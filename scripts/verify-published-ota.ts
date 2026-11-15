@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import mobileApp from "../packages/mobile/app.json";
 import { verifyOtaUpdate } from "./verify-ota-update.ts";
 
 const [metadataPath, channel, runtimeVersion, ...extra] = process.argv.slice(2);
@@ -21,6 +20,17 @@ const appId = z
   .trim()
   .min(1, "EXPO_APP_ID is required")
   .parse(process.env.EXPO_APP_ID);
+const sourceRoot = process.env.GITHUB_WORKSPACE || process.cwd();
+const mobileApp = z
+  .object({
+    expo: z.object({
+      updates: z.object({
+        url: z.url(),
+        codeSigningCertificate: z.string().min(1),
+      }),
+    }),
+  })
+  .parse(JSON.parse(readFileSync(join(sourceRoot, "packages/mobile/app.json"), "utf8")));
 const branch = channel === "production" ? "main" : channel;
 const receiptSchema = z.tuple([
   z.object({
@@ -60,9 +70,10 @@ const expectation = (() => {
     },
   };
 })();
-const certificatePath = new URL(
-  `../packages/mobile/${mobileApp.expo.updates.codeSigningCertificate}`,
-  import.meta.url,
+const certificatePath = join(
+  sourceRoot,
+  "packages/mobile",
+  mobileApp.expo.updates.codeSigningCertificate,
 );
 const id = await verifyOtaUpdate({
   appId,

@@ -9,8 +9,61 @@ import {
 
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 const args = [`${deployTestRepository}:requested`, commit, "dofek_web"];
+const selectedSource = "c".repeat(40);
 
 describe("resolve-deploy-image", () => {
+  it("resolves a manual image tag to its immutable source before validation", () => {
+    const result = runDeployImageFixture({
+      args: [`${deployTestRepository}:requested`, "--resolve-source-only"],
+      release: selectedSource,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.output).toBe(
+      `image_ref=${deployTestRepository}@${deployTestDigest}\nsource_sha=${selectedSource}\n`,
+    );
+    expect(result.calls).toEqual([
+      [
+        "buildx",
+        "imagetools",
+        "inspect",
+        `${deployTestRepository}:requested`,
+        "--format",
+        "{{json .Manifest}}",
+      ],
+      ["pull", "--platform", "linux/arm64", `${deployTestRepository}@${deployTestDigest}`],
+      [
+        "image",
+        "inspect",
+        `${deployTestRepository}@${deployTestDigest}`,
+        "--format",
+        "{{json .Config.Env}}",
+      ],
+      [
+        "image",
+        "inspect",
+        `${deployTestRepository}@${deployTestDigest}`,
+        "--format",
+        "{{json .Config.Labels}}",
+      ],
+    ]);
+  });
+
+  it("validates the candidate locally without inspecting or pulling the remote target", () => {
+    const result = runDeployImageFixture({ args: [...args, "--candidate-only"] });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.output).toContain(`image_ref=${deployTestRepository}@${deployTestDigest}\n`);
+    expect(result.calls[0]?.slice(0, 2)).toEqual(["buildx", "imagetools"]);
+    expect(result.calls[1]).toEqual([
+      "pull",
+      "--platform",
+      "linux/arm64",
+      `${deployTestRepository}@${deployTestDigest}`,
+    ]);
+    expect(result.calls[2]?.slice(0, 2)).toEqual(["image", "inspect"]);
+    expect(result.calls.some((call) => call[0] === "service")).toBe(false);
+    expect(result.dockerHosts).toEqual(["", "", ""]);
+  });
+
   it("validates the pinned image after its tag moves and preserves the old desired reference", () => {
     const result = runDeployImageFixture({ args });
     expect(result.status, result.stderr).toBe(0);

@@ -1,5 +1,63 @@
 # Production Incident Baseline
 
+## 2026-11-15 — Local Docker disk pressure during CI gate validation
+
+- **Symptoms / impact:** Local ClickHouse reported `errno 28` and restarted
+  repeatedly during Task 1 setup; there was no production impact. The Docker VM
+  filesystem was full with 18.8 MiB free and nine ClickHouse restarts.
+- **Evidence / root cause:** Inspected disk state showed disposable stopped
+  container storage had exhausted the VM. Build-cache pruning reclaimed 0 B;
+  removing 12.2 GiB of inspected stopped containers under the existing cleanup
+  approval restored 11.6 GiB free (84% used). No running container or named
+  database volume was removed.
+- **Fix / validation:** ClickHouse then stayed healthy and `SELECT 1` succeeded;
+  local validation continued. The issue was workstation Docker capacity, not
+  application behavior. No timeout or retry changes were made.
+- **Remaining risk / follow-up:** Stopped-container accumulation can fill the
+  Docker VM again. Inspect actual disk and container usage before pruning; keep
+  all running services and named database volumes intact.
+
+## 2026-11-15 — CI release refactor startup and fixture failures
+
+- **Symptoms / impact:** Several CI attempts during PR #3348's workflow refactor
+  failed before useful validation or at a workflow/test gate. PR preview
+  publishing ran, but no production publisher ran; there was no production
+  impact. Runs
+  [43700412759](https://github.com/Asherlc/dofek/actions/runs/43700412759) and
+  [43701761919](https://github.com/Asherlc/dofek/actions/runs/43701761919)
+  created zero jobs. GitHub's workflow validation banner identified the
+  reserved `GITHUB_TOKEN` name in a custom `workflow_call` secret declaration.
+- **Direct fixes / validation:** Removed the conflicting reusable-workflow
+  secret declarations and caller mappings while preserving automatic token
+  use and job permissions. The next run,
+  [43703141677](https://github.com/Asherlc/dofek/actions/runs/43703141677),
+  started jobs and exposed a missing checkout before loading the local OTA
+  composite action; adding the trusted workflow checkout fixed that startup
+  error. Run [43712342423](https://github.com/Asherlc/dofek/actions/runs/43712342423)
+  exposed a missing `ENVIRONMENT_URL` in the summary fixture's Node environment;
+  the existing variable destructuring was corrected and the focused publication
+  tests passed.
+- **WHOOP test-fixture failure:** Run
+  [43714049423](https://github.com/Asherlc/dofek/actions/runs/43714049423)
+  failed an iOS bridge assertion that expected one matching Sentry event and
+  observed two. Local targeted reproduction traced these to two distinct
+  operations: constructor-queued background uploader reconciliation and the
+  explicit purge failure. The test had installed a failing filesystem path
+  while startup reconciliation could still be running. This was a test-setup
+  race; the CI artifact did not prove a production privacy defect. The fixture
+  now uses its existing SQLite cutoff-failure trigger to isolate the explicit
+  purge while preserving account attribution, the exactly-one purge assertion,
+  queued-configuration blocking, and recovery checks. The corrected bridge
+  passed five consecutive Xcode iterations, the WHOOP suite passed 213 tests,
+  and the current-head run
+  [43728671501](https://github.com/Asherlc/dofek/actions/runs/43728671501)
+  passed.
+- **Outcome / remaining risk:** These causes were corrected separately; no
+  failed run was treated as fixed by rerunning it. The local Docker issue and
+  these CI failures caused validation delays only. The earlier credential
+  exposure incident remains a separate owner-led follow-up and is not claimed
+  mitigated by this work.
+
 ## 2026-11-09 — Cycling training stress unavailable after history publication fails
 
 - **Symptoms / impact:** A cycling activity has normalized power but no Training Stress Score. Read-only production queries found normalized power of 165.397 W in `analytics.cycling_power_observation_rows`, no corresponding `cycling_activity_power_metrics` row, and no published history for the affected account. Its completed cycling activities span 2009–2026, producing approximately 7,492 daily and activity history events.
@@ -38125,3 +38183,22 @@ Local qualification and CI are separate from production throughput acceptance. T
   tasks reproduced transport races without another administrator prompt.
   Proposed runbook wording: “Host and Simulator regressions validate ownership
   and formatting; verify background scheduling and CPU recovery on the device.”
+# 2026-11-15 – Production environment values printed during release investigation
+
+- **Symptoms / impact:** A read-only Docker service inspection printed the full
+  production web service environment into agent tool output, exposing secret
+  values during Task 4 release-gate work. No secret values are reproduced here.
+- **Evidence:** The inspection selected
+  `.Spec.TaskTemplate.ContainerSpec.Env`; subsequent checks returned only the
+  immutable image reference and OCI source-revision label.
+- **Root cause:** The diagnostic format requested the entire service
+  environment instead of allowlisting non-secret identity fields.
+- **Fix / mitigation:** Stopped using environment inspection and restricted
+  follow-up reads to the service image digest and
+  `org.opencontainers.image.revision`. No production configuration or secrets
+  were changed.
+- **Remaining risk:** Treat all values from the emitted environment as
+  compromised until the owner completes normal credential rotation. Rotation
+  was not performed during this task because it is outside the approved scope.
+- **Follow-up:** Rotate the affected production credentials through the
+  established secret rotation workflow and verify consumers afterward.

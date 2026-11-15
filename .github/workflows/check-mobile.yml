@@ -1,0 +1,307 @@
+name: Check Mobile
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: Full commit SHA to check; the caller validates it before dispatch.
+        required: true
+        type: string
+
+jobs:
+  typecheck:
+    name: Typecheck (mobile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Typecheck
+        run: pnpm --recursive --filter dofek-mobile --if-present run typecheck
+
+  mobile-policies:
+    name: Mobile Policies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Check mobile telemetry policy
+        run: pnpm lint:mobile-telemetry
+      - name: Check mobile app route files
+        run: pnpm check:mobile-app-routes
+
+  test-mobile:
+    name: Mobile Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm exec vitest run --project mobile
+        env:
+          CLICKHOUSE_URL: http://default:health@localhost:8123
+
+  swiftlint:
+    name: SwiftLint
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - name: Install SwiftLint
+        run: brew install swiftlint
+      - name: Run SwiftLint
+        working-directory: packages/mobile
+        run: swiftlint lint --strict --reporter github-actions-logging
+
+  periphery:
+    name: Periphery
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            packages/mobile/modules/health-kit/.build
+            packages/mobile/modules/whoop-ble/.build
+            packages/mobile/modules/watch-motion/.build
+          key: periphery-v3-${{ hashFiles('packages/mobile/modules/*/Package.swift') }}
+          restore-keys: periphery-v3-
+      - name: Install Periphery
+        run: brew install --formula homebrew/core/periphery
+      - name: Scan for unused code
+        run: |
+          fail=0
+          # Only packages with library source files (non-Module .swift files)
+          # core-motion and ble-probe have no library code — only Module bridge files
+          for pkg in health-kit whoop-ble watch-motion; do
+            echo "::group::Scanning $pkg"
+            (cd packages/mobile/modules/$pkg && periphery scan --retain-public --disable-update-check --relative-results --format github-actions) || fail=1
+            echo "::endgroup::"
+          done
+          exit $fail
+
+  test-swift:
+    name: Swift Tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            packages/mobile/modules/background-refresh/.build
+            packages/mobile/modules/core-motion/.build
+            packages/mobile/modules/health-kit/.build
+          key: swift-build-v2-${{ hashFiles('packages/mobile/modules/background-refresh/Package.swift', 'packages/mobile/modules/core-motion/Package.swift', 'packages/mobile/modules/health-kit/Package.swift') }}
+          restore-keys: swift-build-v2-
+      - name: Run Background Refresh Swift tests
+        working-directory: packages/mobile/modules/background-refresh
+        run: swift test
+      - name: Run Core Motion Swift tests
+        working-directory: packages/mobile/modules/core-motion
+        run: swift test
+      - name: Run WHOOP BLE Swift tests
+        working-directory: packages/mobile/modules/whoop-ble
+        run: swift test
+      - name: Run Swift tests with coverage
+        id: healthkit-coverage
+        run: pnpm tsx scripts/check-health-kit-coverage.ts
+      - name: Run Watch transfer tests
+        run: |
+          swift test \
+            --package-path packages/mobile/targets/DofekWatch \
+            --scratch-path "$RUNNER_TEMP/dofek-watch-transfer-core"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.healthkit-coverage.outputs.coverage-directory != ''
+        with:
+          name: swift-coverage
+          path: ${{ steps.healthkit-coverage.outputs.coverage-directory }}
+          retention-days: 7
+
+  mutation-swift-prep:
+    name: Prepare Swift mutation shards
+    runs-on: macos-latest
+    if: github.event_name == 'pull_request'
+    outputs:
+      jobs: ${{ steps.discover.outputs.jobs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.10.23
+          install_args: github:juntaki/mutantkit
+      - name: Prepare verified native candidate partitions
+        id: discover
+        run: |
+          JOBS=$(pnpm tsx scripts/run-swift-mutation.ts --base origin/main --prepare)
+          echo "jobs=$JOBS" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: swift-mutation-plan
+          path: reports/swift-mutation/
+          if-no-files-found: error
+          retention-days: 7
+
+  mutation-swift:
+    name: Swift Mutation Testing (${{ matrix.file }}, shard ${{ matrix.shard }})
+    needs: mutation-swift-prep
+    runs-on: macos-latest
+    if: needs.mutation-swift-prep.outputs.jobs != '' && needs.mutation-swift-prep.outputs.jobs != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.mutation-swift-prep.outputs.jobs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: swift-mutation-plan
+          path: reports/swift-mutation/
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            packages/mobile/modules/*/.build
+            packages/mobile/targets/*/.build
+          key: swift-mutation-build-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/mobile/modules/*/Package.swift', 'packages/mobile/targets/*/Package.swift') }}
+          restore-keys: swift-mutation-build-v3-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.10.23
+          install_args: github:juntaki/mutantkit
+      - name: Run native mutation tests
+        timeout-minutes: 30
+        env:
+          MUTATION_JOB: ${{ toJSON(matrix) }}
+        run: pnpm tsx scripts/run-swift-mutation.ts --job "$MUTATION_JOB"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: swift-mutation-worker-${{ strategy.job-index }}
+          path: |
+            reports/swift-mutation/campaign.json
+            reports/swift-mutation/files/${{ matrix.file }}/workers/${{ matrix.shard }}/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  mutation-swift-merge:
+    name: Verify complete Swift mutation campaign
+    needs: [mutation-swift-prep, mutation-swift]
+    if: >-
+      always() && needs.mutation-swift-prep.result == 'success' &&
+      (needs.mutation-swift.result == 'success' ||
+       (needs.mutation-swift-prep.outputs.jobs == '[]' && needs.mutation-swift.result == 'skipped'))
+    runs-on: macos-latest
+    steps:
+      - name: Check out pull request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      - name: Download prepared Swift mutation plans
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: swift-mutation-plan
+          path: reports/swift-mutation/
+      - name: Download Swift mutation worker evidence
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.mutation-swift-prep.outputs.jobs != '[]'
+        with:
+          pattern: swift-mutation-worker-*
+          path: reports/swift-mutation/
+          merge-multiple: true
+      - name: Install pinned MutantKit
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.10.23
+          install_args: github:juntaki/mutantkit
+      - name: Reverify shard evidence and merge every original candidate
+        timeout-minutes: 30
+        run: pnpm tsx scripts/run-swift-mutation.ts --merge
+      - name: Upload verified Swift mutation campaign
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: swift-mutation-campaign
+          path: reports/swift-mutation/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  # ── Aggregate ──────────────────────────────────────────────────────────
+
+  mobile-checks:
+    name: Mobile Checks
+    needs:
+      - typecheck
+      - mobile-policies
+      - test-mobile
+      - swiftlint
+      - periphery
+      - test-swift
+      - mutation-swift-prep
+      - mutation-swift
+      - mutation-swift-merge
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      MUTATION_JOBS: ${{ needs.mutation-swift-prep.outputs.jobs }}
+    steps:
+      - name: Check results
+        run: |
+          fail=0
+          require_success() {
+            name="$1"
+            result="$2"
+            if [ "$result" != "success" ]; then
+              echo "::error::$name did not succeed ($result)"
+              fail=1
+            fi
+          }
+
+          require_success typecheck "${{ needs.typecheck.result }}"
+          require_success mobile-policies "${{ needs.mobile-policies.result }}"
+          require_success test-mobile "${{ needs.test-mobile.result }}"
+          require_success swiftlint "${{ needs.swiftlint.result }}"
+          require_success periphery "${{ needs.periphery.result }}"
+          require_success test-swift "${{ needs.test-swift.result }}"
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            require_success mutation-swift-prep "${{ needs.mutation-swift-prep.result }}"
+            if [ "$MUTATION_JOBS" != "[]" ]; then
+              require_success mutation-swift "${{ needs.mutation-swift.result }}"
+            fi
+            require_success mutation-swift-merge "${{ needs.mutation-swift-merge.result }}"
+          fi
+
+          exit "$fail"

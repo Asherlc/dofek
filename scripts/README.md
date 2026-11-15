@@ -113,6 +113,14 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Verification & Tooling
 
+- `prepare-mutation-shards.ts`: Splits existing changed-line Stryker inputs into
+  balanced shards by shared-package or server ownership. It preserves the
+  colocated unit-test, runtime-source, and exclusion checks used by the CI
+  mutation campaign.
+  - Usage: `pnpm tsx scripts/prepare-mutation-shards.ts --scope shared --diff-range <base>...<head>`
+  - CI runs the shared scope with the complete `unit-shared` project and the
+    server scope with the existing Stryker Vitest configuration. Both retain
+    the configured Stryker thresholds.
 - `integration-test-sequencer.ts`: Uses Vitest's public
   [BaseSequencer extension](https://v4.vitest.dev/config/sequence) to balance the
   existing five integration shards from one committed measured baseline.
@@ -179,12 +187,29 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   [detector implementation](./detect-ci-changes.ts) and
   [CI workflow](../.github/workflows/ci.yml).
   - Usage: `pnpm tsx scripts/detect-ci-changes.ts --changed-file packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift --json`
+  - `--diff-range <base>...<head>` classifies the complete Git range used by CI,
+    including renamed and deleted paths. Missing revisions or an invalid range
+    fail instead of returning an empty selection. `--json` prints only the
+    boolean lane-selection flags for review.
+  - Executable `.yml`/`.yaml` files directly under `.github/workflows/` select
+    root/tooling unit checks through the server and shared lanes. This ownership
+    rule does not itself select image builds or publishers; workflow Markdown
+    remains unselected.
 - `resolve-deploy-image.ts`: Resolves a requested registry image once, pulls the
   immutable manifest reference through the configured Docker daemon, verifies
   its full source release, and retains the existing web service's desired digest
   for pre-migration deployment. Emits `image_ref`, `pre_migration_image_ref`, and
   `sentry_release` through `GITHUB_OUTPUT`.
   - Usage: `pnpm tsx scripts/resolve-deploy-image.ts <image-reference> <full-source-sha> <web-service-name>`
+  - `--candidate-only` validates the image source and immutable digest on the
+    runner before production admission. It pulls the app's `linux/arm64`
+    manifest locally without querying or mutating the remote Docker service;
+    the ordinary invocation retains the migration-aware remote service check.
+    Docker documents its [platform-specific pull option](https://docs.docker.com/reference/cli/docker/image/pull/#options).
+  - `--resolve-source-only` resolves a manual image tag to its immutable digest
+    and full OCI revision, and checks that revision against the image's
+    `SENTRY_RELEASE`. It emits `image_ref` and `source_sha` through
+    `GITHUB_OUTPUT` before selected-source checks run.
   - Uses Docker's [manifest descriptor JSON](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/#json-output)
     and [immutable pulls](https://docs.docker.com/reference/cli/docker/image/pull/#pull-an-image-by-digest-immutable-identifier).
 - `verify-deploy-image.ts`: Verifies a converged service's desired image and
@@ -228,8 +253,11 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   requested source trees, including rollback differences. Git's
   [NUL-terminated diff output and disabled rename detection](https://git-scm.com/docs/git-diff)
   preserve unusual filenames and native deletions moved outside native paths.
-  History reads one newest-first page of 100 deployments at a time with each
-  deployment's latest status, continuing by cursor only when needed; GitHub
+  History reads newest-first pages of 100 deployments with each deployment's
+  latest status. Publication scans the full history so an unresolved attempt
+  after the newest successful receipt cannot be missed. Read-only build
+  detection also scans all history but permits unresolved attempts because it
+  does not authorize publication. GitHub
   documents the [ordered deployment connection](https://docs.github.com/en/graphql/reference/repos#repository)
   and [latest-status projection](https://docs.github.com/en/graphql/reference/deployments#deployment).
   Intent and receipt writes use [exact deployment refs](https://docs.github.com/en/rest/deployments/deployments)
@@ -251,6 +279,15 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - Detection: `pnpm tsx scripts/testflight-deployment-cli.ts detect <owner/repo> <full-source-sha> [--force]`
   - Prepare, immediately before upload: `pnpm tsx scripts/testflight-deployment-cli.ts prepare <owner/repo> <full-source-sha> <build-number> <upload-attempt-run-url>`
   - Finalize the same intent, only after a successful upload: `pnpm tsx scripts/testflight-deployment-cli.ts record <owner/repo> <deployment-id> <full-source-sha> <build-number> <upload-attempt-run-url>`
+- Production server and OTA publication workflows use target-scoped GitHub
+  deployment records. Admission checks run under the publisher lock before
+  Terraform or publication, inspect every page and latest status, verify live
+  target identity, and record a pending intent before mutation. Unresolved
+  intents block later candidates until real target evidence supports recovery
+  or explicit operator reconciliation. Server identity is the source SHA and
+  immutable image digest; OTA identity is the source SHA, update UUID, and
+  runtime version. OTA history with a live update but no receipt fails closed;
+  see the [deployment recovery runbook](../deploy/README.md#publication-recovery).
 - `report-repeated-cycling-efforts.ts`: Read-only historical cycling report
   using the same user-bound discovery, comparison, trend, and cycling-performance
   repositories as MCP. It makes no provider network requests and computes no
@@ -361,6 +398,9 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - Usage: `pnpm check:mobile-update --app-id <app-id> --runtime-version <resolved-runtime>`
   - Required: `--app-id <app-id> --runtime-version <version>`
   - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android>`
+  - When `GITHUB_OUTPUT` is set, writes the returned manifest UUID and runtime
+    as `manifest_id` and `manifest_runtime`; a valid no-update response writes
+    `manifest_id=none` with the requested runtime.
 - `stack-service-image.ts`: Reads a service’s canonical immutable image from a Compose
   stack, including [YAML merge keys](https://yaml.org/type/merge.html), for the existing
   Swarm running-task verifier. Missing or mutable references fail explicitly.

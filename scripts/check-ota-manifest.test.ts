@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingHttpHeaders } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { checkOtaManifest } from "./check-ota-manifest.ts";
 
@@ -35,20 +38,23 @@ function createDirectiveResponse(value: unknown): Response {
   );
 }
 
-function createValidManifestResponse(): Response {
+function createValidManifestResponse(
+  id = "a2018e93-2f3e-45aa-8556-aa8b3c38380c",
+  runtimeVersion = "1.0",
+): Response {
   const boundary = "ota-health-check-boundary";
   const manifest = JSON.stringify({
     assets: [],
     createdAt: "2026-07-21T22:33:19.000Z",
     extra: {},
-    id: "a2018e93-2f3e-45aa-8556-aa8b3c38380c",
+    id,
     launchAsset: {
       contentType: "application/javascript",
       key: "index.bundle",
       url: "https://ota.dofek.asherlc.com/assets?asset=index.bundle",
     },
     metadata: { branch: "main" },
-    runtimeVersion: "1.0",
+    runtimeVersion,
   });
   const body = [
     `--${boundary}`,
@@ -69,13 +75,16 @@ function createValidManifestResponse(): Response {
   });
 }
 
-async function runMobileUpdateCheck(arguments_: string[]): Promise<{
+async function runMobileUpdateCheck(
+  arguments_: string[],
+  outputPath?: string,
+): Promise<{
   status: number | null;
   stderr: string;
   stdout: string;
 }> {
   const child = spawn("pnpm", ["check:mobile-update", ...arguments_], {
-    env: process.env,
+    env: { ...process.env, ...(outputPath ? { GITHUB_OUTPUT: outputPath } : {}) },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stderr = "";
@@ -92,7 +101,100 @@ async function runMobileUpdateCheck(arguments_: string[]): Promise<{
   return { status: typeof status === "number" ? status : null, stderr, stdout };
 }
 
+async function runMobileUpdateCheckAgainst(response: Response): Promise<{
+  output: string;
+  result: { status: number | null; stderr: string; stdout: string };
+}> {
+  const body = await response.text();
+  const headers = Object.fromEntries(response.headers.entries());
+  const server = createServer((_request, reply) => {
+    reply.writeHead(response.status, headers).end(body);
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Missing test server port");
+  const directory = mkdtempSync(join(tmpdir(), "ota-manifest-cli-"));
+  const outputPath = join(directory, "github-output");
+  try {
+    const result = await runMobileUpdateCheck(
+      [
+        "--app-id",
+        "release-app-id",
+        "--url",
+        `http://127.0.0.1:${address.port}/manifest`,
+        "--runtime-version",
+        "1.0",
+      ],
+      outputPath,
+    );
+    return { output: existsSync(outputPath) ? readFileSync(outputPath, "utf8") : "", result };
+  } finally {
+    server.close();
+    await once(server, "close");
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 describe("checkOtaManifest", () => {
+  it("writes verified live manifest identity to GITHUB_OUTPUT through the public CLI", async () => {
+    const { output, result } = await runMobileUpdateCheckAgainst(createValidManifestResponse());
+    expect(result.status, result.stderr).toBe(0);
+    expect(output).toBe("manifest_id=a2018e93-2f3e-45aa-8556-aa8b3c38380c\nmanifest_runtime=1.0\n");
+  });
+
+  it("writes the explicit no-update sentinel and runtime through the public CLI", async () => {
+    const { output, result } = await runMobileUpdateCheckAgainst(
+      createDirectiveResponse({ type: "noUpdateAvailable" }),
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(output).toBe("manifest_id=none\nmanifest_runtime=1.0\n");
+  });
+
+  it.each(["none", "not-a-uuid", "47a9ab69-6103-6981-398b-a90d59a49a8a\nmanifest_runtime=spoof"])(
+    "does not write an invalid or sentinel manifest ID to GITHUB_OUTPUT: %j",
+    async (id) => {
+      const { output, result } = await runMobileUpdateCheckAgainst(createValidManifestResponse(id));
+      expect(result.status).not.toBe(0);
+      expect(output).toBe("");
+    },
+  );
+
+  it("rejects a runtime containing output-file line breaks before making the manifest request", async () => {
+    let requestCount = 0;
+    const server = createServer((_request, response) => {
+      requestCount += 1;
+      response.writeHead(204).end();
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Missing test server port");
+    const directory = mkdtempSync(join(tmpdir(), "ota-runtime-output-"));
+    const outputPath = join(directory, "github-output");
+    try {
+      const result = await runMobileUpdateCheck(
+        [
+          "--app-id",
+          "release-app-id",
+          "--url",
+          `http://127.0.0.1:${address.port}/manifest`,
+          "--runtime-version",
+          "1.0\nmanifest_id=spoof",
+        ],
+        outputPath,
+      );
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("runtime version cannot contain line breaks");
+      expect(requestCount).toBe(0);
+      expect(existsSync(outputPath)).toBe(false);
+    } finally {
+      server.close();
+      await once(server, "close");
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("rejects ambiguous duplicate manifest parts", async () => {
     const valid = createValidManifestResponse();
     const body = await valid.text();

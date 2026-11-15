@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  prepareTestFlightUpload,
+  prepareTestFlightUploadDecision,
   recordTestFlightUpload,
   requiresTestFlightUpload,
 } from "./testflight-deployment.ts";
 
 vi.mock("./testflight-deployment.ts", () => ({
   recordTestFlightUpload: vi.fn(),
-  prepareTestFlightUpload: vi.fn(),
+  prepareTestFlightUploadDecision: vi.fn(),
   requiresTestFlightUpload: vi.fn(),
 }));
 
@@ -20,7 +20,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "log").mockImplementation(() => undefined);
   vi.mocked(requiresTestFlightUpload).mockReturnValue(true);
-  vi.mocked(prepareTestFlightUpload).mockReturnValue(5);
+  vi.mocked(prepareTestFlightUploadDecision).mockReturnValue({ kind: "upload", deploymentId: 5 });
 });
 
 afterEach(() => {
@@ -60,15 +60,20 @@ describe("TestFlight deployment command", () => {
     expect(console.log).not.toHaveBeenCalled();
   });
 
-  it("prints the deployment ID prepared for this upload attempt", async () => {
+  it.each([
+    [{ kind: "upload", deploymentId: 5 }, 5],
+    [{ kind: "unchanged" }, "unchanged"],
+    [{ kind: "superseded" }, "superseded"],
+  ] as const)("prints the %s preparation decision", async (decision, output) => {
+    vi.mocked(prepareTestFlightUploadDecision).mockReturnValue(decision);
     await run(["prepare", "owner/dofek", sha, "1793210000", runUrl]);
-    expect(prepareTestFlightUpload).toHaveBeenCalledExactlyOnceWith(
+    expect(prepareTestFlightUploadDecision).toHaveBeenCalledExactlyOnceWith(
       "owner/dofek",
       sha,
       "1793210000",
       runUrl,
     );
-    expect(console.log).toHaveBeenCalledExactlyOnceWith(5);
+    expect(console.log).toHaveBeenCalledExactlyOnceWith(output);
     expect(recordTestFlightUpload).not.toHaveBeenCalled();
   });
 
@@ -97,7 +102,7 @@ describe("TestFlight deployment command", () => {
   ])("rejects incomplete or unsupported arguments %j", async (...arguments_) => {
     await expect(run(arguments_)).rejects.toThrow("Usage:");
     expect(recordTestFlightUpload).not.toHaveBeenCalled();
-    expect(prepareTestFlightUpload).not.toHaveBeenCalled();
+    expect(prepareTestFlightUploadDecision).not.toHaveBeenCalled();
     expect(requiresTestFlightUpload).not.toHaveBeenCalled();
   });
 });

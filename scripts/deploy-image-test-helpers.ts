@@ -39,8 +39,10 @@ export function runDeployImageFixture({
   const directory = mkdtempSync(join(tmpdir(), "deploy-image-"));
   const outputPath = join(directory, "output");
   const callsPath = join(directory, "calls");
+  const dockerHostPath = join(directory, "docker-hosts");
   writeFileSync(outputPath, "");
   writeFileSync(callsPath, "");
+  writeFileSync(dockerHostPath, "");
   const dotenvPath = join(directory, "deploy.env");
   writeFileSync(dotenvPath, "APP_IMAGE=wrong:mutable\nWEB_ENV_FILE=wrong.env\n");
   const dockerPath = join(directory, "docker");
@@ -51,6 +53,7 @@ export function runDeployImageFixture({
       "const fs = require('node:fs');",
       "const args = process.argv.slice(2);",
       "fs.appendFileSync(process.env.FIXTURE_CALLS, JSON.stringify(args) + '\\n');",
+      "fs.appendFileSync(process.env.FIXTURE_DOCKER_HOST_LOG, JSON.stringify(process.env.DOCKER_HOST || '') + '\\n');",
       "const command = args.slice(0, 2).join(' ');",
       "if (process.env.FIXTURE_FAILURE && command === process.env.FIXTURE_FAILURE) { console.error('Docker unavailable'); process.exit(1); }",
       "if (command === 'buildx imagetools') {",
@@ -60,7 +63,8 @@ export function runDeployImageFixture({
       "} else if (command === 'image inspect') {",
       "  const pinned = args[2].endsWith('@' + process.env.FIXTURE_PINNED_DIGEST);",
       "  const release = pinned || !fs.existsSync(process.env.FIXTURE_MOVED) ? process.env.FIXTURE_RELEASE : 'wrong-release-after-tag-move';",
-      "  console.log(args.includes('{{json .Config.Env}}') ? JSON.stringify(['SENTRY_RELEASE=' + release]) : 'SENTRY_RELEASE=' + release);",
+      "  if (args.includes('{{json .Config.Labels}}')) console.log(JSON.stringify({'org.opencontainers.image.revision': release}));",
+      "  else console.log(args.includes('{{json .Config.Env}}') ? JSON.stringify(['SENTRY_RELEASE=' + release]) : 'SENTRY_RELEASE=' + release);",
       "} else if (command === 'service ls') { console.log(process.env.FIXTURE_DESIRED ? 'dofek_web' : '');",
       "} else if (command === 'service inspect') { console.log(args.includes('{{.Spec.Mode.Replicated.Replicas}}') ? process.env.FIXTURE_REPLICAS : process.env.FIXTURE_DESIRED);",
       "} else if (command === 'service ps') { console.log(JSON.parse(process.env.FIXTURE_TASK_IMAGES).map((_, i) => 'task' + i).join('\\n'));",
@@ -87,6 +91,7 @@ export function runDeployImageFixture({
         DOCKER_HOST: "ssh://fixture@example.test",
         GITHUB_OUTPUT: outputPath,
         FIXTURE_CALLS: callsPath,
+        FIXTURE_DOCKER_HOST_LOG: dockerHostPath,
         FIXTURE_MOVED: join(directory, "moved"),
         FIXTURE_DIGEST: JSON.stringify(digest),
         FIXTURE_PINNED_DIGEST: deployTestDigest,
@@ -120,6 +125,11 @@ export function runDeployImageFixture({
         .split("\n")
         .filter(Boolean)
         .map((line): string[] => JSON.parse(line)),
+      dockerHosts: readFileSync(dockerHostPath, "utf8")
+        .trim()
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .map((line) => JSON.parse(line)),
     };
   } finally {
     rmSync(directory, { recursive: true, force: true });

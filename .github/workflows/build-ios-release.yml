@@ -21,6 +21,9 @@ on:
       artifact_id:
         description: "Signed archive artifact ID; empty when no native build is needed"
         value: ${{ jobs.archive.outputs.artifact_id }}
+      should_deploy:
+        description: "Whether the selected source requires a native iOS release"
+        value: ${{ jobs.check.outputs.should_deploy }}
 
 permissions:
   contents: read
@@ -199,6 +202,26 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 7
+      - name: Validate signed archive identity
+        env:
+          EXPECTED_SHA: ${{ inputs.commit_sha }}
+          ARCHIVE_SHA: ${{ steps.checked-out-sha.outputs.sha }}
+          BUILD_NUMBER: ${{ steps.build-number.outputs.value }}
+          ARTIFACT_ID: ${{ steps.signed-archive.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ || "$ARCHIVE_SHA" != "$EXPECTED_SHA" ]]; then
+            echo "::error::Signed iOS archive source is missing or does not match the selected mobile source"
+            exit 1
+          fi
+          if [[ ! "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "::error::Signed iOS archive build number is missing or invalid"
+            exit 1
+          fi
+          if [[ ! "$ARTIFACT_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::Signed iOS archive artifact ID is missing or invalid"
+            exit 1
+          fi
       - name: Show ccache stats
         if: always()
         run: ccache --show-stats

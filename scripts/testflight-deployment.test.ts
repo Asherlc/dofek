@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,12 +16,13 @@ vi.mock("node:child_process", () => ({ execFileSync: vi.fn() }));
 
 import {
   prepareTestFlightUpload,
+  prepareTestFlightUploadDecision,
   recordTestFlightUpload,
   requiresTestFlightUpload,
 } from "./testflight-deployment.ts";
 
 const gh = vi.mocked(execFileSync);
-const { execFileSync: realExecute } =
+const { execFileSync: realExecute, spawnSync: realSpawn } =
   await vi.importActual<typeof import("node:child_process")>("node:child_process");
 const currentSha = "a".repeat(40);
 const earlierSha = "b".repeat(40);
@@ -189,12 +198,12 @@ describe("TestFlight upload receipts", () => {
     });
   });
 
-  it("requests bounded newest-first pages and stops at the latest successful upload", () => {
-    gh.mockReturnValueOnce("").mockReturnValueOnce(
-      page([receipt(currentSha), receipt(earlierSha)], true, "next"),
-    );
+  it("requests bounded newest-first pages and checks all history after the latest success", () => {
+    gh.mockReturnValueOnce("")
+      .mockReturnValueOnce(page([receipt(currentSha), receipt(earlierSha)], true, "next"))
+      .mockReturnValueOnce(page());
     expect(requiresTestFlightUpload("owner/dofek", currentSha)).toBe(false);
-    expect(gh).toHaveBeenCalledTimes(2);
+    expect(gh).toHaveBeenCalledTimes(3);
     const [command, arguments_, options] = gh.mock.calls[1] ?? [];
     expect(command).toBe("gh");
     expect(arguments_).toEqual(["api", "graphql", "--input", "-"]);
@@ -204,6 +213,8 @@ describe("TestFlight upload receipts", () => {
     expect(request.query).toMatch(/orderBy:\s*\{\s*field:\s*CREATED_AT,\s*direction:\s*DESC\s*\}/);
     expect(request.query).toMatch(/environments:\s*\["testflight"\]/);
     expect(request.query).toContain("latestStatus { state }");
+    const nextRequest = JSON.parse(String(gh.mock.calls[2]?.[2]?.input));
+    expect(nextRequest.variables).toEqual({ owner: "owner", name: "dofek", after: "next" });
   });
 
   it("continues past another task and explicitly inactive receipts to a later page", () => {
@@ -225,6 +236,18 @@ describe("TestFlight upload receipts", () => {
       ["diff", "--name-only", "--no-renames", "-z", earlierSha, currentSha, "--"],
       expect.any(Object),
     );
+  });
+
+  it("checks later history pages for unresolved attempts after finding a success", () => {
+    gh.mockReturnValueOnce(page([receipt(currentSha)], true, "cursor-1")).mockReturnValueOnce(
+      page([receipt(earlierSha, "PENDING")]),
+    );
+    expect(() => prepareTestFlightUpload("owner/dofek", currentSha, "1793210000", runUrl)).toThrow(
+      "Unresolved TestFlight upload deployment",
+    );
+    expect(gh).toHaveBeenCalledTimes(2);
+    const request = JSON.parse(String(gh.mock.calls[1]?.[2]?.input));
+    expect(request.variables).toEqual({ owner: "owner", name: "dofek", after: "cursor-1" });
   });
 
   it.each(["FAILURE", "ERROR", "PENDING", "IN_PROGRESS", "QUEUED", "WAITING", null])(
@@ -360,6 +383,188 @@ describe("TestFlight upload receipts", () => {
       "Unresolved",
     );
     expect(gh).toHaveBeenCalledTimes(3);
+  });
+
+  it("treats an already successful source as a no-op during publication", () => {
+    gh.mockReturnValueOnce(page([receipt(currentSha)]));
+    expect(
+      prepareTestFlightUploadDecision("owner/dofek", currentSha, "1793210000", runUrl),
+    ).toEqual({ kind: "unchanged" });
+    expect(gh).toHaveBeenCalledTimes(1);
+  });
+
+  it("supersedes an older ancestor after a newer successful upload without creating an intent", () => {
+    const directory = mkdtempSync(join(tmpdir(), "testflight-ancestry-"));
+    const git = (arguments_: string[]) =>
+      realExecute("git", arguments_, {
+        cwd: directory,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    try {
+      git(["init", "--initial-branch=main"]);
+      writeFileSync(join(directory, "release.txt"), "older\n");
+      git(["add", "release.txt"]);
+      git([
+        "-c",
+        "user.name=Deploy Test",
+        "-c",
+        "user.email=deploy@example.test",
+        "commit",
+        "-m",
+        "older",
+      ]);
+      const older = git(["rev-parse", "HEAD"]);
+      writeFileSync(join(directory, "release.txt"), "newer\n");
+      git(["add", "release.txt"]);
+      git([
+        "-c",
+        "user.name=Deploy Test",
+        "-c",
+        "user.email=deploy@example.test",
+        "commit",
+        "-m",
+        "newer",
+      ]);
+      const newer = git(["rev-parse", "HEAD"]);
+      gh.mockImplementation((command, arguments_, options) => {
+        if (command === "git")
+          return realExecute(command, arguments_ ?? [], { ...options, cwd: directory });
+        return page([receipt(newer)]);
+      });
+      expect(prepareTestFlightUploadDecision("owner/dofek", older, "1793210000", runUrl)).toEqual({
+        kind: "superseded",
+      });
+      expect(gh).toHaveBeenCalledTimes(3);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the existing prepare CLI output while recording the real upload intent", () => {
+    const directory = mkdtempSync(join(tmpdir(), "testflight-cli-"));
+    const repository = join(directory, "repository");
+    const ghPath = join(directory, "gh");
+    const logPath = join(directory, "gh.jsonl");
+    mkdirSync(repository);
+    const git = (arguments_: string[]) =>
+      String(
+        realExecute("git", arguments_, {
+          cwd: repository,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            GIT_DIR: join(repository, ".git"),
+            GIT_WORK_TREE: repository,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        }),
+      ).trim();
+    try {
+      git(["init", "--initial-branch=main"]);
+      git(["config", "user.name", "Deploy Test"]);
+      git(["config", "user.email", "deploy@example.test"]);
+      writeFileSync(join(repository, "release.txt"), "verified baseline\n");
+      git(["add", "release.txt"]);
+      git(["commit", "-m", "verified baseline"]);
+      const baselineSha = git(["rev-parse", "HEAD"]);
+      writeFileSync(join(repository, "release.txt"), "upload candidate\n");
+      git(["add", "release.txt"]);
+      git(["commit", "-m", "upload candidate"]);
+      const sourceSha = git(["rev-parse", "HEAD"]);
+      writeFileSync(
+        ghPath,
+        `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const input = fs.readFileSync(0, 'utf8');
+fs.appendFileSync(process.env.GH_LOG, JSON.stringify({ args, input }) + '\\n');
+if (args.includes('graphql')) process.stdout.write(process.env.GH_HISTORY);
+else if (args.some((arg) => arg.endsWith('/deployments')) && args.includes('--method') && args.includes('POST')) {
+  const request = JSON.parse(input);
+  process.stdout.write(JSON.stringify({ id: 77, node_id: 'D_fixture', sha: request.ref, environment: request.environment, task: request.task, payload: request.payload }));
+} else process.stdout.write(JSON.stringify({ state: 'pending' }));
+`,
+      );
+      chmodSync(ghPath, 0o755);
+      const response = realSpawn(
+        "pnpm",
+        [
+          "tsx",
+          "scripts/testflight-deployment-cli.ts",
+          "prepare",
+          "owner/dofek",
+          sourceSha,
+          "1793210000",
+          runUrl,
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${directory}:${process.env.PATH ?? ""}`,
+            GH_LOG: logPath,
+            GH_HISTORY: page([receipt(baselineSha)]),
+            GIT_DIR: join(repository, ".git"),
+            GIT_WORK_TREE: repository,
+          },
+        },
+      );
+      expect(response.status, response.stderr).toBe(0);
+      expect(response.stdout.trim()).toBe("77");
+      const calls = readFileSync(logPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(calls).toHaveLength(3);
+      expect(calls[0].args).toEqual(["api", "graphql", "--input", "-"]);
+      expect(calls[1].args).toContain("repos/owner/dofek/deployments");
+      expect(calls[2].args).toContain("repos/owner/dofek/deployments/77/statuses");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a non-ancestor TestFlight candidate before creating an intent", () => {
+    const directory = mkdtempSync(join(tmpdir(), "testflight-non-ancestor-"));
+    const git = (arguments_: string[]) =>
+      realExecute("git", arguments_, {
+        cwd: directory,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    const commit = (contents: string) => {
+      writeFileSync(join(directory, "release.txt"), `${contents}\n`);
+      git(["add", "release.txt"]);
+      git([
+        "-c",
+        "user.name=Deploy Test",
+        "-c",
+        "user.email=deploy@example.test",
+        "commit",
+        "-m",
+        contents,
+      ]);
+      return git(["rev-parse", "HEAD"]);
+    };
+    try {
+      git(["init", "--initial-branch=main"]);
+      const newer = commit("newer");
+      git(["checkout", "--orphan", "other"]);
+      const unrelated = commit("unrelated");
+      gh.mockImplementation((command, arguments_, options) => {
+        if (command === "git")
+          return realExecute(command, arguments_ ?? [], { ...options, cwd: directory });
+        return page([receipt(newer)]);
+      });
+      expect(() =>
+        prepareTestFlightUploadDecision("owner/dofek", unrelated, "1793210000", runUrl),
+      ).toThrow("not an ancestor");
+      expect(gh).toHaveBeenCalledTimes(4);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("uses a newer confirmed success without resurrecting an older unresolved intent", () => {

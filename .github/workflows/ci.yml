@@ -8,126 +8,658 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  packages: write
-  pull-requests: write
-  id-token: write
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # ── CI ─────────────────────────────────────────────────────────────────
+  # ── Commit resolution ──────────────────────────────────────────────────
+
+  resolve-commit:
+    name: Resolve Commit
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.resolve.outputs.commit_sha }}
+    steps:
+      - name: Resolve and validate the event commit
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          # For pull_request events github.sha is the candidate merge commit.
+          # Use that exact revision for detection and every downstream checkout.
+          COMMIT_SHA="$EVENT_SHA"
+          if [[ ! "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Expected a full 40-character commit SHA for $EVENT_NAME, got '$COMMIT_SHA'."
+            exit 1
+          fi
+          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+
+  # ── Change detection ───────────────────────────────────────────────────
 
   detect-changes:
     name: Detect Changes
+    needs: resolve-commit
     uses: ./.github/workflows/detect-changes.yml
-
-  build-mobile:
-    name: Build Mobile
-    needs: detect-changes
-    uses: ./.github/workflows/build-mobile.yml
     with:
-      changed: ${{ needs.detect-changes.outputs.mobile == 'true' }}
-    secrets: inherit
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
 
-  build-web:
-    name: Build Web
-    needs: detect-changes
-    if: needs.detect-changes.outputs.web == 'true'
-    uses: ./.github/workflows/build-web.yml
-    secrets: inherit
+  # ── Independent check lanes ────────────────────────────────────────────
 
-  build-zepp:
-    name: Build Zepp
-    needs: detect-changes
-    if: needs.detect-changes.outputs.zepp == 'true'
-    uses: ./.github/workflows/build-zepp.yml
+  check-repository:
+    name: Check Repository
+    needs: resolve-commit
+    uses: ./.github/workflows/check-repository.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+
+  check-shared:
+    name: Check Shared
+    needs: [resolve-commit, detect-changes]
+    if: >-
+      needs.detect-changes.outputs.shared == 'true' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+       (needs.detect-changes.outputs.docker_server == 'true' ||
+        needs.detect-changes.outputs.web == 'true' ||
+        needs.detect-changes.outputs.terraform == 'true' ||
+        needs.detect-changes.outputs.docker_ota == 'true' ||
+        needs.detect-changes.outputs.mobile == 'true'))
+    uses: ./.github/workflows/check-shared.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+
+  check-server:
+    name: Check Server
+    needs: [resolve-commit, detect-changes]
+    if: >-
+      needs.detect-changes.outputs.server == 'true' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+       (needs.detect-changes.outputs.docker_server == 'true' ||
+        needs.detect-changes.outputs.web == 'true' ||
+        needs.detect-changes.outputs.terraform == 'true' ||
+        needs.detect-changes.outputs.docker_ota == 'true'))
+    permissions:
+      contents: read
+      id-token: write
+      packages: read
+    uses: ./.github/workflows/check-server.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+      run_e2e_web: ${{ needs.detect-changes.outputs.e2e_web == 'true' }}
+      run_image_scan: ${{ needs.detect-changes.outputs.docker_server == 'true' }}
+
+  check-mobile:
+    name: Check Mobile
+    needs: [resolve-commit, detect-changes]
+    if: needs.detect-changes.outputs.mobile == 'true'
+    uses: ./.github/workflows/check-mobile.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+
+  # ── Reporting contexts ─────────────────────────────────────────────────
 
   test:
     name: Test
-    needs: detect-changes
+    needs: [detect-changes, check-repository, check-shared, check-server, check-mobile]
+    if: always()
     uses: ./.github/workflows/test.yml
     with:
-      run_e2e_web: ${{ needs.detect-changes.outputs.e2e_web == 'true' }}
-      run_image_scan: ${{ needs.detect-changes.outputs.docker_server == 'true' }}
-      run_mobile_checks: ${{ needs.detect-changes.outputs.mobile == 'true' }}
-    secrets: inherit
+      repository_result: ${{ needs.check-repository.result }}
+      shared_result: ${{ needs.check-shared.result }}
+      server_result: ${{ needs.check-server.result }}
+      mobile_result: ${{ needs.check-mobile.result }}
+      shared_selected: >-
+        ${{ needs.detect-changes.outputs.shared == 'true' ||
+            (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+             (needs.detect-changes.outputs.docker_server == 'true' ||
+              needs.detect-changes.outputs.web == 'true' ||
+              needs.detect-changes.outputs.terraform == 'true' ||
+              needs.detect-changes.outputs.docker_ota == 'true' ||
+              needs.detect-changes.outputs.mobile == 'true')) }}
+      server_selected: >-
+        ${{ needs.detect-changes.outputs.server == 'true' ||
+            (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+             (needs.detect-changes.outputs.docker_server == 'true' ||
+              needs.detect-changes.outputs.web == 'true' ||
+              needs.detect-changes.outputs.terraform == 'true' ||
+              needs.detect-changes.outputs.docker_ota == 'true')) }}
+      mobile_selected: ${{ needs.detect-changes.outputs.mobile == 'true' }}
+      e2e_selected: ${{ needs.detect-changes.outputs.e2e_web == 'true' }}
+      image_scan_selected: ${{ needs.detect-changes.outputs.docker_server == 'true' }}
 
-  ci-gate:
-    name: CI Gate
-    needs: [build-mobile, build-web, build-zepp, build-ota, test]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check all CI results
-        run: |
-          for result in \
-            "${{ needs.build-mobile.result }}" \
-            "${{ needs.build-web.result }}" \
-            "${{ needs.build-zepp.result }}" \
-            "${{ needs.build-ota.result }}" \
-            "${{ needs.test.result }}"; do
-            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
-              echo "CI gate failed"
-              exit 1
-            fi
-          done
-      - name: Link triggered deploys
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        env:
-          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
-        run: |
-          {
-            echo "## Triggered Deploys"
-            echo ""
-            echo "- [Deploy server, then publish matching mobile releases independently](${REPO_URL}/actions/workflows/deploy-web.yml)"
-          } >> "$GITHUB_STEP_SUMMARY"
+  # ── Builds ─────────────────────────────────────────────────────────────
+
+  build-mobile:
+    name: Build Mobile
+    needs: [resolve-commit, detect-changes]
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/build-mobile.yml
+    with:
+      changed: ${{ needs.detect-changes.outputs.mobile == 'true' }}
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+
+  build-web:
+    name: Build Web
+    needs: [resolve-commit, detect-changes]
+    if: needs.detect-changes.outputs.web == 'true'
+    uses: ./.github/workflows/build-web.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+
+  build-zepp:
+    name: Build Zepp
+    needs: [resolve-commit, detect-changes]
+    if: needs.detect-changes.outputs.zepp == 'true'
+    uses: ./.github/workflows/build-zepp.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
 
   # ── Docker image (main push always publishes deploy image; others gated on changes) ──────
 
   build-docker:
     name: Build Docker
-    needs: detect-changes
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || needs.detect-changes.outputs.docker_server == 'true'
+    needs: [resolve-commit, detect-changes]
+    permissions:
+      contents: read
+      packages: write
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+       (needs.detect-changes.outputs.docker_server == 'true' ||
+        needs.detect-changes.outputs.web == 'true' ||
+        needs.detect-changes.outputs.terraform == 'true' ||
+        needs.detect-changes.outputs.docker_ota == 'true')) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
+       needs.detect-changes.outputs.docker_server == 'true')
     uses: ./.github/workflows/build-docker.yml
-    secrets: inherit
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+    secrets:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   build-ota:
-    name: Build OTA
-    needs: detect-changes
-    if: needs.detect-changes.outputs.docker_ota == 'true'
+    name: Validate OTA Build
+    needs: [resolve-commit, detect-changes]
+    if: >-
+      needs.detect-changes.outputs.docker_ota == 'true' &&
+      !(github.event_name == 'push' && github.ref == 'refs/heads/main') &&
+      !(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Validate selected OTA source without registry write access
+        uses: ./.github/actions/build-private-ota
+        with:
+          commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+          publish: "false"
+
+  build-ota-publish:
+    name: Build and Publish OTA
+    needs: [resolve-commit, detect-changes]
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main' && needs.detect-changes.outputs.docker_ota == 'true'
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/build-private-ota.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
 
   build-docker-ml:
     name: Build Docker ML
     needs: detect-changes
     if: needs.detect-changes.outputs.docker_ml == 'true'
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/build-docker-ml.yml
-    secrets: inherit
-
   # ── Storybook previews (PR only, depend on builds not tests) ────────────
 
   build-storybook:
     name: Build Storybook
-    needs: detect-changes
+    needs: [resolve-commit, detect-changes]
     if: github.event_name == 'pull_request' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true')
     uses: ./.github/workflows/build-storybook.yml
-    secrets: inherit
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
 
   build-storybook-mobile:
     name: Build Mobile Storybook
-    needs: detect-changes
+    needs: [resolve-commit, detect-changes]
     if: github.event_name == 'pull_request' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true')
     uses: ./.github/workflows/build-storybook-mobile.yml
-    secrets: inherit
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
 
   storybook-preview:
     name: Storybook Preview
     if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true')
     needs: [detect-changes, build-storybook, build-storybook-mobile]
+    permissions:
+      contents: read
+      pull-requests: write
     uses: ./.github/workflows/storybook-preview.yml
     secrets:
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
+  # ── Independent main releases ─────────────────────────────────────────
+
+  deploy-server:
+    name: Deploy Server Production
+    needs: [resolve-commit, detect-changes, check-repository, check-shared, check-server, build-docker, build-ota-publish]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.resolve-commit.result == 'success' &&
+      needs.detect-changes.result == 'success' &&
+      (needs.detect-changes.outputs.docker_server == 'true' ||
+       needs.detect-changes.outputs.web == 'true' ||
+       needs.detect-changes.outputs.terraform == 'true' ||
+       needs.detect-changes.outputs.docker_ota == 'true') &&
+      needs.check-repository.result == 'success' &&
+      needs.check-shared.result == 'success' &&
+      needs.check-server.result == 'success' &&
+      needs.build-docker.result == 'success' &&
+      needs.build-docker.outputs.commit_sha == needs.resolve-commit.outputs.commit_sha &&
+      needs.build-docker.outputs.image_ref != '' &&
+      (needs.detect-changes.outputs.docker_ota != 'true' || needs.build-ota-publish.result == 'success')
+    concurrency:
+      group: deploy-web-stack-dofek-${{ vars.ORACLE_SERVER_HOST }}
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      packages: read
+      deployments: write
+    uses: ./.github/workflows/deploy-web-environment.yml
+    with:
+      environment_name: production
+      ssh_user: ubuntu
+      stack_override: deploy/stack.oracle.yml
+      image_ref: ${{ needs.build-docker.outputs.image_ref }}
+      automatic_commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+      ci_run_id: ${{ format('{0}', github.run_id) }}
+      public_url: https://dofek.fit
+      web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
+    secrets:
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  build-ios-release:
+    name: Build Matching iOS
+    needs: [resolve-commit, detect-changes]
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.detect-changes.outputs.mobile == 'true'
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      deployments: read
+    uses: ./.github/workflows/build-ios-release.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+      dispatching_run_id: ${{ github.run_id }}
+  deploy-ota:
+    name: Publish Matching OTA
+    needs: [resolve-commit, detect-changes, check-repository, check-shared, check-mobile, build-mobile]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.resolve-commit.result == 'success' &&
+      needs.detect-changes.result == 'success' && needs.detect-changes.outputs.mobile == 'true' &&
+      needs.check-repository.result == 'success' &&
+      needs.check-shared.result == 'success' &&
+      needs.check-mobile.result == 'success' && needs.build-mobile.result == 'success'
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      deployments: write
+    uses: ./.github/workflows/deploy-ota.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+      dispatching_run_id: ${{ github.run_id }}
+  deploy-ios:
+    name: Publish Matching iOS
+    needs: [resolve-commit, detect-changes, check-repository, check-shared, check-mobile, build-mobile, build-ios-release]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.resolve-commit.result == 'success' &&
+      needs.detect-changes.result == 'success' &&
+      needs.check-repository.result == 'success' &&
+      needs.detect-changes.outputs.mobile == 'true' &&
+      needs.check-shared.result == 'success' &&
+      needs.check-mobile.result == 'success' &&
+      needs.build-mobile.result == 'success' && needs.build-ios-release.result == 'success' &&
+      needs.build-ios-release.outputs.should_deploy == 'true' &&
+      needs.build-ios-release.outputs.commit_sha == needs.resolve-commit.outputs.commit_sha &&
+      needs.build-ios-release.outputs.artifact_id != '' &&
+      needs.build-ios-release.outputs.build_number != ''
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      deployments: write
+    uses: ./.github/workflows/deploy-ios.yml
+    with:
+      commit_sha: ${{ needs.build-ios-release.outputs.commit_sha }}
+      archive_commit_sha: ${{ needs.build-ios-release.outputs.commit_sha }}
+      build_number: ${{ needs.build-ios-release.outputs.build_number }}
+      artifact_id: ${{ needs.build-ios-release.outputs.artifact_id }}
+      ci_run_id: ${{ format('{0}', github.run_id) }}
+  # ── Aggregate PR gate ──────────────────────────────────────────────────
+
+  ci-gate:
+    name: CI Gate
+    needs:
+      - resolve-commit
+      - detect-changes
+      - check-repository
+      - check-shared
+      - check-server
+      - check-mobile
+      - test
+      - build-mobile
+      - build-web
+      - build-zepp
+      - build-ota
+      - build-ota-publish
+      - build-storybook
+      - build-storybook-mobile
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      RESOLVE_RESULT: ${{ needs.resolve-commit.result }}
+      DETECT_RESULT: ${{ needs.detect-changes.result }}
+      REPOSITORY_RESULT: ${{ needs.check-repository.result }}
+      SHARED_RESULT: ${{ needs.check-shared.result }}
+      SERVER_RESULT: ${{ needs.check-server.result }}
+      MOBILE_RESULT: ${{ needs.check-mobile.result }}
+      TEST_RESULT: ${{ needs.test.result }}
+      BUILD_MOBILE_RESULT: ${{ needs.build-mobile.result }}
+      BUILD_WEB_RESULT: ${{ needs.build-web.result }}
+      BUILD_ZEPP_RESULT: ${{ needs.build-zepp.result }}
+      BUILD_OTA_RESULT: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.detect-changes.outputs.docker_ota == 'true' && needs.build-ota-publish.result || needs.build-ota.result }}
+      BUILD_STORYBOOK_RESULT: ${{ needs.build-storybook.result }}
+      BUILD_STORYBOOK_MOBILE_RESULT: ${{ needs.build-storybook-mobile.result }}
+      SHARED_SELECTED: >-
+        ${{ needs.detect-changes.outputs.shared == 'true' ||
+            (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+             (needs.detect-changes.outputs.docker_server == 'true' ||
+              needs.detect-changes.outputs.web == 'true' ||
+              needs.detect-changes.outputs.terraform == 'true' ||
+              needs.detect-changes.outputs.docker_ota == 'true' ||
+              needs.detect-changes.outputs.mobile == 'true')) }}
+      SERVER_SELECTED: >-
+        ${{ needs.detect-changes.outputs.server == 'true' ||
+            (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+             (needs.detect-changes.outputs.docker_server == 'true' ||
+              needs.detect-changes.outputs.web == 'true' ||
+              needs.detect-changes.outputs.terraform == 'true' ||
+              needs.detect-changes.outputs.docker_ota == 'true')) }}
+      MOBILE_SELECTED: ${{ needs.detect-changes.outputs.mobile == 'true' }}
+      WEB_SELECTED: ${{ needs.detect-changes.outputs.web == 'true' }}
+      ZEPP_SELECTED: ${{ needs.detect-changes.outputs.zepp == 'true' }}
+      OTA_SELECTED: ${{ needs.detect-changes.outputs.docker_ota == 'true' }}
+      STORYBOOK_SELECTED: ${{ github.event_name == 'pull_request' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true') }}
+    steps:
+      - name: Check all CI results
+        run: |
+          fail=0
+          require_success() {
+            name="$1"
+            result="$2"
+            if [ "$result" != "success" ]; then
+              echo "::error::$name did not succeed ($result)"
+              fail=1
+            fi
+          }
+          check_selected() {
+            name="$1"
+            selected="$2"
+            result="$3"
+            if [ "$selected" = "true" ]; then
+              require_success "$name" "$result"
+            elif [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "::error::Unexpected $name result ($result)"
+              fail=1
+            fi
+          }
+
+          require_success resolve-commit "$RESOLVE_RESULT"
+          require_success detect-changes "$DETECT_RESULT"
+          require_success check-repository "$REPOSITORY_RESULT"
+          require_success test "$TEST_RESULT"
+          require_success build-mobile "$BUILD_MOBILE_RESULT"
+
+          check_selected check-shared "$SHARED_SELECTED" "$SHARED_RESULT"
+          check_selected check-server "$SERVER_SELECTED" "$SERVER_RESULT"
+          check_selected check-mobile "$MOBILE_SELECTED" "$MOBILE_RESULT"
+          check_selected build-web "$WEB_SELECTED" "$BUILD_WEB_RESULT"
+          check_selected build-zepp "$ZEPP_SELECTED" "$BUILD_ZEPP_RESULT"
+          check_selected build-ota "$OTA_SELECTED" "$BUILD_OTA_RESULT"
+
+          if [ "$STORYBOOK_SELECTED" = "true" ]; then
+            require_success build-storybook "$BUILD_STORYBOOK_RESULT"
+            require_success build-storybook-mobile "$BUILD_STORYBOOK_MOBILE_RESULT"
+          elif [ "$BUILD_STORYBOOK_RESULT" = "failure" ] || [ "$BUILD_STORYBOOK_RESULT" = "cancelled" ]; then
+            echo "::error::Unexpected build-storybook result ($BUILD_STORYBOOK_RESULT)"
+            fail=1
+          fi
+
+          exit "$fail"
+
+  release-summary:
+    name: Release and Validation Summary
+    needs:
+      - resolve-commit
+      - detect-changes
+      - check-repository
+      - check-shared
+      - check-server
+      - check-mobile
+      - test
+      - build-mobile
+      - build-web
+      - build-zepp
+      - build-docker
+      - build-ota
+      - build-ota-publish
+      - build-storybook
+      - build-storybook-mobile
+      - storybook-preview
+      - deploy-server
+      - build-ios-release
+      - deploy-ota
+      - deploy-ios
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SOURCE_SHA: ${{ needs.resolve-commit.outputs.commit_sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      RUN_ATTEMPT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+      DETECT_RESULT: ${{ needs.detect-changes.result }}
+      REPOSITORY_RESULT: ${{ needs.check-repository.result }}
+      SHARED_RESULT: ${{ needs.check-shared.result }}
+      SERVER_RESULT: ${{ needs.check-server.result }}
+      MOBILE_RESULT: ${{ needs.check-mobile.result }}
+      TEST_RESULT: ${{ needs.test.result }}
+      MOBILE_BUILD_RESULT: ${{ needs.build-mobile.result }}
+      WEB_BUILD_RESULT: ${{ needs.build-web.result }}
+      ZEPP_BUILD_RESULT: ${{ needs.build-zepp.result }}
+      DOCKER_BUILD_RESULT: ${{ needs.build-docker.result }}
+      OTA_BUILD_RESULT: ${{ needs.build-ota.result }}
+      OTA_PUBLISH_BUILD_RESULT: ${{ needs.build-ota-publish.result }}
+      STORYBOOK_RESULT: ${{ needs.build-storybook.result }}
+      MOBILE_STORYBOOK_RESULT: ${{ needs.build-storybook-mobile.result }}
+      STORYBOOK_PREVIEW_RESULT: ${{ needs.storybook-preview.result }}
+      SERVER_DEPLOY_RESULT: ${{ needs.deploy-server.result }}
+      SERVER_DECISION: ${{ needs.deploy-server.outputs.publication_decision }}
+      SERVER_SOURCE_SHA: ${{ needs.deploy-server.outputs.commit_sha }}
+      SERVER_IMAGE_REF: ${{ needs.deploy-server.outputs.image_ref }}
+      SERVER_DEPLOYMENT_ID: ${{ needs.deploy-server.outputs.deployment_id }}
+      IOS_BUILD_RESULT: ${{ needs.build-ios-release.result }}
+      IOS_SHOULD_DEPLOY: ${{ needs.build-ios-release.outputs.should_deploy }}
+      IOS_BUILD_SHA: ${{ needs.build-ios-release.outputs.commit_sha }}
+      IOS_BUILD_NUMBER: ${{ needs.build-ios-release.outputs.build_number }}
+      IOS_ARTIFACT_ID: ${{ needs.build-ios-release.outputs.artifact_id }}
+      OTA_DEPLOY_RESULT: ${{ needs.deploy-ota.result }}
+      OTA_DECISION: ${{ needs.deploy-ota.outputs.decision }}
+      OTA_SOURCE_SHA: ${{ needs.resolve-commit.outputs.commit_sha }}
+      OTA_UPDATE_ID: ${{ needs.deploy-ota.outputs.update_id }}
+      OTA_RUNTIME_VERSION: ${{ needs.deploy-ota.outputs.runtime_version }}
+      OTA_DEPLOYMENT_ID: ${{ needs.deploy-ota.outputs.deployment_id }}
+      OTA_SUPERSEDING_SOURCE_SHA: ${{ needs.deploy-ota.outputs.superseding_source_sha }}
+      OTA_SUPERSEDING_RUNTIME_VERSION: ${{ needs.deploy-ota.outputs.superseding_runtime_version }}
+      OTA_SUPERSEDING_UPDATE_ID: ${{ needs.deploy-ota.outputs.superseding_update_id }}
+      IOS_DEPLOY_RESULT: ${{ needs.deploy-ios.result }}
+      IOS_DECISION: ${{ needs.deploy-ios.outputs.decision }}
+      IOS_DEPLOYMENT_ID: ${{ needs.deploy-ios.outputs.deployment_id }}
+      IOS_PUBLISH_SHA: ${{ needs.deploy-ios.outputs.commit_sha }}
+      IOS_PUBLISH_BUILD_NUMBER: ${{ needs.deploy-ios.outputs.build_number }}
+      IOS_PUBLISHER_URL: ${{ needs.deploy-ios.outputs.upload_run_url }}
+      SERVER_SELECTED: >-
+        ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+            (needs.detect-changes.outputs.docker_server == 'true' ||
+             needs.detect-changes.outputs.web == 'true' ||
+             needs.detect-changes.outputs.terraform == 'true' ||
+             needs.detect-changes.outputs.docker_ota == 'true') }}
+      MOBILE_SELECTED: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect-changes.outputs.mobile == 'true' }}
+    steps:
+      - name: Write source, lane links, and per-target outcomes
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          source_sha="${SOURCE_SHA:-$GITHUB_SHA}"
+          source_url="$repo_url/commit/$source_sha"
+          {
+            echo "## Release and validation summary"
+            echo
+            echo "- Source: [\`$source_sha\`]($source_url)"
+            echo "- CI attempt: [Run #$GITHUB_RUN_NUMBER, attempt $GITHUB_RUN_ATTEMPT]($RUN_ATTEMPT_URL)"
+            if [ -n "$PR_NUMBER" ]; then
+              echo "- Pull request: [#$PR_NUMBER]($repo_url/pull/$PR_NUMBER) (candidate merge commit; the post-merge main SHA is a separate revision)"
+            fi
+            echo
+            echo "### Validation and build lanes"
+            echo
+            echo "| Lane | Result | Run attempt |"
+            echo "|---|---|---|"
+            echo "| Repository checks | $REPOSITORY_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Shared checks | $SHARED_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Server checks | $SERVER_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Mobile checks | $MOBILE_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Required check reports | $TEST_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Mobile build | $MOBILE_BUILD_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Web build | $WEB_BUILD_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Zepp build | $ZEPP_BUILD_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Server image build | $DOCKER_BUILD_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| OTA validation build | $OTA_BUILD_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| OTA publication image build | $OTA_PUBLISH_BUILD_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Web Storybook build | $STORYBOOK_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Mobile Storybook build | $MOBILE_STORYBOOK_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Storybook preview | $STORYBOOK_PREVIEW_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo
+            echo "### Production target outcomes"
+            echo
+            echo "| Target | Outcome and identity | Publisher attempt | Deployment record |"
+            echo "|---|---|---|---|"
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              echo "| Server production | Not applicable — pull requests do not publish production | — | — |"
+            elif [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$DETECT_RESULT" != "success" ]; then
+              echo "| Server production | Blocked — target selection did not complete ($DETECT_RESULT); applicability is unknown | [Open CI attempt]($RUN_ATTEMPT_URL) | — |"
+              echo "| OTA production | Blocked — target selection did not complete ($DETECT_RESULT); applicability is unknown | [Open CI attempt]($RUN_ATTEMPT_URL) | — |"
+              echo "| TestFlight | Blocked — target selection did not complete ($DETECT_RESULT); applicability is unknown | [Open CI attempt]($RUN_ATTEMPT_URL) | — |"
+            elif [ "$SERVER_SELECTED" = "true" ]; then
+              case "$SERVER_DEPLOY_RESULT:$SERVER_DECISION" in
+                success:publish|success:recover) server_outcome="Published and verified" ;;
+                success:unchanged) server_outcome="Unchanged — the requested image is already live" ;;
+                success:superseded) server_outcome="Superseded — a newer source is already live" ;;
+                failure:*) server_outcome="Failed — open publisher logs for the failing verification or deployment step" ;;
+                cancelled:*) server_outcome="Failed — publisher attempt was cancelled" ;;
+                skipped:*) server_outcome="Blocked — a required source, check, or image build did not complete successfully" ;;
+                *) server_outcome="Blocked — no verified publisher decision was produced ($SERVER_DEPLOY_RESULT)" ;;
+              esac
+              server_identity="source [\`${SERVER_SOURCE_SHA:-$source_sha}\`]($repo_url/commit/${SERVER_SOURCE_SHA:-$source_sha})"
+              [ -z "$SERVER_IMAGE_REF" ] || server_identity="$server_identity; image \`$SERVER_IMAGE_REF\`"
+              server_record="—"
+              [ -z "$SERVER_DEPLOYMENT_ID" ] || server_record="[API deployment #$SERVER_DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$SERVER_DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=server-production)"
+              echo "| Server production | $server_outcome; $server_identity | [Open publisher attempt]($RUN_ATTEMPT_URL) | $server_record |"
+            else
+              echo "| Server production | Not applicable — no server target was selected for this event and source | — | — |"
+            fi
+            if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$DETECT_RESULT" = "success" ] && [ "$MOBILE_SELECTED" = "true" ]; then
+              case "$OTA_DEPLOY_RESULT:$OTA_DECISION" in
+                success:publish|success:recover) ota_outcome="Published and device update verified" ;;
+                success:unchanged) ota_outcome="Unchanged — matching verified update is already live" ;;
+                success:superseded) ota_outcome="Superseded — a newer source is already live" ;;
+                failure:*) ota_outcome="Failed — open publisher logs for the failing verification or deployment step" ;;
+                cancelled:*) ota_outcome="Failed — publisher attempt was cancelled" ;;
+                skipped:*) ota_outcome="Blocked — a required mobile check or build did not complete successfully" ;;
+                *) ota_outcome="Blocked — no verified publisher decision was produced ($OTA_DEPLOY_RESULT)" ;;
+              esac
+              ota_identity="source [\`${OTA_SOURCE_SHA:-$source_sha}\`]($repo_url/commit/${OTA_SOURCE_SHA:-$source_sha})"
+              [ -z "$OTA_RUNTIME_VERSION" ] || ota_identity="$ota_identity; requested runtime \`$OTA_RUNTIME_VERSION\`"
+              [ -z "$OTA_UPDATE_ID" ] || ota_identity="$ota_identity; candidate update UUID \`$OTA_UPDATE_ID\`"
+              if [ -n "$OTA_SUPERSEDING_SOURCE_SHA" ]; then
+                ota_identity="$ota_identity; superseded by source [\`$OTA_SUPERSEDING_SOURCE_SHA\`]($repo_url/commit/$OTA_SUPERSEDING_SOURCE_SHA), runtime \`$OTA_SUPERSEDING_RUNTIME_VERSION\`, update UUID \`$OTA_SUPERSEDING_UPDATE_ID\`"
+              fi
+              ota_record="—"
+              [ -z "$OTA_DEPLOYMENT_ID" ] || ota_record="[API deployment #$OTA_DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$OTA_DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=ota-production)"
+              echo "| OTA production | $ota_outcome; $ota_identity | [Open publisher attempt]($RUN_ATTEMPT_URL) | $ota_record |"
+              if [ "$IOS_BUILD_RESULT" = "success" ] && [ "$IOS_SHOULD_DEPLOY" = "false" ]; then
+                echo "| TestFlight | Unchanged — no new signed iOS archive is required for this source | [Open archive decision]($RUN_ATTEMPT_URL) | — |"
+              elif [ "$IOS_BUILD_RESULT" != "success" ]; then
+                if [ "$IOS_BUILD_RESULT" = "failure" ] || [ "$IOS_BUILD_RESULT" = "cancelled" ]; then
+                  echo "| TestFlight | Failed — signed archive selection/build result: $IOS_BUILD_RESULT | [Open archive attempt]($RUN_ATTEMPT_URL) | — |"
+                else
+                  echo "| TestFlight | Blocked — signed archive selection/build did not complete ($IOS_BUILD_RESULT) | [Open archive attempt]($RUN_ATTEMPT_URL) | — |"
+                fi
+              else
+                case "$IOS_DEPLOY_RESULT:$IOS_DECISION" in
+                  success:upload) ios_outcome="Uploaded to TestFlight; Apple's processing and availability continue separately" ;;
+                  success:unchanged) ios_outcome="Unchanged — this source is already uploaded" ;;
+                  success:superseded) ios_outcome="Superseded — a newer source is already uploaded" ;;
+                  failure:*) ios_outcome="Failed — open publisher logs for the upload or receipt step" ;;
+                  cancelled:*) ios_outcome="Failed — publisher attempt was cancelled" ;;
+                  skipped:*) ios_outcome="Blocked — a required check, build, or target lock prerequisite did not complete" ;;
+                  *) ios_outcome="Blocked — no verified upload decision was produced ($IOS_DEPLOY_RESULT)" ;;
+                esac
+                ios_identity="source [\`${IOS_PUBLISH_SHA:-${IOS_BUILD_SHA:-$source_sha}}\`]($repo_url/commit/${IOS_PUBLISH_SHA:-${IOS_BUILD_SHA:-$source_sha}})"
+                [ -z "${IOS_PUBLISH_BUILD_NUMBER:-$IOS_BUILD_NUMBER}" ] || ios_identity="$ios_identity; build \`${IOS_PUBLISH_BUILD_NUMBER:-$IOS_BUILD_NUMBER}\`"
+                if [ -n "$IOS_ARTIFACT_ID" ]; then
+                  ios_identity="$ios_identity; archive [artifact $IOS_ARTIFACT_ID]($repo_url/actions/runs/$GITHUB_RUN_ID/artifacts/$IOS_ARTIFACT_ID)"
+                fi
+                ios_record="—"
+                [ -z "$IOS_DEPLOYMENT_ID" ] || ios_record="[API deployment #$IOS_DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$IOS_DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=testflight)"
+                publisher_url="${IOS_PUBLISHER_URL:-$RUN_ATTEMPT_URL}"
+                echo "| TestFlight | $ios_outcome; $ios_identity | [Open publisher attempt]($publisher_url) | $ios_record |"
+              fi
+            elif [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$DETECT_RESULT" != "success" ]; then
+              : # The blocked target outcomes were written above when selection failed.
+            else
+              echo "| OTA production | Not applicable — no mobile release was selected for this event and source | — | — |"
+              echo "| TestFlight | Not applicable — no mobile release was selected for this event and source | — | — |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
