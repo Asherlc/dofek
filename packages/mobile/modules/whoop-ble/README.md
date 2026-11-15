@@ -224,12 +224,29 @@ at most 16 records and 262,144 encoded bytes, following the
 [queue reservation limits](ios/WhoopBleSampleStore.swift).
 Each stream uses its existing authenticated ingestion route.
 Actual BLE arrivals coalesce scheduling checks to five seconds, and partial
-batches become eligible after 30 seconds or a lifecycle flush. Submitted requests
-use Apple's [background URLSession service](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background),
-which requires file-backed uploads and controls actual delivery timing. Tokens
-remain in application memory; iOS owns submitted request headers. After a restart,
-native callbacks acknowledge existing batches without React; authenticated app
-configuration supplies credentials for new work. Canonical mutation endpoints
+batches become eligible after 30 seconds or a lifecycle flush. Each reservation
+uses one ordinary native request while the app executes and one file-backed
+[background URLSession transfer](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background)
+for process-independent delivery. Background-started transfers remain
+[discretionary regardless of the configured flag](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/isdiscretionary),
+so fresh capture also has an ordinary delivery path. Both paths share the same
+immutable batch and deterministic server identities; concurrent replay is possible.
+The first terminal response owns acknowledgment handling, and its counterpart is
+canceled after that handling finishes. A network failure on one path is reported
+immediately while the other remains available. Capture may replenish a missing
+path after the existing 30-second error backoff; no polling loop is added.
+The ordinary session [waits for initial connectivity](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/waitsforconnectivity),
+matching the background service's waiting behavior, and disables shared cookies,
+credentials and caching. Responses are bounded to 64 KiB and isolated by session
+as well as [task identifier](https://developer.apple.com/documentation/foundation/urlsessiontask/taskidentifier).
+Tokens remain in application memory; iOS owns submitted request headers. After a
+restart, native callbacks acknowledge existing batches without React;
+authenticated configuration or an explicit flush can add ordinary delivery to a
+restored reservation. Account changes cancel both paths, and replacement
+credentials retire the old request. Queued callbacks carry an in-memory submission identity so
+retired results cannot block or cancel a refreshed reservation, including a refresh
+with unchanged credentials. Native background completions remain valid before any
+new submission is configured. Canonical mutation endpoints
 must serve directly: Apple's background service follows redirects, and a
 cross-origin final response is rejected as an acknowledgment.
 
@@ -321,6 +338,14 @@ regenerates the normal app project. No Metro server or authenticated account
 is needed. The [test cases](ios/BridgeTests/WhoopBleModuleTests.swift) exercise
 bridge state transitions; validate physical strap capture and background
 Bluetooth delivery separately on a device.
+
+The [transport tests](ios/BridgeTests/WhoopURLSessionTransportTests.swift) use real
+URLSession tasks with a stock [URLProtocol](https://developer.apple.com/documentation/foundation/urlprotocol)
+network boundary to exercise paired delivery, response isolation, restoration,
+network failure and cancellation races. These tests do not reproduce iOS's
+background-transfer scheduling decisions. Physical acceptance requires a matching
+native build: verify fresh locked-phone capture and advancing confirmations,
+retained rows across process recreation, and cancellation across account changes.
 
 The standalone `swift test` suite remains separate: its target excludes the Expo
 bridge and the app-hosted tests, as declared in [Package.swift](Package.swift).

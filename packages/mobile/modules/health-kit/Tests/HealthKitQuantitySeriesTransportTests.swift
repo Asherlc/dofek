@@ -4,6 +4,25 @@ import XCTest
 @testable import HealthKitLib
 
 final class HealthKitQuantitySeriesTransportTests: XCTestCase {
+    func testLargeRunningSeriesAvoidsPerTimestampFormatterCost() async throws {
+        let type = HKQuantityType.quantityType(forIdentifier: .runningSpeed)!
+        let start = Date(timeIntervalSince1970: 1_793_181_600.125)
+        let quantity = HKQuantity(unit: .meter().unitDivided(by: .second()), doubleValue: 4)
+        let parent = HKQuantitySample(type: type, quantity: quantity, start: start, end: start.addingTimeInterval(1_250))
+        let entries = (0..<10_000).map { index in
+            HealthKitQuantitySeriesEntry(parent: parent, quantity: quantity,
+                dateInterval: DateInterval(start: start.addingTimeInterval(Double(index) * 0.125), duration: 0.125))
+        }
+        let began = ProcessInfo.processInfo.systemUptime
+        let result = try await HealthKitQuantitySeriesTransport.transportSamples([parent], typeIdentifier: type.identifier) { _ in entries }
+        let elapsed = ProcessInfo.processInfo.systemUptime - began
+        XCTAssertEqual(result.count, entries.count)
+        XCTAssertEqual(HealthKitQueries.parseDate(try XCTUnwrap(result.first?["startDate"] as? String)), start)
+        XCTAssertEqual(HealthKitQueries.parseDate(try XCTUnwrap(result.last?["endDate"] as? String)), start.addingTimeInterval(1_250))
+        // A generous host regression guard, not a claim about the physical iPhone CPU budget.
+        XCTAssertLessThan(elapsed, 2, "Large series must not construct a formatter for every start/end timestamp")
+    }
+
     func testRunningSeriesPreservesIndividualValuesParentIdentityAndFractionalIntervals() async throws {
         let type = HKQuantityType.quantityType(forIdentifier: .runningSpeed)!
         let start = Date(timeIntervalSince1970: 1_793_181_600)

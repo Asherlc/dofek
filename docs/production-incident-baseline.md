@@ -38046,3 +38046,82 @@ Local qualification and CI are separate from production throughput acceptance. T
   Proposed runbook improvement: distinguish foreground tasks from tasks created
   after backgrounding, and verify actual OS scheduling class before attributing
   an active task to a network failure. See [the complete evidence record](evidence/ble-collection-20261114/README.md).
+
+## 2026-11-14 — Current WHOOP capture continues while native uploads accumulate; CPU kill repeats
+
+- **Symptoms/impact:** on installed TestFlight build `1794683328`, backend
+  WHOOP freshness still lags current phone capture. At 1:27 PM PST the phone
+  reports background streaming and 508,500 IMU, 5,019 realtime and 9,749 raw
+  records queued behind three active uploads, with confirmations last at 1:07 PM.
+- **Evidence/root cause boundaries:** the live Kafka sink/archive are caught up
+  at offset 14,340,223 at 1:30 PM; history is also caught up. Earlier consumer
+  pauses align with a successful 510.67-second analytics build and existing
+  publication ownership. The remaining accumulated wait is in native delivery;
+  the exact OS scheduling condition remains unproven. API acknowledgments do
+  not wait for ClickHouse or analytics. A new physical CPU-fatal report explicitly
+  records process termination at 1:27:17 PM after 48 CPU seconds in 50.55 seconds.
+  Exact UUID-matched release symbols resolve its hot stack to HealthKit running
+  timestamp formatting, the same path introduced October 30 in PR #3144.
+- **Fix/status:** no runtime or production change. Recommend invocation-local
+  formatter reuse for the proven CPU defect, with unchanged timestamp output
+  and physical CPU-budget validation. The separate live-upload-path candidate
+  requires a controlled physical comparison and preservation of durable
+  reservations, account fences and background delivery; it is not a verified
+  remedy. Do not reset offsets, change owners or retune pacing for this evidence.
+- **Remaining risk/follow-up:** the new process resumes background streaming
+  within two seconds, but upload freshness and CPU-budget recovery are not
+  verified. Two incomplete live database copies were removed without inspection;
+  existing operational logs and app-specific crash reports supplied evidence
+  without administrator authentication. Six-hour Sentry silence did not exclude
+  the physical kill. See the [current-build evidence](evidence/ble-collection-20261114/README.md#current-build-follow-up--130-pm-pst).
+- **Retrospective/proposed runbook wording:** “Check cloud capture counters,
+  last confirmations and accessible app-specific crash reports before requesting
+  broad device logs; separate native-delivery latency from transient sink lag.”
+
+## 2026-11-14 — Native WHOOP delivery and HealthKit CPU corrections prepared
+
+- **Symptoms/impact:** the installed build continued collecting fresh BLE samples
+  while three native uploads remained active and queue confirmations lagged;
+  the separate HealthKit running-series CPU termination repeated. See the
+  [current-build evidence](evidence/ble-collection-20261114/README.md#current-build-follow-up--130-pm-pst).
+- **Root cause boundaries:** UUID-matched symbols identify per-timestamp
+  formatter construction in the CPU-fatal stack, introduced in PR #3144.
+  A 10,000-point synthetic regression failed its two-second host budget before
+  invocation-local formatter reuse and passed afterward. The uploader depended
+  solely on background transfers; Apple makes background-started transfers
+  [discretionary](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/isdiscretionary).
+  The precise OS condition delaying the observed phone tasks remains unresolved.
+  Kafka independently caught up without intervention; this correction does not
+  change its sink, offsets, publication ownership or pacing.
+- **Direct changes:** reuse one formatter per extraction. Give each existing
+  WHOOP reservation an ordinary native request alongside its existing OS-managed
+  file-upload fallback, preserving the same replay identity and native durable
+  owner. Retire counterparts after terminal response handling, isolate response
+  buffers by session, and fence canceled/restored/replacement requests. Network
+  attempt errors remain visible while a surviving path can finish. No production
+  deployment or physical-device recovery is established by these local changes.
+- **Validation:** 122 HealthKit Swift tests, 212 WHOOP Swift tests and 26 real iOS
+  bridge-host tests passed, including delayed cancellation, credential changes,
+  independent streams, malformed acknowledgments and live-path network failure.
+  Review reproduced a queued old HTTP 401 blocking replacement credentials;
+  submission-attempt fencing now rejects that result before state mutation or
+  cancellation. Regressions also cover unchanged-credential refreshes and queued
+  network errors. Attempt numbers remain in memory; OS restoration and server
+  replay continue to use the existing durable batch identity.
+  Focused mobile/server tests, repository lint, recursive typechecks and changed
+  native strict SwiftLint passed. The additional real-ClickHouse replay check did
+  not start: the local Redpanda prerequisite exhausted Docker VM asynchronous I/O
+  capacity (`aio-nr = aio-max-nr = 65536`). No host settings or other workspaces
+  were changed to bypass that limit; CI and physical acceptance remain pending.
+- **Remaining resilience settings:** retain five-second capture scheduling to
+  coalesce BLE arrivals, the existing 30-second partial/error interval to bound
+  submission churn, and the 64 KiB acknowledgment bound to cap response memory.
+  The ordinary session [waits for initial connectivity](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/waitsforconnectivity)
+  as background sessions do. Concurrent identical HTTP submissions can occur;
+  deterministic server IDs preserve replay semantics. No new retry timer is added.
+- **Follow-up/retrospective:** use the matching released native build to verify
+  locked-phone confirmations, process recreation, account cancellation and the
+  absence of another CPU-budget kill. Stock URLProtocol plus real URLSession
+  tasks reproduced transport races without another administrator prompt.
+  Proposed runbook wording: “Host and Simulator regressions validate ownership
+  and formatting; verify background scheduling and CPU recovery on the device.”

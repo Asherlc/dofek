@@ -34,26 +34,22 @@ enum HealthKitQuantitySeriesTransport {
         let parents = samples.compactMap { $0 as? HKQuantitySample }
         guard !parents.isEmpty else { return [] }
         let entries = try await readRunningSeries(parents)
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = .current
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return entries.map { entry in
             let unit = HealthKitQueries.preferredUnit(for: entry.parent.quantityType)
             return [
                 "type": typeIdentifier,
                 "value": entry.quantity.doubleValue(for: unit),
                 "unit": unit.unitString,
-                "startDate": formatSampleDate(entry.dateInterval.start),
-                "endDate": formatSampleDate(entry.dateInterval.end),
+                "startDate": formatter.string(from: entry.dateInterval.start),
+                "endDate": formatter.string(from: entry.dateInterval.end),
                 "sourceName": entry.parent.sourceRevision.source.name,
                 "sourceBundle": entry.parent.sourceRevision.source.bundleIdentifier,
                 "uuid": entry.parent.uuid.uuidString,
             ]
         }
-    }
-
-    private static func formatSampleDate(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.timeZone = .current
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
     }
 
     static func read(

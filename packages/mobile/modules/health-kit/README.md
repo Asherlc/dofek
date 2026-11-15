@@ -65,6 +65,13 @@ Apple explains the underlying aggregation in
 [`HKQuantitySample.quantity`](https://developer.apple.com/documentation/healthkit/hkquantitysample/quantity)
 and [condensed workout samples](https://developer.apple.com/documentation/healthkit/accessing-condensed-workout-samples).
 
+Running-series extraction creates one invocation-local
+[`ISO8601DateFormatter`](https://developer.apple.com/documentation/foundation/iso8601dateformatter)
+after reading the quantities and reuses it for both interval bounds. This avoids
+constructing and configuring two formatters per point while preserving the same
+fractional-second timestamp output. The synthetic large-series regression guards
+host formatting cost; a matching native build still needs device CPU validation.
+
 The existing account-erasure cutoff filters parents before expansion. Anchored
 queries finish expansion before registering a pending anchor, then JavaScript
 uploads additions and applies parent-UUID deletions before acknowledging success.

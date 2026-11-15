@@ -424,3 +424,72 @@ Proposed runbook improvement for user approval: require these three boundaries
 and native-occurrence clocks in the processing-status BLE checklist. The
 existing `check-logs` workflow covers server discovery; no new skill or custom
 diagnostic framework is needed.
+
+## Current-build follow-up — 1:30 PM PST
+
+Read-only checks after the user reported another freshness gap separate backend
+consumption, current native capture and native delivery. The paired phone has
+TestFlight build `1794683328` installed. No app launch, debugger, administrator
+authentication or production mutation was used.
+
+At 1:27:19 PM, PostHog's metadata-only `capture_snapshot` records the app
+`background`, connection `streaming`, notifications enabled and current sample
+watermarks. It reports 508,500 IMU, 5,019 realtime and 9,749 raw records queued;
+three uploads are active and no streams are marked blocked. For every stream,
+received equals confirmed plus queued. All three last-confirmation timestamps
+are about 1:07:11 PM. These are retained operational counters, not sensor values.
+They establish current background capture and accumulated native delivery delay;
+they do not establish the OS condition preventing individual task completions.
+
+The backend's last observed WHOOP heart-rate/RR sample is 12:44:11 PM, stored
+at 1:12:19–20 PM. Retained shared upload telemetry has its latest received and
+published events at 1:07 PM; those plain-console events also cover IMU, so they
+are not independently attributed per stream. At 1:30 PM the live sink and archive
+both reach offset 14,340,223 with zero lag; history and its archive are also
+caught up. The earlier growing lag was transient. A successful 510.67-second
+dbt build ends just before sink completions resume at 1:12 PM, and read-only
+PostgreSQL metadata confirms analytics owns the shared publication resource
+during the next build. This is the existing serialization/pacing design, not
+proof of a stuck or crashed sink. Preserve its owner, locks and offsets.
+
+The [WHOOP routes](../../../packages/server/src/routers/whoop-ble-sync.ts)
+return their acknowledgment after Kafka publication; they do not await analytics
+or ClickHouse serving. Consequently, clearing Kafka cannot acknowledge a native
+transfer that has not reached that API. The
+[uploader](../../../packages/mobile/modules/whoop-ble/ios/WhoopBleBackgroundUploader.swift)
+retains one reservation per stream and skips replacement submission while that
+identity is active. The existing
+[background transport](../../../packages/mobile/modules/whoop-ble/ios/WhoopURLSessionTransport.swift)
+therefore remains the relevant candidate for the observed native wait. The
+controlled live-path comparison described above is still needed before calling
+a transport change a proven remedy.
+
+A second physical CPU-fatal report is conclusive for the new process death:
+`Dofek.cpu_resource_fatal-2026-11-14-132722.ips` records **Process killed** at
+1:27:17.298 PM, with 48 CPU seconds over 50.55 wall seconds (95% average).
+Its build and binary UUID `58F95ACC-6B35-3B7F-BEF9-75AE2D5D40CA` exactly match
+[release 43629856022](https://github.com/Asherlc/dofek/actions/runs/43629856022)'s
+dSYM. Stock `atos` resolves the hot application stack to
+`HealthKitModule.swift:756`, `HealthKitQuantitySeriesTransport.swift:37`
+and its start/end formatting calls at lines 43–44: the same formatter path
+introduced by [PR #3144](https://github.com/Asherlc/dofek/pull/3144).
+A new native process reaches streaming while backgrounded at 1:27:19 PM. This
+validates background reinitialization on this launch; it does not prove why the
+old transfers had waited since 1:07 PM.
+
+The minimum direct CPU correction remains one invocation-local configured date
+formatter, preserving every timestamp string and avoiding shared mutable
+formatter state. Validate the existing running-series cases and exact timestamp
+outputs, then a native release build and physical CPU-budget comparison. It is
+not implemented by this diagnostic follow-up. Treat immediate native live upload
+with durable background fallback as a separate, unverified transport correction;
+preserve one outbox, reservation ownership, account fences and replay identities.
+
+Two large live SQLite transfers failed near their final chunk. Both incomplete
+local copies were deleted without querying them; no counter finding depends on
+them. Smaller phone lifecycle metadata and existing PostHog operational logs
+supplied the evidence instead. Six-hour Sentry search returned no events, which
+did not rule out the physical CPU-fatal report. Proposed runbook refinement:
+check existing cloud capture counters and accessible app-specific crash reports
+before requesting a broad device archive. No further administrator capture is
+authorized or needed for this follow-up.
