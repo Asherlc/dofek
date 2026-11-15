@@ -463,13 +463,195 @@ jobs:
           fi
 
           exit "$fail"
-      - name: Link triggered deploys
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        env:
-          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+
+  release-summary:
+    name: Release and Validation Summary
+    needs:
+      - resolve-commit
+      - detect-changes
+      - check-repository
+      - check-shared
+      - check-server
+      - check-mobile
+      - test
+      - build-mobile
+      - build-web
+      - build-zepp
+      - build-docker
+      - build-ota
+      - build-ota-publish
+      - build-storybook
+      - build-storybook-mobile
+      - storybook-preview
+      - deploy-server
+      - build-ios-release
+      - deploy-ota
+      - deploy-ios
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SOURCE_SHA: ${{ needs.resolve-commit.outputs.commit_sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      RUN_ATTEMPT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+      DETECT_RESULT: ${{ needs.detect-changes.result }}
+      REPOSITORY_RESULT: ${{ needs.check-repository.result }}
+      SHARED_RESULT: ${{ needs.check-shared.result }}
+      SERVER_RESULT: ${{ needs.check-server.result }}
+      MOBILE_RESULT: ${{ needs.check-mobile.result }}
+      TEST_RESULT: ${{ needs.test.result }}
+      MOBILE_BUILD_RESULT: ${{ needs.build-mobile.result }}
+      WEB_BUILD_RESULT: ${{ needs.build-web.result }}
+      ZEPP_BUILD_RESULT: ${{ needs.build-zepp.result }}
+      DOCKER_BUILD_RESULT: ${{ needs.build-docker.result }}
+      OTA_BUILD_RESULT: ${{ needs.build-ota.result }}
+      OTA_PUBLISH_BUILD_RESULT: ${{ needs.build-ota-publish.result }}
+      STORYBOOK_RESULT: ${{ needs.build-storybook.result }}
+      MOBILE_STORYBOOK_RESULT: ${{ needs.build-storybook-mobile.result }}
+      STORYBOOK_PREVIEW_RESULT: ${{ needs.storybook-preview.result }}
+      SERVER_DEPLOY_RESULT: ${{ needs.deploy-server.result }}
+      SERVER_DECISION: ${{ needs.deploy-server.outputs.publication_decision }}
+      SERVER_SOURCE_SHA: ${{ needs.deploy-server.outputs.commit_sha }}
+      SERVER_IMAGE_REF: ${{ needs.deploy-server.outputs.image_ref }}
+      SERVER_DEPLOYMENT_ID: ${{ needs.deploy-server.outputs.deployment_id }}
+      IOS_BUILD_RESULT: ${{ needs.build-ios-release.result }}
+      IOS_SHOULD_DEPLOY: ${{ needs.build-ios-release.outputs.should_deploy }}
+      IOS_BUILD_SHA: ${{ needs.build-ios-release.outputs.commit_sha }}
+      IOS_BUILD_NUMBER: ${{ needs.build-ios-release.outputs.build_number }}
+      IOS_ARTIFACT_ID: ${{ needs.build-ios-release.outputs.artifact_id }}
+      OTA_DEPLOY_RESULT: ${{ needs.deploy-ota.result }}
+      OTA_DECISION: ${{ needs.deploy-ota.outputs.decision }}
+      OTA_SOURCE_SHA: ${{ needs.resolve-commit.outputs.commit_sha }}
+      OTA_UPDATE_ID: ${{ needs.deploy-ota.outputs.update_id }}
+      OTA_RUNTIME_VERSION: ${{ needs.deploy-ota.outputs.runtime_version }}
+      OTA_DEPLOYMENT_ID: ${{ needs.deploy-ota.outputs.deployment_id }}
+      IOS_DEPLOY_RESULT: ${{ needs.deploy-ios.result }}
+      IOS_DECISION: ${{ needs.deploy-ios.outputs.decision }}
+      IOS_DEPLOYMENT_ID: ${{ needs.deploy-ios.outputs.deployment_id }}
+      IOS_PUBLISH_SHA: ${{ needs.deploy-ios.outputs.commit_sha }}
+      IOS_PUBLISH_BUILD_NUMBER: ${{ needs.deploy-ios.outputs.build_number }}
+      IOS_PUBLISHER_URL: ${{ needs.deploy-ios.outputs.upload_run_url }}
+      SERVER_SELECTED: >-
+        ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+            (needs.detect-changes.outputs.docker_server == 'true' ||
+             needs.detect-changes.outputs.web == 'true' ||
+             needs.detect-changes.outputs.terraform == 'true' ||
+             needs.detect-changes.outputs.docker_ota == 'true') }}
+      MOBILE_SELECTED: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect-changes.outputs.mobile == 'true' }}
+    steps:
+      - name: Write source, lane links, and per-target outcomes
+        shell: bash
         run: |
+          set -euo pipefail
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          source_sha="${SOURCE_SHA:-$GITHUB_SHA}"
+          source_url="$repo_url/commit/$source_sha"
           {
-            echo "## Triggered Deploys"
-            echo ""
-            echo "- [Deploy server, then publish matching mobile releases independently](${REPO_URL}/actions/workflows/deploy-web.yml)"
+            echo "## Release and validation summary"
+            echo
+            echo "- Source: [\`$source_sha\`]($source_url)"
+            echo "- CI attempt: [Run #$GITHUB_RUN_NUMBER, attempt $GITHUB_RUN_ATTEMPT]($RUN_ATTEMPT_URL)"
+            if [ -n "$PR_NUMBER" ]; then
+              echo "- Pull request: [#$PR_NUMBER]($repo_url/pull/$PR_NUMBER) (candidate merge commit; the post-merge main SHA is a separate revision)"
+            fi
+            echo
+            echo "### Validation and build lanes"
+            echo
+            echo "| Lane | Result | Run attempt |"
+            echo "|---|---|---|"
+            echo "| Repository checks | $REPOSITORY_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Shared checks | $SHARED_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Server checks | $SERVER_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Mobile checks | $MOBILE_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Required check reports | $TEST_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Mobile build | $MOBILE_BUILD_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Web build | $WEB_BUILD_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Zepp build | $ZEPP_BUILD_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Server image build | $DOCKER_BUILD_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| OTA validation build | $OTA_BUILD_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| OTA publication image build | $OTA_PUBLISH_BUILD_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Web Storybook build | $STORYBOOK_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Mobile Storybook build | $MOBILE_STORYBOOK_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo "| Storybook preview | $STORYBOOK_PREVIEW_RESULT | [Open]($RUN_ATTEMPT_URL) |"
+            echo
+            echo "### Production target outcomes"
+            echo
+            echo "| Target | Outcome and identity | Publisher attempt | Deployment record |"
+            echo "|---|---|---|---|"
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              echo "| Server production | Not applicable — pull requests do not publish production | — | — |"
+            elif [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$DETECT_RESULT" != "success" ]; then
+              echo "| Server production | Blocked — target selection did not complete ($DETECT_RESULT); applicability is unknown | [Open CI attempt]($RUN_ATTEMPT_URL) | — |"
+              echo "| OTA production | Blocked — target selection did not complete ($DETECT_RESULT); applicability is unknown | [Open CI attempt]($RUN_ATTEMPT_URL) | — |"
+              echo "| TestFlight | Blocked — target selection did not complete ($DETECT_RESULT); applicability is unknown | [Open CI attempt]($RUN_ATTEMPT_URL) | — |"
+            elif [ "$SERVER_SELECTED" = "true" ]; then
+              case "$SERVER_DEPLOY_RESULT:$SERVER_DECISION" in
+                success:publish|success:recover) server_outcome="Published and verified" ;;
+                success:unchanged) server_outcome="Unchanged — the requested image is already live" ;;
+                success:superseded) server_outcome="Superseded — a newer source is already live" ;;
+                failure:*) server_outcome="Failed — open publisher logs for the failing verification or deployment step" ;;
+                cancelled:*) server_outcome="Failed — publisher attempt was cancelled" ;;
+                skipped:*) server_outcome="Blocked — a required source, check, or image build did not complete successfully" ;;
+                *) server_outcome="Blocked — no verified publisher decision was produced ($SERVER_DEPLOY_RESULT)" ;;
+              esac
+              server_identity="source [\`${SERVER_SOURCE_SHA:-$source_sha}\`]($repo_url/commit/${SERVER_SOURCE_SHA:-$source_sha})"
+              [ -z "$SERVER_IMAGE_REF" ] || server_identity="$server_identity; image \`$SERVER_IMAGE_REF\`"
+              server_record="—"
+              [ -z "$SERVER_DEPLOYMENT_ID" ] || server_record="[server-production #$SERVER_DEPLOYMENT_ID]($repo_url/deployments/activity_log?environments_filter=server-production)"
+              echo "| Server production | $server_outcome; $server_identity | [Open publisher attempt]($RUN_ATTEMPT_URL) | $server_record |"
+            else
+              echo "| Server production | Not applicable — no server target was selected for this event and source | — | — |"
+            fi
+            if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$DETECT_RESULT" = "success" ] && [ "$MOBILE_SELECTED" = "true" ]; then
+              case "$OTA_DEPLOY_RESULT:$OTA_DECISION" in
+                success:publish|success:recover) ota_outcome="Published and device update verified" ;;
+                success:unchanged) ota_outcome="Unchanged — matching verified update is already live" ;;
+                success:superseded) ota_outcome="Superseded — a newer source is already live" ;;
+                failure:*) ota_outcome="Failed — open publisher logs for the failing verification or deployment step" ;;
+                cancelled:*) ota_outcome="Failed — publisher attempt was cancelled" ;;
+                skipped:*) ota_outcome="Blocked — a required mobile check or build did not complete successfully" ;;
+                *) ota_outcome="Blocked — no verified publisher decision was produced ($OTA_DEPLOY_RESULT)" ;;
+              esac
+              ota_identity="source [\`${OTA_SOURCE_SHA:-$source_sha}\`]($repo_url/commit/${OTA_SOURCE_SHA:-$source_sha})"
+              [ -z "$OTA_RUNTIME_VERSION" ] || ota_identity="$ota_identity; runtime \`$OTA_RUNTIME_VERSION\`"
+              [ -z "$OTA_UPDATE_ID" ] || ota_identity="$ota_identity; update UUID \`$OTA_UPDATE_ID\`"
+              ota_record="—"
+              [ -z "$OTA_DEPLOYMENT_ID" ] || ota_record="[ota-production #$OTA_DEPLOYMENT_ID]($repo_url/deployments/activity_log?environments_filter=ota-production)"
+              echo "| OTA production | $ota_outcome; $ota_identity | [Open publisher attempt]($RUN_ATTEMPT_URL) | $ota_record |"
+              if [ "$IOS_BUILD_RESULT" = "success" ] && [ "$IOS_SHOULD_DEPLOY" = "false" ]; then
+                echo "| TestFlight | Unchanged — no new signed iOS archive is required for this source | [Open archive decision]($RUN_ATTEMPT_URL) | — |"
+              elif [ "$IOS_BUILD_RESULT" != "success" ]; then
+                if [ "$IOS_BUILD_RESULT" = "failure" ] || [ "$IOS_BUILD_RESULT" = "cancelled" ]; then
+                  echo "| TestFlight | Failed — signed archive selection/build result: $IOS_BUILD_RESULT | [Open archive attempt]($RUN_ATTEMPT_URL) | — |"
+                else
+                  echo "| TestFlight | Blocked — signed archive selection/build did not complete ($IOS_BUILD_RESULT) | [Open archive attempt]($RUN_ATTEMPT_URL) | — |"
+                fi
+              else
+                case "$IOS_DEPLOY_RESULT:$IOS_DECISION" in
+                  success:upload) ios_outcome="Uploaded to TestFlight; Apple's processing and availability continue separately" ;;
+                  success:unchanged) ios_outcome="Unchanged — this source is already uploaded" ;;
+                  success:superseded) ios_outcome="Superseded — a newer source is already uploaded" ;;
+                  failure:*) ios_outcome="Failed — open publisher logs for the upload or receipt step" ;;
+                  cancelled:*) ios_outcome="Failed — publisher attempt was cancelled" ;;
+                  skipped:*) ios_outcome="Blocked — a required check, build, or target lock prerequisite did not complete" ;;
+                  *) ios_outcome="Blocked — no verified upload decision was produced ($IOS_DEPLOY_RESULT)" ;;
+                esac
+                ios_identity="source [\`${IOS_PUBLISH_SHA:-${IOS_BUILD_SHA:-$source_sha}}\`]($repo_url/commit/${IOS_PUBLISH_SHA:-${IOS_BUILD_SHA:-$source_sha}})"
+                [ -z "${IOS_PUBLISH_BUILD_NUMBER:-$IOS_BUILD_NUMBER}" ] || ios_identity="$ios_identity; build \`${IOS_PUBLISH_BUILD_NUMBER:-$IOS_BUILD_NUMBER}\`"
+                if [ -n "$IOS_ARTIFACT_ID" ]; then
+                  ios_identity="$ios_identity; archive [artifact $IOS_ARTIFACT_ID]($repo_url/actions/runs/$GITHUB_RUN_ID/artifacts/$IOS_ARTIFACT_ID)"
+                fi
+                ios_record="—"
+                [ -z "$IOS_DEPLOYMENT_ID" ] || ios_record="[testflight #$IOS_DEPLOYMENT_ID]($repo_url/deployments/activity_log?environments_filter=testflight)"
+                publisher_url="${IOS_PUBLISHER_URL:-$RUN_ATTEMPT_URL}"
+                echo "| TestFlight | $ios_outcome; $ios_identity | [Open publisher attempt]($publisher_url) | $ios_record |"
+              fi
+            elif [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$DETECT_RESULT" != "success" ]; then
+              : # The blocked target outcomes were written above when selection failed.
+            else
+              echo "| OTA production | Not applicable — no mobile release was selected for this event and source | — | — |"
+              echo "| TestFlight | Not applicable — no mobile release was selected for this event and source | — | — |"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

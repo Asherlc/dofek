@@ -11,6 +11,19 @@ on:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
+    outputs:
+      decision:
+        description: "Verified OTA publication decision"
+        value: ${{ jobs.deploy.outputs.decision }}
+      deployment_id:
+        description: "Existing OTA deployment record for this decision"
+        value: ${{ jobs.deploy.outputs.deployment_id }}
+      update_id:
+        description: "Verified OTA update UUID when available"
+        value: ${{ jobs.deploy.outputs.update_id }}
+      runtime_version:
+        description: "OTA runtime version checked by the publisher"
+        value: ${{ jobs.deploy.outputs.runtime_version }}
 concurrency:
   group: deploy-ota
   cancel-in-progress: false
@@ -25,6 +38,11 @@ jobs:
   deploy:
     name: Publish OTA
     runs-on: ubuntu-latest
+    outputs:
+      decision: ${{ steps.publication.outputs.decision }}
+      deployment_id: ${{ steps.publication.outputs.deployment_id }}
+      update_id: ${{ steps.finalize.outputs.update_id || steps.publication.outputs.update_id }}
+      runtime_version: ${{ steps.runtime.outputs.runtime_version }}
     steps:
       - name: Validate deployed source commit
         env:
@@ -183,7 +201,7 @@ jobs:
             if (runtimeSuccess.source_sha === SOURCE_SHA) {
               const update = verifyCurrent();
               if (update.id !== runtimeSuccess.update_id || update.runtimeVersion !== runtimeSuccess.runtime_version) throw new Error('same-source OTA content differs from its successful receipt');
-              appendFileSync(GITHUB_OUTPUT, `decision=unchanged\nupdate_id=${update.id}\n`);
+              appendFileSync(GITHUB_OUTPUT, `decision=unchanged\ndeployment_id=${runtimeSuccessRecord.databaseId}\nupdate_id=${update.id}\n`);
               process.exit(0);
             }
           } else if (liveExists) {
@@ -192,7 +210,7 @@ jobs:
           const newestSuccessful = successful[0] ? source(successful[0]) : null;
           if (newestSuccessful && newestSuccessful.source_sha !== SOURCE_SHA) {
             if (git(['merge-base','--is-ancestor',SOURCE_SHA,newestSuccessful.source_sha])) {
-              appendFileSync(GITHUB_OUTPUT, 'decision=superseded\n');
+              appendFileSync(GITHUB_OUTPUT, `decision=superseded\ndeployment_id=${successful[0].databaseId}\nupdate_id=${source(successful[0]).update_id}\n`);
               process.exit(0);
             }
             if (!git(['merge-base','--is-ancestor',newestSuccessful.source_sha,SOURCE_SHA])) throw new Error(`OTA candidate ${SOURCE_SHA} is unrelated to latest successful source ${newestSuccessful.source_sha}`);
@@ -204,7 +222,7 @@ jobs:
           });
           if (!Number.isInteger(deployment.id)) throw new Error('GitHub did not acknowledge OTA intent');
           const status = post('POST', `repos/${REPOSITORY}/deployments/${deployment.id}/statuses`, {
-            state: 'pending', auto_inactive: false, log_url: RUN_URL,
+            state: 'pending', auto_inactive: false, log_url: RUN_URL, environment_url: 'https://ota.dofek.asherlc.com/manifest',
             description: 'OTA awaiting publication verification',
           });
           if (status.state !== 'pending') throw new Error('GitHub did not acknowledge pending OTA intent');
@@ -235,6 +253,7 @@ jobs:
           fi
 
       - name: Finalize verified OTA deployment intent
+        id: finalize
         if: steps.publication.outputs.decision == 'publish' || steps.publication.outputs.decision == 'recover'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -268,10 +287,11 @@ jobs:
             exit 1
           fi
           response="$(gh api --method POST "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --input - <<JSON
-          {"state":"success","auto_inactive":false,"log_url":"$RUN_URL","description":"OTA verified $update_id"}
+          {"state":"success","auto_inactive":false,"log_url":"$RUN_URL","environment_url":"https://ota.dofek.asherlc.com/manifest","description":"OTA verified $update_id"}
           JSON
           )"
           jq -e --arg description "OTA verified $update_id" '.state == "success" and .description == $description and (.description | length <= 140)' <<<"$response" >/dev/null
+          echo "update_id=$update_id" >> "$GITHUB_OUTPUT"
       - uses: ./.release-tools/.github/actions/append-dispatcher-run-summary
         if: always()
         with:

@@ -23,6 +23,22 @@ on:
         description: "CI run ID to include in deploy summary (optional)"
         required: false
         type: string
+    outputs:
+      decision:
+        description: "TestFlight publication decision"
+        value: ${{ jobs.deploy.outputs.decision }}
+      deployment_id:
+        description: "TestFlight deployment record for the upload decision"
+        value: ${{ jobs.deploy.outputs.deployment_id }}
+      commit_sha:
+        description: "Source SHA used by the TestFlight publisher"
+        value: ${{ jobs.deploy.outputs.commit_sha }}
+      build_number:
+        description: "Build number submitted to TestFlight"
+        value: ${{ jobs.deploy.outputs.build_number }}
+      upload_run_url:
+        description: "Exact TestFlight publisher attempt URL"
+        value: ${{ jobs.deploy.outputs.upload_run_url }}
 permissions:
   contents: read
   actions: read
@@ -46,6 +62,7 @@ jobs:
       commit_sha: ${{ inputs.archive_commit_sha }}
       build_number: ${{ inputs.build_number }}
       upload_succeeded: ${{ steps.upload.outcome == 'success' }}
+      decision: ${{ steps.intent.outputs.decision }}
       deployment_id: ${{ steps.intent.outputs.deployment_id }}
       upload_run_url: ${{ steps.intent.outputs.upload_run_url }}
     steps:
@@ -150,6 +167,10 @@ jobs:
           BUILD_NUMBER: ${{ inputs.build_number }}
           COMMIT_SHA: ${{ inputs.archive_commit_sha }}
           CI_RUN_ID: ${{ inputs.ci_run_id }}
+          DECISION: ${{ steps.intent.outputs.decision }}
+          DEPLOYMENT_ID: ${{ steps.intent.outputs.deployment_id }}
+          UPLOAD_RUN_URL: ${{ steps.intent.outputs.upload_run_url }}
+          ARTIFACT_ID: ${{ inputs.artifact_id }}
         run: |
           VERSION=$(/usr/libexec/PlistBuddy -c "Print :ApplicationProperties:CFBundleShortVersionString" "$RUNNER_TEMP/Dofek.xcarchive/Info.plist")
           REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
@@ -160,7 +181,14 @@ jobs:
             echo "|---|---|"
             echo "| **Version** | $VERSION |"
             echo "| **Build** | $BUILD_NUMBER |"
-            echo "| **Commit** | \`${COMMIT_SHA:0:10}\` |"
+            echo "| **Commit** | [\`${COMMIT_SHA}\`](${REPO_URL}/commit/${COMMIT_SHA}) |"
+            echo "| **Signed archive** | [Artifact ${ARTIFACT_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID:-$GITHUB_RUN_ID}/artifacts/${ARTIFACT_ID}) |"
+            if [ -n "$DEPLOYMENT_ID" ]; then
+              echo "| **Deployment** | [TestFlight intent #${DEPLOYMENT_ID}](${REPO_URL}/deployments/activity_log?environments_filter=testflight) |"
+              echo "| **Publisher attempt** | [Open upload run](${UPLOAD_RUN_URL}) |"
+            else
+              echo "| **Upload decision** | ${DECISION} |"
+            fi
             if [ -n "$CI_RUN_ID" ]; then
               echo "| **Triggered by** | [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID}) |"
             fi

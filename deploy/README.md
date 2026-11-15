@@ -507,6 +507,19 @@ until server deployment completes. Mobile publication uses the independent
 [job and workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
 and [manual workflow ref selection](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
 
+The CI run summary links the pull request (when present), the exact source
+commit and run attempt, lane results, iOS archive artifact, publisher attempt,
+and each existing target deployment record. It reports server, OTA, and
+TestFlight outcomes separately, so a failed lane does not hide a different
+target that completed. The manual Deploy workflow writes the same per-target
+outcome view for the selected targets. These summaries are navigation aids;
+they do not admit a release or replace target verification. If cancellation
+prevents a summary from being written, inspect the publisher attempt and its
+existing deployment status and log URL. GitHub documents
+[workflow job summaries](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary),
+[deployment history](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/view-deployment-history),
+and [deployment status links](https://docs.github.com/en/rest/deployments/statuses#create-a-deployment-status).
+
 Signed iOS builds and uploads run in separate macOS jobs, each with a 30-minute
 limit. The archive job packages the signed `.xcarchive` in a tar file to preserve
 bundle permissions and symlinks, and retains it for seven days. The upload job

@@ -308,4 +308,137 @@ jobs:
     with:
       commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
+
+  release-summary:
+    name: Manual Release Summary
+    needs:
+      - resolve-source
+      - check-repository
+      - check-shared
+      - check-server
+      - check-mobile
+      - build-mobile
+      - docker
+      - terraform
+      - web-stack
+      - ios-archive
+      - ios
+      - ota
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SOURCE_SHA: ${{ needs.resolve-source.outputs.commit_sha }}
+      IMAGE_REF: ${{ needs.resolve-source.outputs.image_ref || needs.docker.outputs.image_ref }}
+      TARGET: ${{ inputs.target }}
+      SERVER_RESULT: ${{ needs.web-stack.result }}
+      SERVER_DECISION: ${{ needs.web-stack.outputs.publication_decision }}
+      SERVER_DEPLOYMENT_ID: ${{ needs.web-stack.outputs.deployment_id }}
+      SERVER_SOURCE_SHA: ${{ needs.web-stack.outputs.commit_sha }}
+      SERVER_IMAGE_REF: ${{ needs.web-stack.outputs.image_ref }}
+      IOS_ARCHIVE_RESULT: ${{ needs.ios-archive.result }}
+      IOS_SHOULD_DEPLOY: ${{ needs.ios-archive.outputs.should_deploy }}
+      IOS_ARTIFACT_ID: ${{ needs.ios-archive.outputs.artifact_id }}
+      IOS_BUILD_NUMBER: ${{ needs.ios-archive.outputs.build_number }}
+      IOS_RESULT: ${{ needs.ios.result }}
+      IOS_DECISION: ${{ needs.ios.outputs.decision }}
+      IOS_DEPLOYMENT_ID: ${{ needs.ios.outputs.deployment_id }}
+      IOS_SOURCE_SHA: ${{ needs.ios.outputs.commit_sha }}
+      IOS_PUBLISH_BUILD_NUMBER: ${{ needs.ios.outputs.build_number }}
+      IOS_PUBLISHER_URL: ${{ needs.ios.outputs.upload_run_url }}
+      OTA_RESULT: ${{ needs.ota.result }}
+      OTA_DECISION: ${{ needs.ota.outputs.decision }}
+      OTA_DEPLOYMENT_ID: ${{ needs.ota.outputs.deployment_id }}
+      OTA_UPDATE_ID: ${{ needs.ota.outputs.update_id }}
+      OTA_RUNTIME_VERSION: ${{ needs.ota.outputs.runtime_version }}
+    steps:
+      - name: Report selected target outcomes
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          source_sha="${SOURCE_SHA:-$GITHUB_SHA}"
+          run_url="$repo_url/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
+          {
+            echo "## Manual release summary"
+            echo
+            echo "- Requested target: \`$TARGET\`"
+            echo "- Selected source: [\`$source_sha\`]($repo_url/commit/$source_sha)"
+            echo "- Publisher attempt: [Run #$GITHUB_RUN_NUMBER, attempt $GITHUB_RUN_ATTEMPT]($run_url)"
+            echo
+            echo "| Target | Outcome and identity | Publisher attempt | Deployment record |"
+            echo "|---|---|---|---|"
+            if [ "$TARGET" = "web" ] || [ "$TARGET" = "web-stack" ] || [ "$TARGET" = "all" ]; then
+              case "$SERVER_RESULT:$SERVER_DECISION" in
+                success:publish|success:recover) outcome="Published and verified" ;;
+                success:unchanged) outcome="Unchanged — requested image is already live" ;;
+                success:superseded) outcome="Superseded — a newer source is already live" ;;
+                failure:*) outcome="Failed — inspect the publisher verification and deployment steps" ;;
+                cancelled:*) outcome="Failed — publisher attempt was cancelled" ;;
+                skipped:*) outcome="Blocked — required checks, immutable image, or infrastructure prerequisite did not complete" ;;
+                *) outcome="Blocked — no verified publisher decision was produced ($SERVER_RESULT)" ;;
+              esac
+              server_source="${SERVER_SOURCE_SHA:-$source_sha}"
+              identity="source [\`$server_source\`]($repo_url/commit/$server_source)"
+              image_ref="${SERVER_IMAGE_REF:-$IMAGE_REF}"
+              [ -z "$image_ref" ] || identity="$identity; image \`$image_ref\`"
+              record="—"
+              [ -z "$SERVER_DEPLOYMENT_ID" ] || record="[server-production #$SERVER_DEPLOYMENT_ID]($repo_url/deployments/activity_log?environments_filter=server-production)"
+              echo "| Server production | $outcome; $identity | [Open publisher attempt]($run_url) | $record |"
+            else
+              echo "| Server production | Not applicable — target \`$TARGET\` does not publish the server | — | — |"
+            fi
+            if [ "$TARGET" = "ota" ] || [ "$TARGET" = "all" ]; then
+              case "$OTA_RESULT:$OTA_DECISION" in
+                success:publish|success:recover) outcome="Published and device update verified" ;;
+                success:unchanged) outcome="Unchanged — matching verified update is already live" ;;
+                success:superseded) outcome="Superseded — a newer source is already live" ;;
+                failure:*) outcome="Failed — inspect the publisher verification and deployment steps" ;;
+                cancelled:*) outcome="Failed — publisher attempt was cancelled" ;;
+                skipped:*) outcome="Blocked — required checks, mobile build, or server dependency did not complete" ;;
+                *) outcome="Blocked — no verified publisher decision was produced ($OTA_RESULT)" ;;
+              esac
+              identity="source [\`$source_sha\`]($repo_url/commit/$source_sha)"
+              [ -z "$OTA_RUNTIME_VERSION" ] || identity="$identity; runtime \`$OTA_RUNTIME_VERSION\`"
+              [ -z "$OTA_UPDATE_ID" ] || identity="$identity; update UUID \`$OTA_UPDATE_ID\`"
+              record="—"
+              [ -z "$OTA_DEPLOYMENT_ID" ] || record="[ota-production #$OTA_DEPLOYMENT_ID]($repo_url/deployments/activity_log?environments_filter=ota-production)"
+              echo "| OTA production | $outcome; $identity | [Open publisher attempt]($run_url) | $record |"
+            else
+              echo "| OTA production | Not applicable — target \`$TARGET\` does not publish OTA | — | — |"
+            fi
+            if [ "$TARGET" = "ios" ] || [ "$TARGET" = "all" ]; then
+              if [ "$IOS_ARCHIVE_RESULT" = "success" ] && [ "$IOS_SHOULD_DEPLOY" = "false" ]; then
+                echo "| TestFlight | Unchanged — no new signed archive is required for this source | [Open archive decision]($run_url) | — |"
+              else
+                case "$IOS_RESULT:$IOS_DECISION" in
+                  success:upload) outcome="Uploaded to TestFlight; Apple's processing and availability continue separately" ;;
+                  success:unchanged) outcome="Unchanged — this source is already uploaded" ;;
+                  success:superseded) outcome="Superseded — a newer source is already uploaded" ;;
+                  failure:*) outcome="Failed — inspect the archive, upload, and receipt steps" ;;
+                  cancelled:*) outcome="Failed — publisher attempt was cancelled" ;;
+                  skipped:*) outcome="Blocked — required checks, signed archive, or server dependency did not complete" ;;
+                  *) outcome="Blocked — no verified upload decision was produced ($IOS_RESULT)" ;;
+                esac
+                identity_source="${IOS_SOURCE_SHA:-$source_sha}"
+                identity="source [\`$identity_source\`]($repo_url/commit/$identity_source)"
+                build_number="${IOS_PUBLISH_BUILD_NUMBER:-$IOS_BUILD_NUMBER}"
+                [ -z "$build_number" ] || identity="$identity; build \`$build_number\`"
+                if [ -n "$IOS_ARTIFACT_ID" ]; then
+                  identity="$identity; archive [artifact $IOS_ARTIFACT_ID]($repo_url/actions/runs/$GITHUB_RUN_ID/artifacts/$IOS_ARTIFACT_ID)"
+                fi
+                record="—"
+                [ -z "$IOS_DEPLOYMENT_ID" ] || record="[testflight #$IOS_DEPLOYMENT_ID]($repo_url/deployments/activity_log?environments_filter=testflight)"
+                publisher_url="${IOS_PUBLISHER_URL:-$run_url}"
+                echo "| TestFlight | $outcome; $identity | [Open publisher attempt]($publisher_url) | $record |"
+              fi
+            else
+              echo "| TestFlight | Not applicable — target \`$TARGET\` does not upload to TestFlight | — | — |"
+            fi
+            if [ "$TARGET" = "infra" ]; then
+              echo
+              echo "Infrastructure-only target: [Terraform job and logs]($run_url). No server, OTA, or TestFlight publication was requested."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
   # Image cleanup runs via daily cron on the server (see cloud-init.yml).

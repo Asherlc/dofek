@@ -9,6 +9,12 @@ on:
       publication_decision:
         description: "Whether the server target was published, unchanged or superseded"
         value: ${{ jobs.check.outputs.publication_decision }}
+      image_ref:
+        description: "Immutable server image reference selected for this publication"
+        value: ${{ jobs.check.outputs.image_ref }}
+      deployment_id:
+        description: "Existing server deployment record for this publication decision"
+        value: ${{ jobs.check.outputs.deployment_id }}
     inputs:
       environment_name:
         description: "Human-readable deploy environment name"
@@ -218,6 +224,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          ENVIRONMENT_URL: ${{ inputs.public_url || 'https://dofek.fit' }}
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
@@ -308,11 +315,12 @@ jobs:
             });
             if (!Number.isInteger(deployment.id)) throw new Error('GitHub did not acknowledge the server deployment');
             const status = post('POST', `repos/${REPOSITORY}/deployments/${deployment.id}/statuses`, {
-              state, auto_inactive: false, log_url: RUN_URL, description,
+              state, auto_inactive: false, log_url: RUN_URL, environment_url: ENVIRONMENT_URL || undefined, description,
             });
             if (status.state !== state.toLowerCase()) throw new Error(`GitHub did not acknowledge server ${state}`);
             return deployment.id;
           };
+          const existingDeploymentId = successful?.databaseId ?? '';
 
           if (successful) {
             const baseline = getIdentity(successful);
@@ -322,22 +330,22 @@ jobs:
           }
 
           if (live?.sourceSha === SOURCE_SHA && live.imageDigest === candidateDigest) {
-            appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndecision=unchanged\n`);
+            appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndeployment_id=${existingDeploymentId}\ndecision=unchanged\n`);
             process.exit(0);
           }
           if (live?.sourceSha === SOURCE_SHA && live.imageDigest !== candidateDigest) throw new Error('server source matches the live target but its immutable image digest differs; verify the image build before promotion');
           if (live && git(['merge-base','--is-ancestor',SOURCE_SHA,live.sourceSha])) {
-            appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndecision=superseded\n`);
+            appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndeployment_id=${existingDeploymentId}\ndecision=superseded\n`);
             process.exit(0);
           }
           const baseline = successful ? getIdentity(successful).source_sha : null;
           if (baseline && !git(['merge-base','--is-ancestor',baseline,SOURCE_SHA])) throw new Error(`server candidate ${SOURCE_SHA} is unrelated to target source ${baseline}`);
           if (successful && getIdentity(successful).source_sha === SOURCE_SHA && getIdentity(successful).image_digest === candidateDigest) {
-            appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndecision=unchanged\n`);
+            appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndeployment_id=${existingDeploymentId}\ndecision=unchanged\n`);
             process.exit(0);
           }
           if (successful && git(['merge-base','--is-ancestor',SOURCE_SHA,getIdentity(successful).source_sha])) {
-            appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndecision=superseded\n`);
+            appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndeployment_id=${existingDeploymentId}\ndecision=superseded\n`);
             process.exit(0);
           }
           const deploymentId = record(SOURCE_SHA, candidateDigest, 'pending', `Server source ${SOURCE_SHA} awaiting stack verification`);
@@ -415,6 +423,7 @@ jobs:
       SERVER_HOST: ${{ needs.terraform.outputs.server_host || inputs.server_host || vars.ORACLE_SERVER_HOST }}
       DOCKER_HOST: ssh://${{ inputs.ssh_user != '' && inputs.ssh_user || 'ubuntu' }}@${{ needs.terraform.outputs.server_host || inputs.server_host || vars.ORACLE_SERVER_HOST }}
       DOCKER_SSH_COMMAND: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10
+      ENVIRONMENT_URL: ${{ inputs.public_url || 'https://dofek.fit' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -465,7 +474,7 @@ jobs:
             echo "::error::Server deployment was reconciled inactive; do not overwrite it."; exit 1
           fi
           response="$(gh api --method POST "repos/$REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --input - <<JSON
-          {"state":"success","auto_inactive":false,"log_url":"$RUN_URL","description":"Verified server $SOURCE_SHA"}
+          {"state":"success","auto_inactive":false,"log_url":"$RUN_URL","environment_url":"$ENVIRONMENT_URL","description":"Verified server $SOURCE_SHA"}
           JSON
           )"
           jq -e '.state == "success" and (.description | length <= 140)' <<<"$response" >/dev/null
