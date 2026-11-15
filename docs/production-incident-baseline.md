@@ -38125,3 +38125,38 @@ Local qualification and CI are separate from production throughput acceptance. T
   tasks reproduced transport races without another administrator prompt.
   Proposed runbook wording: “Host and Simulator regressions validate ownership
   and formatting; verify background scheduling and CPU recovery on the device.”
+
+## 2026-11-14 — Installed native corrections show background upload recovery
+
+- **Release/impact:** [PR #3346](https://github.com/Asherlc/dofek/pull/3346)
+  merged as `d049f86a57461e6e15e72b9f0707e26b4a085a82`.
+  [Production release 43662538842](https://github.com/Asherlc/dofek/actions/runs/43662538842)
+  succeeded, and Apple accepted TestFlight build `1794705798`. All required PR
+  checks passed, including the five real integration shards. The user installed
+  this build; native telemetry confirms its identity at 6:02 PM PST.
+- **Observed recovery:** between the 6:02:30 and 6:17:47 PM snapshots, queued IMU
+  records fell from 1,855,498 to 539,398; realtime fell from 13,603 to zero and
+  raw records from 31,614 to zero. The latest snapshot is background/streaming,
+  with IMU and raw acknowledgments at 6:17:46 PM. Same-account/strap structured
+  server logs corroborate publication of all three streams after backgrounding.
+  These establish native delivery recovery; IMU history is still catching up.
+  They do not establish ClickHouse serving freshness or uninterrupted capture.
+- **CPU evidence:** running-series queries and a HealthKit background sync
+  completed on the installed build. A read-only device crash-metadata check
+  around 6:17 PM found no new Dofek report after installation; the latest existing
+  CPU-fatal report is from 2:00 PM. The short observation and incremental work
+  do not establish sustained large-history CPU-budget recovery.
+- **Remaining risk/root-cause boundaries:** Bluetooth connection and encryption
+  timeouts occur both before and after installation. The latest snapshot shows
+  streaming again, but their underlying cause remains unresolved. A network-loss
+  attempt error is visible despite subsequent durable acknowledgments. Do not
+  infer that the queue is blocked from that retained error alone. The original
+  OS condition delaying discretionary tasks remains unresolved; this device
+  comparison corroborates recovery after the direct delivery correction.
+- **Follow-up/retrospective:** no additional runtime, production or pairing
+  changes were made. Existing operational telemetry and app-specific crash
+  metadata supplied evidence without administrator authentication or sensor
+  values. Separate self-review checked build identity, native occurrence versus
+  replay time, account/strap attribution and publication versus serving.
+  Proposed runbook wording: “Check capture and acknowledgment progress
+  separately; a draining queue does not prove an uninterrupted Bluetooth link.”
