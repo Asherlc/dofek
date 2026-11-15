@@ -14,6 +14,78 @@
 - **Direct fix / validation:** Update the API integration expectation, use the fixed six nullable channel projections and unconditional stream UNION with empty selection arrays, and add a `skin_temperature` selection predicate within the stream temperature branch. The predicate keeps HR-only activity streams from reading decoded health-sensor history; it does not change the shared health-sensor query or measured-time bounds. Four real-engine suites passed (59 tests), focused unit suites passed (85 tests), `pnpm lint` passed, and recursive all-package typecheck passed. After loading 1,000 decoded readings outside the activity measurement window, actual ClickHouse response summaries remained stable: no source `read_rows/read_bytes` `1/1` and HR-only `17/1535` before and after the history increase. The regenerated changed-line Stryker scope contains no executable mutants; the only ignored mutant is the SQL template literal under the existing `StringLiteral` exclusion, so no numeric mutation score is available. No threshold or exclusion changed.
 - **Retrospective / remaining risk:** Real-engine query summaries exposed the HR-only history scan that [`EXPLAIN ESTIMATE`](https://clickhouse.com/docs/reference/statements/explain#explain-estimate) did not establish; per-query physical counters are also available from [`system.query_log`](https://clickhouse.com/docs/reference/system-tables/query_log). For SQL changes, compare actual response summaries with and without off-window history, and preserve the generated changed-line ranges. The final refactor's SQL semantics are verified by the ClickHouse suites; the changed-line mutation score remains unavailable because the changed SQL is a string literal.
 
+## 2026-11-15 — OTA publisher rejected a nested trusted checkout
+
+- **Symptoms / impact:** Production OTA run
+  [43745526857](https://github.com/Asherlc/dofek/actions/runs/43745526857)
+  stopped before upload, so it did not publish its selected update. The
+  existing [OTA intent deployment record 7808135811](https://api.github.com/repos/Asherlc/dofek/deployments/7808135811)
+  was later reconciled once to `inactive` with `auto_inactive: false`; its
+  [deployment status list](https://api.github.com/repos/Asherlc/dofek/deployments/7808135811/statuses)
+  records exactly one inactive status. The production server baseline
+  [deployment record 7808336097](https://api.github.com/repos/Asherlc/dofek/deployments/7808336097)
+  was initialized for source `d049f86a57461e6e15e72b9f0707e26b4a085a82` and
+  image digest
+  `sha256:027b41d0f5762ef4560fdc33168cfd16a8f8ba9c060cead0c434d2906a11cdef`;
+  its [deployment status list](https://api.github.com/repos/Asherlc/dofek/deployments/7808336097/statuses)
+  records the successful baseline status. The source and digest were verified
+  in the successful original [release run, attempt 1](https://github.com/Asherlc/dofek/actions/runs/43662538842/attempts/1)
+  and [server stack verification job](https://github.com/Asherlc/dofek/actions/runs/43662538842/job/132654903427).
+  These operator-owned recovery writes have durable record and status links;
+  local recovery packets are supplemental implementation evidence.
+- **Failing job / step / evidence:** The original [OTA publisher job 132917033920](https://github.com/Asherlc/dofek/actions/runs/43745526857/job/132917033920)
+  stopped at **Publish OTA update**. Its supplemental workstation log copy
+  (`/tmp/opencode/task7/monitor-ota-publisher.log`, lines 3192–3196) showed
+  `?? ../../.release-tools/` followed by `Error: Commit all changes. Aborting...`.
+- **Root cause / direct fixes:** The workflow checked out current trusted
+  release controls as a nested `.release-tools` directory inside a historical
+  mobile candidate. EOAS treated that auxiliary checkout as candidate source
+  dirt. The workflow now adds only `/.release-tools/` to that runner clone's
+  Git `info/exclude`, found with `git rev-parse --git-path info/exclude`, before
+  candidate verification. Git documents `info/exclude` as a local exclude
+  source and `/`-anchored patterns as worktree-root paths
+  ([Git ignore documentation](https://git-scm.com/docs/gitignore)). The
+  tracked `.gitignore`, global Git configuration, and EOAS dirty-source guard
+  are unchanged. Tests execute the actual step in a historical temporary Git
+  candidate without a `.gitignore`; tracked edits and untracked candidate app
+  files independently remain dirty and are rejected by the installed EOAS
+  guard.
+  A local `expo-updates runtimeversion:resolve --platform ios --workflow
+  managed` comparison on the same isolated candidate, with identical synthetic
+  public app ID and Sentry DSN, returned the same runtime hash and identical
+  tracked fingerprint-source paths and hashes before and after the exclude
+  entry. Resolver output and its comparison are retained as supplemental local
+  implementation evidence under `/tmp/opencode/ota-followup/`.
+- **Server retry failure and parser fix:** The operator's server admission
+  retry [job 132922667909](https://github.com/Asherlc/dofek/actions/runs/43745526857/job/132922667909)
+  failed because the captured GraphQL response represented `Deployment.payload`
+  as a string containing another JSON-encoded string. GitHub documents
+  [`Deployment.payload` as `String`](https://docs.github.com/en/graphql/reference/deployments#deployment);
+  the two-layer encoding was observed in this response, not assumed as a
+  universal API format. One decode left a string, so the baseline source check
+  reported that deployment `7808336097` did not contain a full source SHA. This
+  was a parser-boundary defect, not a missing or invalid baseline. Both server
+  and OTA history readers now accept the observed two-layer encoding (and
+  existing object or one-layer object-string forms), then reject malformed,
+  triple-encoded, or non-object payloads before mutation. Source SHA, commit
+  OID, digest/runtime, UUID, current-live identity, and intent-ordering checks
+  remain in force. The captured response and decode proof under
+  `/tmp/opencode/ota-followup/` are supplemental implementation evidence.
+- **Validation boundary / remaining risk:** The aux-checkout and payload
+  regressions, workflow checks, and focused local suites validate fixtures and
+  code only. No post-fix production publisher run or production OTA republish
+  has occurred; the existing server retry used the old control source and
+  failed before the parser fix. A future production retry requires the new
+  trusted controls and fresh normal release admission. TestFlight receipt
+  deployment [7808157768](https://api.github.com/repos/Asherlc/dofek/deployments/7808157768)
+  and its [deployment status list](https://api.github.com/repos/Asherlc/dofek/deployments/7808157768/statuses)
+  record the successful upload; the corresponding [upload job](https://github.com/Asherlc/dofek/actions/runs/43745526857/job/132917033959)
+  passed without re-upload. The earlier disclosed credential exposure remains
+  a separate, unresolved operator-owned follow-up; this work did not read or
+  rotate production credentials. Local fixture, workflow, and API capture files
+  under `/tmp/opencode/` are supplemental implementation evidence, not required
+  operator instructions.
+
 ## 2026-11-15 — Local Docker disk pressure during CI gate validation
 
 - **Symptoms / impact:** Local ClickHouse reported `errno 28` and restarted
