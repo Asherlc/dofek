@@ -211,10 +211,10 @@ extension WhoopBleModuleTests {
         defer { SentrySDK.close() }
         let cleanupEventCaptured = expectation(description: "Erasure failure passed through Sentry beforeSend")
         let controlEventCaptured = expectation(description: "Control event passed through Sentry beforeSend")
-        captures.expect(cleanupEventCaptured, matching: "bodies")
+        captures.expect(cleanupEventCaptured, matching: "cutoff fixture rejected write")
         captures.expect(controlEventCaptured, matching: "NativeAttributionControl")
         let (context, module) = try makeModule()
-        _ = try module.uploader
+        let uploader = try module.uploader
         let priorCutoff = UserDefaults.standard.object(forKey: "dofek_device_erasure_cutoff_v1")
         defer {
             if let priorCutoff {
@@ -223,25 +223,25 @@ extension WhoopBleModuleTests {
                 UserDefaults.standard.removeObject(forKey: "dofek_device_erasure_cutoff_v1")
             }
         }
-        let requestedCutoff = try XCTUnwrap(ISO8601DateFormatter().date(from: "2001-01-01T00:00:00Z"))
-        let expectedCutoff = max(priorCutoff as? Date ?? requestedCutoff, requestedCutoff)
+        let fixture = try SQLiteCutoffFailureFixture(
+            databaseDirectory: try whoopUploadDatabaseDirectory(), userDefaultsCutoff: priorCutoff
+        )
+        try fixture.installFailureTrigger()
+        defer { restoreCutoffFixture(fixture, uploader: uploader) }
+        let expectedCutoff = fixture.cutoff
         let cutoffWritten = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 UserDefaults.standard.object(forKey: "dofek_device_erasure_cutoff_v1") as? Date == expectedCutoff
             },
             object: nil
         )
-        let fixture = try makeBodyRemovalFailure()
-        defer {
-            XCTAssertNoThrow(try restoreBodyDirectory(fixture.directory, backup: fixture.backup))
-            XCTAssertNoThrow(try module.uploader.disable())
-        }
 
         let blocked = expectation(description: "BLE queue occupied before erasure")
         let release = DispatchSemaphore(value: 0)
         defer { release.signal() }
         let runtime = try await queueErasureWhileBleQueueIsBlocked(
-            context, module: module, blocked: blocked, release: release, cutoffWritten: cutoffWritten
+            context, module: module, blocked: blocked, release: release, cutoff: fixture.cutoff,
+            cutoffWritten: cutoffWritten
         )
         await MainActor.run {
             SentrySDK.configureScope { scope in scope.setUser(Sentry.User(userId: "account-B")) }
@@ -255,9 +255,8 @@ extension WhoopBleModuleTests {
         await assertSentryErasureAttribution(
             captures, cleanupCaptured: cleanupEventCaptured, controlCaptured: controlEventCaptured
         )
-        try await assertFailureFencePersistsAfterRestore(
-            directory: fixture.directory, backup: fixture.backup, context: context, module: module
-        )
+        try fixture.dropFailureTrigger()
+        try await assertFailureFencePersistsAfterRepair(context: context, module: module)
     }
 
     func testExplicitRetryRejectsRetainedCaptureFailure() async throws {
