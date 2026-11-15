@@ -1,6 +1,8 @@
 # Independent release gates
 
-Status: proposal for review; implementation is not approved.
+Status: design approved by the user on 2026-11-14, including GitHub UI
+traceability. Implementation planning is authorized; execution review follows
+the implementation plan.
 
 ## Goal and safety boundary
 
@@ -57,7 +59,7 @@ new services or repositories ([DORA](https://dora.dev/capabilities/loosely-coupl
    later, but leaves unrelated failures and slow jobs on the release path.
 
 The user requested a concrete design following the independent-gates proposal.
-The detailed choices below are recommendations awaiting approval.
+The detailed choices below are included in the approved design.
 
 ## Release units and gate ownership
 
