@@ -509,7 +509,16 @@ and [manual workflow ref selection](https://docs.github.com/en/actions/how-tos/m
 
 The CI run summary links the pull request (when present), the exact source
 commit and run attempt, lane results, iOS archive artifact, publisher attempt,
-and each existing target deployment record. It reports server, OTA, and
+and each existing target deployment record. The repository environment-history
+link opens the filtered history list; the separate API deployment link names
+the exact record ID and returns that record's JSON. GitHub documents the
+[deployment REST endpoint](https://docs.github.com/en/rest/deployments/deployments#get-a-deployment)
+and the [environment history view](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/view-deployment-history).
+Superseded OTA summaries keep the requested candidate source/runtime separate
+from the source/runtime/update UUID on the successful record that superseded it.
+Each publisher also writes its own attempt summary, so an admission ID and
+incomplete verification or receipt remain visible when the parent workflow
+cannot receive outputs from a failed reusable workflow. It reports server, OTA, and
 TestFlight outcomes separately, so a failed lane does not hide a different
 target that completed. The manual Deploy workflow writes the same per-target
 outcome view for the selected targets. These summaries are navigation aids;

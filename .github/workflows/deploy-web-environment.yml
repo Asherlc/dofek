@@ -314,6 +314,7 @@ jobs:
               payload: { source_sha: sourceSha, image_digest: imageDigest, run_id: RUN_ID, run_attempt: RUN_ATTEMPT, run_url: RUN_URL },
             });
             if (!Number.isInteger(deployment.id)) throw new Error('GitHub did not acknowledge the server deployment');
+            appendFileSync(GITHUB_OUTPUT, `deployment_id=${deployment.id}\n`);
             const status = post('POST', `repos/${REPOSITORY}/deployments/${deployment.id}/statuses`, {
               state, auto_inactive: false, log_url: RUN_URL, environment_url: ENVIRONMENT_URL || undefined, description,
             });
@@ -478,3 +479,65 @@ jobs:
           JSON
           )"
           jq -e '.state == "success" and (.description | length <= 140)' <<<"$response" >/dev/null
+
+  publisher-result:
+    name: Server publisher result
+    needs: [check, terraform, deploy-web-stack, finalize-server-receipt]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SOURCE_SHA: ${{ needs.check.outputs.source_sha || inputs.automatic_commit_sha || github.sha }}
+      REQUESTED_IMAGE: ${{ needs.check.outputs.image_ref || inputs.image_ref || inputs.image_tag }}
+      DECISION: ${{ needs.check.outputs.publication_decision }}
+      DEPLOYMENT_ID: ${{ needs.check.outputs.deployment_id }}
+      CHECK_RESULT: ${{ needs.check.result }}
+      TERRAFORM_RESULT: ${{ needs.terraform.result }}
+      STACK_RESULT: ${{ needs.deploy-web-stack.result }}
+      RECEIPT_RESULT: ${{ needs.finalize-server-receipt.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+    steps:
+      - name: Write server publisher result
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          candidate="source [\`$SOURCE_SHA\`]($repo_url/commit/$SOURCE_SHA)"
+          [ -z "$REQUESTED_IMAGE" ] || candidate="$candidate; requested image \`$REQUESTED_IMAGE\`"
+          record="—"
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            record="[API deployment #$DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=server-production)"
+          fi
+          case "$DECISION" in
+            unchanged) outcome="Unchanged — requested server candidate is already live and verified; $candidate" ;;
+            superseded) outcome="Superseded — requested candidate $candidate is behind the verified live server record #${DEPLOYMENT_ID:-unknown}" ;;
+            publish)
+              if [ "$TERRAFORM_RESULT" = "failure" ] || [ "$TERRAFORM_RESULT" = "cancelled" ]; then
+                outcome="Blocked — infrastructure prerequisite $TERRAFORM_RESULT after intent admission; server publication was not verified; $candidate"
+              elif [ "$STACK_RESULT" = "failure" ] || [ "$STACK_RESULT" = "cancelled" ]; then
+                outcome="Failed — stack deployment $STACK_RESULT after intent admission; deployment receipt is not verified; $candidate"
+              elif [ "$STACK_RESULT" = "success" ] && [ "$RECEIPT_RESULT" != "success" ]; then
+                outcome="Incomplete — live stack deployment succeeded, but final server verification or receipt recording is $RECEIPT_RESULT; $candidate"
+              elif [ "$STACK_RESULT" = "success" ] && [ "$RECEIPT_RESULT" = "success" ]; then
+                outcome="Published and verified — $candidate"
+              else
+                outcome="Blocked or incomplete — stack result $STACK_RESULT, receipt result $RECEIPT_RESULT after intent admission; $candidate"
+              fi
+              ;;
+            *)
+              if [ -n "$DEPLOYMENT_ID" ]; then
+                outcome="Incomplete — server intent exists, but admission did not complete ($CHECK_RESULT); $candidate"
+              else
+                outcome="Failed before a server deployment intent ID was emitted ($CHECK_RESULT); requested candidate $candidate"
+              fi
+              ;;
+          esac
+          {
+            echo "## Server publisher result"
+            echo
+            echo "- Candidate: $candidate"
+            echo "- Outcome: $outcome"
+            echo "- Publisher attempt: [Open exact run attempt]($RUN_URL)"
+            echo "- Deployment record: $record"
+          } >> "$GITHUB_STEP_SUMMARY"

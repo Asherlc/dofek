@@ -22,8 +22,17 @@ on:
         description: "Verified OTA update UUID when available"
         value: ${{ jobs.deploy.outputs.update_id }}
       runtime_version:
-        description: "OTA runtime version checked by the publisher"
+        description: "Requested OTA candidate runtime version"
         value: ${{ jobs.deploy.outputs.runtime_version }}
+      superseding_source_sha:
+        description: "Source SHA of the successful deployment that superseded this candidate"
+        value: ${{ jobs.deploy.outputs.superseding_source_sha }}
+      superseding_runtime_version:
+        description: "Runtime version of the successful deployment that superseded this candidate"
+        value: ${{ jobs.deploy.outputs.superseding_runtime_version }}
+      superseding_update_id:
+        description: "Update UUID belonging to the successful deployment that superseded this candidate"
+        value: ${{ jobs.deploy.outputs.superseding_update_id }}
 concurrency:
   group: deploy-ota
   cancel-in-progress: false
@@ -41,8 +50,11 @@ jobs:
     outputs:
       decision: ${{ steps.publication.outputs.decision }}
       deployment_id: ${{ steps.publication.outputs.deployment_id }}
-      update_id: ${{ steps.finalize.outputs.update_id || steps.publication.outputs.update_id }}
+      update_id: ${{ steps.finalize.outputs.update_id || steps.verify.outputs.update_id || steps.publication.outputs.update_id }}
       runtime_version: ${{ steps.runtime.outputs.runtime_version }}
+      superseding_source_sha: ${{ steps.publication.outputs.superseding_source_sha }}
+      superseding_runtime_version: ${{ steps.publication.outputs.superseding_runtime_version }}
+      superseding_update_id: ${{ steps.publication.outputs.superseding_update_id }}
     steps:
       - name: Validate deployed source commit
         env:
@@ -210,7 +222,7 @@ jobs:
           const newestSuccessful = successful[0] ? source(successful[0]) : null;
           if (newestSuccessful && newestSuccessful.source_sha !== SOURCE_SHA) {
             if (git(['merge-base','--is-ancestor',SOURCE_SHA,newestSuccessful.source_sha])) {
-              appendFileSync(GITHUB_OUTPUT, `decision=superseded\ndeployment_id=${successful[0].databaseId}\nupdate_id=${source(successful[0]).update_id}\n`);
+              appendFileSync(GITHUB_OUTPUT, `decision=superseded\ndeployment_id=${successful[0].databaseId}\nsuperseding_source_sha=${newestSuccessful.source_sha}\nsuperseding_runtime_version=${newestSuccessful.runtime_version}\nsuperseding_update_id=${newestSuccessful.update_id}\n`);
               process.exit(0);
             }
             if (!git(['merge-base','--is-ancestor',newestSuccessful.source_sha,SOURCE_SHA])) throw new Error(`OTA candidate ${SOURCE_SHA} is unrelated to latest successful source ${newestSuccessful.source_sha}`);
@@ -221,6 +233,7 @@ jobs:
             payload: { source_sha: SOURCE_SHA, runtime_version: RUNTIME_VERSION, run_id: RUN_ID, run_attempt: RUN_ATTEMPT, run_url: RUN_URL },
           });
           if (!Number.isInteger(deployment.id)) throw new Error('GitHub did not acknowledge OTA intent');
+          appendFileSync(GITHUB_OUTPUT, `deployment_id=${deployment.id}\n`);
           const status = post('POST', `repos/${REPOSITORY}/deployments/${deployment.id}/statuses`, {
             state: 'pending', auto_inactive: false, log_url: RUN_URL, environment_url: 'https://ota.dofek.asherlc.com/manifest',
             description: 'OTA awaiting publication verification',
@@ -229,6 +242,7 @@ jobs:
           appendFileSync(GITHUB_OUTPUT, `decision=publish\ndeployment_id=${deployment.id}\n`);
           NODE
       - name: Publish OTA update
+        id: publish
         if: steps.publication.outputs.decision == 'publish'
         working-directory: packages/mobile
         env:
@@ -238,8 +252,12 @@ jobs:
           EXPO_PUBLIC_SENTRY_RELEASE: ${{ inputs.commit_sha }}
         run: pnpm exec eoas publish --branch main --platform ios --nonInteractive --packageRunner "pnpm exec" --dumpSourcemap --emitMetadata
       - name: Verify published device update
+        id: verify
         if: steps.publication.outputs.decision == 'publish'
-        run: pnpm tsx .release-tools/scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production "${{ steps.runtime.outputs.runtime_version }}"
+        run: |
+          set -euo pipefail
+          pnpm tsx .release-tools/scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production "${{ steps.runtime.outputs.runtime_version }}"
+          echo "update_id=$(jq -er '.[0].id' packages/mobile/dist/xprem-update-metadata.json)" >> "$GITHUB_OUTPUT"
       - name: Upload OTA sourcemaps to Sentry
         if: steps.publication.outputs.decision == 'publish' || steps.publication.outputs.decision == 'recover'
         working-directory: packages/mobile
@@ -274,6 +292,7 @@ jobs:
           jq -e --arg source "$SOURCE_SHA" --arg runtime "$RUNTIME_VERSION" \
             '.sha == $source and .payload.source_sha == $source and .payload.runtime_version == $runtime' \
             <<<"$deployment" >/dev/null || { echo "::error::OTA intent identity changed"; exit 1; }
+          echo "update_id=$update_id" >> "$GITHUB_OUTPUT"
           latest_state="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --jq '.[0].state // "missing"')"
           if [ "$latest_state" = "success" ]; then
             latest_description="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --jq '.[0].description // ""')"
@@ -291,7 +310,77 @@ jobs:
           JSON
           )"
           jq -e --arg description "OTA verified $update_id" '.state == "success" and .description == $description and (.description | length <= 140)' <<<"$response" >/dev/null
-          echo "update_id=$update_id" >> "$GITHUB_OUTPUT"
+      - name: Write OTA publisher result
+        if: always()
+        continue-on-error: true
+        env:
+          SOURCE_SHA: ${{ inputs.commit_sha }}
+          RUNTIME_VERSION: ${{ steps.runtime.outputs.runtime_version }}
+          DECISION: ${{ steps.publication.outputs.decision }}
+          DEPLOYMENT_ID: ${{ steps.publication.outputs.deployment_id }}
+          UPDATE_ID: ${{ steps.finalize.outputs.update_id || steps.publication.outputs.update_id }}
+          SUPERSEDING_SOURCE_SHA: ${{ steps.publication.outputs.superseding_source_sha }}
+          SUPERSEDING_RUNTIME_VERSION: ${{ steps.publication.outputs.superseding_runtime_version }}
+          SUPERSEDING_UPDATE_ID: ${{ steps.publication.outputs.superseding_update_id }}
+          RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
+          PUBLICATION_OUTCOME: ${{ steps.publication.outcome }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          FINALIZE_OUTCOME: ${{ steps.finalize.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          candidate="source [\`$SOURCE_SHA\`]($repo_url/commit/$SOURCE_SHA); requested runtime \`${RUNTIME_VERSION:-unresolved}\`"
+          record="—"
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            record="[API deployment #$DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=ota-production)"
+          fi
+          case "$DECISION" in
+            unchanged)
+              outcome="Unchanged — the requested candidate is already verified"
+              ;;
+            superseded)
+              outcome="Superseded — candidate $candidate; later successful record source [\`${SUPERSEDING_SOURCE_SHA:-unknown}\`]($repo_url/commit/${SUPERSEDING_SOURCE_SHA:-$SOURCE_SHA}), runtime \`${SUPERSEDING_RUNTIME_VERSION:-unknown}\`, update UUID \`${SUPERSEDING_UPDATE_ID:-unknown}\`"
+              ;;
+            publish)
+              if [ "$PUBLISH_OUTCOME" = "success" ] && [ "$VERIFY_OUTCOME" = "success" ] && [ "$FINALIZE_OUTCOME" = "success" ]; then
+                outcome="Published and verified — $candidate; update UUID \`${UPDATE_ID:-unknown}\`"
+              elif [ "$PUBLISH_OUTCOME" = "success" ] && [ "$VERIFY_OUTCOME" = "success" ]; then
+                outcome="Incomplete — live update verified, but the GitHub deployment receipt was not finalized ($FINALIZE_OUTCOME); $candidate; update UUID \`${UPDATE_ID:-unknown}\`"
+              elif [ "$PUBLISH_OUTCOME" = "success" ]; then
+                outcome="Failed — update mutation ran, but live verification did not succeed ($VERIFY_OUTCOME); intent remains unverified; $candidate"
+              elif [ "$PUBLICATION_OUTCOME" = "success" ]; then
+                outcome="Failed — admitted intent exists, but update publication did not succeed ($PUBLISH_OUTCOME); $candidate"
+              else
+                outcome="Blocked or failed before intent admission ($PUBLICATION_OUTCOME); $candidate"
+              fi
+              ;;
+            recover)
+              if [ "$FINALIZE_OUTCOME" = "success" ]; then
+                outcome="Recovered and verified — $candidate; update UUID \`${UPDATE_ID:-unknown}\`"
+              else
+                outcome="Incomplete — recovered live update was not finalized ($FINALIZE_OUTCOME); $candidate; update UUID \`${UPDATE_ID:-unknown}\`"
+              fi
+              ;;
+            *)
+              if [ -n "$DEPLOYMENT_ID" ]; then
+                outcome="Incomplete — intent #$DEPLOYMENT_ID exists, but publication admission did not complete ($PUBLICATION_OUTCOME); $candidate"
+              elif [ "$RUNTIME_OUTCOME" != "success" ]; then
+                outcome="Blocked or failed during runtime validation ($RUNTIME_OUTCOME); $candidate"
+              else
+                outcome="Failed before an OTA deployment intent was identified ($PUBLICATION_OUTCOME); $candidate"
+              fi
+              ;;
+          esac
+          {
+            echo "## OTA publisher result"
+            echo
+            echo "- Candidate: $candidate"
+            echo "- Outcome: $outcome"
+            echo "- Publisher attempt: [Open exact run attempt]($RUN_URL)"
+            echo "- Deployment record: $record"
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: ./.release-tools/.github/actions/append-dispatcher-run-summary
         if: always()
         with:

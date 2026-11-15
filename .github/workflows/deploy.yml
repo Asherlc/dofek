@@ -352,9 +352,13 @@ jobs:
       OTA_DEPLOYMENT_ID: ${{ needs.ota.outputs.deployment_id }}
       OTA_UPDATE_ID: ${{ needs.ota.outputs.update_id }}
       OTA_RUNTIME_VERSION: ${{ needs.ota.outputs.runtime_version }}
+      OTA_SUPERSEDING_SOURCE_SHA: ${{ needs.ota.outputs.superseding_source_sha }}
+      OTA_SUPERSEDING_RUNTIME_VERSION: ${{ needs.ota.outputs.superseding_runtime_version }}
+      OTA_SUPERSEDING_UPDATE_ID: ${{ needs.ota.outputs.superseding_update_id }}
     steps:
       - name: Report selected target outcomes
         shell: bash
+        continue-on-error: true
         run: |
           set -euo pipefail
           repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
@@ -384,7 +388,7 @@ jobs:
               image_ref="${SERVER_IMAGE_REF:-$IMAGE_REF}"
               [ -z "$image_ref" ] || identity="$identity; image \`$image_ref\`"
               record="—"
-              [ -z "$SERVER_DEPLOYMENT_ID" ] || record="[server-production #$SERVER_DEPLOYMENT_ID]($repo_url/deployments/activity_log?environments_filter=server-production)"
+              [ -z "$SERVER_DEPLOYMENT_ID" ] || record="[API deployment #$SERVER_DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$SERVER_DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=server-production)"
               echo "| Server production | $outcome; $identity | [Open publisher attempt]($run_url) | $record |"
             else
               echo "| Server production | Not applicable — target \`$TARGET\` does not publish the server | — | — |"
@@ -400,10 +404,13 @@ jobs:
                 *) outcome="Blocked — no verified publisher decision was produced ($OTA_RESULT)" ;;
               esac
               identity="source [\`$source_sha\`]($repo_url/commit/$source_sha)"
-              [ -z "$OTA_RUNTIME_VERSION" ] || identity="$identity; runtime \`$OTA_RUNTIME_VERSION\`"
-              [ -z "$OTA_UPDATE_ID" ] || identity="$identity; update UUID \`$OTA_UPDATE_ID\`"
+              [ -z "$OTA_RUNTIME_VERSION" ] || identity="$identity; requested runtime \`$OTA_RUNTIME_VERSION\`"
+              [ -z "$OTA_UPDATE_ID" ] || identity="$identity; candidate update UUID \`$OTA_UPDATE_ID\`"
+              if [ -n "$OTA_SUPERSEDING_SOURCE_SHA" ]; then
+                identity="$identity; superseded by source [\`$OTA_SUPERSEDING_SOURCE_SHA\`]($repo_url/commit/$OTA_SUPERSEDING_SOURCE_SHA), runtime \`$OTA_SUPERSEDING_RUNTIME_VERSION\`, update UUID \`$OTA_SUPERSEDING_UPDATE_ID\`"
+              fi
               record="—"
-              [ -z "$OTA_DEPLOYMENT_ID" ] || record="[ota-production #$OTA_DEPLOYMENT_ID]($repo_url/deployments/activity_log?environments_filter=ota-production)"
+              [ -z "$OTA_DEPLOYMENT_ID" ] || record="[API deployment #$OTA_DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$OTA_DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=ota-production)"
               echo "| OTA production | $outcome; $identity | [Open publisher attempt]($run_url) | $record |"
             else
               echo "| OTA production | Not applicable — target \`$TARGET\` does not publish OTA | — | — |"
@@ -429,7 +436,7 @@ jobs:
                   identity="$identity; archive [artifact $IOS_ARTIFACT_ID]($repo_url/actions/runs/$GITHUB_RUN_ID/artifacts/$IOS_ARTIFACT_ID)"
                 fi
                 record="—"
-                [ -z "$IOS_DEPLOYMENT_ID" ] || record="[testflight #$IOS_DEPLOYMENT_ID]($repo_url/deployments/activity_log?environments_filter=testflight)"
+                [ -z "$IOS_DEPLOYMENT_ID" ] || record="[API deployment #$IOS_DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$IOS_DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=testflight)"
                 publisher_url="${IOS_PUBLISHER_URL:-$run_url}"
                 echo "| TestFlight | $outcome; $identity | [Open publisher attempt]($publisher_url) | $record |"
               fi

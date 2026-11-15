@@ -527,6 +527,9 @@ jobs:
       OTA_UPDATE_ID: ${{ needs.deploy-ota.outputs.update_id }}
       OTA_RUNTIME_VERSION: ${{ needs.deploy-ota.outputs.runtime_version }}
       OTA_DEPLOYMENT_ID: ${{ needs.deploy-ota.outputs.deployment_id }}
+      OTA_SUPERSEDING_SOURCE_SHA: ${{ needs.deploy-ota.outputs.superseding_source_sha }}
+      OTA_SUPERSEDING_RUNTIME_VERSION: ${{ needs.deploy-ota.outputs.superseding_runtime_version }}
+      OTA_SUPERSEDING_UPDATE_ID: ${{ needs.deploy-ota.outputs.superseding_update_id }}
       IOS_DEPLOY_RESULT: ${{ needs.deploy-ios.result }}
       IOS_DECISION: ${{ needs.deploy-ios.outputs.decision }}
       IOS_DEPLOYMENT_ID: ${{ needs.deploy-ios.outputs.deployment_id }}
@@ -543,6 +546,7 @@ jobs:
     steps:
       - name: Write source, lane links, and per-target outcomes
         shell: bash
+        continue-on-error: true
         run: |
           set -euo pipefail
           repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
@@ -599,7 +603,7 @@ jobs:
               server_identity="source [\`${SERVER_SOURCE_SHA:-$source_sha}\`]($repo_url/commit/${SERVER_SOURCE_SHA:-$source_sha})"
               [ -z "$SERVER_IMAGE_REF" ] || server_identity="$server_identity; image \`$SERVER_IMAGE_REF\`"
               server_record="—"
-              [ -z "$SERVER_DEPLOYMENT_ID" ] || server_record="[server-production #$SERVER_DEPLOYMENT_ID]($repo_url/deployments/activity_log?environments_filter=server-production)"
+              [ -z "$SERVER_DEPLOYMENT_ID" ] || server_record="[API deployment #$SERVER_DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$SERVER_DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=server-production)"
               echo "| Server production | $server_outcome; $server_identity | [Open publisher attempt]($RUN_ATTEMPT_URL) | $server_record |"
             else
               echo "| Server production | Not applicable — no server target was selected for this event and source | — | — |"
@@ -615,10 +619,13 @@ jobs:
                 *) ota_outcome="Blocked — no verified publisher decision was produced ($OTA_DEPLOY_RESULT)" ;;
               esac
               ota_identity="source [\`${OTA_SOURCE_SHA:-$source_sha}\`]($repo_url/commit/${OTA_SOURCE_SHA:-$source_sha})"
-              [ -z "$OTA_RUNTIME_VERSION" ] || ota_identity="$ota_identity; runtime \`$OTA_RUNTIME_VERSION\`"
-              [ -z "$OTA_UPDATE_ID" ] || ota_identity="$ota_identity; update UUID \`$OTA_UPDATE_ID\`"
+              [ -z "$OTA_RUNTIME_VERSION" ] || ota_identity="$ota_identity; requested runtime \`$OTA_RUNTIME_VERSION\`"
+              [ -z "$OTA_UPDATE_ID" ] || ota_identity="$ota_identity; candidate update UUID \`$OTA_UPDATE_ID\`"
+              if [ -n "$OTA_SUPERSEDING_SOURCE_SHA" ]; then
+                ota_identity="$ota_identity; superseded by source [\`$OTA_SUPERSEDING_SOURCE_SHA\`]($repo_url/commit/$OTA_SUPERSEDING_SOURCE_SHA), runtime \`$OTA_SUPERSEDING_RUNTIME_VERSION\`, update UUID \`$OTA_SUPERSEDING_UPDATE_ID\`"
+              fi
               ota_record="—"
-              [ -z "$OTA_DEPLOYMENT_ID" ] || ota_record="[ota-production #$OTA_DEPLOYMENT_ID]($repo_url/deployments/activity_log?environments_filter=ota-production)"
+              [ -z "$OTA_DEPLOYMENT_ID" ] || ota_record="[API deployment #$OTA_DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$OTA_DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=ota-production)"
               echo "| OTA production | $ota_outcome; $ota_identity | [Open publisher attempt]($RUN_ATTEMPT_URL) | $ota_record |"
               if [ "$IOS_BUILD_RESULT" = "success" ] && [ "$IOS_SHOULD_DEPLOY" = "false" ]; then
                 echo "| TestFlight | Unchanged — no new signed iOS archive is required for this source | [Open archive decision]($RUN_ATTEMPT_URL) | — |"
@@ -644,7 +651,7 @@ jobs:
                   ios_identity="$ios_identity; archive [artifact $IOS_ARTIFACT_ID]($repo_url/actions/runs/$GITHUB_RUN_ID/artifacts/$IOS_ARTIFACT_ID)"
                 fi
                 ios_record="—"
-                [ -z "$IOS_DEPLOYMENT_ID" ] || ios_record="[testflight #$IOS_DEPLOYMENT_ID]($repo_url/deployments/activity_log?environments_filter=testflight)"
+                [ -z "$IOS_DEPLOYMENT_ID" ] || ios_record="[API deployment #$IOS_DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$IOS_DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=testflight)"
                 publisher_url="${IOS_PUBLISHER_URL:-$RUN_ATTEMPT_URL}"
                 echo "| TestFlight | $ios_outcome; $ios_identity | [Open publisher attempt]($publisher_url) | $ios_record |"
               fi
