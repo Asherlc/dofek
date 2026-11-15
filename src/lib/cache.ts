@@ -178,7 +178,7 @@ export const queryCache: CacheStore =
       : new RedisCacheStore();
 
 const USER_QUERY_PREFIXES = {
-  activity: ["activity.", "calendar."],
+  activity: ["activity.", "calendar.", "cycling.", "cyclingAdvanced."],
   personalization: ["personalization.", "mobileDashboard.", "recovery.", "stress.", "pmc."],
   sportSettings: ["sportSettings."],
 } as const;

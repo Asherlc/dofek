@@ -1,6 +1,6 @@
 # Replace estimated cycling FTP with a manual setting
 
-Status: proposed design for confirmation; implementation has not started.
+Status: approved by the user on 2026-11-15; implementation in progress.
 
 ## Intent and user direction
 
@@ -9,10 +9,14 @@ with power and no user-configured FTP should show a link to the FTP setting.
 This supersedes the computed-only direction in the dated
 [2026-11-01 design](2026-11-01-computed-cycling-eftp-design.md).
 
+User clarification during implementation: retain the estimation algorithms behind
+an explicitly invoked button beside the FTP input, show method options/results,
+and require the user's choice. Do not automatically save or apply suggestions.
+
 Use the user's entered FTP as the sole threshold for cycling power zones,
 intensity factor, and power training stress. Preserve recorded power, normalized
 power, work, power-duration observations, and the separate Critical Power
-analysis. Do not introduce another estimator, model-based decay, provider FTP
+analysis. Do not introduce automatic estimation, model-based decay, provider FTP
 fallback, or automatic update of the user's setting.
 
 ## Approach and alternatives
@@ -24,9 +28,9 @@ manual FTP by requesting an FTP-setting link. Removing all threshold-dependent
 metrics would unnecessarily remove useful behavior after FTP is configured;
 replacing eFTP with another estimator conflicts with the removal request.
 
-Implementation choices below are proposed defaults, not previously approved
-scientific conclusions. Date handling follows the existing sport-settings
-contract; it is not a fitness-aging model.
+Date handling follows the existing sport-settings contract; it is not a
+fitness-aging model. Estimation suggestions retain their stated scientific
+limitations and never become saved thresholds automatically.
 
 ## User experience
 
@@ -34,6 +38,20 @@ contract; it is not a fitness-aging model.
   Provide a whole-watt positive FTP input, the existing effective-date concept
   with today's date as the default, Save, and a way to clear FTP. Display save,
   validation, loading, and error states using existing form patterns.
+- Beside the FTP input, provide an explicitly invoked estimation action. Show
+  suggestions from the retained reference-curve algorithm and the commonly used
+  95% of 20-minute best power method, with method, evidence ride/date/duration,
+  selected date range and limitations. Use recent evidence by default (90 days
+  ending on the chosen effective date), with editable date bounds; never silently
+  search all history. The [TrainingPeaks threshold guidance](https://help.trainingpeaks.com/hc/en-us/articles/204071934-How-to-Calculate-Threshold-Values-for-Power-Heart-Rate-or-Pace)
+  describes the 20-minute method. An ordinary ride's best effort is not known to
+  be maximal: clearly explain that easy-only riding can underestimate FTP. The
+  reference-family method is an estimate, not an exact Intervals.icu reproduction
+  or individually validated FTP. Show unavailable methods explicitly when their
+  evidence is absent/outside supported coverage. Choosing a suggestion fills the
+  input for review; only Save writes the dated manual setting. Running estimates
+  or selecting an option must not change settings, zones, load or cache state.
+  Critical Power remains separately named and does not become an FTP suggestion.
 - Use the existing sport-settings history to edit values applying to earlier
   rides. Do not silently apply a newly entered current value to years of history.
   Date defaults and activity dates use the user's/activity's local calendar date,
@@ -50,8 +68,9 @@ contract; it is not a fitness-aging model.
 - With a configured FTP and valid power coverage, retain power zones, intensity
   factor, and training stress using that value. Missing coverage still has its
   separate explanation. Zero power is a valid recorded value, not missing data.
-- Remove computed-eFTP values, provenance disclosures, trends, and estimated-FTP
-  availability messages from both clients. Do not replace them with a manual-FTP
+- Remove automatically maintained computed-eFTP values, provenance disclosures,
+  trends, and estimated-FTP availability messages from both clients. Keep the
+  explicitly invoked settings suggestions described above. Do not add a manual-FTP
   trend chart. Preserve unrelated heart-rate and training-load analyses.
 
 ## Storage and server calculation
@@ -83,7 +102,8 @@ contract; it is not a fitness-aging model.
 - Preserve the existing server-owned normalized-power projection and its source
   invalidation, completion eligibility, missing-data semantics, and account-erasure
   fence. Remove the per-user eFTP history reconstruction/publication stage and its
-  reference bank and policy.
+  history-decay policy. Retain the reference bank and candidate algorithm only
+  for the manually invoked settings suggestions.
 - Keep expensive sensor computations in analytics. Compute the inexpensive
   threshold-dependent arithmetic from existing normalized power and duration
   plus manual FTP in one shared server/domain path. Intensity factor is NP/FTP;
@@ -99,9 +119,11 @@ contract; it is not a fitness-aging model.
 
 ## Removal and migration boundary
 
-Remove application eFTP trend/estimate APIs and their registrations, the
-application calibration bank, chronological estimator history, and unused
-application-only helpers. Preserve independently useful pure normalized-power,
+Remove ongoing-eFTP trend/history APIs and their registrations, chronological
+estimator history and unused application-only helpers. Replace the ongoing
+estimate wrapper with an explicitly invoked, bounded suggestion query using
+existing power-duration observations; never scan raw sensor history on request.
+Retain the calibration bank for that action. Preserve independently useful pure normalized-power,
 stress, regression, and Critical Power algorithms. Audit the public numerical
 package's exports before deleting a reusable public API; app feature removal
 does not require a gratuitous library API break.
@@ -146,8 +168,12 @@ is separate from implementation and local migration validation.
    updates, and setting deletion follow the documented effective-date rules.
 4. Power observations, mechanical work, zero samples, incomplete coverage, and
    Critical Power analysis remain correct independently of FTP availability.
-5. All current consumers use manual FTP; no application path calculates or
-   displays eFTP. API and persisted cache contracts match both clients.
+5. All zones/load consumers use manual FTP. Estimates are calculated/displayed
+   only after explicit invocation in settings and require explicit choice plus
+   Save. Running suggestions never writes settings; old evidence outside the
+   selected range cannot leak in. Missing 20-minute/reference evidence remains
+   unavailable; easy-only data has an explicit limitation. API and persisted
+   cache contracts match both clients.
 6. Observe behavior regressions fail before implementation and pass afterward.
    Follow the removal test policy: update/delete obsolete tests rather than
    testing that removed code does not exist. Execute real Postgres/ClickHouse

@@ -1,90 +1,67 @@
-# Computed cycling power cutover
+# Manual cycling FTP cutover
 
-The [pure algorithm package](../packages/cycling-power/README.md) contains no
-Dofek data access, policy or reference data. The
-[application projector](../src/analytics/README.md) is the sole numerical writer
-for canonical normalized power and maintained eFTP. Consumers read those results;
-bounded interval calculations call the same package.
+The [approved design](superpowers/specs/2026-11-15-manual-cycling-ftp-design.md)
+replaces ongoing estimated FTP with a user-entered, effective-dated setting.
+Normalized power remains a server-owned observation. Manual FTP determines zones,
+intensity factor and power training stress; Critical Power remains separate.
 
-## Schema and release boundary
+## Settings and estimation assistance
 
-[Postgres migration 0175](../drizzle/0175_remove_configured_cycling_ftp.sql) removes
-both configured FTP columns and recreates the legacy profile projection without
-FTP. Its first-line maintenance marker invokes the existing
-[deployment maintenance procedure](../deploy/README.md#deployment).
-Old web and worker readers must remain stopped through the schema boundary;
-resume only the matching application image. No compatibility writer or manual
-FTP fallback exists. PostgreSQL documents
-[`ALTER TABLE DROP COLUMN`](https://www.postgresql.org/docs/current/sql-altertable.html).
-`CREATE OR REPLACE VIEW` cannot remove an existing column, so replacing the
-profile projection requires the user-approved statement-scoped Squawk exception
-at this maintenance boundary
-([PostgreSQL view replacement](https://www.postgresql.org/docs/current/sql-createview.html),
-[Squawk view-drop rule](https://squawkhq.com/docs/ban-drop-view)).
+[Migration 0187](../drizzle/0187_restore_manual_cycling_ftp.sql) restores nullable,
+positive whole-watt FTP on `fitness.sport_settings`, without populating it from
+estimates or restoring profile FTP. Rows remain full snapshots: partial saves
+preserve omitted fields; a new date inherits omitted values from its predecessor.
+Clearing records null. Deleting a whole snapshot intentionally exposes its
+predecessor. Editing an earlier snapshot does not rewrite later snapshots.
 
-[ClickHouse migration 0108](../src/db/clickhouse-migrations/0108_computed_cycling_power.ts)
-creates versioned NP observations and per-user histories before exposing their
-serving views. It removes the three obsolete stored SQL NP columns, drops the
-profile mirror FTP column, and originally made Healthspan minute values nullable.
-Healthspan is now retired by [migration 0112](../src/db/clickhouse-migrations/0112_remove_healthspan.ts). The old
-ten-slot daily cycling cache is recreated with the nine-slot current schema;
-raw observations are retained. Current-shape reapplication preserves rows.
-The [executable migration fixtures](../src/db/clickhouse-migrations/0108_computed_cycling_power.integration.test.ts)
-cover fresh bootstrap, populated upgrades and reapplication.
+Settings can request estimates explicitly over selected date bounds, initially
+90 days through the chosen effective date. The retained reference-family method
+and 95% of best 20-minute power return evidence and limitations. The latter
+follows [TrainingPeaks guidance](https://help.trainingpeaks.com/hc/en-us/articles/204071934-How-to-Calculate-Threshold-Values-for-Power-Heart-Rate-or-Pace).
+Ordinary rides do not establish maximal effort; easy-only riding can underestimate
+FTP. Reference-family results are not exact Intervals.icu outputs or individually
+validated thresholds. The [historical research](cycling-power-algorithms-research.md)
+records the method's provenance and limitations.
 
-## Recompute and verify
+Running estimates changes no setting. Choosing an option fills the editable
+input; only Save applies it. Activity links carry their local date into settings,
+so applying a value to a historical ride is an explicit decision.
 
-Record activity/curve coverage and the oldest source activity before release.
-Use the [existing bounded read-model procedure](clickhouse-read-model-deploy-runbook.md)
-for any historical input repair. Schema migrations do not replay raw history,
-copy former computed NP, or overwrite Postgres profiles with sensor analytics.
+## Coordinated release boundary
 
-The serialized analytics refresh builds canonical dbt inputs, refreshes at most
-100 changed activity observations, and reconstructs compact histories for at most
-32 ready users per pass. Pending work prevents processing success and cache
-warming. Threshold-history and activity-power models run only after projection completes.
-Deletion/recomputation jobs await that same serialized writer. Native work is
-limited to changed inputs; clock-only advancement reuses NP.
+Release matching server, worker, web and mobile contracts together using the
+[existing maintenance procedure](../deploy/README.md#deployment). The forward
+ClickHouse migration replaces the power serving view with existing normalized-power
+observations and activity metadata, then removes obsolete estimated-threshold
+history storage/views. Preserve raw sensor and activity data; this cutover needs
+no full sensor backfill.
 
-Verify zero pending activity/user projections, matching source/model versions,
-stable retained date bounds, preserved zero-power observations, and explicit
-unavailability for unsupported evidence. Check a historical activity separately
-from the current ongoing estimate; display filters cannot alter its threshold.
-Critical Power remains a separately named analysis and is never another FTP
-source. Confirm web/mobile provenance, uncertainty and unsupported states together.
+Old mobile clients expect computed-eFTP contracts. Ship the matching mobile
+update and persisted-cache contract change before ending the coordinated cutover;
+do not fabricate legacy estimates or maintain a second threshold source.
+Production deployment is separate from implementation and local validation.
 
-Both projection tables participate in the existing user-ID-based
-[physical account-erasure discovery](../src/account-erasure/clickhouse-erasure.ts).
-Atomic insert fences prevent a concurrent projector from recreating erased rows.
-Publication views withhold revised NP until a matching complete history exists.
+## Calculation and validation
 
-## Numerical policy
+Select the snapshot using the canonical activity's source-resolved local date,
+falling back to the user's timezone only when source context is absent. Chart
+grouping timezone must not change FTP. Resolve settings in bulk.
 
-Reference data and all Dofek policy live outside the package in
-[`cycling-power-policy.ts`](../src/analytics/cycling-power-policy.ts), using the
-[frozen original-source manifest](cycling-power-source-manifest.json).
-The [research record](cycling-power-algorithms-research.md) documents finite bank
-coverage, cohort limitations and the independent decay heuristic. This release
-does not claim physiological FTP validation or exact Intervals.icu outputs.
+Intensity factor is NP/FTP; power training stress is
+`(NP/FTP)^2 * elapsed_seconds / 36`, following the
+[TrainingPeaks definition](https://www.trainingpeaks.com/learn/articles/estimating-training-stress-score-tss/).
+Missing FTP or incomplete power coverage produces unavailable metrics, never
+zero stress. Recorded zero watts remains valid. Unsupported rides must not
+silently disappear from load totals.
 
-## Regression invariants
+Retain bounded normalized-power projection, source invalidation, completed-activity
+eligibility and erasure insert fences. Remove per-user FTP-history reconstruction.
+Deletion/recomputation still awaits the same serialized analytics writer.
 
-Matching whole-ride and full-span interval windows must retain identical missing
-power barriers and use the same resampler/NP calculation. A completed activity
-imported before its end time must become eligible later the same UTC day without
-requiring another source mutation. Corrections/deletions must replay later
-thresholds and update affected cycling power metrics.
-
-## Queue lifecycle
-
-Deletion/recomputation waits use the same serialized writer while holding no
-shared user work lock. Cache invalidation acquires that lock and rechecks erasure.
-Worker shutdown explicitly cancels pending application waits before draining
-workers; incomplete work still fails rather than being acknowledged. The
-[Postgres/Redis regression](../src/jobs/process-activity-delete-analytics-job.integration.test.ts)
-verifies that erasure completes while a refresh remains pending.
-
-Serving view transformations live in the two canonical dbt SQL models, with
-bootstrap reading those same SQL files. The user approved their exact read-only
-view-policy entries; the underlying projector tables remain the sole persisted
-computed values.
+Validate both database migrations, focused real-engine regressions, lint,
+workspace typechecks and affected unit/mobile tests. Cover dated saves, lower
+values, clears, deletion, future exclusion, concurrent partial updates,
+near-midnight source dates, zero watts and incomplete coverage. Check activity,
+calendar, cycling, comparisons, load and MCP consistency. Settings changes must
+affect reads without rebuilding analytics. Estimate invocation/selection must not
+save anything. Review missing, entered, loading and error states on both clients.

@@ -1,3 +1,4 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -13,6 +14,7 @@ const sportSettingsDbSchema = z.object({
   sport: z.string(),
   threshold_hr: z.coerce.number().nullable(),
   threshold_pace_per_km: z.coerce.number().nullable(),
+  ftp: z.coerce.number().nullable(),
   power_zone_pcts: z.unknown().nullable(),
   hr_zone_pcts: z.unknown().nullable(),
   pace_zone_pcts: z.unknown().nullable(),
@@ -32,6 +34,7 @@ export interface SportSettingsRow {
   sport: string;
   thresholdHr: number | null;
   thresholdPacePerKm: number | null;
+  ftp: number | null;
   powerZonePcts: unknown;
   hrZonePcts: unknown;
   paceZonePcts: unknown;
@@ -48,6 +51,7 @@ function toDomain(row: z.infer<typeof sportSettingsDbSchema>): SportSettingsRow 
     sport: row.sport,
     thresholdHr: row.threshold_hr,
     thresholdPacePerKm: row.threshold_pace_per_km,
+    ftp: row.ftp,
     powerZonePcts: row.power_zone_pcts,
     hrZonePcts: row.hr_zone_pcts,
     paceZonePcts: row.pace_zone_pcts,
@@ -66,6 +70,7 @@ export interface UpsertSportSettings {
   sport: string;
   thresholdHr?: number | null;
   thresholdPacePerKm?: number | null;
+  ftp?: number | null;
   powerZonePcts?: number[] | null;
   hrZonePcts?: number[] | null;
   paceZonePcts?: number[] | null;
@@ -81,14 +86,17 @@ export interface UpsertSportSettings {
 export class SportSettingsRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #timezone: string;
 
-  constructor(db: Pick<Database, "execute">, userId: string) {
+  constructor(db: Pick<Database, "execute">, userId: string, timezone = "UTC") {
     this.#db = db;
     this.#userId = userId;
+    this.#timezone = timezone;
   }
 
-  /** Most recent effective setting per sport. */
+  /** Most recent setting effective on the user's current local date per sport. */
   async list(): Promise<SportSettingsRow[]> {
+    const asOfDate = formatDateYmdInTimeZone(new Date(), this.#timezone);
     const rows = await executeWithSchema(
       this.#db,
       sportSettingsDbSchema,
@@ -96,6 +104,7 @@ export class SportSettingsRepository {
         SELECT DISTINCT ON (sport) *
         FROM fitness.sport_settings
         WHERE user_id = ${this.#userId}
+          AND effective_from <= ${asOfDate}::date
         ORDER BY sport, effective_from DESC
       `,
     );
@@ -107,7 +116,7 @@ export class SportSettingsRepository {
    * Returns `null` when no matching setting exists.
    */
   async getBySport(sport: string, asOfDate?: string): Promise<SportSettingsRow | null> {
-    const asOf = asOfDate ?? new Date().toISOString().slice(0, 10);
+    const asOf = asOfDate ?? formatDateYmdInTimeZone(new Date(), this.#timezone);
     const rows = await executeWithSchema(
       this.#db,
       sportSettingsDbSchema,
@@ -142,36 +151,53 @@ export class SportSettingsRepository {
 
   /** Insert or update (on user+sport+effective_from conflict). */
   async upsert(settings: UpsertSportSettings): Promise<SportSettingsRow> {
-    const effectiveFrom = settings.effectiveFrom ?? new Date().toISOString().slice(0, 10);
+    const effectiveFrom =
+      settings.effectiveFrom ?? formatDateYmdInTimeZone(new Date(), this.#timezone);
+    const powerZonePcts = jsonbValue(settings.powerZonePcts);
+    const hrZonePcts = jsonbValue(settings.hrZonePcts);
+    const paceZonePcts = jsonbValue(settings.paceZonePcts);
 
     const rows = await executeWithSchema(
       this.#db,
       sportSettingsDbSchema,
       sql`
+        WITH previous AS (
+          SELECT threshold_hr, threshold_pace_per_km, ftp,
+                 power_zone_pcts, hr_zone_pcts, pace_zone_pcts, notes
+          FROM fitness.sport_settings
+          WHERE user_id = ${this.#userId}
+            AND sport = ${settings.sport}
+            AND effective_from <= ${effectiveFrom}::date
+          ORDER BY effective_from DESC
+          LIMIT 1
+        )
         INSERT INTO fitness.sport_settings (
-          user_id, sport, threshold_hr, threshold_pace_per_km,
+          user_id, sport, threshold_hr, threshold_pace_per_km, ftp,
           power_zone_pcts, hr_zone_pcts, pace_zone_pcts,
           effective_from, notes
         )
-        VALUES (
+        SELECT
           ${this.#userId},
           ${settings.sport},
-          ${settings.thresholdHr ?? null},
-          ${settings.thresholdPacePerKm ?? null},
-          ${settings.powerZonePcts ? JSON.stringify(settings.powerZonePcts) : null}::jsonb,
-          ${settings.hrZonePcts ? JSON.stringify(settings.hrZonePcts) : null}::jsonb,
-          ${settings.paceZonePcts ? JSON.stringify(settings.paceZonePcts) : null}::jsonb,
+          CASE WHEN ${settings.thresholdHr !== undefined} THEN ${settings.thresholdHr ?? null}::smallint ELSE previous.threshold_hr END,
+          CASE WHEN ${settings.thresholdPacePerKm !== undefined} THEN ${settings.thresholdPacePerKm ?? null}::real ELSE previous.threshold_pace_per_km END,
+          CASE WHEN ${settings.ftp !== undefined} THEN ${settings.ftp ?? null}::integer ELSE previous.ftp END,
+          CASE WHEN ${settings.powerZonePcts !== undefined} THEN ${powerZonePcts}::jsonb ELSE previous.power_zone_pcts END,
+          CASE WHEN ${settings.hrZonePcts !== undefined} THEN ${hrZonePcts}::jsonb ELSE previous.hr_zone_pcts END,
+          CASE WHEN ${settings.paceZonePcts !== undefined} THEN ${paceZonePcts}::jsonb ELSE previous.pace_zone_pcts END,
           ${effectiveFrom}::date,
-          ${settings.notes ?? null}
-        )
+          CASE WHEN ${settings.notes !== undefined} THEN ${settings.notes ?? null} ELSE previous.notes END
+        FROM (SELECT 1) AS seed
+        LEFT JOIN previous ON true
         ON CONFLICT (user_id, sport, effective_from)
         DO UPDATE SET
-          threshold_hr = EXCLUDED.threshold_hr,
-          threshold_pace_per_km = EXCLUDED.threshold_pace_per_km,
-          power_zone_pcts = EXCLUDED.power_zone_pcts,
-          hr_zone_pcts = EXCLUDED.hr_zone_pcts,
-          pace_zone_pcts = EXCLUDED.pace_zone_pcts,
-          notes = EXCLUDED.notes,
+          threshold_hr = CASE WHEN ${settings.thresholdHr !== undefined} THEN EXCLUDED.threshold_hr ELSE sport_settings.threshold_hr END,
+          threshold_pace_per_km = CASE WHEN ${settings.thresholdPacePerKm !== undefined} THEN EXCLUDED.threshold_pace_per_km ELSE sport_settings.threshold_pace_per_km END,
+          ftp = CASE WHEN ${settings.ftp !== undefined} THEN EXCLUDED.ftp ELSE sport_settings.ftp END,
+          power_zone_pcts = CASE WHEN ${settings.powerZonePcts !== undefined} THEN EXCLUDED.power_zone_pcts ELSE sport_settings.power_zone_pcts END,
+          hr_zone_pcts = CASE WHEN ${settings.hrZonePcts !== undefined} THEN EXCLUDED.hr_zone_pcts ELSE sport_settings.hr_zone_pcts END,
+          pace_zone_pcts = CASE WHEN ${settings.paceZonePcts !== undefined} THEN EXCLUDED.pace_zone_pcts ELSE sport_settings.pace_zone_pcts END,
+          notes = CASE WHEN ${settings.notes !== undefined} THEN EXCLUDED.notes ELSE sport_settings.notes END,
           updated_at = NOW()
         RETURNING *
       `,
@@ -190,4 +216,8 @@ export class SportSettingsRepository {
     `);
     return { success: true };
   }
+}
+
+function jsonbValue(value: number[] | null | undefined) {
+  return value === null || value === undefined ? sql`NULL` : sql`${JSON.stringify(value)}`;
 }

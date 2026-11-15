@@ -377,6 +377,7 @@ entity "sport_settings" {
   sport : text
   threshold_hr : smallint
   threshold_pace_per_km : real
+  ftp : integer
   power_zone_pcts : jsonb
   hr_zone_pcts : jsonb
   pace_zone_pcts : jsonb

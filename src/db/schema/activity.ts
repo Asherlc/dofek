@@ -326,6 +326,7 @@ export const sportSettings = fitness.table(
     sport: text("sport").notNull(),
     thresholdHr: smallint("threshold_hr"),
     thresholdPacePerKm: real("threshold_pace_per_km"),
+    ftp: integer("ftp"),
     powerZonePcts: jsonb("power_zone_pcts"),
     hrZonePcts: jsonb("hr_zone_pcts"),
     paceZonePcts: jsonb("pace_zone_pcts"),
@@ -341,6 +342,7 @@ export const sportSettings = fitness.table(
       table.effectiveFrom,
     ),
     index("sport_settings_user_idx").on(table.userId),
+    check("sport_settings_ftp_positive", sql`${table.ftp} IS NULL OR ${table.ftp} > 0`),
   ],
 );
 
