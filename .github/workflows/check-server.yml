@@ -138,6 +138,8 @@ jobs:
         env:
           CLICKHOUSE_URL: http://default:${{ github.run_id }}@127.0.0.1:8123
       - name: Run server SQL and regression lint
+        env:
+          CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
         run: |
           pnpm lint:analytics-policy
           pnpm provider-derived-metric-policy
