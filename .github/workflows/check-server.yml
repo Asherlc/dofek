@@ -17,6 +17,16 @@ on:
         required: false
         type: boolean
         default: true
+      mutation_base_sha:
+        description: Parent source SHA used to select changed mutation lines for a historical release.
+        required: false
+        type: string
+        default: ""
+      control_commit_sha:
+        description: Trusted workflow-control revision for selected historical source checks.
+        required: false
+        type: string
+        default: ""
 
 jobs:
   typecheck:
@@ -613,20 +623,38 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.control_commit_sha != ''
+        with:
+          ref: ${{ inputs.control_commit_sha }}
+          path: .release-tools
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: scripts/prepare-mutation-shards.ts
       - name: Compute changed files and split into shards
         id: shard
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MUTATION_BASE_SHA: ${{ inputs.mutation_base_sha }}
+          CONTROL_COMMIT_SHA: ${{ inputs.control_commit_sha }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
             DIFF_RANGE="$PR_BASE_SHA...HEAD"
           elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            DIFF_RANGE="origin/main...HEAD"
+            if [ -n "$MUTATION_BASE_SHA" ]; then
+              DIFF_RANGE="$MUTATION_BASE_SHA...HEAD"
+            else
+              DIFF_RANGE="HEAD^1...HEAD"
+            fi
           else
             DIFF_RANGE="HEAD~1...HEAD"
           fi
-          SHARDS=$(pnpm tsx scripts/prepare-mutation-shards.ts --scope server --diff-range "$DIFF_RANGE")
+          if [ -n "$CONTROL_COMMIT_SHA" ]; then
+            SHARDS=$(pnpm exec tsx .release-tools/scripts/prepare-mutation-shards.ts --workspace . --scope server --diff-range "$DIFF_RANGE")
+          else
+            SHARDS=$(pnpm tsx scripts/prepare-mutation-shards.ts --scope server --diff-range "$DIFF_RANGE")
+          fi
           echo "shards=$SHARDS" >> "$GITHUB_OUTPUT"
 
   mutation:

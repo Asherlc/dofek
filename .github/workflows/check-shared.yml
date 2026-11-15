@@ -7,6 +7,16 @@ on:
         description: Full commit SHA to check; the caller validates it before dispatch.
         required: true
         type: string
+      mutation_base_sha:
+        description: Parent source SHA used to select changed mutation lines for a historical release.
+        required: false
+        type: string
+        default: ""
+      control_commit_sha:
+        description: Trusted workflow-control revision for selected historical source checks.
+        required: false
+        type: string
+        default: ""
 
 jobs:
   typecheck:
@@ -32,11 +42,52 @@ jobs:
           ref: ${{ inputs.commit_sha }}
           persist-credentials: false
           fetch-depth: 0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.control_commit_sha != ''
+        with:
+          ref: ${{ inputs.control_commit_sha }}
+          path: .release-tools
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/integration-diagnostics-reporter.ts
+            scripts/integration-test-sequencer.ts
+            scripts/integration-timing-reporter.ts
+            scripts/prepare-mutation-shards.ts
+            vitest.config.ts
+            vitest.config.shared-mutation.ts
+            stryker.ci.config.json
+            stryker.shared.config.cjs
+      - name: Install trusted shared test controls
+        if: inputs.control_commit_sha != ''
+        run: |
+          cp .release-tools/vitest.config.ts ./vitest.config.ts
+          cp .release-tools/scripts/integration-diagnostics-reporter.ts ./scripts/integration-diagnostics-reporter.ts
+          cp .release-tools/scripts/integration-test-sequencer.ts ./scripts/integration-test-sequencer.ts
+          cp .release-tools/scripts/integration-timing-reporter.ts ./scripts/integration-timing-reporter.ts
+          cp .release-tools/vitest.config.shared-mutation.ts ./vitest.config.shared-mutation.ts
+          cp .release-tools/stryker.ci.config.json ./stryker.ci.config.json
+          cp .release-tools/stryker.shared.config.cjs ./stryker.shared.config.cjs
       - uses: ./.github/actions/setup-node-pnpm
-      - run: pnpm test:unit:shared
+      - name: Run shared package tests
         env:
+          HISTORICAL_CONTROL_SOURCE: ${{ inputs.control_commit_sha != '' }}
           CLICKHOUSE_URL: http://default:health@localhost:8123
           NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          if [ "$HISTORICAL_CONTROL_SOURCE" = "true" ]; then
+            pnpm exec vitest run --project unit-shared --coverage \
+              --coverage.include='packages/*/src/**/*.ts' \
+              --coverage.exclude='**/*.test.ts' \
+              --coverage.exclude='**/test-helpers.ts' \
+              --coverage.exclude='**/fixtures/**' \
+              --coverage.exclude='**/node_modules/**' \
+              --coverage.exclude='packages/server/**' \
+              --coverage.exclude='packages/web/**' \
+              --coverage.exclude='packages/mobile/**'
+          else
+            pnpm test:unit:shared
+          fi
       - name: Diff coverage (changed lines only)
         if: github.event_name == 'pull_request'
         env:
@@ -93,20 +144,38 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.control_commit_sha != ''
+        with:
+          ref: ${{ inputs.control_commit_sha }}
+          path: .release-tools
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: scripts/prepare-mutation-shards.ts
       - name: Compute changed files and split into shards
         id: shard
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MUTATION_BASE_SHA: ${{ inputs.mutation_base_sha }}
+          CONTROL_COMMIT_SHA: ${{ inputs.control_commit_sha }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
             DIFF_RANGE="$PR_BASE_SHA...HEAD"
           elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            DIFF_RANGE="origin/main...HEAD"
+            if [ -n "$MUTATION_BASE_SHA" ]; then
+              DIFF_RANGE="$MUTATION_BASE_SHA...HEAD"
+            else
+              DIFF_RANGE="HEAD^1...HEAD"
+            fi
           else
             DIFF_RANGE="HEAD~1...HEAD"
           fi
-          SHARDS=$(pnpm tsx scripts/prepare-mutation-shards.ts --scope shared --diff-range "$DIFF_RANGE")
+          if [ -n "$CONTROL_COMMIT_SHA" ]; then
+            SHARDS=$(pnpm exec tsx .release-tools/scripts/prepare-mutation-shards.ts --workspace . --scope shared --diff-range "$DIFF_RANGE")
+          else
+            SHARDS=$(pnpm tsx scripts/prepare-mutation-shards.ts --scope shared --diff-range "$DIFF_RANGE")
+          fi
           echo "shards=$SHARDS" >> "$GITHUB_OUTPUT"
 
   mutation-shared:
@@ -127,6 +196,25 @@ jobs:
           ref: ${{ inputs.commit_sha }}
           persist-credentials: false
           fetch-depth: 0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.control_commit_sha != ''
+        with:
+          ref: ${{ inputs.control_commit_sha }}
+          path: .release-tools
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            vitest.config.ts
+            vitest.config.shared-mutation.ts
+            stryker.ci.config.json
+            stryker.shared.config.cjs
+      - name: Install trusted mutation controls
+        if: inputs.control_commit_sha != ''
+        run: |
+          cp .release-tools/vitest.config.ts ./vitest.config.ts
+          cp .release-tools/vitest.config.shared-mutation.ts ./vitest.config.shared-mutation.ts
+          cp .release-tools/stryker.ci.config.json ./stryker.ci.config.json
+          cp .release-tools/stryker.shared.config.cjs ./stryker.shared.config.cjs
       - uses: ./.github/actions/setup-node-pnpm
       - name: Run Stryker
         env:

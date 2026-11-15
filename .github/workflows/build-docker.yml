@@ -2,20 +2,53 @@ name: Build Docker
 
 on:
   workflow_call:
+    inputs:
+      commit_sha:
+        description: Full source SHA to build; defaults to the event SHA.
+        required: false
+        type: string
+        default: ""
+    outputs:
+      commit_sha:
+        description: Full source SHA used by the image build.
+        value: ${{ jobs.build.outputs.commit_sha }}
+      image_ref:
+        description: Immutable server image reference produced by this build.
+        value: ${{ jobs.build.outputs.image_ref }}
   workflow_dispatch:
 
 jobs:
   build:
     name: Docker Build & Push
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04-arm
+    outputs:
+      commit_sha: ${{ steps.source.outputs.commit_sha }}
+      image_ref: ${{ steps.image-ref.outputs.image_ref }}
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.commit_sha || github.sha }}
           persist-credentials: false
+      - name: Validate exact build source
+        id: source
+        env:
+          EXPECTED_SHA: ${{ inputs.commit_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::commit_sha must be a full source SHA"
+            exit 1
+          fi
+          CHECKED_OUT_SHA=$(git rev-parse HEAD)
+          if [ "$CHECKED_OUT_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Checked out $CHECKED_OUT_SHA instead of requested source $EXPECTED_SHA"
+            exit 1
+          fi
+          echo "commit_sha=$CHECKED_OUT_SHA" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
         with:
           buildkitd-config-inline: |
@@ -38,17 +71,20 @@ jobs:
         with:
           images: ${{ steps.image-name.outputs.name }}
           tags: |
-            type=sha,value=${{ github.sha }}
+            type=sha,value=${{ steps.source.outputs.commit_sha }}
             type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.source.outputs.commit_sha }}
       - name: Compute web asset base URL
         id: web-assets
         env:
-          SHA: ${{ github.sha }}
+          SHA: ${{ steps.source.outputs.commit_sha }}
         run: |
           set -euo pipefail
           image_tag="sha-$(echo "$SHA" | head -c 7)"
           echo "base_url=https://assets.dofek.fit/web/${image_tag}/" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        id: build
         with:
           context: .
           target: server
@@ -57,17 +93,29 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            COMMIT_HASH=${{ github.sha }}
+            COMMIT_HASH=${{ steps.source.outputs.commit_sha }}
             VITE_ASSET_BASE_URL=${{ steps.web-assets.outputs.base_url }}
             REQUIRE_SENTRY_RELEASE_UPLOAD=true
           secrets: |
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:server-buildcache
           cache-to: type=registry,ref=${{ steps.image-name.outputs.name }}:server-buildcache,mode=max
+      - name: Emit immutable server image reference
+        id: image-ref
+        env:
+          IMAGE_NAME: ${{ steps.image-name.outputs.name }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The server image build did not return a valid manifest digest"
+            exit 1
+          fi
+          echo "image_ref=$IMAGE_NAME@$IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
 
   e2e-cache:
     name: E2E Docker Cache
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -75,6 +123,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.commit_sha || github.sha }}
           persist-credentials: false
       - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
         with:

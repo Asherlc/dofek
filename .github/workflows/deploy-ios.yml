@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       commit_sha:
-        description: "Actual deployed server source SHA to publish"
+        description: "Selected mobile release source SHA"
         required: true
         type: string
       archive_commit_sha:
@@ -52,15 +52,15 @@ jobs:
     steps:
       - name: Validate archive matches deployed source
         env:
-          COMMIT_SHA: ${{ inputs.commit_sha }}
+          MOBILE_COMMIT_SHA: ${{ inputs.commit_sha }}
           ARCHIVE_COMMIT_SHA: ${{ inputs.archive_commit_sha }}
         run: |
-          if [[ ! "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]] || [[ ! "$ARCHIVE_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
-            echo "::error::commit_sha and archive_commit_sha must be full source SHAs"
+          if [[ ! "$MOBILE_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]] || [[ ! "$ARCHIVE_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::mobile commit_sha and archive_commit_sha must be full source SHAs"
             exit 1
           fi
-          if [[ "$COMMIT_SHA" != "$ARCHIVE_COMMIT_SHA" ]]; then
-            echo "::error::Signed iOS archive source $ARCHIVE_COMMIT_SHA does not match deployed server source $COMMIT_SHA"
+          if [[ "$MOBILE_COMMIT_SHA" != "$ARCHIVE_COMMIT_SHA" ]]; then
+            echo "::error::Signed iOS archive source $ARCHIVE_COMMIT_SHA does not match selected mobile source $MOBILE_COMMIT_SHA"
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

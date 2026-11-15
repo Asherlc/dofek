@@ -1,109 +1,29 @@
 name: Release Production
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
-      environment:
-        description: "Environment to deploy"
-        required: true
-        default: production
-        type: choice
-        options:
-          - production
       image_tag:
-        description: "Docker image tag (e.g. sha-abc1234). Defaults to latest."
+        description: "Docker image tag; source is resolved from its immutable image before checks"
         required: false
-        default: "latest"
+        default: ""
         type: string
 
 permissions:
   contents: read
-  actions: read
-  packages: read
-  id-token: write
 
 jobs:
-  ios-archive:
-    name: Build Matching iOS
-    # Build the same eligible release as production without waiting for rollout.
-    if: >-
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_sha == github.sha
-    permissions:
-      contents: read
-      actions: read
-      id-token: write
-      deployments: read
-    uses: ./.github/workflows/build-ios-release.yml
-    with:
-      commit_sha: ${{ github.event.workflow_run.head_sha }}
-      dispatching_run_id: ${{ github.run_id }}
-
   production:
     name: Deploy Web Production
-    # workflow_run uses main's workflow definitions. Deploy only when that
-    # exact commit passed push CI, keeping workflows, source and image aligned.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == 'main' &&
-       github.event.workflow_run.head_sha == github.sha)
-    concurrency:
-      group: deploy-web-stack-dofek-${{ vars.ORACLE_SERVER_HOST }}
-      cancel-in-progress: false
+    if: github.ref == 'refs/heads/main'
     permissions:
-      contents: read
       actions: read
-      packages: read
-      id-token: write
+      contents: read
       deployments: write
-    uses: ./.github/workflows/deploy-web-environment.yml
+      id-token: write
+      packages: write
+    uses: ./.github/workflows/deploy.yml
     with:
-      environment_name: production
-      ssh_user: ubuntu
-      stack_override: deploy/stack.oracle.yml
-      image_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
-      automatic_commit_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
-      ci_run_id: ${{ github.event_name == 'workflow_run' && format('{0}', github.event.workflow_run.id) || '' }}
-      public_url: https://dofek.fit
-      web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
+      target: web
+      image_tag: ${{ inputs.image_tag }}
     secrets: inherit
-
-  ota:
-    name: Deploy Matching OTA
-    needs: production
-    if: ${{ !cancelled() && github.event_name == 'workflow_run' && needs.production.result == 'success' && needs.production.outputs.publication_decision != 'superseded' }}
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      deployments: write
-    uses: ./.github/workflows/deploy-ota.yml
-    with:
-      commit_sha: ${{ needs.production.outputs.commit_sha }}
-      dispatching_run_id: ${{ github.run_id }}
-
-  ios:
-    name: Publish Matching iOS
-    needs: [production, ios-archive]
-    if: ${{ !cancelled() && github.event_name == 'workflow_run' && needs.production.result == 'success' && needs.production.outputs.publication_decision != 'superseded' && needs.ios-archive.result == 'success' && needs.ios-archive.outputs.artifact_id != '' }}
-    permissions:
-      contents: read
-      actions: read
-      id-token: write
-      deployments: write
-    uses: ./.github/workflows/deploy-ios.yml
-    with:
-      commit_sha: ${{ needs.production.outputs.commit_sha }}
-      archive_commit_sha: ${{ needs.ios-archive.outputs.commit_sha }}
-      build_number: ${{ needs.ios-archive.outputs.build_number }}
-      artifact_id: ${{ needs.ios-archive.outputs.artifact_id }}
-      ci_run_id: ${{ format('{0}', github.event.workflow_run.id) }}

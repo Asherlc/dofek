@@ -17,7 +17,9 @@ on:
     inputs:
       target:
         description: "What to deploy"
+        required: true
         type: choice
+        default: all
         options:
           - all
           - web
@@ -33,9 +35,136 @@ on:
 env:
   REGISTRY: ghcr.io
 
+permissions:
+  contents: read
+
 jobs:
+  resolve-source:
+    name: Resolve selected release source
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      commit_sha: ${{ steps.source.outputs.commit_sha }}
+      mutation_base_sha: ${{ steps.source.outputs.mutation_base_sha }}
+      image_ref: ${{ steps.source.outputs.image_ref }}
+    steps:
+      - name: Require current main release controls and validate source selection
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Dispatch Deploy from main, then select an immutable source with image_tag when needed."
+            exit 1
+          fi
+          if [[ ! "$EVENT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The workflow control revision must be a full commit SHA"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        if: inputs.image_tag != ''
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve source from selected immutable image or dispatch revision
+        id: source
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+          EVENT_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "$INPUT_TAG" ]; then
+            SOURCE_SHA="$EVENT_SHA"
+            echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          else
+            IMAGE="ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]'):$INPUT_TAG"
+            pnpm tsx scripts/resolve-deploy-image.ts "$IMAGE" --resolve-source-only
+            SOURCE_SHA=$(awk -F= '$1 == "source_sha" { print $2 }' "$GITHUB_OUTPUT" | tail -n 1)
+          fi
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Resolved source must be a full commit SHA"
+            exit 1
+          fi
+          git fetch --no-tags origin "$SOURCE_SHA"
+          MUTATION_BASE_SHA=$(git rev-parse "$SOURCE_SHA^1")
+          echo "commit_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "mutation_base_sha=$MUTATION_BASE_SHA" >> "$GITHUB_OUTPUT"
+
+  check-repository:
+    name: Check Repository
+    needs: resolve-source
+    permissions:
+      contents: read
+    uses: ./.github/workflows/check-repository.yml
+    with:
+      commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
+
+  check-shared:
+    name: Check Shared
+    needs: resolve-source
+    if: inputs.target != 'infra'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/check-shared.yml
+    with:
+      commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
+      mutation_base_sha: ${{ needs.resolve-source.outputs.mutation_base_sha }}
+      control_commit_sha: ${{ github.workflow_sha }}
+
+  check-server:
+    name: Check Server
+    needs: resolve-source
+    if: inputs.target == 'all' || inputs.target == 'web' || inputs.target == 'web-stack'
+    permissions:
+      contents: read
+      id-token: write
+      packages: read
+    uses: ./.github/workflows/check-server.yml
+    with:
+      commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
+      mutation_base_sha: ${{ needs.resolve-source.outputs.mutation_base_sha }}
+      control_commit_sha: ${{ github.workflow_sha }}
+      run_e2e_web: true
+      run_image_scan: true
+
+  check-mobile:
+    name: Check Mobile
+    needs: resolve-source
+    if: inputs.target == 'all' || inputs.target == 'ios' || inputs.target == 'ota'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/check-mobile.yml
+    with:
+      commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
+
+  build-mobile:
+    name: Build Mobile Gate
+    needs: resolve-source
+    if: inputs.target == 'all' || inputs.target == 'ios' || inputs.target == 'ota'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/build-mobile.yml
+    with:
+      changed: true
+      commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
+    secrets: inherit
+
   terraform:
     name: Deploy Infra
+    needs: [resolve-source, check-repository]
     permissions:
       contents: read
       actions: read
@@ -43,131 +172,37 @@ jobs:
     if: inputs.target == 'infra'
     uses: ./.github/workflows/deploy-terraform.yml
     with:
-      commit_sha: ${{ github.sha }}
+      commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 
   docker:
     name: Docker Build & Push
-    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all')
-    runs-on: ubuntu-24.04-arm
+    needs: resolve-source
+    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
     permissions:
       contents: read
       packages: write
-    outputs:
-      image_tag: ${{ steps.tag.outputs.tag }}
-    steps:
-      - name: Compute image name and tag
-        id: tag
-        env:
-          SHA: ${{ github.sha }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          SHORT_SHA=$(echo "$SHA" | head -c 7)
-          echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "image=${REGISTRY}/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.sha }}
-      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
-        with:
-          buildkitd-config-inline: |
-            [registry."docker.io"]
-              mirrors = ["mirror.gcr.io"]
-      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        id: meta
-        with:
-          images: ${{ steps.tag.outputs.image }}
-          tags: |
-            type=sha,value=${{ github.sha }}
-            type=raw,value=latest,enable={{is_default_branch}}
-      - name: Compute web asset base URL
-        id: web-assets
-        env:
-          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          set -euo pipefail
-          echo "base_url=https://assets.dofek.fit/web/${IMAGE_TAG}/" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          target: server
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            COMMIT_HASH=${{ github.sha }}
-            VITE_ASSET_BASE_URL=${{ steps.web-assets.outputs.base_url }}
-            REQUIRE_SENTRY_RELEASE_UPLOAD=true
-          secrets: |
-            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
-          cache-from: type=registry,ref=${{ steps.tag.outputs.image }}:server-buildcache
-          cache-to: type=registry,ref=${{ steps.tag.outputs.image }}:server-buildcache,mode=max
+    uses: ./.github/workflows/build-docker.yml
+    with:
+      commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
+    secrets: inherit
 
-  docker_ml:
-    name: Docker ML Build & Push
-    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all')
-    runs-on: ubuntu-24.04-arm
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      image_tag: ${{ steps.tag.outputs.tag }}
-    steps:
-      - name: Compute image name and tag
-        id: tag
-        env:
-          SHA: ${{ github.sha }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          SHORT_SHA=$(echo "$SHA" | head -c 7)
-          echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "image=${REGISTRY}/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')-ml" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.sha }}
-      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
-        with:
-          buildkitd-config-inline: |
-            [registry."docker.io"]
-              mirrors = ["mirror.gcr.io"]
-      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        id: meta
-        with:
-          images: ${{ steps.tag.outputs.image }}
-          tags: |
-            type=sha,value=${{ github.sha }}
-            type=raw,value=latest,enable={{is_default_branch}}
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: packages/ml
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ steps.tag.outputs.image }}:buildcache
-          cache-to: type=registry,ref=${{ steps.tag.outputs.image }}:buildcache,mode=max
 
   web-stack:
     name: Deploy Web Stack
-    needs: [docker, docker_ml]
+    needs: [resolve-source, check-repository, check-shared, check-server, docker, terraform]
     concurrency:
       group: deploy-web-stack-dofek-${{ vars.ORACLE_SERVER_HOST }}
       cancel-in-progress: false
-    if: ${{ !cancelled() && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && vars.ORACLE_SERVER_HOST != '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all') }}
+    if: >-
+      always() && needs.resolve-source.result == 'success' &&
+      needs.check-repository.result == 'success' && needs.check-shared.result == 'success' &&
+      needs.check-server.result == 'success' &&
+      (needs.docker.result == 'success' || (inputs.image_tag != '' && needs.docker.result == 'skipped')) &&
+      (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') &&
+      vars.ORACLE_SERVER_HOST != '' &&
+      (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
     permissions:
       actions: read
       contents: read
@@ -179,8 +214,9 @@ jobs:
       environment_name: production
       apply_infrastructure: ${{ inputs.target != 'web-stack' }}
       server_host: ${{ vars.ORACLE_SERVER_HOST }}
-      automatic_commit_sha: ${{ github.sha }}
-      image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
+      automatic_commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
+      image_tag: ${{ inputs.image_tag }}
+      image_ref: ${{ needs.resolve-source.outputs.image_ref || needs.docker.outputs.image_ref }}
       ssh_user: ubuntu
       stack_override: deploy/stack.oracle.yml
       public_url: https://dofek.fit
@@ -191,8 +227,10 @@ jobs:
   ios-archive:
     name: Build iOS Release
     # Manual image tags may resolve to a different source than github.sha.
-    needs: web-stack
-    if: ${{ !cancelled() && needs.web-stack.result == 'success' && needs.web-stack.outputs.publication_decision != 'superseded' && (inputs.target == 'ios' || inputs.target == 'all') }}
+    needs: resolve-source
+    if: >-
+      always() && (inputs.target == 'ios' || inputs.target == 'all') &&
+      needs.resolve-source.result == 'success'
     permissions:
       actions: read
       contents: read
@@ -200,13 +238,20 @@ jobs:
       deployments: read
     uses: ./.github/workflows/build-ios-release.yml
     with:
-      commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
+      commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
 
   ios:
     name: Deploy iOS
-    needs: [web-stack, ios-archive]
-    if: ${{ !cancelled() && needs.web-stack.result == 'success' && needs.web-stack.outputs.publication_decision != 'superseded' && needs.ios-archive.result == 'success' && needs.ios-archive.outputs.artifact_id != '' && (inputs.target == 'ios' || inputs.target == 'all') }}
+    needs: [resolve-source, check-repository, check-shared, check-mobile, build-mobile, web-stack, ios-archive]
+    if: >-
+      always() && (inputs.target == 'ios' || inputs.target == 'all') &&
+      needs.resolve-source.result == 'success' && needs.check-repository.result == 'success' &&
+      needs.check-shared.result == 'success' && needs.check-mobile.result == 'success' &&
+      needs.build-mobile.result == 'success' && needs.ios-archive.result == 'success' &&
+      needs.ios-archive.outputs.commit_sha == needs.resolve-source.outputs.commit_sha &&
+      needs.ios-archive.outputs.artifact_id != '' &&
+      (inputs.target != 'all' || (needs.web-stack.result == 'success' && needs.web-stack.outputs.publication_decision != 'superseded'))
     permissions:
       actions: read
       contents: read
@@ -214,15 +259,21 @@ jobs:
       deployments: write
     uses: ./.github/workflows/deploy-ios.yml
     with:
-      commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
+      commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       archive_commit_sha: ${{ needs.ios-archive.outputs.commit_sha }}
       build_number: ${{ needs.ios-archive.outputs.build_number }}
       artifact_id: ${{ needs.ios-archive.outputs.artifact_id }}
+      ci_run_id: ${{ format('{0}', github.run_id) }}
 
   ota:
     name: Deploy OTA
-    needs: web-stack
-    if: ${{ !cancelled() && needs.web-stack.result == 'success' && needs.web-stack.outputs.publication_decision != 'superseded' && (inputs.target == 'ota' || inputs.target == 'all') }}
+    needs: [resolve-source, check-repository, check-shared, check-mobile, build-mobile, web-stack]
+    if: >-
+      always() && (inputs.target == 'ota' || inputs.target == 'all') &&
+      needs.resolve-source.result == 'success' && needs.check-repository.result == 'success' &&
+      needs.check-shared.result == 'success' && needs.check-mobile.result == 'success' &&
+      needs.build-mobile.result == 'success' &&
+      (inputs.target != 'all' || (needs.web-stack.result == 'success' && needs.web-stack.outputs.publication_decision != 'superseded'))
     permissions:
       actions: read
       contents: read
@@ -230,6 +281,6 @@ jobs:
       deployments: write
     uses: ./.github/workflows/deploy-ota.yml
     with:
-      commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
+      commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
   # Image cleanup runs via daily cron on the server (see cloud-init.yml).

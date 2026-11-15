@@ -8,13 +8,9 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  packages: write
-  pull-requests: write
-  id-token: write
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -70,6 +66,10 @@ jobs:
     name: Check Server
     needs: [resolve-commit, detect-changes]
     if: needs.detect-changes.outputs.server == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      packages: read
     uses: ./.github/workflows/check-server.yml
     with:
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
@@ -106,44 +106,88 @@ jobs:
 
   build-mobile:
     name: Build Mobile
-    needs: detect-changes
+    needs: [resolve-commit, detect-changes]
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/build-mobile.yml
     with:
       changed: ${{ needs.detect-changes.outputs.mobile == 'true' }}
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
     secrets: inherit
 
   build-web:
     name: Build Web
-    needs: detect-changes
+    needs: [resolve-commit, detect-changes]
     if: needs.detect-changes.outputs.web == 'true'
     uses: ./.github/workflows/build-web.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
     secrets: inherit
 
   build-zepp:
     name: Build Zepp
-    needs: detect-changes
+    needs: [resolve-commit, detect-changes]
     if: needs.detect-changes.outputs.zepp == 'true'
     uses: ./.github/workflows/build-zepp.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
 
   # ── Docker image (main push always publishes deploy image; others gated on changes) ──────
 
   build-docker:
     name: Build Docker
-    needs: detect-changes
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || needs.detect-changes.outputs.docker_server == 'true'
+    needs: [resolve-commit, detect-changes]
+    permissions:
+      contents: read
+      packages: write
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+       (needs.detect-changes.outputs.docker_server == 'true' ||
+        needs.detect-changes.outputs.web == 'true' ||
+        needs.detect-changes.outputs.terraform == 'true' ||
+        needs.detect-changes.outputs.docker_ota == 'true')) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
+       needs.detect-changes.outputs.docker_server == 'true')
     uses: ./.github/workflows/build-docker.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
     secrets: inherit
 
   build-ota:
-    name: Build OTA
-    needs: detect-changes
-    if: needs.detect-changes.outputs.docker_ota == 'true'
+    name: Validate OTA Build
+    needs: [resolve-commit, detect-changes]
+    if: >-
+      needs.detect-changes.outputs.docker_ota == 'true' &&
+      !(github.event_name == 'push' && github.ref == 'refs/heads/main') &&
+      !(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/build-private-ota.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+
+  build-ota-publish:
+    name: Build and Publish OTA
+    needs: [resolve-commit, detect-changes]
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main' && needs.detect-changes.outputs.docker_ota == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-private-ota.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
 
   build-docker-ml:
     name: Build Docker ML
     needs: detect-changes
     if: needs.detect-changes.outputs.docker_ml == 'true'
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/build-docker-ml.yml
     secrets: inherit
 
@@ -151,26 +195,136 @@ jobs:
 
   build-storybook:
     name: Build Storybook
-    needs: detect-changes
+    needs: [resolve-commit, detect-changes]
     if: github.event_name == 'pull_request' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true')
     uses: ./.github/workflows/build-storybook.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
     secrets: inherit
 
   build-storybook-mobile:
     name: Build Mobile Storybook
-    needs: detect-changes
+    needs: [resolve-commit, detect-changes]
     if: github.event_name == 'pull_request' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true')
     uses: ./.github/workflows/build-storybook-mobile.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
     secrets: inherit
 
   storybook-preview:
     name: Storybook Preview
     if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true')
     needs: [detect-changes, build-storybook, build-storybook-mobile]
+    permissions:
+      contents: read
+      pull-requests: write
     uses: ./.github/workflows/storybook-preview.yml
     secrets:
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
+  # ── Independent main releases ─────────────────────────────────────────
+
+  deploy-server:
+    name: Deploy Server Production
+    needs: [resolve-commit, detect-changes, check-repository, check-shared, check-server, build-docker, build-ota-publish]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.resolve-commit.result == 'success' &&
+      needs.detect-changes.result == 'success' &&
+      (needs.detect-changes.outputs.docker_server == 'true' ||
+       needs.detect-changes.outputs.web == 'true' ||
+       needs.detect-changes.outputs.terraform == 'true' ||
+       needs.detect-changes.outputs.docker_ota == 'true') &&
+      needs.check-repository.result == 'success' &&
+      (needs.detect-changes.outputs.shared != 'true' || needs.check-shared.result == 'success') &&
+      (needs.detect-changes.outputs.server != 'true' || needs.check-server.result == 'success') &&
+      needs.build-docker.result == 'success' &&
+      needs.build-docker.outputs.commit_sha == needs.resolve-commit.outputs.commit_sha &&
+      needs.build-docker.outputs.image_ref != '' &&
+      (needs.detect-changes.outputs.docker_ota != 'true' || needs.build-ota-publish.result == 'success')
+    concurrency:
+      group: deploy-web-stack-dofek-${{ vars.ORACLE_SERVER_HOST }}
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      packages: read
+      deployments: write
+    uses: ./.github/workflows/deploy-web-environment.yml
+    with:
+      environment_name: production
+      ssh_user: ubuntu
+      stack_override: deploy/stack.oracle.yml
+      image_ref: ${{ needs.build-docker.outputs.image_ref }}
+      automatic_commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+      ci_run_id: ${{ format('{0}', github.run_id) }}
+      public_url: https://dofek.fit
+      web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
+    secrets: inherit
+
+  build-ios-release:
+    name: Build Matching iOS
+    needs: resolve-commit
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      deployments: read
+    uses: ./.github/workflows/build-ios-release.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+      dispatching_run_id: ${{ github.run_id }}
+
+  deploy-ota:
+    name: Publish Matching OTA
+    needs: [resolve-commit, detect-changes, check-repository, check-shared, check-mobile, build-mobile]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.resolve-commit.result == 'success' &&
+      needs.detect-changes.result == 'success' && needs.detect-changes.outputs.mobile == 'true' &&
+      needs.check-repository.result == 'success' &&
+      (needs.detect-changes.outputs.shared != 'true' || needs.check-shared.result == 'success') &&
+      needs.check-mobile.result == 'success' && needs.build-mobile.result == 'success'
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      deployments: write
+    uses: ./.github/workflows/deploy-ota.yml
+    with:
+      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+      dispatching_run_id: ${{ github.run_id }}
+    secrets: inherit
+
+  deploy-ios:
+    name: Publish Matching iOS
+    needs: [resolve-commit, detect-changes, check-repository, check-shared, check-mobile, build-mobile, build-ios-release]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.resolve-commit.result == 'success' &&
+      needs.detect-changes.result == 'success' &&
+      needs.check-repository.result == 'success' &&
+      (needs.detect-changes.outputs.shared != 'true' || needs.check-shared.result == 'success') &&
+      (needs.detect-changes.outputs.mobile != 'true' || needs.check-mobile.result == 'success') &&
+      needs.build-mobile.result == 'success' && needs.build-ios-release.result == 'success' &&
+      needs.build-ios-release.outputs.commit_sha == needs.resolve-commit.outputs.commit_sha &&
+      needs.build-ios-release.outputs.artifact_id != ''
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      deployments: write
+    uses: ./.github/workflows/deploy-ios.yml
+    with:
+      commit_sha: ${{ needs.build-ios-release.outputs.commit_sha }}
+      archive_commit_sha: ${{ needs.build-ios-release.outputs.commit_sha }}
+      build_number: ${{ needs.build-ios-release.outputs.build_number }}
+      artifact_id: ${{ needs.build-ios-release.outputs.artifact_id }}
+      ci_run_id: ${{ format('{0}', github.run_id) }}
+    secrets: inherit
 
   # ── Aggregate PR gate ──────────────────────────────────────────────────
 
@@ -188,6 +342,7 @@ jobs:
       - build-web
       - build-zepp
       - build-ota
+      - build-ota-publish
       - build-storybook
       - build-storybook-mobile
     if: always()
@@ -203,7 +358,7 @@ jobs:
       BUILD_MOBILE_RESULT: ${{ needs.build-mobile.result }}
       BUILD_WEB_RESULT: ${{ needs.build-web.result }}
       BUILD_ZEPP_RESULT: ${{ needs.build-zepp.result }}
-      BUILD_OTA_RESULT: ${{ needs.build-ota.result }}
+      BUILD_OTA_RESULT: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.detect-changes.outputs.docker_ota == 'true' && needs.build-ota-publish.result || needs.build-ota.result }}
       BUILD_STORYBOOK_RESULT: ${{ needs.build-storybook.result }}
       BUILD_STORYBOOK_MOBILE_RESULT: ${{ needs.build-storybook-mobile.result }}
       SHARED_SELECTED: ${{ needs.detect-changes.outputs.shared == 'true' }}

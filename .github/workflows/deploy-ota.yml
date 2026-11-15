@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       commit_sha:
-        description: "Commit SHA to deploy"
+        description: "Selected mobile release source SHA"
         required: true
         type: string
       dispatching_run_id:
@@ -32,7 +32,7 @@ jobs:
           COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
           if [[ ! "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
-            echo "::error::commit_sha must be the full source SHA verified by the successful server rollout"
+            echo "::error::commit_sha must be the full selected mobile source SHA"
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,8 +64,8 @@ jobs:
             echo "::error::Missing SENTRY_AUTH_TOKEN secret required for mobile OTA sourcemap upload"
             exit 1
           fi
-      # The caller has already completed the matching server rollout. Validate
-      # once: an unavailable or invalid manifest stops publication for diagnosis.
+      # Validate the currently served runtime once. An unavailable or invalid
+      # manifest stops OTA publication without triggering a server rollout.
       - name: Validate OTA server
         id: runtime
         working-directory: packages/mobile

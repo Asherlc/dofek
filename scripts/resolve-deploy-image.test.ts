@@ -9,8 +9,45 @@ import {
 
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 const args = [`${deployTestRepository}:requested`, commit, "dofek_web"];
+const selectedSource = "c".repeat(40);
 
 describe("resolve-deploy-image", () => {
+  it("resolves a manual image tag to its immutable source before validation", () => {
+    const result = runDeployImageFixture({
+      args: [`${deployTestRepository}:requested`, "--resolve-source-only"],
+      release: selectedSource,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.output).toBe(
+      `image_ref=${deployTestRepository}@${deployTestDigest}\nsource_sha=${selectedSource}\n`,
+    );
+    expect(result.calls).toEqual([
+      [
+        "buildx",
+        "imagetools",
+        "inspect",
+        `${deployTestRepository}:requested`,
+        "--format",
+        "{{json .Manifest}}",
+      ],
+      ["pull", "--platform", "linux/arm64", `${deployTestRepository}@${deployTestDigest}`],
+      [
+        "image",
+        "inspect",
+        `${deployTestRepository}@${deployTestDigest}`,
+        "--format",
+        "{{json .Config.Env}}",
+      ],
+      [
+        "image",
+        "inspect",
+        `${deployTestRepository}@${deployTestDigest}`,
+        "--format",
+        "{{json .Config.Labels}}",
+      ],
+    ]);
+  });
+
   it("validates the candidate locally without inspecting or pulling the remote target", () => {
     const result = runDeployImageFixture({ args: [...args, "--candidate-only"] });
     expect(result.status, result.stderr).toBe(0);

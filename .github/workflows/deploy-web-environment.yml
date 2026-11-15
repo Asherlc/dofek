@@ -198,8 +198,12 @@ jobs:
         env:
           SOURCE_SHA: ${{ inputs.automatic_commit_sha != '' && inputs.automatic_commit_sha || github.sha }}
           IMAGE_TAG: ${{ steps.resolve.outputs.image_tag }}
+          PREBUILT_IMAGE_REF: ${{ inputs.image_ref }}
           STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
-        run: pnpm tsx scripts/resolve-deploy-image.ts "ghcr.io/${GITHUB_REPOSITORY,,}:$IMAGE_TAG" "$SOURCE_SHA" "${STACK_NAME}_web" --candidate-only
+        run: |
+          set -euo pipefail
+          requested_image="${PREBUILT_IMAGE_REF:-ghcr.io/${GITHUB_REPOSITORY,,}:$IMAGE_TAG}"
+          pnpm tsx scripts/resolve-deploy-image.ts "$requested_image" "$SOURCE_SHA" "${STACK_NAME}_web" --candidate-only
 
       - name: Admit forward-only server publication and record intent
         id: publication

@@ -2,6 +2,12 @@ name: Build private OTA
 
 on:
   workflow_call:
+    inputs:
+      commit_sha:
+        description: Full source SHA to build.
+        required: false
+        type: string
+        default: ""
   workflow_dispatch:
 
 permissions:
@@ -16,8 +22,24 @@ jobs:
       - name: Check out Dofek
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.commit_sha || github.sha }}
           persist-credentials: false
+      - name: Validate exact build source
+        id: source
+        env:
+          EXPECTED_SHA: ${{ inputs.commit_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::commit_sha must be a full source SHA"
+            exit 1
+          fi
+          CHECKED_OUT_SHA=$(git rev-parse HEAD)
+          if [ "$CHECKED_OUT_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Checked out $CHECKED_OUT_SHA instead of requested source $EXPECTED_SHA"
+            exit 1
+          fi
+          echo "commit_sha=$CHECKED_OUT_SHA" >> "$GITHUB_OUTPUT"
       - name: Set up Node and pnpm
         uses: ./.github/actions/setup-node-pnpm
       - name: Require a private OTA package before publication
@@ -63,7 +85,7 @@ jobs:
           file: deploy/ota/Dockerfile
           platforms: linux/arm64
           push: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-          tags: ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
+          tags: ${{ steps.image.outputs.name }}:sha-${{ steps.source.outputs.commit_sha }}
       - name: Verify published image remains private
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
