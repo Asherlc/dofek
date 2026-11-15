@@ -926,4 +926,22 @@ printf '\n%s\n' 'console.log("MAINTENANCE_BOUNDARY=" + process.env.MIGRATION_MAI
     expect(result.status, result.stderr).toBe(0);
     expect(result.output).toContain("pre_migration_image_ref=" + deployTestOldImage + "\n");
   });
+
+  it("uses the server image admitted before Terraform instead of resolving its mutable tag again", () => {
+    const immutable = `${deployTestRepository}@${deployTestDigest}`;
+    const result = runDeployImageFixture({
+      script: workflowRunScript("Pull deploy images"),
+      environment: { IMAGE_REF: immutable },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.calls[0]).toEqual([
+      "buildx",
+      "imagetools",
+      "inspect",
+      immutable,
+      "--format",
+      "{{json .Manifest}}",
+    ]);
+    expect(result.output).toContain(`image_ref=${immutable}\n`);
+  });
 });

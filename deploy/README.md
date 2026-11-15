@@ -346,13 +346,16 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
          -> matching TestFlight upload under deploy-ios, once the signed archive also succeeds
 ```
 
-Production web deployments are serialized and never cancel an in-progress
-deployment. The server jobs in Deploy and Release Production share the
-`deploy-web-production` concurrency group. The lock ends when the server job
-finishes; OTA and TestFlight publication use their existing `deploy-ota` and
-`deploy-ios` groups. A queued or slow mobile job cannot hold the production
-lock. GitHub's default single pending job means new requests replace pending
-work while the active deployment finishes. A rollout intentionally quiesces
+Production server deployments are serialized and never cancel an in-progress
+deployment. Deploy and Release Production route server mutations through the
+same environment workflow and target lock, held from admission through receipt
+finalization. Admission verifies live web and worker identity and writes a
+pending GitHub deployment before Terraform, asset upload, migration, or stack
+mutation. The stack workflow does not acquire a nested copy of that lock. OTA
+and TestFlight publication use their existing `deploy-ota` and `deploy-ios`
+groups. A queued or slow mobile job cannot hold the server lock. GitHub's
+default single pending job means new requests replace pending work while the
+active deployment finishes. A rollout intentionally quiesces
 `analytics-worker`,
 all three metric-stream ClickHouse sinks, and `processing-reconciliation` before
 migrations and restores all five only after the final stack converges, so a
@@ -572,6 +575,96 @@ uncertain attempt based only on its job conclusion. An unresolved record remains
 a visible release blocker until this reconciliation is complete. Absence from
 App Store Connect while processing is uncertain does not establish that no upload
 occurred; retain the pending record when the evidence is inconclusive.
+
+### Publication Recovery
+
+Server receipts use environment `server-production` and task
+`server-stack-publish`; OTA receipts use `ota-production` and task `ota-publish`.
+Each publisher reads all pages and each deployment's latest status while holding
+its target lock. A pending or otherwise unresolved record blocks later
+publication. A successful workflow conclusion alone is not target evidence.
+
+If the full stack job completed and only receipt finalization failed, rerun only
+the **Finalize verified server receipt** job from that run. It reruns the live
+web and worker image/source checks, then finalizes the same deployment record;
+it does not repeat Terraform or stack mutation. If any existing stack
+verification failed, keep the intent unresolved until the target is reconciled
+and all required verification gates pass. Do not mark it inactive while either
+service may be running the candidate.
+Bootstrap without server history is automatic only after the workflow confirms
+both live services are running the same source revision and image digest; it
+records that observed identity as the baseline before considering the candidate.
+Read live metadata without printing container environment values:
+
+```bash
+ssh dofek-server 'docker service ps dofek_web dofek_worker --no-trunc'
+ssh dofek-server 'docker ps -q --filter label=com.docker.swarm.service.name=dofek_web --filter status=running | xargs -r docker inspect | jq '\''map({revision: .Config.Labels["org.opencontainers.image.revision"], image: .Config.Image, state: .State.Status})'\'''
+ssh dofek-server 'docker ps -q --filter label=com.docker.swarm.service.name=dofek_worker --filter status=running | xargs -r docker inspect | jq '\''map({revision: .Config.Labels["org.opencontainers.image.revision"], image: .Config.Image, state: .State.Status})'\'''
+```
+
+For OTA, the live manifest exposes an update UUID and runtime but the current
+production channel does not expose the source SHA. With no matching success
+receipt, publication therefore stops with `Operator initialization required`.
+An operator must identify the exact source commit from trustworthy immutable
+release provenance, verify the live signed manifest and complete asset set
+against the deployed update using `scripts/verify-published-ota.ts`, then create
+and finalize an `ota-production` deployment for task `ota-publish` whose ref and
+payload record `source_sha`, `update_id`, and `runtime_version`. Use
+`auto_inactive: false`; do not infer the source from the workflow that happened
+to publish or create repository environments/protection settings. If immutable
+provenance cannot establish the source commit, stop and keep publication
+blocked. With the checkout at that exact source SHA, the required production
+`EXPO_APP_ID` available in the environment, and `RUNTIME_VERSION` taken from
+that release, perform the same manifest, export, and device verification used by
+the publisher:
+
+```bash
+manifest_output="$(mktemp)"
+GITHUB_OUTPUT="$manifest_output" pnpm tsx scripts/check-ota-manifest.ts \
+  --app-id "$EXPO_APP_ID" --runtime-version "$RUNTIME_VERSION"
+update_id="$(sed -n 's/^manifest_id=//p' "$manifest_output")"
+manifest_runtime="$(sed -n 's/^manifest_runtime=//p' "$manifest_output")"
+test -n "$update_id" && test "$update_id" != none
+test "$manifest_runtime" = "$RUNTIME_VERSION"
+pnpm --dir packages/mobile exec expo export \
+  --output-dir "$RUNNER_TEMP/dofek-ota-initialization" --platform ios
+pnpm tsx scripts/verify-published-ota.ts \
+  "$RUNNER_TEMP/dofek-ota-initialization/xprem-update-metadata.json" \
+  production "$RUNTIME_VERSION"
+test "$(jq -er '.[0].id' "$RUNNER_TEMP/dofek-ota-initialization/xprem-update-metadata.json")" = "$update_id"
+```
+
+After independently checking the source SHA against immutable release
+provenance, create the deployment and append its success status. The finalizer
+status description must preserve the UUID/runtime/source format that workflows
+read as the authoritative receipt:
+
+```bash
+deployment="$(gh api --method POST "repos/$GITHUB_REPOSITORY/deployments" --input - <<JSON
+{"ref":"$SOURCE_SHA","environment":"ota-production","task":"ota-publish","auto_merge":false,"required_contexts":[],"production_environment":false,"payload":{"source_sha":"$SOURCE_SHA","update_id":"$update_id","runtime_version":"$RUNTIME_VERSION"}}
+JSON
+)"
+deployment_id="$(jq -er '.id' <<<"$deployment")"
+gh api --method POST "repos/$GITHUB_REPOSITORY/deployments/$deployment_id/statuses" --input - <<JSON
+{"state":"success","auto_inactive":false,"log_url":"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID","description":"OTA verified $update_id"}
+JSON
+```
+
+Once initialized, rerun the candidate workflow; it compares source ancestry and
+exact live UUID/runtime before deciding whether to publish.
+
+If target evidence proves an intent never became live, first stop or wait for
+the original publisher and verify the current target identity independently.
+Then append an `inactive` status to that exact deployment with an explanation
+and the original run URL, using `auto_inactive: false`. If the candidate is live,
+recover by rerunning the original workflow so its existing verifier finalizes
+the same receipt. If a release must be rolled back, create a new descendant
+commit that reverts the undesired changes, then publish that commit through the
+normal migration and target identity guards. The older source itself is
+superseded by design; never rewrite history or clear a pending intent to make
+an older workflow eligible. GitHub documents deployment
+[creation](https://docs.github.com/en/rest/deployments/deployments#create-a-deployment)
+and [status reporting](https://docs.github.com/en/rest/deployments/statuses#create-a-deployment-status).
 
 1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). Successful main-push CI requests direct deployment only when its source matches the Release Production workflow's SHA; superseded CI completions wait for the current main commit to pass. The matching image tag resolves to an immutable digest before rollout. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's [workflow_run revision semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run). The `ml` image is built only when ML image inputs change.
    The production job calls the existing environment workflow directly and holds

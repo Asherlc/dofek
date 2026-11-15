@@ -38125,3 +38125,22 @@ Local qualification and CI are separate from production throughput acceptance. T
   tasks reproduced transport races without another administrator prompt.
   Proposed runbook wording: “Host and Simulator regressions validate ownership
   and formatting; verify background scheduling and CPU recovery on the device.”
+# 2026-11-15 – Production environment values printed during release investigation
+
+- **Symptoms / impact:** A read-only Docker service inspection printed the full
+  production web service environment into agent tool output, exposing secret
+  values during Task 4 release-gate work. No secret values are reproduced here.
+- **Evidence:** The inspection selected
+  `.Spec.TaskTemplate.ContainerSpec.Env`; subsequent checks returned only the
+  immutable image reference and OCI source-revision label.
+- **Root cause:** The diagnostic format requested the entire service
+  environment instead of allowlisting non-secret identity fields.
+- **Fix / mitigation:** Stopped using environment inspection and restricted
+  follow-up reads to the service image digest and
+  `org.opencontainers.image.revision`. No production configuration or secrets
+  were changed.
+- **Remaining risk:** Treat all values from the emitted environment as
+  compromised until the owner completes normal credential rotation. Rotation
+  was not performed during this task because it is outside the approved scope.
+- **Follow-up:** Rotate the affected production credentials through the
+  established secret rotation workflow and verify consumers afterward.

@@ -193,6 +193,11 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   for pre-migration deployment. Emits `image_ref`, `pre_migration_image_ref`, and
   `sentry_release` through `GITHUB_OUTPUT`.
   - Usage: `pnpm tsx scripts/resolve-deploy-image.ts <image-reference> <full-source-sha> <web-service-name>`
+  - `--candidate-only` validates the image source and immutable digest on the
+    runner before production admission. It pulls the app's `linux/arm64`
+    manifest locally without querying or mutating the remote Docker service;
+    the ordinary invocation retains the migration-aware remote service check.
+    Docker documents its [platform-specific pull option](https://docs.docker.com/reference/cli/docker/image/pull/#options).
   - Uses Docker's [manifest descriptor JSON](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/#json-output)
     and [immutable pulls](https://docs.docker.com/reference/cli/docker/image/pull/#pull-an-image-by-digest-immutable-identifier).
 - `verify-deploy-image.ts`: Verifies a converged service's desired image and
@@ -236,8 +241,11 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   requested source trees, including rollback differences. Git's
   [NUL-terminated diff output and disabled rename detection](https://git-scm.com/docs/git-diff)
   preserve unusual filenames and native deletions moved outside native paths.
-  History reads one newest-first page of 100 deployments at a time with each
-  deployment's latest status, continuing by cursor only when needed; GitHub
+  History reads newest-first pages of 100 deployments with each deployment's
+  latest status. Publication scans the full history so an unresolved attempt
+  after the newest successful receipt cannot be missed. Read-only build
+  detection also scans all history but permits unresolved attempts because it
+  does not authorize publication. GitHub
   documents the [ordered deployment connection](https://docs.github.com/en/graphql/reference/repos#repository)
   and [latest-status projection](https://docs.github.com/en/graphql/reference/deployments#deployment).
   Intent and receipt writes use [exact deployment refs](https://docs.github.com/en/rest/deployments/deployments)
@@ -259,6 +267,15 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - Detection: `pnpm tsx scripts/testflight-deployment-cli.ts detect <owner/repo> <full-source-sha> [--force]`
   - Prepare, immediately before upload: `pnpm tsx scripts/testflight-deployment-cli.ts prepare <owner/repo> <full-source-sha> <build-number> <upload-attempt-run-url>`
   - Finalize the same intent, only after a successful upload: `pnpm tsx scripts/testflight-deployment-cli.ts record <owner/repo> <deployment-id> <full-source-sha> <build-number> <upload-attempt-run-url>`
+- Production server and OTA publication workflows use target-scoped GitHub
+  deployment records. Admission checks run under the publisher lock before
+  Terraform or publication, inspect every page and latest status, verify live
+  target identity, and record a pending intent before mutation. Unresolved
+  intents block later candidates until real target evidence supports recovery
+  or explicit operator reconciliation. Server identity is the source SHA and
+  immutable image digest; OTA identity is the source SHA, update UUID, and
+  runtime version. OTA history with a live update but no receipt fails closed;
+  see the [deployment recovery runbook](../deploy/README.md#publication-recovery).
 - `report-repeated-cycling-efforts.ts`: Read-only historical cycling report
   using the same user-bound discovery, comparison, trend, and cycling-performance
   repositories as MCP. It makes no provider network requests and computes no

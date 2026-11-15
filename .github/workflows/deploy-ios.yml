@@ -66,6 +66,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
           ref: ${{ inputs.archive_commit_sha }}
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
@@ -116,11 +117,25 @@ jobs:
           BUILD_NUMBER: ${{ inputs.build_number }}
         run: |
           UPLOAD_RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
-          DEPLOYMENT_ID=$(pnpm tsx .release-tools/scripts/testflight-deployment-cli.ts prepare "$GITHUB_REPOSITORY" "$COMMIT_SHA" "$BUILD_NUMBER" "$UPLOAD_RUN_URL")
-          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+          DECISION=$(pnpm tsx .release-tools/scripts/testflight-deployment-cli.ts prepare "$GITHUB_REPOSITORY" "$COMMIT_SHA" "$BUILD_NUMBER" "$UPLOAD_RUN_URL")
+          case "$DECISION" in
+            unchanged|superseded)
+              echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
+              echo "TestFlight upload is $DECISION; no new upload is needed."
+              ;;
+            ''|*[!0-9]*)
+              echo "::error::Unexpected TestFlight upload decision: $DECISION"
+              exit 1
+              ;;
+            *)
+              echo "decision=upload" >> "$GITHUB_OUTPUT"
+              echo "deployment_id=$DECISION" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
           echo "upload_run_url=$UPLOAD_RUN_URL" >> "$GITHUB_OUTPUT"
       - name: Export IPA & Upload to TestFlight
         id: upload
+        if: steps.intent.outputs.decision == 'upload'
         run: |
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Dofek.xcarchive" \

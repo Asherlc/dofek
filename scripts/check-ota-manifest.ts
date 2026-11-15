@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { getMultipartBoundary, parseMultipart } from "@remix-run/multipart-parser";
 import { z } from "zod";
 
@@ -195,10 +196,22 @@ if (isDirectExecution) {
     timeoutMilliseconds: 5_000,
   });
   if (!manifest) {
+    if (process.env.GITHUB_OUTPUT) {
+      appendFileSync(
+        process.env.GITHUB_OUTPUT,
+        `manifest_id=none\nmanifest_runtime=${requestOptions.runtimeVersion}\n`,
+      );
+    }
     console.log(
       `No update deployed for platform=${requestOptions.platform} runtimeVersion=${requestOptions.runtimeVersion}`,
     );
   } else {
+    if (process.env.GITHUB_OUTPUT) {
+      appendFileSync(
+        process.env.GITHUB_OUTPUT,
+        `manifest_id=${manifest.id}\nmanifest_runtime=${manifest.runtimeVersion}\n`,
+      );
+    }
     console.log(`id:              ${manifest.id}`);
     console.log(`createdAt:       ${manifest.createdAt}`);
     console.log(`runtimeVersion:  ${manifest.runtimeVersion}`);

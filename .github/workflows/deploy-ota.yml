@@ -14,12 +14,13 @@ on:
 
 concurrency:
   group: deploy-ota
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
   actions: read
   id-token: write
+  deployments: write
 
 jobs:
   deploy:
@@ -37,6 +38,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
           ref: ${{ inputs.commit_sha }}
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
@@ -75,8 +77,124 @@ jobs:
       # source maps. Both commands use the installed Expo version.
       - name: Export iOS bundle (surfaces the error eoas hides)
         working-directory: packages/mobile
-        run: pnpm expo export --output-dir /tmp/dofek-ota-preflight --platform ios
+        env:
+          EXPO_PUBLIC_SENTRY_RELEASE: ${{ inputs.commit_sha }}
+        run: pnpm expo export --source-maps external --output-dir "$RUNNER_TEMP/dofek-ota-preflight" --platform ios
+      - name: Admit forward-only OTA publication and record intent
+        id: publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ inputs.commit_sha }}
+          RUNTIME_VERSION: ${{ steps.runtime.outputs.runtime_version }}
+          CURRENT_MANIFEST_ID: ${{ steps.runtime.outputs.manifest_id }}
+          CURRENT_MANIFEST_RUNTIME: ${{ steps.runtime.outputs.manifest_runtime }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+
+          function command(name, args, input) {
+            const result = spawnSync(name, args, { encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'] });
+            if (result.status !== 0) throw new Error(`${name} ${args.join(' ')} failed: ${result.stderr.trim()}`);
+            return result.stdout.trim();
+          }
+          function gh(args, body) {
+            return JSON.parse(command('gh', ['api', ...args], body === undefined ? undefined : JSON.stringify(body)));
+          }
+          function git(args) {
+            return spawnSync('git', args, { encoding: 'utf8', stdio: 'ignore' }).status === 0;
+          }
+          const { SOURCE_SHA, RUNTIME_VERSION, CURRENT_MANIFEST_ID, CURRENT_MANIFEST_RUNTIME, REPOSITORY, RUN_ID, RUN_ATTEMPT, RUN_URL, GITHUB_OUTPUT } = process.env;
+          const preflightDirectory = join(process.env.RUNNER_TEMP, 'dofek-ota-preflight');
+          if (!/^[a-f0-9]{40}$/.test(SOURCE_SHA)) throw new Error('OTA source SHA must be a full lowercase commit');
+          command('git', ['cat-file', '-e', `${SOURCE_SHA}^{commit}`]);
+          const environment = 'ota-production';
+          const query = `query($owner:String!,$name:String!,$environment:String!,$after:String){repository(owner:$owner,name:$name){deployments(environments:[$environment],first:100,after:$after,orderBy:{field:CREATED_AT,direction:DESC}){nodes{databaseId task commitOid payload latestStatus{state description}}pageInfo{hasNextPage endCursor}}}}`;
+          const [owner, name] = REPOSITORY.split('/');
+          let after = null;
+          const history = [];
+          for (;;) {
+            const page = gh(['graphql', '--input', '-'], { query, variables: { owner, name, environment, after } })?.data?.repository?.deployments;
+            if (!page || !Array.isArray(page.nodes) || !page.pageInfo) throw new Error('OTA deployment history is incomplete');
+            history.push(...page.nodes.filter((record) => record.task === 'ota-publish').map((record) => ({
+              ...record,
+              payload: typeof record.payload === 'string' ? JSON.parse(record.payload || '{}') : record.payload,
+              state: record.latestStatus?.state ?? null,
+            })));
+            if (!page.pageInfo.hasNextPage) break;
+            if (!page.pageInfo.endCursor || page.pageInfo.endCursor === after) throw new Error('OTA deployment history cursor did not advance');
+            after = page.pageInfo.endCursor;
+          }
+          const post = (method, path, body) => gh(['--method', method, path, '--input', '-'], body);
+          const source = (record, requireUpdateId = true) => {
+            const value = record.payload ?? {};
+            const statusUpdateId = record.latestStatus?.description?.match(/^OTA verified ([a-f0-9-]{36})$/)?.[1];
+            const identity = { ...value, update_id: value.update_id ?? statusUpdateId };
+            if (!/^[a-f0-9]{40}$/.test(identity.source_sha ?? '') || !identity.runtime_version || (requireUpdateId && !identity.update_id)) throw new Error(`OTA deployment ${record.databaseId} has no verified source, update UUID and runtime identity`);
+            if (record.commitOid !== identity.source_sha) throw new Error(`OTA deployment ${record.databaseId} ref does not match its source payload`);
+            return identity;
+          };
+          const verifyCurrent = () => {
+            const metadataPath = join(preflightDirectory, 'xprem-update-metadata.json');
+            command('pnpm', ['tsx','scripts/verify-published-ota.ts',metadataPath,'production',RUNTIME_VERSION]);
+            return JSON.parse(readFileSync(metadataPath,'utf8'))[0];
+          };
+          const unresolved = history.filter((record) => !['SUCCESS','INACTIVE'].includes(record.state));
+          if (unresolved.length > 1) throw new Error('multiple unresolved OTA publication intents require operator reconciliation');
+          const liveExists = CURRENT_MANIFEST_ID && CURRENT_MANIFEST_ID !== 'none';
+          if (liveExists && CURRENT_MANIFEST_RUNTIME !== RUNTIME_VERSION) throw new Error('live OTA manifest runtime does not match the requested production runtime');
+          if (unresolved.length === 1) {
+            const pending = unresolved[0];
+            const identity = source(pending, false);
+            if (identity.source_sha !== SOURCE_SHA || identity.runtime_version !== RUNTIME_VERSION) throw new Error(`unresolved OTA publication ${pending.databaseId} blocks promotion; reconcile its live update before retrying`);
+            const update = verifyCurrent();
+            if (update.id !== CURRENT_MANIFEST_ID || update.runtimeVersion !== RUNTIME_VERSION) throw new Error('live OTA update does not verify against the unresolved candidate; keep its intent pending and reconcile');
+            appendFileSync(GITHUB_OUTPUT, `decision=recover\ndeployment_id=${pending.databaseId}\nupdate_id=${update.id}\n`);
+            process.exit(0);
+          }
+          const successful = history.filter((record) => record.state === 'SUCCESS');
+          const runtimeSuccessRecord = successful.find((record) => (record.payload ?? {}).runtime_version === RUNTIME_VERSION);
+          if (runtimeSuccessRecord) {
+            const runtimeSuccess = source(runtimeSuccessRecord);
+            if (!liveExists || CURRENT_MANIFEST_ID !== runtimeSuccess.update_id || CURRENT_MANIFEST_RUNTIME !== runtimeSuccess.runtime_version) throw new Error('live OTA UUID/runtime does not match the latest receipt for the requested runtime; reconcile target evidence before publication');
+            if (runtimeSuccess.source_sha === SOURCE_SHA) {
+              const update = verifyCurrent();
+              if (update.id !== runtimeSuccess.update_id || update.runtimeVersion !== runtimeSuccess.runtime_version) throw new Error('same-source OTA content differs from its successful receipt');
+              appendFileSync(GITHUB_OUTPUT, `decision=unchanged\nupdate_id=${update.id}\n`);
+              process.exit(0);
+            }
+          } else if (liveExists) {
+            throw new Error(`production OTA ${CURRENT_MANIFEST_ID} (${CURRENT_MANIFEST_RUNTIME}) is live without a target receipt. Operator initialization required: verify its signed UUID/runtime and source SHA; create a GitHub deployment in environment ota-production, task ota-publish, payload {source_sha, update_id, runtime_version}; append a success status only after verifying that exact live update. Do not infer the source SHA from a completed workflow.`);
+          }
+          const newestSuccessful = successful[0] ? source(successful[0]) : null;
+          if (newestSuccessful && newestSuccessful.source_sha !== SOURCE_SHA) {
+            if (git(['merge-base','--is-ancestor',SOURCE_SHA,newestSuccessful.source_sha])) {
+              appendFileSync(GITHUB_OUTPUT, 'decision=superseded\n');
+              process.exit(0);
+            }
+            if (!git(['merge-base','--is-ancestor',newestSuccessful.source_sha,SOURCE_SHA])) throw new Error(`OTA candidate ${SOURCE_SHA} is unrelated to latest successful source ${newestSuccessful.source_sha}`);
+          }
+          const deployment = post('POST', `repos/${REPOSITORY}/deployments`, {
+            ref: SOURCE_SHA, environment, task: 'ota-publish', auto_merge: false,
+            required_contexts: [], production_environment: false,
+            payload: { source_sha: SOURCE_SHA, runtime_version: RUNTIME_VERSION, run_id: RUN_ID, run_attempt: RUN_ATTEMPT, run_url: RUN_URL },
+          });
+          if (!Number.isInteger(deployment.id)) throw new Error('GitHub did not acknowledge OTA intent');
+          const status = post('POST', `repos/${REPOSITORY}/deployments/${deployment.id}/statuses`, {
+            state: 'pending', auto_inactive: false, log_url: RUN_URL,
+            description: 'OTA awaiting publication verification',
+          });
+          if (status.state !== 'pending') throw new Error('GitHub did not acknowledge pending OTA intent');
+          appendFileSync(GITHUB_OUTPUT, `decision=publish\ndeployment_id=${deployment.id}\n`);
+          NODE
       - name: Publish OTA update
+        if: steps.publication.outputs.decision == 'publish'
         working-directory: packages/mobile
         env:
           DEBUG: true
@@ -85,13 +203,58 @@ jobs:
           EXPO_PUBLIC_SENTRY_RELEASE: ${{ inputs.commit_sha }}
         run: pnpm exec eoas publish --branch main --platform ios --nonInteractive --packageRunner "pnpm exec" --dumpSourcemap --emitMetadata
       - name: Verify published device update
+        if: steps.publication.outputs.decision == 'publish'
         run: pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production "${{ steps.runtime.outputs.runtime_version }}"
       - name: Upload OTA sourcemaps to Sentry
+        if: steps.publication.outputs.decision == 'publish' || steps.publication.outputs.decision == 'recover'
         working-directory: packages/mobile
         env:
           SENTRY_RELEASE: ${{ inputs.commit_sha }}
-        run: pnpm exec sentry-expo-upload-sourcemaps dist
+        run: |
+          if [ "${{ steps.publication.outputs.decision }}" = "recover" ]; then
+            pnpm exec sentry-expo-upload-sourcemaps "$RUNNER_TEMP/dofek-ota-preflight"
+          else
+            pnpm exec sentry-expo-upload-sourcemaps dist
+          fi
 
+      - name: Finalize verified OTA deployment intent
+        if: steps.publication.outputs.decision == 'publish' || steps.publication.outputs.decision == 'recover'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOYMENT_ID: ${{ steps.publication.outputs.deployment_id }}
+          SOURCE_SHA: ${{ inputs.commit_sha }}
+          RUNTIME_VERSION: ${{ steps.runtime.outputs.runtime_version }}
+          RECOVERED_UPDATE_ID: ${{ steps.publication.outputs.update_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.publication.outputs.decision }}" = "recover" ]; then
+            update_id="$RECOVERED_UPDATE_ID"
+          else
+            update_id="$(jq -er '.[0].id' packages/mobile/dist/xprem-update-metadata.json)"
+          fi
+          [[ "$update_id" =~ ^[a-f0-9-]{36}$ ]] || { echo "::error::OTA update UUID is invalid"; exit 1; }
+          deployment="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID")"
+          jq -e --arg source "$SOURCE_SHA" --arg runtime "$RUNTIME_VERSION" \
+            '.sha == $source and .payload.source_sha == $source and .payload.runtime_version == $runtime' \
+            <<<"$deployment" >/dev/null || { echo "::error::OTA intent identity changed"; exit 1; }
+          latest_state="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --jq '.[0].state // "missing"')"
+          if [ "$latest_state" = "success" ]; then
+            latest_description="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --jq '.[0].description // ""')"
+            expected_description="OTA verified $update_id"
+            [ "$latest_description" = "$expected_description" ] || { echo "::error::successful OTA receipt does not match the verified update identity"; exit 1; }
+            echo "OTA deployment receipt already finalized."
+            exit 0
+          fi
+          if [ "$latest_state" = "inactive" ]; then
+            echo "::error::OTA deployment was reconciled inactive; do not overwrite it."
+            exit 1
+          fi
+          response="$(gh api --method POST "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --input - <<JSON
+          {"state":"success","auto_inactive":false,"log_url":"$RUN_URL","description":"OTA verified $update_id"}
+          JSON
+          )"
+          jq -e --arg description "OTA verified $update_id" '.state == "success" and .description == $description and (.description | length <= 140)' <<<"$response" >/dev/null
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
         with:

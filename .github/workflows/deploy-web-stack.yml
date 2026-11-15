@@ -11,6 +11,10 @@ on:
         description: "Commit SHA to deploy (used to compute image tag if image_tag not provided)"
         required: false
         type: string
+      image_ref:
+        description: "Immutable image admitted by deploy-web-environment"
+        required: false
+        type: string
       image_tag:
         description: "Docker image tag to deploy directly (e.g. sha-abc1234)"
         required: false
@@ -98,12 +102,6 @@ on:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
-
-concurrency:
-  # Key on the target host so deploys to different hosts (production vs staging) run in
-  # parallel, while concurrent deploys to the same host still serialize.
-  group: deploy-web-stack-${{ inputs.stack_name || 'dofek' }}-${{ inputs.server_host != '' && inputs.server_host || vars.ORACLE_SERVER_HOST }}
-  cancel-in-progress: false
 
 jobs:
   # The deploy job masks exported dotenv values. Keep public release metadata
@@ -533,10 +531,12 @@ jobs:
         id: pull_images
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          IMAGE_REF: ${{ inputs.image_ref }}
         run: |
           echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
+          REQUESTED_IMAGE="${IMAGE_REF:-ghcr.io/asherlc/dofek:${IMAGE_TAG}}"
           pnpm tsx scripts/resolve-deploy-image.ts \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" "$(git rev-parse HEAD)" "${STACK_NAME}_web"
+            "$REQUESTED_IMAGE" "$(git rev-parse HEAD)" "${STACK_NAME}_web"
 
           server_host="${DOCKER_HOST#"ssh://${SSH_USER}@"}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then

@@ -40,7 +40,7 @@ jobs:
       contents: read
       actions: read
       id-token: write
-    if: inputs.target == 'infra' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all'
+    if: inputs.target == 'infra'
     uses: ./.github/workflows/deploy-terraform.yml
     with:
       commit_sha: ${{ github.sha }}
@@ -163,32 +163,36 @@ jobs:
 
   web-stack:
     name: Deploy Web Stack
-    needs: [terraform, docker, docker_ml]
+    needs: [docker, docker_ml]
     concurrency:
-      group: deploy-web-production
+      group: deploy-web-stack-dofek-${{ vars.ORACLE_SERVER_HOST }}
       cancel-in-progress: false
-    if: ${{ !cancelled() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && vars.ORACLE_SERVER_HOST != '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all') }}
+    if: ${{ !cancelled() && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && vars.ORACLE_SERVER_HOST != '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read
       id-token: write
       packages: read
-    uses: ./.github/workflows/deploy-web-stack.yml
+      deployments: write
+    uses: ./.github/workflows/deploy-web-environment.yml
     with:
-      image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
+      environment_name: production
+      apply_infrastructure: ${{ inputs.target != 'web-stack' }}
       server_host: ${{ vars.ORACLE_SERVER_HOST }}
+      automatic_commit_sha: ${{ github.sha }}
+      image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
       ssh_user: ubuntu
       stack_override: deploy/stack.oracle.yml
       public_url: https://dofek.fit
       web_host_rule: "Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`) || Host(`dofek.asherlc.com`)"
-      dispatching_run_id: ${{ github.run_id }}
+      ci_run_id: ${{ format('{0}', github.run_id) }}
     secrets: inherit
 
   ios-archive:
     name: Build iOS Release
     # Manual image tags may resolve to a different source than github.sha.
     needs: web-stack
-    if: ${{ !cancelled() && needs.web-stack.result == 'success' && (inputs.target == 'ios' || inputs.target == 'all') }}
+    if: ${{ !cancelled() && needs.web-stack.result == 'success' && needs.web-stack.outputs.publication_decision != 'superseded' && (inputs.target == 'ios' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read
@@ -202,7 +206,7 @@ jobs:
   ios:
     name: Deploy iOS
     needs: [web-stack, ios-archive]
-    if: ${{ !cancelled() && needs.web-stack.result == 'success' && needs.ios-archive.result == 'success' && needs.ios-archive.outputs.artifact_id != '' && (inputs.target == 'ios' || inputs.target == 'all') }}
+    if: ${{ !cancelled() && needs.web-stack.result == 'success' && needs.web-stack.outputs.publication_decision != 'superseded' && needs.ios-archive.result == 'success' && needs.ios-archive.outputs.artifact_id != '' && (inputs.target == 'ios' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read
@@ -218,11 +222,12 @@ jobs:
   ota:
     name: Deploy OTA
     needs: web-stack
-    if: ${{ !cancelled() && needs.web-stack.result == 'success' && (inputs.target == 'ota' || inputs.target == 'all') }}
+    if: ${{ !cancelled() && needs.web-stack.result == 'success' && needs.web-stack.outputs.publication_decision != 'superseded' && (inputs.target == 'ota' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read
       id-token: write
+      deployments: write
     uses: ./.github/workflows/deploy-ota.yml
     with:
       commit_sha: ${{ needs.web-stack.outputs.commit_sha }}

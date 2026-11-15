@@ -14,17 +14,24 @@ function docker(...args: string[]): string {
   return execFileSync("docker", args, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "inherit"],
+    env: {
+      ...process.env,
+      ...(process.argv.at(-1) === "--candidate-only" ? { DOCKER_HOST: "" } : {}),
+    },
   }).trim();
 }
 
 function main(): void {
+  const arguments_ = process.argv.slice(2);
+  const candidateOnly = arguments_.at(-1) === "--candidate-only";
+  if (candidateOnly) arguments_.pop();
   const [requestedImage, expectedCommit, webServiceName] = z
     .tuple([
       deployImageSchema,
       sourceCommitSchema,
       z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/),
     ])
-    .parse(process.argv.slice(2));
+    .parse(arguments_);
   const outputFile = z.string().min(1).parse(process.env.GITHUB_OUTPUT);
   const manifest = z
     .object({ digest: imageDigestSchema })
@@ -35,26 +42,28 @@ function main(): void {
     );
   const imageRef = `${imageRepository(requestedImage)}@${manifest.digest}`;
 
-  // List must succeed before absence can mean a first deployment.
-  const services = docker("service", "ls", "--format", "{{.Name}}").split("\n");
   let preMigrationImageRef = imageRef;
-  if (services.includes(webServiceName)) {
-    preMigrationImageRef = docker(
-      "service",
-      "inspect",
-      webServiceName,
-      "--format",
-      "{{.Spec.TaskTemplate.ContainerSpec.Image}}",
-    );
-    immutableImageReference(preMigrationImageRef);
-    if (imageRepository(preMigrationImageRef) !== imageRepository(requestedImage)) {
-      throw new Error(
-        `Existing service ${webServiceName} must declare an immutable image in ${imageRepository(requestedImage)}; found ${preMigrationImageRef}`,
+  if (!candidateOnly) {
+    // List must succeed before absence can mean a first deployment.
+    const services = docker("service", "ls", "--format", "{{.Name}}").split("\n");
+    if (services.includes(webServiceName)) {
+      preMigrationImageRef = docker(
+        "service",
+        "inspect",
+        webServiceName,
+        "--format",
+        "{{.Spec.TaskTemplate.ContainerSpec.Image}}",
       );
+      immutableImageReference(preMigrationImageRef);
+      if (imageRepository(preMigrationImageRef) !== imageRepository(requestedImage)) {
+        throw new Error(
+          `Existing service ${webServiceName} must declare an immutable image in ${imageRepository(requestedImage)}; found ${preMigrationImageRef}`,
+        );
+      }
     }
   }
 
-  docker("pull", imageRef);
+  docker("pull", ...(candidateOnly ? ["--platform", "linux/arm64"] : []), imageRef);
   const imageEnvironment = z
     .array(z.string())
     .parse(JSON.parse(docker("image", "inspect", imageRef, "--format", "{{json .Config.Env}}")));
@@ -71,7 +80,9 @@ function main(): void {
     `image_ref=${imageRef}\npre_migration_image_ref=${preMigrationImageRef}\nsentry_release=${sentryRelease}\n`,
   );
   console.log(
-    `Validated deployment image ${imageRef}; pre-migration image ${preMigrationImageRef}`,
+    candidateOnly
+      ? `Validated candidate deployment image ${imageRef}`
+      : `Validated deployment image ${imageRef}; pre-migration image ${preMigrationImageRef}`,
   );
 }
 
