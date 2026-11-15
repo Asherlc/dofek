@@ -1,0 +1,171 @@
+name: Check Shared
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: Full commit SHA to check; the caller validates it before dispatch.
+        required: true
+        type: string
+
+jobs:
+  typecheck:
+    name: Typecheck (shared packages)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Typecheck
+        run: pnpm --recursive --filter '!dofek' --filter '!dofek-server' --filter '!dofek-web' --filter '!dofek-mobile' --if-present run typecheck
+
+  test-unit-shared:
+    name: Unit Tests (shared)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm test:unit:shared
+        env:
+          CLICKHOUSE_URL: http://default:health@localhost:8123
+          NODE_OPTIONS: --max-old-space-size=8192
+      - name: Diff coverage (changed lines only)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          pip install diff-cover
+          diff-cover coverage/lcov.info \
+            --compare-branch=origin/$BASE_REF \
+            --fail-under=80 \
+            --markdown-report diff-coverage.md || DIFF_FAILED=1
+          if [ -f diff-coverage.md ]; then
+            cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit ${DIFF_FAILED:-0}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-shared
+          path: coverage/
+
+  import-boundaries:
+    name: Import Boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm exec depcruise --config .dependency-cruiser.cjs src/ packages/
+
+  review-scenarios:
+    name: Review Scenario Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm lint:review-scenarios
+
+  # ── Mutation testing ───────────────────────────────────────────────────
+
+  mutation-shared-prep:
+    name: Shared Mutation Prep
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.shard.outputs.shards }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Compute changed files and split into shards
+        id: shard
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            DIFF_RANGE="${{ github.event.pull_request.base.sha }}...HEAD"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            DIFF_RANGE="origin/main...HEAD"
+          else
+            DIFF_RANGE="HEAD~1...HEAD"
+          fi
+          SHARDS=$(pnpm tsx scripts/prepare-mutation-shards.ts --scope shared --diff-range "$DIFF_RANGE")
+          echo "shards=$SHARDS" >> "$GITHUB_OUTPUT"
+
+  mutation-shared:
+    name: Shared Stryker (${{ strategy.job-index }})
+    needs: mutation-shared-prep
+    if: needs.mutation-shared-prep.outputs.shards != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        files: ${{ fromJSON(needs.mutation-shared-prep.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Run Stryker
+        env:
+          MUTATE_FILES: ${{ matrix.files }}
+        run: pnpm exec stryker run stryker.shared.config.cjs --mutate "$MUTATE_FILES"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: mutation-shared-report-${{ strategy.job-index }}
+          path: reports/mutation/
+          retention-days: 7
+
+  # ── Aggregate ──────────────────────────────────────────────────────────
+
+  shared-checks:
+    name: Shared Checks
+    needs: [typecheck, test-unit-shared, import-boundaries, review-scenarios, mutation-shared-prep, mutation-shared]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      MUTATION_SHARDS: ${{ needs.mutation-shared-prep.outputs.shards }}
+    steps:
+      - name: Check results
+        run: |
+          fail=0
+          require_success() {
+            name="$1"
+            result="$2"
+            if [ "$result" != "success" ]; then
+              echo "::error::$name did not succeed ($result)"
+              fail=1
+            fi
+          }
+
+          require_success typecheck "${{ needs.typecheck.result }}"
+          require_success test-unit-shared "${{ needs.test-unit-shared.result }}"
+          require_success import-boundaries "${{ needs.import-boundaries.result }}"
+          require_success review-scenarios "${{ needs.review-scenarios.result }}"
+          require_success mutation-shared-prep "${{ needs.mutation-shared-prep.result }}"
+
+          if [ "$MUTATION_SHARDS" != "[]" ]; then
+            require_success mutation-shared "${{ needs.mutation-shared.result }}"
+          fi
+
+          exit "$fail"

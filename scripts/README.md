@@ -113,6 +113,14 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Verification & Tooling
 
+- `prepare-mutation-shards.ts`: Splits existing changed-line Stryker inputs into
+  balanced shards by shared-package or server ownership. It preserves the
+  colocated unit-test, runtime-source, and exclusion checks used by the CI
+  mutation campaign.
+  - Usage: `pnpm tsx scripts/prepare-mutation-shards.ts --scope shared --diff-range <base>...<head>`
+  - CI runs the shared scope with the complete `unit-shared` project and the
+    server scope with the existing Stryker Vitest configuration. Both retain
+    the configured Stryker thresholds.
 - `integration-test-sequencer.ts`: Uses Vitest's public
   [BaseSequencer extension](https://v4.vitest.dev/config/sequence) to balance the
   existing five integration shards from one committed measured baseline.

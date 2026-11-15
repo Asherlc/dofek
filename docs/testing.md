@@ -3,7 +3,7 @@
 ## CI check ownership
 
 This map records the owner of every check that currently gates merges or
-releases. Ownership labels describe extraction boundaries, not new workflows:
+releases. Ownership labels describe extraction boundaries:
 **Repository safety**, **Server/web**, **Mobile JavaScript**, **Native mobile**,
 **Infrastructure**, **Other packages**, and **Shared prerequisite**. A shared
 prerequisite still combines lanes and must remain wired to every caller until an
@@ -31,12 +31,34 @@ replacement would narrow the required set.
 | `Test / Mutation Testing` | Classic branch protection and ruleset |
 | `Build Mobile / Mobile Build Gate` | Classic branch protection only |
 
-### Job ownership map
+### Current workflow groups
 
-`test.yml` owns most test, lint, and policy jobs. Its aggregate jobs must keep
-every listed dependency until the replacement workflow proves the same coverage.
+`check-repository.yml`, `check-shared.yml`, `check-server.yml`, and
+`check-mobile.yml` are reusable workflows called independently by `ci.yml`.
+Each lane receives and checks the caller's full commit SHA. The server lane
+keeps the existing full unit and integration coverage merge; the shared lane
+adds an independently thresholded shared-package unit and coverage run for
+mobile consumers, while server consumers retain the original aggregate.
 
-| Workflow | Job ID | Displayed check | Owner |
+| Reusable workflow | Owned checks |
+| --- | --- |
+| `check-repository.yml` | Repository security, dependency, license, workflow, infrastructure, and general repository checks |
+| `check-shared.yml` | Shared package typechecks and unit tests, import-boundary and review-scenario policies, shared TypeScript mutation checks |
+| `check-server.yml` | Root/server/web typechecks, database-free root plus server SQL/regression lint, full unit/integration coverage, FIT/CDC/Pulsar/BookKeeper, web E2E, image scan, server TypeScript mutation |
+| `check-mobile.yml` | Mobile typecheck, telemetry/route policies, mobile tests, SwiftLint/Periphery/Swift tests, native mutation campaign |
+| `test.yml` | Compatibility reporting jobs under the existing protected `Test / …` names; it does not rerun checks |
+| `ci.yml` | Change detection, lane/build orchestration, and the existing `CI Gate` status |
+
+The inventory below preserves the original job IDs and check names from before
+extraction, so reviewers can map the historical combined workflow to its new
+owners. The protected merge contexts remain listed above.
+
+### Historical job inventory
+
+Before extraction, `test.yml` owned most test, lint, and policy jobs. This
+inventory preserves those original job IDs and their owner assignments.
+
+| Original workflow | Job ID | Displayed check | Owner |
 | --- | --- | --- | --- |
 | `test.yml` | `secret-scan` | Secret Scan | Repository safety |
 | `test.yml` | `audit` | Dependency Audit | Repository safety |
@@ -113,7 +135,7 @@ when the monolithic `Test / Lint` job is split.
 | --- | --- |
 | `pnpm lint:sandbox` | Shared prerequisite (aggregate) |
 | `pnpm lint:exact-versions` | Repository safety |
-| `biome check .` | Shared prerequisite |
+| `biome check .` | Repository safety |
 | `pnpm lint:suppressions` | Repository safety |
 | `pnpm lint:workflow-downloads` | Repository safety |
 | `pnpm lint:analytics-policy` | Server/web |
@@ -137,23 +159,27 @@ behavior and must not be dropped with the database-free commands.
   `.github/workflows`, `entrypoint.test.ts`, `packages/*/src` except
   `packages/mobile`, the explicit Zepp package trees, and `scripts`. Mobile has a
   separate `--project mobile` from [`packages/mobile/vitest.config.ts`](../packages/mobile/vitest.config.ts).
-  The single unit job is shared today; splitting it requires selecting complete
-  affected package suites plus their consumers, not only changed test files.
+  `unit-shared` selects the complete package-source suites outside server, web,
+  and mobile; mobile changes run that suite alongside the full mobile project.
+  The server lane retains the full original `unit` suite, including shared and
+  tooling tests, rather than replacing it with a changed-file subset.
 - **Integration tests**: the `integration` Vitest project requires real
   PostgreSQL/ClickHouse/Redis fixtures and runs as five duration-balanced shards.
   PeerDB and Pulsar/BookKeeper suites are separate projects and jobs. All remain
   server/web owned.
-- **Coverage**: the `coverage` job merges `coverage-unit` with all five
+- **Coverage**: the server `coverage` job merges `coverage-unit` with all five
   `coverage-integration-*` artifacts and enforces lines 93.5%, branches 89%,
   functions 94.5%, statements 93.5%, plus 80% diff coverage on changed lines.
-  Mobile coverage is not merged or thresholded. Retain combined accounting until
-  a partition proves identical totals; do not claim the coverage stage is
-  mobile-independent before then.
-- **TypeScript mutation**: `mutation-prep` intersects changed files with the
-  Stryker mutate list, then runs `stryker.ci.config.json` against the unit-only
-  Vitest config with break 75 and high/low 100/90. Discovery excludes
-  `packages/mobile/**` even though the Stryker config lists mobile TypeScript
-  paths, so mobile TypeScript mutation is not currently gated.
+  The shared check separately applies those same global floors and the same 80%
+  changed-line floor to the shared package source selection. Mobile coverage is
+  not merged or thresholded. The server aggregate remains the authoritative
+  combined report for server changes.
+- **TypeScript mutation**: `check-shared.yml` and `check-server.yml` use
+  `prepare-mutation-shards.ts` to partition the existing changed-line Stryker
+  campaign by source owner. Both use the original break 75 and high/low 100/90
+  thresholds and exclusions; the shared campaign uses the complete `unit-shared`
+  test project. Mobile changes select the shared lane, while Swift mutation
+  remains in the native mobile campaign.
 - **Native mutation and tests**: Swift mutation plans and shards run per owning
   package; `Swift Tests` separately runs Background Refresh, Core Motion, WHOOP
   BLE, HealthKit coverage, and Watch transfer tests. HealthKit coverage requires

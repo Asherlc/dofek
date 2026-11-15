@@ -13,6 +13,8 @@ const changeOutputsSchema = z.object({
   e2e_web: z.boolean(),
   ml: z.boolean(),
   mobile: z.boolean(),
+  server: z.boolean(),
+  shared: z.boolean(),
   storybook_mobile: z.boolean(),
   storybook_web: z.boolean(),
   terraform: z.boolean(),
@@ -30,6 +32,8 @@ const noChanges = {
   e2e_web: false,
   ml: false,
   mobile: false,
+  server: false,
+  shared: false,
   storybook_mobile: false,
   storybook_web: false,
   terraform: false,
@@ -45,6 +49,8 @@ const allChanges = {
   e2e_web: true,
   ml: true,
   mobile: true,
+  server: true,
+  shared: true,
   storybook_mobile: true,
   storybook_web: true,
   terraform: true,
@@ -161,6 +167,8 @@ describe("CI change detector", () => {
       e2e_web: false,
       ml: false,
       mobile: true,
+      server: false,
+      shared: true,
       storybook_mobile: true,
       storybook_web: false,
       terraform: false,
@@ -178,6 +186,8 @@ describe("CI change detector", () => {
       e2e_web: false,
       ml: false,
       mobile: false,
+      server: false,
+      shared: false,
       storybook_mobile: false,
       storybook_web: false,
       terraform: false,
@@ -235,8 +245,81 @@ describe("CI change detector", () => {
         e2e_web: false,
         ml: false,
         mobile: false,
+        server: false,
+        shared: true,
         web: false,
         zepp: false,
+      }),
+    );
+  });
+
+  it.each([
+    "scripts/migration-policy.ts",
+    "scripts/migration-policy.test.ts",
+    "entrypoint.test.ts",
+    ".github/workflows/deploy-ios.test.ts",
+  ])("selects root/tooling unit tests for %s without an application build", (changedFile) => {
+    expect(detectChangedAreas(changedFile)).toEqual(
+      expect.objectContaining({
+        docker_server: false,
+        e2e_web: false,
+        mobile: false,
+        server: true,
+        shared: true,
+        web: false,
+      }),
+    );
+  });
+
+  it("selects server and E2E checks for a Cypress-only change without an image build", () => {
+    expect(detectChangedAreas("cypress/e2e/onboarding.cy.ts")).toEqual(
+      expect.objectContaining({
+        docker_server: false,
+        e2e_web: true,
+        mobile: false,
+        server: true,
+        shared: true,
+        web: false,
+      }),
+    );
+  });
+
+  it("selects server native FIT checks and the server image for a decoder change", () => {
+    expect(detectChangedAreas("native/fit-decoder/src/decoder.cpp")).toEqual(
+      expect.objectContaining({
+        docker_server: true,
+        e2e_web: false,
+        mobile: false,
+        server: true,
+        shared: true,
+        web: false,
+      }),
+    );
+  });
+
+  it.each([
+    "docker-compose.yml",
+    "docker-compose.peerdb.yml",
+    "docker-compose.bookie-evacuation.yml",
+    "deploy/docker-compose.yml",
+    "deploy/stack.maintenance.yml",
+    "deploy/otel-collector-config.yaml",
+  ])("selects server runtime checks for %s without an image rebuild", (changedFile) => {
+    expect(detectChangedAreas(changedFile)).toEqual(
+      expect.objectContaining({
+        docker_server: false,
+        server: true,
+        shared: true,
+      }),
+    );
+  });
+
+  it("selects web E2E for the E2E compose file without an image rebuild", () => {
+    expect(detectChangedAreas("docker-compose.e2e.yml")).toEqual(
+      expect.objectContaining({
+        docker_server: false,
+        e2e_web: true,
+        server: true,
       }),
     );
   });
@@ -282,6 +365,8 @@ describe("independent lane selection", () => {
       docker_server: true,
       e2e_web: true,
       mobile: true,
+      server: true,
+      shared: true,
       storybook_mobile: true,
       storybook_web: true,
       web: true,
@@ -293,6 +378,8 @@ describe("independent lane selection", () => {
       ...noChanges,
       docker_server: true,
       e2e_web: true,
+      server: true,
+      shared: true,
       storybook_web: true,
       web: true,
     });
@@ -302,6 +389,7 @@ describe("independent lane selection", () => {
     expect(detectChangedAreas(".github/workflows/check-mobile.yml")).toEqual({
       ...noChanges,
       mobile: true,
+      shared: true,
       storybook_mobile: true,
     });
   });
@@ -320,6 +408,7 @@ describe("independent lane selection", () => {
     "vitest.config.ts",
     "vitest.config.mutation.ts",
     "stryker.ci.config.json",
+    "stryker.shared.config.cjs",
     "mise.toml",
     "mise.lock",
     ".nvmrc",

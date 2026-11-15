@@ -13,7 +13,10 @@
         "scripts/check-ota-image-visibility.ts",
         "scripts/verify-published-ota.ts",
         "scripts/stack-service-image.ts",
-        "vitest.config.mutation.ts"
+        "scripts/prepare-mutation-shards.ts",
+        "vitest.config.mutation.ts",
+        "vitest.config.shared-mutation.ts",
+        "stryker.shared.config.cjs"
       ],
       "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js}", "scripts/clickhouse-ci-diagnostics.ts", "scripts/verify-ota-update.ts"],
       "ignoreDependencies": ["supports-color"],

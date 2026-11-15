@@ -23,6 +23,10 @@ on:
         value: ${{ jobs.detect.outputs.ml }}
       mobile:
         value: ${{ jobs.detect.outputs.mobile }}
+      server:
+        value: ${{ jobs.detect.outputs.server }}
+      shared:
+        value: ${{ jobs.detect.outputs.shared }}
       storybook_mobile:
         value: ${{ jobs.detect.outputs.storybook_mobile }}
       storybook_web:
@@ -46,6 +50,8 @@ jobs:
       e2e_web: ${{ steps.detect.outputs.e2e_web }}
       ml: ${{ steps.detect.outputs.ml }}
       mobile: ${{ steps.detect.outputs.mobile }}
+      server: ${{ steps.detect.outputs.server }}
+      shared: ${{ steps.detect.outputs.shared }}
       storybook_mobile: ${{ steps.detect.outputs.storybook_mobile }}
       storybook_web: ${{ steps.detect.outputs.storybook_web }}
       terraform: ${{ steps.detect.outputs.terraform }}

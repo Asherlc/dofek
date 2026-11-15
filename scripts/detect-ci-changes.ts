@@ -12,12 +12,19 @@ const outputNames = [
   "e2e_web",
   "ml",
   "mobile",
+  "server",
+  "shared",
   "storybook_mobile",
   "storybook_web",
   "terraform",
   "web",
   "zepp",
 ] as const;
+
+// Package names whose typechecks and tests belong to an application lane rather
+// than the shared package check. Keep in sync with the pnpm filters in
+// .github/workflows/check-shared.yml and check-server.yml.
+const applicationPackageNames = new Set(["dofek", "dofek-server", "dofek-web", "dofek-mobile"]);
 
 const workspaceSchema = z.object({
   packages: z.array(z.string()).min(1),
@@ -217,7 +224,7 @@ function classifyChanges(
   );
   const rootToolingChange = hasMatchingFile(
     changedFiles,
-    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.json|mise\.toml|mise\.lock|\.nvmrc|biome\.json|vitest\.config(?:\.[\w-]+)?\.ts|stryker(?:\.[\w-]+)?\.config\.json)$/,
+    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.json|mise\.toml|mise\.lock|\.nvmrc|biome\.json|vitest\.config(?:\.[\w-]+)?\.ts|stryker(?:\.[\w-]+)?\.config\.(?:json|cjs))$/,
   );
   if (runAll || criticalCiChange || rootToolingChange) {
     return {
@@ -228,6 +235,8 @@ function classifyChanges(
       e2e_web: true,
       ml: true,
       mobile: true,
+      server: true,
+      shared: true,
       storybook_mobile: true,
       storybook_web: true,
       terraform: true,
@@ -289,6 +298,39 @@ function classifyChanges(
     /^(?:\.storybook\/|\.github\/workflows\/storybook-preview\.yml$)/,
   );
   const mlChange = hasMatchingFile(changedFiles, /^packages\/ml\//);
+  const sharedPackageChange = changedFiles.some(
+    (changedFile) =>
+      !changedFile.endsWith(".md") &&
+      projects.some(
+        (project) =>
+          project.directory !== "." &&
+          !applicationPackageNames.has(project.name) &&
+          changedFile.startsWith(`${project.directory}/`),
+      ),
+  );
+  // Root/tooling unit tests live in the full `unit` project, which the server
+  // lane runs. Without this, a change such as scripts/migration-policy.ts would
+  // select no lane even though its colocated test must run.
+  const toolingChange = hasMatchingFile(
+    changedFiles,
+    /^(?:scripts\/|entrypoint\.test\.ts$|\.github\/workflows\/[^/]+\.test\.ts$)/,
+  );
+  const nativeFitChange = hasMatchingFile(changedFiles, /^native\/fit-decoder\//);
+  // Compose and Swarm runtime inputs feed the server/integration lanes. A
+  // compose-only change does not need a new application image, so it selects
+  // server checks without setting docker_server.
+  const serverRuntimeChange = hasMatchingFile(
+    changedFiles,
+    /^(?:docker-compose(?:\.[\w-]+)?\.ya?ml|deploy\/(?:docker-compose\.yml|stack\.[\w-]+\.yml|otel-collector-config\.ya?ml))$/,
+  );
+  const serverImageChange = serverChange || nativeFitChange;
+  const e2eWebChange =
+    serverChange ||
+    webChange ||
+    hasMatchingFile(changedFiles, /^(?:cypress\/|docker-compose\.e2e\.yml$)/);
+  const serverCheckChange =
+    serverImageChange || e2eWebChange || toolingChange || serverRuntimeChange;
+  const sharedCheckChange = serverCheckChange || mobileChange || zeppChange || sharedPackageChange;
 
   return {
     analytics: analyticsChange,
@@ -298,13 +340,12 @@ function classifyChanges(
       changedFiles,
       /^(?:deploy\/ota\/|\.github\/workflows\/build-private-ota\.yml$|scripts\/check-ota-image-visibility\.ts$)/,
     ),
-    docker_server: serverChange,
-    e2e_web:
-      serverChange ||
-      webChange ||
-      hasMatchingFile(changedFiles, /^(?:cypress\/|docker-compose\.e2e\.yml$)/),
+    docker_server: serverImageChange,
+    e2e_web: e2eWebChange,
     ml: mlChange,
     mobile: mobileChange,
+    server: serverCheckChange,
+    shared: sharedCheckChange,
     storybook_mobile:
       mobileChange ||
       sharedStorybookChange ||

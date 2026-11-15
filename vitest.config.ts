@@ -75,6 +75,36 @@ const testClickHouseUrl =
     ? configuredClickHouseUrl
     : "http://localhost:8123";
 
+// Shared-domain tests are also the baseline for shared mutation testing. Export
+// the project so vitest.config.shared-mutation.ts selects exactly this suite.
+export const unitSharedProject = {
+  extends: false,
+  esbuild: {
+    jsx: "automatic" as const,
+  },
+  resolve: {
+    alias: zeppAliases,
+  },
+  test: {
+    ...sharedTestConfig,
+    name: "unit-shared",
+    setupFiles: [path.resolve(dirname, "packages/web/test-setup.ts")],
+    include: [
+      "packages/*/src/**/*.test.{ts,tsx}",
+      "packages/zepp/e2e/**/*.e2e.test.ts",
+      "packages/zepp/setting/**/*.test.ts",
+      "packages/zepp/workout-extension/**/*.test.ts",
+    ],
+    exclude: [
+      "**/*.integration.test.ts",
+      "packages/server/**",
+      "packages/web/**",
+      "packages/mobile/**",
+    ],
+    env: sharedTestEnv,
+  },
+};
+
 export default defineConfig({
   test: {
     ...sharedTestConfig,
@@ -111,6 +141,7 @@ export default defineConfig({
         },
       },
       "packages/mobile/vitest.config.ts",
+      unitSharedProject,
       {
         extends: false,
         test: {
