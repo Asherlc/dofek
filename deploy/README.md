@@ -274,7 +274,10 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
   See the [CDC deploy boundary and interrupted-addition recovery procedure](../docs/clickhouse-read-model-deploy-runbook.md#known-failure-new-peerdb-table-added-before-its-migration).
 
 Each target releases after its own applicable gates; new client API dependencies
-require a verified additive server deployment before client activation.
+require a verified additive server deployment before client activation. This is
+the proposed target state from the
+[independent release-gates design](../docs/superpowers/specs/2026-11-14-independent-release-gates-design.md#release-units-and-gate-ownership);
+current workflows still couple the lanes until that work lands.
 
 ### Production Secrets
 

@@ -133,10 +133,10 @@ behavior and must not be dropped with the database-free commands.
 
 ### Source, test, coverage, and mutation ownership
 
-- **Unit tests**: `vitest run --project unit` covers root `src`, `analytics/models`,
+- **Unit tests**: `vitest run --project unit` includes root `src`, `analytics/models`,
   `.github/workflows`, `entrypoint.test.ts`, `packages/*/src` except
-  `packages/mobile`, `packages/zepp`, and `scripts`. Mobile has a separate
-  `--project mobile` from [`packages/mobile/vitest.config.ts`](../packages/mobile/vitest.config.ts).
+  `packages/mobile`, the explicit Zepp package trees, and `scripts`. Mobile has a
+  separate `--project mobile` from [`packages/mobile/vitest.config.ts`](../packages/mobile/vitest.config.ts).
   The single unit job is shared today; splitting it requires selecting complete
   affected package suites plus their consumers, not only changed test files.
 - **Integration tests**: the `integration` Vitest project requires real
@@ -181,6 +181,15 @@ job reaches 1714–1778s. Terraform and TestFlight deployment records add
 independent timestamps: #3346 recorded Terraform 01:19:34–01:19:52 and
 TestFlight 01:52:09–01:54:45; #3341 recorded Terraform 06:04:45–06:05:07 only;
 #3339 recorded Terraform 04:55:19–04:55:41 and TestFlight 05:28:31–05:31:36.
+
+The PR-open to deployed-release loop separates into review, main validation, and
+rollout. For these samples, PR open to merge took 23m (#3341), 27m (#3339), and
+1h07m (#3346); that span includes human review and the PR run, which the run
+timestamps alone cannot separate. Merge to main CI start was 3–4s, main CI took
+17m43s–32m03s, and main CI completion to production start was 2–3s. The
+production run then took 32m25s–36m33s through Terraform and, where present,
+TestFlight finalization. Deployment records end at the named environment/task,
+not at App Store tester availability.
 
 Baseline limitations: one representative run per lane; totals include queue and
 runner setup; job durations include dependency installation and artifact
