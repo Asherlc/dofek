@@ -657,13 +657,18 @@ update_id="$(sed -n 's/^manifest_id=//p' "$manifest_output")"
 manifest_runtime="$(sed -n 's/^manifest_runtime=//p' "$manifest_output")"
 test -n "$update_id" && test "$update_id" != none
 test "$manifest_runtime" = "$RUNTIME_VERSION"
-pnpm --dir packages/mobile exec expo export \
-  --output-dir "$RUNNER_TEMP/dofek-ota-initialization" --platform ios
+EXPO_NO_DOTENV=1 SENTRY_RELEASE="$SOURCE_SHA" EXPO_PUBLIC_SENTRY_RELEASE="$SOURCE_SHA" \
+  pnpm --dir packages/mobile exec expo export \
+    --dump-sourcemap --output-dir "$RUNNER_TEMP/dofek-ota-initialization" --platform ios
 pnpm tsx scripts/verify-published-ota.ts \
   "$RUNNER_TEMP/dofek-ota-initialization/xprem-update-metadata.json" \
   production "$RUNTIME_VERSION"
 test "$(jq -er '.[0].id' "$RUNNER_TEMP/dofek-ota-initialization/xprem-update-metadata.json")" = "$update_id"
 ```
+
+The installed EOAS publisher passes `--dump-sourcemap`; Expo documents export
+and source-map options in its [CLI reference](https://docs.expo.dev/more/expo-cli/)
+and [workflow syntax](https://docs.expo.dev/eas/workflows/syntax/).
 
 After independently checking the source SHA against immutable release
 provenance, create the deployment and append its success status. The finalizer
