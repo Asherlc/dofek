@@ -114,7 +114,6 @@ jobs:
     with:
       changed: ${{ needs.detect-changes.outputs.mobile == 'true' }}
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
-    secrets: inherit
 
   build-web:
     name: Build Web
@@ -123,7 +122,6 @@ jobs:
     uses: ./.github/workflows/build-web.yml
     with:
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
-    secrets: inherit
 
   build-zepp:
     name: Build Zepp
@@ -152,7 +150,9 @@ jobs:
     uses: ./.github/workflows/build-docker.yml
     with:
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
-    secrets: inherit
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   build-ota:
     name: Validate OTA Build
@@ -161,12 +161,16 @@ jobs:
       needs.detect-changes.outputs.docker_ota == 'true' &&
       !(github.event_name == 'push' && github.ref == 'refs/heads/main') &&
       !(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: read
-    uses: ./.github/workflows/build-private-ota.yml
-    with:
-      commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+    steps:
+      - name: Validate selected OTA source without registry write access
+        uses: ./.github/actions/build-private-ota
+        with:
+          commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
+          publish: "false"
 
   build-ota-publish:
     name: Build and Publish OTA
@@ -189,7 +193,8 @@ jobs:
       contents: read
       packages: write
     uses: ./.github/workflows/build-docker-ml.yml
-    secrets: inherit
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── Storybook previews (PR only, depend on builds not tests) ────────────
 
@@ -200,7 +205,6 @@ jobs:
     uses: ./.github/workflows/build-storybook.yml
     with:
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
-    secrets: inherit
 
   build-storybook-mobile:
     name: Build Mobile Storybook
@@ -209,7 +213,6 @@ jobs:
     uses: ./.github/workflows/build-storybook-mobile.yml
     with:
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
-    secrets: inherit
 
   storybook-preview:
     name: Storybook Preview
@@ -262,7 +265,15 @@ jobs:
       ci_run_id: ${{ format('{0}', github.run_id) }}
       public_url: https://dofek.fit
       web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
-    secrets: inherit
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   build-ios-release:
     name: Build Matching iOS
@@ -277,6 +288,8 @@ jobs:
     with:
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   deploy-ota:
     name: Publish Matching OTA
@@ -297,7 +310,8 @@ jobs:
     with:
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets: inherit
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   deploy-ios:
     name: Publish Matching iOS
@@ -324,7 +338,8 @@ jobs:
       build_number: ${{ needs.build-ios-release.outputs.build_number }}
       artifact_id: ${{ needs.build-ios-release.outputs.artifact_id }}
       ci_run_id: ${{ format('{0}', github.run_id) }}
-    secrets: inherit
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── Aggregate PR gate ──────────────────────────────────────────────────
 

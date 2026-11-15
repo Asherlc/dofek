@@ -102,6 +102,13 @@ on:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
+    secrets:
+      DEPLOY_SSH_KEY:
+        required: false
+      GHCR_TOKEN:
+        required: false
+      SENTRY_AUTH_TOKEN:
+        required: false
 
 jobs:
   # The deploy job masks exported dotenv values. Keep public release metadata

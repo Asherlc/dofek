@@ -119,6 +119,23 @@ on:
         required: false
         type: string
         default: ""
+    secrets:
+      GITHUB_TOKEN:
+        required: false
+      DEPLOY_SSH_KEY:
+        required: false
+      GHCR_TOKEN:
+        required: false
+      SENTRY_AUTH_TOKEN:
+        required: false
+      TF_API_TOKEN:
+        required: false
+      CLOUDFLARE_API_TOKEN:
+        required: false
+      CLOUDFLARE_TERRAFORM_R2_API_TOKEN:
+        required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
 
 permissions:
   contents: read
@@ -357,7 +374,11 @@ jobs:
     with:
       commit_sha: ${{ inputs.automatic_commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets: inherit
+    secrets:
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   deploy-web-stack:
     name: Deploy Web Stack
@@ -385,7 +406,10 @@ jobs:
       peerdb_public_url: ${{ inputs.peerdb_public_url }}
       peerdb_host_rule: ${{ inputs.peerdb_host_rule }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets: inherit
+    secrets:
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   finalize-server-receipt:
     name: Finalize verified server receipt

@@ -12,27 +12,33 @@ afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
-const workflow = z
+const action = z
   .object({
-    jobs: z.object({
-      build: z.object({
-        steps: z.array(
-          z.object({
-            id: z.string().optional(),
-            name: z.string().optional(),
-            run: z.string().optional(),
-            with: z.object({ tags: z.string().optional() }).optional(),
-          }),
-        ),
-      }),
+    runs: z.object({
+      steps: z.array(
+        z.object({
+          id: z.string().optional(),
+          name: z.string().optional(),
+          run: z.string().optional(),
+          with: z.object({ tags: z.string().optional() }).optional(),
+        }),
+      ),
     }),
   })
-  .parse(parse(readFileSync(".github/workflows/build-private-ota.yml", "utf8")));
+  .parse(parse(readFileSync(".github/actions/build-private-ota/action.yml", "utf8")));
 const ciWorkflow = z
   .object({
     jobs: z.object({
-      "build-ota": z.object({ permissions: z.object({ packages: z.enum(["read", "write"]) }), if: z.string() }),
-      "build-ota-publish": z.object({ permissions: z.object({ packages: z.enum(["read", "write"]) }), if: z.string() }),
+      "build-ota": z.object({
+        permissions: z.object({ packages: z.enum(["read", "write"]) }),
+        if: z.string(),
+        steps: z.array(z.object({ uses: z.string().optional(), with: z.record(z.string(), z.string()).optional() })),
+      }),
+      "build-ota-publish": z.object({
+        permissions: z.object({ packages: z.enum(["read", "write"]) }),
+        if: z.string(),
+        uses: z.string(),
+      }),
     }),
   })
   .parse(parse(readFileSync(".github/workflows/ci.yml", "utf8")));
@@ -46,6 +52,9 @@ describe("private OTA image source", () => {
     expect(ciWorkflow.jobs["build-ota"].permissions.packages).toBe("read");
     expect(ciWorkflow.jobs["build-ota-publish"].permissions.packages).toBe("write");
     expect(ciWorkflow.jobs["build-ota-publish"].if).toContain("github.ref == 'refs/heads/main'");
+    expect(ciWorkflow.jobs["build-ota-publish"].uses).toBe("./.github/workflows/build-private-ota.yml");
+    expect(ciWorkflow.jobs["build-ota"].steps[0]?.uses).toBe("./.github/actions/build-private-ota");
+    expect(ciWorkflow.jobs["build-ota"].steps[0]?.with?.publish).toBe("false");
   });
 
   it("requires the checkout to match the selected full source SHA before building", () => {
@@ -54,7 +63,7 @@ describe("private OTA image source", () => {
     git(directory, "init", "--quiet");
     git(directory, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "candidate");
     const checkedOutSha = git(directory, "rev-parse", "HEAD");
-    const sourceGuard = workflow.jobs.build.steps.find((step) => step.id === "source");
+    const sourceGuard = action.runs.steps.find((step) => step.id === "source");
     expect(sourceGuard?.run).toBeDefined();
 
     const matches = spawnSync("bash", ["-euo", "pipefail", "-c", sourceGuard?.run ?? ""], {
@@ -75,7 +84,7 @@ describe("private OTA image source", () => {
   });
 
   it("tags the published private image with the selected checked-out source", () => {
-    const tag = workflow.jobs.build.steps.find((step) => step.id === "runtime")?.with?.tags;
+    const tag = action.runs.steps.find((step) => step.id === "runtime")?.with?.tags;
     expect(tag).toBe("${{ steps.image.outputs.name }}:sha-${{ steps.source.outputs.commit_sha }}");
   });
 });

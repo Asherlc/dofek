@@ -2,6 +2,9 @@ name: Build Docker ML
 
 on:
   workflow_call:
+    secrets:
+      GITHUB_TOKEN:
+        required: false
   workflow_dispatch:
 
 jobs:

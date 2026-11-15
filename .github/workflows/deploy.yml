@@ -13,6 +13,23 @@ on:
         required: false
         type: string
         default: ""
+    secrets:
+      GITHUB_TOKEN:
+        required: false
+      SENTRY_AUTH_TOKEN:
+        required: false
+      DEPLOY_SSH_KEY:
+        required: false
+      GHCR_TOKEN:
+        required: false
+      TF_API_TOKEN:
+        required: false
+      CLOUDFLARE_API_TOKEN:
+        required: false
+      CLOUDFLARE_TERRAFORM_R2_API_TOKEN:
+        required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
   workflow_dispatch:
     inputs:
       target:
@@ -160,7 +177,6 @@ jobs:
     with:
       changed: true
       commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
-    secrets: inherit
 
   terraform:
     name: Deploy Infra
@@ -174,7 +190,11 @@ jobs:
     with:
       commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets: inherit
+    secrets:
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   docker:
     name: Docker Build & Push
@@ -186,7 +206,9 @@ jobs:
     uses: ./.github/workflows/build-docker.yml
     with:
       commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
-    secrets: inherit
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
 
   web-stack:
@@ -222,7 +244,15 @@ jobs:
       public_url: https://dofek.fit
       web_host_rule: "Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`) || Host(`dofek.asherlc.com`)"
       ci_run_id: ${{ format('{0}', github.run_id) }}
-    secrets: inherit
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   ios-archive:
     name: Build iOS Release
@@ -240,6 +270,8 @@ jobs:
     with:
       commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   ios:
     name: Deploy iOS
@@ -264,6 +296,8 @@ jobs:
       build_number: ${{ needs.ios-archive.outputs.build_number }}
       artifact_id: ${{ needs.ios-archive.outputs.artifact_id }}
       ci_run_id: ${{ format('{0}', github.run_id) }}
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   ota:
     name: Deploy OTA
@@ -283,4 +317,6 @@ jobs:
     with:
       commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   # Image cleanup runs via daily cron on the server (see cloud-init.yml).
