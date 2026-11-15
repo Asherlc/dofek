@@ -20,6 +20,7 @@ import {
   type ActivityPowerWork,
 } from "../contracts/activity-metric-sources.ts";
 import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
+import { healthSensorSamplesSql } from "./health-sensor-query.ts";
 import { heartRateZoneCountColumns, heartRateZoneSqlParams } from "./heart-rate-zone-sql.ts";
 
 /** Includes standalone recordings, but excludes recordings attached to unrelated activities. */
@@ -37,6 +38,65 @@ export const activityMetricSamplesSql = `SELECT *
     ))
     AND _peerdb_is_deleted = 0
     AND (channel != 'heart_rate' OR scalar > 0)`;
+
+/** Decoded temperature is filtered by strap measurement time, not the upload/reception day. */
+export const activitySkinTemperatureSamplesSql = `SELECT id, CAST(NULL, 'Nullable(UUID)') AS activity_id,
+    recorded_at, provider_id, source_name AS device_id, scalar,
+    coalesce(device_priority, provider_priority, 1000) AS provider_priority,
+    '' AS measurement_kind, 'skin_temperature' AS channel
+  FROM (
+    WITH temperature_candidates AS (
+      SELECT *
+      FROM (${healthSensorSamplesSql("skin_temperature")})
+      WHERE recorded_at >= parseDateTime64BestEffort({windowStartedAt:String}, 6, 'UTC')
+        AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String}, 6, 'UTC')
+        AND {isPointOnly:Bool} = 0
+    ),
+    active_sensor_provider_priority AS (
+      SELECT provider_id, toNullable(priority) AS priority
+      FROM postgres_fitness.sensor_provider_priority FINAL
+      WHERE channel = 'skin_temperature' AND _peerdb_is_deleted = 0
+    ),
+    active_sensor_device_priority AS (
+      SELECT provider_id, source_name_pattern, toNullable(priority) AS priority
+      FROM postgres_fitness.sensor_device_priority FINAL
+      WHERE channel = 'skin_temperature' AND _peerdb_is_deleted = 0
+    ),
+    device_priority_match AS (
+      SELECT sample_id, priority
+      FROM (
+        SELECT
+          temperature_candidates.id AS sample_id,
+          active_sensor_device_priority.priority AS priority,
+          row_number() OVER (
+            PARTITION BY temperature_candidates.id
+            ORDER BY
+              length(active_sensor_device_priority.source_name_pattern) DESC,
+              active_sensor_device_priority.priority ASC,
+              active_sensor_device_priority.source_name_pattern ASC
+          ) AS row_number
+        FROM temperature_candidates
+        INNER JOIN active_sensor_device_priority
+          ON active_sensor_device_priority.provider_id = temperature_candidates.provider_id
+         AND temperature_candidates.source_name IS NOT NULL
+         AND assumeNotNull(temperature_candidates.source_name)
+           LIKE active_sensor_device_priority.source_name_pattern
+      )
+      WHERE row_number = 1
+    )
+    SELECT temperature_candidates.id AS id,
+      temperature_candidates.recorded_at AS recorded_at,
+      temperature_candidates.provider_id AS provider_id,
+      temperature_candidates.source_name AS source_name,
+      temperature_candidates.scalar AS scalar,
+      device_priority_match.priority AS device_priority,
+      active_sensor_provider_priority.priority AS provider_priority
+    FROM temperature_candidates
+    LEFT JOIN active_sensor_provider_priority
+      ON active_sensor_provider_priority.provider_id = temperature_candidates.provider_id
+    LEFT JOIN device_priority_match
+      ON device_priority_match.sample_id = temperature_candidates.id
+  ) AS selected_temperature`;
 
 /** Keep device identities distinct, including multiple recordings delivered by Apple Health. */
 export const activityMetricSourceIdSql = `if(coalesce(device_id, '') = '', provider_id, toJSONString(tuple(provider_id, device_id)))`;
@@ -170,8 +230,14 @@ export async function getActivityMetricSources(
   const rows = await store.query(
     sourceRowSchema,
     `
-    WITH source_samples AS (
-      SELECT *, ${activityMetricSourceIdSql} AS source_id FROM (${activityMetricSamplesSql})
+    WITH source_candidates AS (
+      SELECT id, activity_id, recorded_at, channel, provider_id, device_id, provider_priority
+      FROM (${activityMetricSamplesSql})
+      UNION ALL
+      SELECT id, activity_id, recorded_at, channel, provider_id, device_id, provider_priority
+      FROM (${activitySkinTemperatureSamplesSql})
+    ), source_samples AS (
+      SELECT *, ${activityMetricSourceIdSql} AS source_id FROM source_candidates
     )
     SELECT channel, provider_id, source_id, any(nullIf(device_id, '')) AS device_id,
       groupUniqArray(ifNull(toString(activity_id), '')) AS activity_ids,

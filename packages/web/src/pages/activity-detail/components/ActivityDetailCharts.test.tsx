@@ -219,6 +219,117 @@ it("plots server-provided HR context without extending other metrics", () => {
   expect(series[1].data[0].value).toEqual([Date.parse(points[0].recordedAt), 200]);
 });
 
+it("plots skin temperature at its own recorded times in the selected units", () => {
+  const temperaturePoints = [
+    {
+      ...points[0],
+      skinTemperature: 32.18,
+      skinTemperatureRecordedAt: "2026-10-18T17:30:17Z",
+    },
+    {
+      ...points[1],
+      skinTemperature: 32.4,
+      skinTemperatureRecordedAt: "2026-10-18T17:31:17Z",
+    },
+  ];
+  render(
+    <MetricsChart
+      {...args}
+      points={temperaturePoints}
+      metricSources={[
+        {
+          key: "skinTemperature",
+          label: "Skin Temperature",
+          sources: [],
+          selectedId: '["whoop_ble","strap-a"]',
+          onChange: vi.fn(),
+        },
+      ]}
+      units={new UnitConverter("imperial")}
+    />,
+  );
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected chart series");
+  const temperature = series.find(
+    (entry: { name: string; data?: unknown[] }) => entry.name === "Skin Temperature",
+  );
+  const temperatureData: unknown[] = Array.isArray(temperature?.data) ? temperature.data : [];
+  const temperatureValues = temperatureData.flatMap((sample) => {
+    if (typeof sample !== "object" || sample === null || !("value" in sample)) return [];
+    const value = sample.value;
+    if (
+      !Array.isArray(value) ||
+      typeof value[0] !== "number" ||
+      (typeof value[1] !== "number" && value[1] !== null)
+    ) {
+      return [];
+    }
+    return [{ timestamp: value[0], value: value[1] }];
+  });
+  expect(temperatureValues.filter((sample) => sample.value !== null)).toEqual([
+    { timestamp: Date.parse("2026-10-18T17:30:17Z"), value: 89.924 },
+    { timestamp: Date.parse("2026-10-18T17:31:17Z"), value: 90.32 },
+  ]);
+  expect(temperatureValues.some((sample) => sample.value === null)).toBe(true);
+  expect(captured.option.yAxis).toEqual(
+    expect.arrayContaining([expect.objectContaining({ name: "Skin Temperature (°F)" })]),
+  );
+  if (!Array.isArray(captured.option.yAxis)) throw new Error("Expected chart axes");
+  const temperatureAxis = captured.option.yAxis.find(
+    (axis: { name?: string; axisLabel?: { formatter?: (value: number) => string } }) =>
+      axis.name === "Skin Temperature (°F)",
+  );
+  expect(temperatureAxis?.axisLabel?.formatter?.(89.924)).toBe("89.9");
+  const temperatureSeries = series.find(
+    (entry: { name: string; tooltip?: { valueFormatter?: (value: number) => string } }) =>
+      entry.name === "Skin Temperature",
+  );
+  expect(temperatureSeries?.tooltip?.valueFormatter?.(89.924)).toBe("89.9");
+  const heartRateSeries = series.find(
+    (entry: { name: string; tooltip?: { valueFormatter?: (value: number) => string } }) =>
+      entry.name === "Heart Rate",
+  );
+  expect(heartRateSeries?.tooltip?.valueFormatter?.(140)).toBe("140");
+});
+
+it("keeps one decimal place for Celsius temperature labels and tooltips", () => {
+  render(
+    <MetricsChart
+      {...args}
+      points={[
+        {
+          ...points[0],
+          skinTemperature: 32.18,
+          skinTemperatureRecordedAt: "2026-10-18T17:30:17Z",
+        },
+      ]}
+      metricSources={[
+        {
+          key: "skinTemperature",
+          label: "Skin Temperature",
+          sources: [],
+          selectedId: '["whoop_ble","strap-a"]',
+          onChange: vi.fn(),
+        },
+      ]}
+      units={new UnitConverter("metric")}
+    />,
+  );
+  if (!Array.isArray(captured.option.yAxis) || !Array.isArray(captured.option.series)) {
+    throw new Error("Expected metric chart configuration");
+  }
+  const temperatureAxis = captured.option.yAxis.find(
+    (axis: { name?: string; axisLabel?: { formatter?: (value: number) => string } }) =>
+      axis.name === "Skin Temperature (°C)",
+  );
+  const temperatureSeries = captured.option.series.find(
+    (entry: { name: string; tooltip?: { valueFormatter?: (value: number) => string } }) =>
+      entry.name === "Skin Temperature",
+  );
+  expect(temperatureAxis?.axisLabel?.formatter?.(32.18)).toBe("32.2");
+  expect(temperatureSeries?.tooltip?.valueFormatter?.(32.18)).toBe("32.2");
+});
+
 it.each([false, true])(
   "preserves user zoom while highlighting a climb (batched: %s)",
   (batched) => {
@@ -443,12 +554,15 @@ describe("MetricsChart number formatting", () => {
     expect(labels).toContain("77");
   });
 
-  it("rounds tooltip values to whole numbers", () => {
+  it("rounds non-temperature tooltip values to whole numbers", () => {
     renderFractionalChart();
 
-    const tooltip = captured.option.tooltip;
+    const series = captured.option.series;
+    if (!Array.isArray(series)) throw new Error("Expected chart series");
+    const heartRate = series.find((entry) => entry.name === "Heart Rate");
+    const tooltip = heartRate?.tooltip;
     if (typeof tooltip !== "object" || tooltip === null || !("valueFormatter" in tooltip)) {
-      throw new Error("Expected tooltip value formatter");
+      throw new Error("Expected heart-rate tooltip value formatter");
     }
     const formatter = tooltip.valueFormatter;
     if (typeof formatter !== "function") throw new Error("Expected tooltip value formatter");

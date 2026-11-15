@@ -114,6 +114,32 @@ export const IndependentMetricTimelines: Story = {
   },
 };
 
+export const SkinTemperatureReadings: Story = {
+  args: {
+    points: activityPreviewPoints(defaultActivityMetricSources),
+    hasHr: false,
+    hasPower: false,
+    hasSpeed: false,
+    hasCadence: false,
+    metricSources: [
+      {
+        key: "skinTemperature",
+        label: "Skin Temperature",
+        sources: activityMetricSourcePreview
+          .filter((metric) => metric.key === "skinTemperature")
+          .flatMap((metric) => metric.sources),
+        selectedId: defaultActivityMetricSources.skinTemperature,
+        onChange: () => {},
+      },
+    ],
+  },
+};
+
+export const SparseSkinTemperatureReadings: Story = {
+  ...SkinTemperatureReadings,
+  name: "Sparse skin temperature readings",
+};
+
 function MetricControl({
   metric,
   sourceId,

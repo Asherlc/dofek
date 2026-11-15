@@ -27,6 +27,8 @@ describe("StreamPoint", () => {
       altitude: 350,
       lat: 47.6,
       lng: -122.3,
+      skin_temperature: 32.4,
+      skin_temperature_recorded_at: "2024-01-15T10:31:00.000Z",
     });
     expect(point.toDetail()).toEqual({
       recordedAt: "2024-01-15T10:30:00.000Z",
@@ -37,6 +39,8 @@ describe("StreamPoint", () => {
       altitude: 350,
       lat: 47.6,
       lng: -122.3,
+      skinTemperature: 32.4,
+      skinTemperatureRecordedAt: "2024-01-15T10:31:00.000Z",
     });
   });
 
@@ -50,6 +54,8 @@ describe("StreamPoint", () => {
       altitude: null,
       lat: null,
       lng: null,
+      skin_temperature: null,
+      skin_temperature_recorded_at: null,
     });
     const detail = point.toDetail();
     expect(detail.heartRate).toBeNull();
@@ -59,6 +65,8 @@ describe("StreamPoint", () => {
     expect(detail.altitude).toBeNull();
     expect(detail.lat).toBeNull();
     expect(detail.lng).toBeNull();
+    expect(detail.skinTemperature).toBeNull();
+    expect(detail.skinTemperatureRecordedAt).toBeNull();
   });
 
   it("handles mixed null and non-null fields", () => {

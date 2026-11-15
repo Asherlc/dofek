@@ -25,7 +25,14 @@ export const activityPowerZonesSchema = z
   )
   .nullable();
 
-export const activityMetricSchema = z.enum(["heartRate", "power", "speed", "cadence", "altitude"]);
+export const activityMetricSchema = z.enum([
+  "heartRate",
+  "power",
+  "speed",
+  "cadence",
+  "altitude",
+  "skinTemperature",
+]);
 export type ActivityMetric = z.infer<typeof activityMetricSchema>;
 export const activityMetricSourceSelectionSchema = z.partialRecord(
   activityMetricSchema,
@@ -63,4 +70,5 @@ export const ACTIVITY_CHART_METRICS = [
   { key: "speed", channel: "speed", label: "Speed" },
   { key: "cadence", channel: "cadence", label: "Cadence" },
   { key: "altitude", channel: "altitude", label: "Elevation" },
+  { key: "skinTemperature", channel: "skin_temperature", label: "Skin Temperature" },
 ] as const;

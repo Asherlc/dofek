@@ -130,6 +130,8 @@ export interface StreamPoint {
   altitude: number | null;
   lat: number | null;
   lng: number | null;
+  skinTemperature?: number | null;
+  skinTemperatureRecordedAt?: string | null;
 }
 
 export type ActivityHrZones = import("@dofek/zones/zones").ActivityHrZone[];

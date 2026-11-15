@@ -41,6 +41,7 @@ const CHART_COLORS = {
   power: activityMetricColors.power,
   speed: activityMetricColors.speed,
   cadence: activityMetricColors.cadence,
+  skinTemperature: activityMetricColors.skinTemperature,
   altitude: "#6b7280",
 };
 
@@ -75,7 +76,7 @@ function buildAxisPointerEvents(
   };
 }
 
-function chartSeriesData(series: ActivityChartSeries) {
+function chartSeriesData(series: ActivityChartSeries, precision = 0) {
   const data: Array<{
     value: [number, number | null];
     name: string;
@@ -96,7 +97,7 @@ function chartSeriesData(series: ActivityChartSeries) {
     data.push({
       value: [sample.timestamp, sample.value],
       name: `Sample ${sample.index + 1} · ${timestampLabel}`,
-      displayValue: formatNumber(sample.value, 0),
+      displayValue: formatNumber(sample.value, precision),
       itemStyle: { opacity: sample.showMarker ? 1 : 0 },
     });
   }
@@ -107,7 +108,8 @@ interface MetricDefinition {
   name: string;
   axisName: string;
   color: string;
-  data: Array<number | null>;
+  samples: Array<{ recordedAt: string; value: number | null }>;
+  precision?: number;
 }
 
 export function MetricsChart({
@@ -236,30 +238,48 @@ export function MetricsChart({
       name: "Heart Rate",
       axisName: "Heart Rate (bpm)",
       color: CHART_COLORS.heartRate,
-      data: points.map((p) => p.heartRate),
+      samples: points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate })),
     });
   if (hasPower || metricSources.some((source) => source.key === "power"))
     metrics.push({
       name: "Power",
       axisName: "Power (W)",
       color: CHART_COLORS.power,
-      data: points.map((p) => p.power),
+      samples: points.map((p) => ({ recordedAt: p.recordedAt, value: p.power })),
     });
   if (hasSpeed || metricSources.some((source) => source.key === "speed"))
     metrics.push({
       name: "Speed",
       axisName: `Speed (${units.speedLabel})`,
       color: CHART_COLORS.speed,
-      data: points.map((p) =>
-        p.speed != null ? +formatNumber(units.convertSpeed(p.speed * 3.6)) : null,
-      ),
+      samples: points.map((p) => ({
+        recordedAt: p.recordedAt,
+        value: p.speed != null ? +formatNumber(units.convertSpeed(p.speed * 3.6)) : null,
+      })),
     });
   if (hasCadence || metricSources.some((source) => source.key === "cadence"))
     metrics.push({
       name: "Cadence",
       axisName: cadenceAxisLabel(activityType),
       color: CHART_COLORS.cadence,
-      data: points.map((p) => p.cadence),
+      samples: points.map((p) => ({ recordedAt: p.recordedAt, value: p.cadence })),
+    });
+  if (metricSources.some((source) => source.key === "skinTemperature"))
+    metrics.push({
+      name: "Skin Temperature",
+      axisName: `Skin Temperature (${units.temperatureLabel})`,
+      color: CHART_COLORS.skinTemperature,
+      precision: 1,
+      samples: points.flatMap((point) =>
+        point.skinTemperature != null && point.skinTemperatureRecordedAt != null
+          ? [
+              {
+                recordedAt: point.skinTemperatureRecordedAt,
+                value: units.convertTemperature(point.skinTemperature),
+              },
+            ]
+          : [],
+      ),
     });
 
   const customLegend =
@@ -332,7 +352,10 @@ export function MetricsChart({
         max: "dataMax",
         position,
         showSplitLine,
-        axisLabel: { color: metric.color, formatter: (value: number) => formatNumber(value, 0) },
+        axisLabel: {
+          color: metric.color,
+          formatter: (value: number) => formatNumber(value, metric.precision ?? 0),
+        },
       }),
       show: visible,
       offset: !isFirst && visibleRightBefore > 0 ? visibleRightBefore * 60 : 0,
@@ -346,14 +369,10 @@ export function MetricsChart({
     yAxisIndex: index,
     data: chartSeriesData(
       activityChartSeries(
-        metric.name === "Heart Rate" && heartRateContext
-          ? heartRateContext.points
-          : points.map((point, dataIndex) => ({
-              recordedAt: point.recordedAt,
-              value: metric.data[dataIndex] ?? null,
-            })),
+        metric.name === "Heart Rate" && heartRateContext ? heartRateContext.points : metric.samples,
         heartRateContext?.window ?? activityWindow,
       ),
+      metric.precision,
     ),
     connectNulls: false,
     showSymbol: true,
@@ -363,6 +382,9 @@ export function MetricsChart({
     emphasis: { itemStyle: { opacity: 1 } },
     lineStyle: { width: 1.5, color: metric.color },
     itemStyle: { color: metric.color },
+    tooltip: {
+      valueFormatter: (value: number) => formatNumber(value, metric.precision ?? 0),
+    },
     ...(metric.name === "Heart Rate" && climbs.length > 0
       ? {
           markLine: {
@@ -451,7 +473,6 @@ export function MetricsChart({
           },
         },
       }),
-      valueFormatter: (value: number) => formatNumber(value, 0),
     },
     legend: { ...dofekLegend(customLegend === undefined), selected: legendSelected },
     dataZoom: [

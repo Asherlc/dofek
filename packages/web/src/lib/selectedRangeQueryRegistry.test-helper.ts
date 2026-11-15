@@ -30,6 +30,7 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
   ],
   running: ["durationCurves.paceCurve", "running.paceTrendV2", "running.dynamicsV2"],
   recovery: [
+    "dailyMetrics.list",
     "recovery.hrvVariability",
     "dailyMetrics.hrvBaseline",
     "recovery.workloadRatio",

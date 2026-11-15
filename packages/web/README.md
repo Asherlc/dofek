@@ -4,7 +4,8 @@ The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and
 
 The [dashboard](src/pages/Dashboard.tsx) presents processing status, recorded
 health measurements, personal-baseline comparisons, and insights. The
-[Recovery view](src/routes/training/recovery.tsx) retains HRV and sleep analytics;
+[Recovery view](src/routes/training/recovery.tsx) presents HRV, sleep analytics,
+and existing daily skin-temperature measurements with the selected date range and units;
 custom recovery, 0–21 strain, and sleep-performance scores and their daily
 recommendations have been retired as described in the
 [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-scores-design.md).
@@ -204,7 +205,7 @@ Both clients consume the same
 [structured presentation](../providers-meta/src/activity-metric-source.ts).
 
 Activity views offer independent source controls for heart rate, power, speed,
-cadence, and elevation. Each control preselects its existing priority winner
+cadence, elevation, and skin temperature. Each control preselects its existing priority winner
 without an Auto option. Choices distinguish providers and devices and apply
 only to the current view; saved priorities are unchanged. Heart-rate and power
 zones follow their respective selected sources.
@@ -218,7 +219,9 @@ activity ownership and stream downsampling.
 
 The [metric and elevation charts](src/pages/activity-detail/components/ActivityDetailCharts.tsx)
 position observations by elapsed time and evaluate continuity independently for
-each metric. Other metrics' timestamps do not interrupt a recording. Sparse
+each metric. Skin temperature uses selected-device decoded samples and its own
+measurement timestamps, so downsampled heart-rate times do not shift its
+observations. Other metrics' timestamps do not interrupt a recording. Sparse
 observations retain markers; dense recordings show lines with markers on hover.
 The [shared presentation policy](../training/src/activity-chart-series.ts) defines
 the cadence-based gap rule used by both clients. This follows the distinction

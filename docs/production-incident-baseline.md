@@ -38125,3 +38125,48 @@ Local qualification and CI are separate from production throughput acceptance. T
   tasks reproduced transport races without another administrator prompt.
   Proposed runbook wording: “Host and Simulator regressions validate ownership
   and formatting; verify background scheduling and CPU recovery on the device.”
+
+## 2026-11-15 — Skin temperature absent from web Recovery
+
+- **Symptoms and impact:** the user could not find WHOOP skin temperature on
+  Recovery or alongside activity heart rate. Web Recovery did not offer the
+  metric; activity charts did not expose the decoded temperature channel.
+- **Evidence:** working Axiom logs showed current `sensorRecords`
+  `upload_published` events with matching accepted/published counts and no
+  filtered records. Read-only production queries found cloud temperatures and
+  decoded BLE temperatures through November 15. The live `dailyMetrics.list`
+  cache contained temperatures, and the existing signed-in Firefox session
+  rendered the Body temperature chart after the pending query completed.
+- **Root cause:** the web Recovery route never requested or rendered skin
+  temperature; the activity source/stream contract omitted it. Missing ingestion
+  was not established. The [Recovery route](../packages/web/src/routes/training/recovery.tsx)
+  and [activity metric contract](../packages/server/src/contracts/activity-metric-sources.ts)
+  define these UI boundaries.
+- **Remediation:** the approved [design](superpowers/specs/2026-11-15-whoop-skin-temperature-design.md)
+  reuses existing decoded samples, activity source controls, and daily metrics.
+  Activity charts now expose a selectable skin-temperature channel with original
+  measurement times, fractional units, and source/device priority. Web Recovery
+  queries and charts the existing daily values. Implementation is tracked in
+  the [plan](superpowers/plans/2026-11-15-whoop-skin-temperature.md); production
+  release acceptance remains separate.
+- **Local validation and resource blocker:** the canonical integration command
+  initially stopped before test collection because Redpanda could not allocate
+  an asynchronous I/O slot: `aio-nr = aio-max-nr = 65536`. With explicit user
+  approval, a transient local container raised only the Docker VM's runtime
+  `fs.aio-max-nr` to `1048576`, verified by readback; no persistent configuration
+  or other workspaces were changed. Redpanda's
+  [readiness checklist](https://docs.redpanda.com/streaming/25.3/deploy/redpanda/manual/production/production-readiness/)
+  documents that AIO ceiling. The unchanged integration wrapper then ran the
+  source-selection, hardware-label, and stream-lifecycle suites: 26 tests passed.
+  Amended unit/mobile tests, repository lint, and recursive typechecks passed.
+  Independent review caught and corrected SQL quoting, source priority,
+  inconsistent fixtures, fractional formatting, and mobile chart interactions.
+  No retry, timeout, or product resilience setting was added.
+- **Remaining risk:** mobile Recovery already has a conditional card, but its
+  physical-device runtime was not inspected in this investigation. Do not claim
+  an account data loss or mobile-specific root cause from this evidence.
+- **Retrospective and follow-up:** checking raw data, decoded samples, and the
+  actual served response distinguished a missing UI section from missing data.
+  Initial Body snapshots preceded query completion. Proposed runbook wording:
+  “Before treating an absent metric as ingestion loss, inspect the completed
+  response and verify that the selected screen requests and renders it.”

@@ -75,7 +75,7 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("ARRAY JOIN points AS point");
     expect(queryText).toContain("AND is_deleted = 0");
     expect(queryText).toContain(
-      "any(tuple(heart_rate, power, speed, cadence, altitude, lat, lng)) AS point_values",
+      "tuple(any(heart_rate), any(power), any(speed), any(cadence), any(altitude),",
     );
     expect(queryText).toContain("downsampled_points AS");
     expect(queryText).toContain("argMinIf(heart_rate, sample_recorded_at, heart_rate IS NOT NULL)");
@@ -103,6 +103,46 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(options.query).toContain("analytics.sensor_scalar_sample FINAL");
     expect(options.query).toContain("{selectedChannels:Array(String)}");
     expect(options.query).toContain("CAST(NULL, 'Nullable(Float64)') AS heart_rate");
+  });
+
+  it("retains decoded skin-temperature sample time independently of the shared point time", async () => {
+    const { store, query } = makeStore([
+      {
+        recorded_at: "2024-01-15 10:00:00.000",
+        heart_rate: 140,
+        power: null,
+        speed: null,
+        cadence: null,
+        altitude: null,
+        lat: null,
+        lng: null,
+        skin_temperature: 32.18,
+        skin_temperature_recorded_at: "2024-01-15 10:00:17.000",
+      },
+    ]);
+
+    const rows = await store.getStream(window, 500, {
+      skinTemperature: '["whoop_ble","strap-a"]',
+    });
+
+    expect(rows[0]).toMatchObject({
+      recorded_at: "2024-01-15T10:00:00.000Z",
+      heart_rate: 140,
+      skin_temperature: 32.18,
+      skin_temperature_recorded_at: "2024-01-15T10:00:17.000Z",
+    });
+    const options = query.mock.calls[0]?.[0];
+    expect(options.query_params).toMatchObject({
+      selectedChannels: ["skin_temperature"],
+      selectedSources: ['["whoop_ble","strap-a"]'],
+    });
+    expect(options.query).toContain("analytics.daily_health_sensor AS health_sensor FINAL");
+    expect(options.query).toContain("sample.measured_at AS recorded_at");
+    expect(options.query).toContain("skin_temperature_recorded_at,");
+    expect(options.query).toContain("source_point.skin_temperature_recorded_at");
+    expect(options.query).toContain("source_point.skin_temperature IS NOT NULL");
+    expect(options.query).not.toContain("analytics.activity_sensor_sample");
+    expect(options.query).not.toContain("ingest.metric_stream");
   });
 
   it("returns no stream points when the read model has no rows", async () => {
@@ -371,6 +411,8 @@ describe("ClickHouseActivitySensorStore", () => {
         altitude: null,
         lat: 37.1,
         lng: -122.1,
+        skin_temperature: null,
+        skin_temperature_recorded_at: null,
       },
     ]);
   });

@@ -33,14 +33,8 @@ import type {
 import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ActivityClimbingPanel } from "../../components/ActivityClimbingPanel";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
-import {
-  AreaChart,
-  CHART_COLORS,
-  chartStyles,
-  LineChart,
-} from "../../components/activity/ActivityDetailCharts";
+import { ActivityMetricsCharts, chartStyles } from "../../components/activity/ActivityDetailCharts";
 import { ActivityDetailHeader } from "../../components/activity/ActivityDetailHeader";
-import { ActivityMetricSourcePicker } from "../../components/activity/ActivityMetricSourcePicker";
 import { RecomputeActivityButton } from "../../components/activity/RecomputeActivityButton";
 import { statsStyles, styles } from "../../components/activity/styles";
 import { useActivityMapHover } from "../../components/activity/useActivityMapHover";
@@ -821,153 +815,27 @@ export default function ActivityDetailScreen() {
           <Text style={styles.chartsLoadingText}>Loading charts...</Text>
         </View>
       ) : null}
-      {sourceControls
-        .filter((metric) => metric.key === "heartRate")
-        .map((metric) => (
-          <ActivityMetricSourcePicker
-            key={metric.key}
-            label={metric.label}
-            serverUrl={serverUrl}
-            sources={metric.sources}
-            selectedId={metric.selectedId}
-            onChange={metric.onChange}
-          />
-        ))}
-      {hasHr && (
-        <>
-          <LineChart
-            highlightedClimbId={highlightedClimbId}
-            onSelectClimb={setHighlightedClimbId}
-            activityWindow={
-              isClimbingActivity ? (heartRateContext.data?.window ?? activity) : activity
-            }
-            climbAnnotations={
-              isClimbingActivity
-                ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
-                : undefined
-            }
-            data={
-              isClimbingActivity && heartRateContext.data
-                ? heartRateContext.data.points
-                : points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate }))
-            }
-            color={CHART_COLORS.heartRate}
-            label="Heart Rate"
-            unit="bpm"
-            onHoverTime={hasGps ? handleHeartRateHoverTime : undefined}
-            onScrubStart={hasGps ? handleScrubStart : undefined}
-            onScrubEnd={hasGps ? handleScrubEnd : undefined}
-          />
-          {isClimbingActivity && heartRateContext.data && (
-            <Text style={styles.chartsLoadingText}>
-              {heartRateContext.data.window.endedAt
-                ? "HR chart spans 5 minutes before and after the activity."
-                : "HR chart starts 5 minutes before the activity."}
-            </Text>
-          )}
-        </>
-      )}
-
-      {sourceControls
-        .filter((metric) => metric.key === "power")
-        .map((metric) => (
-          <ActivityMetricSourcePicker
-            key={metric.key}
-            label={metric.label}
-            serverUrl={serverUrl}
-            sources={metric.sources}
-            selectedId={metric.selectedId}
-            onChange={metric.onChange}
-          />
-        ))}
-      {hasPower && (
-        <LineChart
-          data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.power }))}
-          color={CHART_COLORS.power}
-          label="Power"
-          unit="W"
-          onHoverIndex={hasGps ? handleHoverIndex : undefined}
-          onScrubStart={hasGps ? handleScrubStart : undefined}
-          onScrubEnd={hasGps ? handleScrubEnd : undefined}
-        />
-      )}
-
-      {sourceControls
-        .filter((metric) => metric.key === "speed")
-        .map((metric) => (
-          <ActivityMetricSourcePicker
-            key={metric.key}
-            label={metric.label}
-            serverUrl={serverUrl}
-            sources={metric.sources}
-            selectedId={metric.selectedId}
-            onChange={metric.onChange}
-          />
-        ))}
-      {points.some((point) => point.speed != null) && (
-        <LineChart
-          data={points.map((p) => ({
-            recordedAt: p.recordedAt,
-            value: p.speed != null ? units.convertSpeed(p.speed * 3.6) : null,
-          }))}
-          color={CHART_COLORS.speed}
-          label="Speed"
-          unit={units.speedLabel}
-          onHoverIndex={hasGps ? handleHoverIndex : undefined}
-          onScrubStart={hasGps ? handleScrubStart : undefined}
-          onScrubEnd={hasGps ? handleScrubEnd : undefined}
-        />
-      )}
-      {sourceControls
-        .filter((metric) => metric.key === "cadence")
-        .map((metric) => (
-          <ActivityMetricSourcePicker
-            key={metric.key}
-            label={metric.label}
-            serverUrl={serverUrl}
-            sources={metric.sources}
-            selectedId={metric.selectedId}
-            onChange={metric.onChange}
-          />
-        ))}
-      {points.some((point) => point.cadence != null) && (
-        <LineChart
-          data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.cadence }))}
-          color={CHART_COLORS.cadence}
-          label="Cadence"
-          unit={cadenceUnit(activity.activityType)}
-          onHoverIndex={hasGps ? handleHoverIndex : undefined}
-          onScrubStart={hasGps ? handleScrubStart : undefined}
-          onScrubEnd={hasGps ? handleScrubEnd : undefined}
-        />
-      )}
-      {sourceControls
-        .filter((metric) => metric.key === "altitude")
-        .map((metric) => (
-          <ActivityMetricSourcePicker
-            key={metric.key}
-            label={metric.label}
-            showLabel={false}
-            serverUrl={serverUrl}
-            sources={metric.sources}
-            selectedId={metric.selectedId}
-            onChange={metric.onChange}
-          />
-        ))}
-      {hasAltitude && (
-        <AreaChart
-          data={points.map((p) => ({
-            recordedAt: p.recordedAt,
-            value: p.altitude != null ? units.convertElevation(p.altitude) : null,
-          }))}
-          color={CHART_COLORS.altitude}
-          label="Elevation Profile"
-          unit={units.elevationLabel}
-          onHoverIndex={hasGps ? handleHoverIndex : undefined}
-          onScrubStart={hasGps ? handleScrubStart : undefined}
-          onScrubEnd={hasGps ? handleScrubEnd : undefined}
-        />
-      )}
+      <ActivityMetricsCharts
+        points={points}
+        sourceControls={sourceControls}
+        serverUrl={serverUrl}
+        activityWindow={activity}
+        cadenceLabel={cadenceUnit(activity.activityType)}
+        isClimbingActivity={isClimbingActivity}
+        heartRateContext={heartRateContext.data}
+        climbingAnnotations={climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])}
+        highlightedClimbId={highlightedClimbId}
+        onSelectClimb={setHighlightedClimbId}
+        hasHr={hasHr}
+        hasPower={hasPower}
+        hasAltitude={hasAltitude}
+        units={units}
+        hasGps={hasGps}
+        onHoverIndex={handleHoverIndex}
+        onHoverTime={handleHeartRateHoverTime}
+        onScrubStart={handleScrubStart}
+        onScrubEnd={handleScrubEnd}
+      />
 
       {(hasHr || zones.length > 0) && (
         <HrZonesChart

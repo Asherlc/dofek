@@ -90,6 +90,8 @@ export interface StreamPointRow {
   altitude: number | null;
   lat: number | null;
   lng: number | null;
+  skin_temperature?: number | null;
+  skin_temperature_recorded_at?: string | null;
 }
 
 export interface ActivitySensorStore extends ActivitySensorQueryStore {
@@ -146,7 +148,18 @@ export class StreamPoint {
     this.#row = row;
   }
 
-  toDetail() {
+  toDetail(): {
+    recordedAt: string;
+    heartRate: number | null;
+    power: number | null;
+    speed: number | null;
+    cadence: number | null;
+    altitude: number | null;
+    lat: number | null;
+    lng: number | null;
+    skinTemperature?: number | null;
+    skinTemperatureRecordedAt?: string | null;
+  } {
     return {
       recordedAt: String(this.#row.recorded_at),
       heartRate: this.#row.heart_rate != null ? Number(this.#row.heart_rate) : null,
@@ -156,6 +169,11 @@ export class StreamPoint {
       altitude: this.#row.altitude != null ? Number(this.#row.altitude) : null,
       lat: this.#row.lat != null ? Number(this.#row.lat) : null,
       lng: this.#row.lng != null ? Number(this.#row.lng) : null,
+      skinTemperature:
+        this.#row.skin_temperature != null ? Number(this.#row.skin_temperature) : null,
+      skinTemperatureRecordedAt: this.#row.skin_temperature_recorded_at
+        ? String(this.#row.skin_temperature_recorded_at)
+        : null,
     };
   }
 }

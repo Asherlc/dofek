@@ -206,6 +206,27 @@ describe("ActivityDetailCharts", () => {
   });
 
   it.each([
+    ["Celsius", 32.18, "32.2 °C"],
+    ["Fahrenheit", 89.924, "89.9 °F"],
+  ])("keeps fractional %s values in ticks and accessible chart rows", (_, value, display) => {
+    const { container } = render(
+      <LineChart
+        data={[{ recordedAt: "2026-10-18T17:30:17Z", value }]}
+        activityWindow={{ startedAt: "2026-10-18T17:00:00Z", endedAt: "2026-10-18T18:00:00Z" }}
+        color="#ff0000"
+        label="Skin Temperature"
+        unit={display.endsWith("°C") ? "°C" : "°F"}
+        precision={1}
+      />,
+    );
+    expect(
+      Array.from(container.querySelectorAll("SvgText"), (element) => element.textContent),
+    ).toContain(display.split(" ")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "View Skin Temperature data" }));
+    expect(screen.getByLabelText(new RegExp(display.replace(" ", "\\s")))).toBeDefined();
+  });
+
+  it.each([
     ["line", LineChart],
     ["area", AreaChart],
   ])("uses proportional time spacing in the %s chart", (_, ChartComponent) => {

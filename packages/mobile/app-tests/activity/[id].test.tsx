@@ -20,6 +20,23 @@ import { activityImageFixture } from "../../components/activity-images-test-help
 import { RouteMap } from "../../components/RouteMap";
 import { captureException } from "../../lib/telemetry";
 
+const chartScrub = vi.hoisted(() => {
+  const state: {
+    startedAt: number | null;
+    endedAt: number | null;
+    onHoverTime: ((timestamp: number | null) => void) | null;
+    onScrubStart: (() => void) | null;
+    onScrubEnd: (() => void) | null;
+  } = {
+    startedAt: null,
+    endedAt: null,
+    onHoverTime: null,
+    onScrubStart: null,
+    onScrubEnd: null,
+  };
+  return state;
+});
+
 function stripStyle({
   style: _s,
   contentContainerStyle: _cs,
@@ -64,8 +81,16 @@ vi.mock("react-native", () => ({
       }),
       ...(children != null ? [children] : []),
     ),
-  ScrollView: ({ children, ...props }: Record<string, unknown>) =>
-    React.createElement("div", stripStyle(props), ...(children != null ? [children] : [])),
+  ScrollView: ({
+    children,
+    scrollEnabled,
+    ...props
+  }: Record<string, unknown> & { scrollEnabled?: boolean }) =>
+    React.createElement(
+      "div",
+      { ...stripStyle(props), "data-scroll-enabled": scrollEnabled },
+      ...(children != null ? [children] : []),
+    ),
   Pressable: ({
     accessibilityLabel,
     accessibilityRole,
@@ -146,16 +171,36 @@ vi.mock("../../components/MuscleGroupBodyDiagram", () => ({
 vi.mock("../../components/ProviderLogo", () => ({ ProviderLogo: () => null }));
 
 vi.mock("../../components/RouteMap", () => ({
-  RouteMap: vi.fn(({ points }: { points: Array<{ lat: number | null; lng: number | null }> }) =>
-    React.createElement("span", null, `Route ends at ${points.at(-1)?.lat ?? "none"}`),
+  RouteMap: vi.fn(
+    ({
+      points,
+      hoveredPosition,
+    }: {
+      points: Array<{ lat: number | null; lng: number | null }>;
+      hoveredPosition?: { lat: number; lng: number } | null;
+    }) =>
+      React.createElement(
+        "span",
+        { "data-hover-lat": hoveredPosition?.lat ?? "" },
+        `Route ends at ${points.at(-1)?.lat ?? "none"}`,
+      ),
   ),
 }));
 
 vi.mock("../../components/activity/useChartScrub", () => ({
-  useChartScrub: () => ({
-    touchIndex: null,
-    panResponder: { panHandlers: {} },
-  }),
+  useChartScrub: (options: {
+    series: { startedAt: number; endedAt: number };
+    onHoverTime?: (timestamp: number | null) => void;
+    onScrubStart?: () => void;
+    onScrubEnd?: () => void;
+  }) => {
+    chartScrub.startedAt = options.series.startedAt;
+    chartScrub.endedAt = options.series.endedAt;
+    chartScrub.onHoverTime = options.onHoverTime ?? null;
+    chartScrub.onScrubStart = options.onScrubStart ?? null;
+    chartScrub.onScrubEnd = options.onScrubEnd ?? null;
+    return { touchIndex: null, panResponder: { panHandlers: {} } };
+  },
 }));
 
 vi.mock("../../lib/units", () => ({
@@ -168,6 +213,8 @@ vi.mock("../../lib/units", () => ({
     elevationLabel: "m",
     convertWeight: (kg: number) => kg,
     weightLabel: "kg",
+    convertTemperature: (celsius: number) => (celsius * 9) / 5 + 32,
+    temperatureLabel: "°F",
   }),
 }));
 
@@ -246,7 +293,7 @@ vi.mock("@dofek/providers/providers", async (importOriginal) => ({
 
 vi.mock("@dofek/scoring/colors", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@dofek/scoring/colors")>()),
-  activityMetricColors: { heartRate: "red", power: "orange" },
+  activityMetricColors: { heartRate: "red", power: "orange", skinTemperature: "tomato" },
   chartColors: { teal: "#0ea5e9", purple: "#5E35B1" },
   statusColors: {
     positive: "#16a34a",
@@ -617,6 +664,11 @@ function getPlaceholderData(
 }
 
 beforeEach(() => {
+  chartScrub.startedAt = null;
+  chartScrub.endedAt = null;
+  chartScrub.onHoverTime = null;
+  chartScrub.onScrubStart = null;
+  chartScrub.onScrubEnd = null;
   activityRouteParams.id = "00000000-0000-0000-0000-000000000001";
   mockRestoreProviderAbsentMutate.mockClear();
   mockRestoreResult.mockReturnValue(undefined);
@@ -2953,4 +3005,140 @@ it.each([
   render(<ActivityDetailScreen />);
   fireEvent.click(screen.getByRole("button", { name: "View Cadence data" }));
   expect(screen.getAllByText(`85 ${unit}`).length).toBeGreaterThan(0);
+});
+
+it("shows decoded activity skin-temperature values at the source-selected measurement times", async () => {
+  mockMetricSourcesQuery.mockReturnValue({
+    data: [
+      {
+        key: "skinTemperature",
+        label: "Skin Temperature",
+        defaultSourceId: '["whoop_ble","strap-a"]',
+        sources: [
+          {
+            id: '["whoop_ble","strap-a"]',
+            label: "WHOOP Bluetooth · strap-a",
+            presentation: {
+              displayName: "strap-a",
+              providerId: "whoop_ble",
+              sourceName: "strap-a",
+              attribution: { kind: "bluetooth", label: "Bluetooth" },
+            },
+          },
+        ],
+      },
+    ],
+    error: null,
+    isLoading: false,
+  });
+  mockStreamQuery.mockReturnValue({
+    data: [
+      {
+        recordedAt: "2026-10-18T17:30:00Z",
+        heartRate: null,
+        power: null,
+        speed: null,
+        cadence: null,
+        altitude: null,
+        lat: null,
+        lng: null,
+        skinTemperature: 32.18,
+        skinTemperatureRecordedAt: "2026-10-18T17:30:17Z",
+      },
+    ],
+    isLoading: false,
+  });
+  const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+  render(<ActivityDetailScreen />);
+  expect(screen.getByText("Skin Temperature")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "View Skin Temperature data" }));
+  expect(screen.getAllByText("89.9 °F").length).toBeGreaterThan(0);
+  expect(mockStreamQuery.mock.calls.at(-1)?.[0]).toMatchObject({
+    sources: { skinTemperature: '["whoop_ble","strap-a"]' },
+  });
+});
+
+it("keeps sparse temperature charts on the activity timeline and supports GPS hover and scrubbing", async () => {
+  mockRouteQuery.mockReturnValue({
+    data: {
+      status: "ready",
+      points: [
+        { lat: 1, lng: -121 },
+        { lat: 2, lng: -122 },
+      ],
+    },
+    isLoading: false,
+    error: null,
+  });
+  mockMetricSourcesQuery.mockReturnValue({
+    data: [
+      {
+        key: "skinTemperature",
+        label: "Skin Temperature",
+        defaultSourceId: '["whoop_ble","strap-a"]',
+        sources: [
+          {
+            id: '["whoop_ble","strap-a"]',
+            label: "WHOOP Bluetooth · strap-a",
+            presentation: {
+              displayName: "strap-a",
+              providerId: "whoop_ble",
+              sourceName: "strap-a",
+              attribution: { kind: "bluetooth", label: "Bluetooth" },
+            },
+          },
+        ],
+      },
+    ],
+    error: null,
+    isLoading: false,
+  });
+  mockStreamQuery.mockReturnValue({
+    data: [
+      {
+        recordedAt: "2026-04-14T10:00:00.000Z",
+        heartRate: null,
+        power: null,
+        speed: null,
+        cadence: null,
+        altitude: null,
+        lat: 1,
+        lng: -121,
+        skinTemperature: null,
+        skinTemperatureRecordedAt: null,
+      },
+      {
+        recordedAt: "2026-04-14T10:30:00.000Z",
+        heartRate: null,
+        power: null,
+        speed: null,
+        cadence: null,
+        altitude: null,
+        lat: 2,
+        lng: -122,
+        skinTemperature: 32.18,
+        skinTemperatureRecordedAt: "2026-04-14T10:30:00.000Z",
+      },
+    ],
+    isLoading: false,
+  });
+  const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+  const view = render(<ActivityDetailScreen />);
+
+  expect(chartScrub.startedAt).toBe(Date.parse(baseCyclingActivity.startedAt));
+  expect(chartScrub.endedAt).toBe(Date.parse(baseCyclingActivity.endedAt));
+  expect(chartScrub.onHoverTime).toBeDefined();
+  expect(chartScrub.onScrubStart).toBeDefined();
+  expect(chartScrub.onScrubEnd).toBeDefined();
+  act(() => chartScrub.onScrubStart?.());
+  expect(
+    view.container.querySelector("[data-scroll-enabled]")?.getAttribute("data-scroll-enabled"),
+  ).toBe("false");
+  act(() => chartScrub.onHoverTime?.(Date.parse("2026-04-14T10:30:00.000Z")));
+  const mapProps = vi.mocked(RouteMap).mock.calls.at(-1)?.[0];
+  expect(mapProps?.hoveredPosition).toEqual({ lat: 2, lng: -122 });
+  act(() => chartScrub.onScrubEnd?.());
+  expect(
+    view.container.querySelector("[data-scroll-enabled]")?.getAttribute("data-scroll-enabled"),
+  ).toBe("true");
 });
