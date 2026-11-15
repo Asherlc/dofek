@@ -1310,6 +1310,13 @@
       "when": 1794439529814,
       "tag": "0186_preserve_active_activity_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1794786007987,
+      "tag": "0187_climbing_log_session_bounds",
+      "breakpoints": true
     }
   ]
 }

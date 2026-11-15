@@ -302,7 +302,11 @@ group_bounds AS (
       MIN(r.started_at) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log'),
       MIN(r.started_at)
     ) AS started_at,
-    MAX(r.ended_at) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log') AS ended_at
+    CASE
+      WHEN COUNT(*) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log') = 0
+        THEN MAX(r.started_at)
+      ELSE MAX(r.ended_at) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log')
+    END AS ended_at
   FROM final_groups AS fg
   INNER JOIN ranked AS r ON fg.activity_id = r.id
   GROUP BY fg.group_id
