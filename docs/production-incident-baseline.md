@@ -38688,7 +38688,12 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Remaining risk / follow-up:** At 21:47:17 UTC analytics-worker,
   processing-reconciliation, worker and all three ClickHouse sinks were observed
   at zero desired/running replicas again. The cause of this new quiescence is
-  not yet established. Operation-specific terminal analytics/cache facts remain
+  not yet established. A focused read at 21:51:22 UTC still found analytics and
+  reconciliation at zero with no tasks, now configured for digest
+  `sha256:21d3165bc6f3dd6d7b27b7b36ba317cd4b74dd4c891af967734455d43a841e4a`;
+  their service update timestamps were 21:49:24 and 21:49:19 UTC respectively.
+  These desired images do not establish a verified deployment or recovery.
+  Operation-specific terminal analytics/cache facts remain
   unverified; SERVER-7H stays open until intended service availability returns
   and the ordinary serialized worker records those facts. The stock reconciler
   and analytics/cache refresh are global; the approved single-row trigger did
