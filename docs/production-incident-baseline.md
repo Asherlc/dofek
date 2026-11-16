@@ -38299,3 +38299,31 @@ Local qualification and CI are separate from production throughput acceptance. T
   was not performed during this task because it is outside the approved scope.
 - **Follow-up:** Rotate the affected production credentials through the
   established secret rotation workflow and verify consumers afterward.
+
+## 2026-11-16 (UTC) — BoardSesh PR mutation jobs fail required CI gates
+
+- **Symptoms / impact:** PR #3356's CI run `43784341173` failed its two server
+  mutation jobs; aggregate server and compatibility gates consequently failed.
+  Production was unaffected because this branch had not deployed.
+- **Evidence / root cause:** `Check Server / Stryker (0)` and `(1)`, step
+  `Run Stryker`, reported `Final mutation score 65.38 under breaking threshold
+  75` and `Final mutation score 64.71 under breaking threshold 75`. Downloaded
+  mutation reports identified missing tests for source-catalogue personal
+  grades, malformed/partial metadata, and unknown-grade/provider sorting paths.
+  The non-provider isolation fixture used incompatible route grades, so forcing
+  the BoardSesh branch did not alter its result. See the
+  [failed run](https://github.com/Asherlc/dofek/actions/runs/43784341173).
+- **Fix / validation:** Added observable boundary, personal-catalogue, fallback,
+  ungraded-sort, and compatible-provider isolation assertions. The repository
+  regression also asserts positive BoardSesh API grades. Simplified source
+  formatting to boulders and normalized both label formats to uppercase,
+  matching the source app. Exact local mutation targets scored 77.24% for the
+  helper and 100% for the repository under the unchanged 75% gate. The full
+  unit/mobile suite, lint, and all-package typechecks passed. Remote validation
+  is recorded in [PR #3356's checks](https://github.com/Asherlc/dofek/pull/3356/checks).
+- **Remaining risk / follow-up:** A local mutation dry run once failed a
+  separate MCP transport test with a non-JSON-RPC response; its cause remains
+  unclassified. The standalone MCP file and subsequent exact mutation run
+  passed; no MCP change or retry policy was introduced. Preserve the diagnostic
+  if it recurs. No exclusions or thresholds were relaxed. Production rollout
+  and the normal BoardSesh re-sync are still separate operational steps.

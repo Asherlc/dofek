@@ -978,22 +978,18 @@ describe("ClimbingActivityLogEntryRepository", () => {
     ).toHaveLength(2);
   });
   it("orders known rock grades before ungraded observations with stable ties", async () => {
-    const { base, lower, higher, ungraded } = climbingGradeSortFixtures();
-    const sorted = await repository([ungraded, lower, base, higher]).getActivityLogEntries(
-      "activity",
+    const { sortRows, sortedRows } = climbingGradeSortFixtures();
+    const sorted = await repository(sortRows).getActivityLogEntries("activity");
+    expect(sorted.map((row) => row.toDetail().id)).toEqual(sortedRows.map((row) => row.id));
+    const { other, historical, boardRows, sortedBoardRows } = climbingBoardSeshGradeSortFixtures();
+    const sortedBoard = await repository(boardRows).getActivityLogEntries("activity");
+    expect(sortedBoard.map((row) => row.toDetail().id)).toEqual(
+      sortedBoardRows.map((row) => row.id),
     );
-    expect(sorted.map((row) => row.toDetail().id)).toEqual([
-      higher.id,
-      base.id,
-      lower.id,
-      ungraded.id,
-    ]);
-    const { easier, plus, harder, other, historical } = climbingBoardSeshGradeSortFixtures();
-    const boardRows = await repository([plus, harder, easier]).getActivityLogEntries("activity");
-    expect(boardRows.map((row) => row.toDetail().id)).toEqual([harder.id, plus.id, easier.id]);
-    expect(boardRows.map((row) => row.toDetail().displayGrade)).toEqual(["V5", "V4+", "V4"]);
-    const [isolated] = await repository([other]).getActivityLogEntries("activity");
-    expect(isolated?.toDetail().displayGrade).toBe("5.10a");
+    expect(sortedBoard[1]?.toDetail().displayGrade).toBe("V4+");
+    expect(sortedBoard.find((row) => row.toDetail().id === other.id)?.toDetail().displayGrade).toBe(
+      "V1",
+    );
     const [old] = await repository([historical]).getActivityLogEntries("activity");
     expect(old?.toDetail().displayGrade).toBe("V2");
   });

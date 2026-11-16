@@ -222,7 +222,14 @@ export function climbingGradeSortFixtures() {
   lower.climb.publishedGrades = [{ value: "5.9", system: "yds" }];
   higher.climb.publishedGrades = [{ value: "5.11a", system: "yds" }];
   ungraded.climb.publishedGrades = [];
-  return { base, lower, higher, ungraded };
+  return {
+    base,
+    lower,
+    higher,
+    ungraded,
+    sortRows: [ungraded, lower, base, higher],
+    sortedRows: [higher, base, lower, ungraded],
+  };
 }
 export function climbingBoardSeshGradeSortFixtures() {
   const easier = climbingBoardSeshGradeFixture({ boardseshDifficulty: 18 });
@@ -235,15 +242,46 @@ export function climbingBoardSeshGradeSortFixtures() {
     climbId: "20000000-0000-4000-8000-000000000007",
     boardseshDifficulty: 20,
   });
-  const other = climbingNamedLogEntryFixture("openbeta");
+  const ungraded = climbingBoardSeshGradeFixture({
+    id: "20000000-0000-4000-8000-000000000009",
+    climbId: "20000000-0000-4000-8000-000000000009",
+  });
+  ungraded.raw = null;
+  const missingClimb = climbingBoardSeshGradeFixture({
+    id: "20000000-0000-4000-8000-000000000010",
+    climbId: "20000000-0000-4000-8000-000000000010",
+  });
+  missingClimb.climb = null;
+  missingClimb.climbId = null;
+  const other = climbingNamedLogEntryFixture("openbeta", "20000000-0000-4000-8000-000000000011");
+  if (!other.climb) throw new Error("Expected climb");
+  other.climb.kind = "boulder";
+  other.climb.publishedGrades = [{ value: "V1", system: "v_scale" }];
   other.raw = plus.raw;
+  const nonRock = climbingNamedLogEntryFixture("openbeta", "20000000-0000-4000-8000-000000000012");
+  if (!nonRock.climb) throw new Error("Expected climb");
+  nonRock.discipline = "ice_climbing";
+  nonRock.climb.kind = "boulder";
+  nonRock.climb.publishedGrades = [{ value: "V1", system: "v_scale" }];
+  nonRock.raw = plus.raw;
   const historical = climbingBoardSeshGradeFixture({
     id: "20000000-0000-4000-8000-000000000008",
     climbId: "20000000-0000-4000-8000-000000000008",
   });
   historical.raw = null;
   historical.reportedGrades = [{ value: "V2", system: "v_scale" }];
-  return { easier, plus, harder, other, historical };
+  return {
+    easier,
+    plus,
+    harder,
+    ungraded,
+    missingClimb,
+    other,
+    nonRock,
+    historical,
+    boardRows: [ungraded, missingClimb, other, nonRock, plus, harder, easier],
+    sortedBoardRows: [harder, plus, easier, other, ungraded, missingClimb, nonRock],
+  };
 }
 export function climbingKayaHistoryFixture() {
   const send = climbingNamedLogEntryFixture("kaya", "20000000-0000-4000-8000-000000000001", true);

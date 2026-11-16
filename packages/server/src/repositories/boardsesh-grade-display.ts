@@ -42,14 +42,14 @@ function sourceDisplayGrade(
   kind: ClimbKind | null,
   preference: ClimbingGradePreference,
 ): { displayGrade: string; gradeSortValue: number } | null {
-  if (kind !== "boulder" && kind !== "route") return null;
+  if (kind !== "boulder") return null;
   const components = componentsForLabel(label);
   const system = preference[kind];
   const selected = components.find((component) => component.system === system);
   let sortValue = selectRockClimbingGrade(preference, kind, components)?.gradeSortValue;
   if (!selected || sortValue === undefined) return null;
   let displayGrade = selected.value;
-  if (system === "font") displayGrade = displayGrade.toUpperCase();
+  displayGrade = displayGrade.toUpperCase();
   if (system === "v_scale") {
     const fontGrade = components.find((component) => component.system === "font")?.value;
     const mappedFonts = new Set(

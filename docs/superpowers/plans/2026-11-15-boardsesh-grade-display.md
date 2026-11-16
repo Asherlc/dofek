@@ -76,3 +76,22 @@ Source fields are documented in the upstream [Tick schema](https://github.com/bo
   re-review found no remaining material findings.
 - Deployment and the normal BoardSesh re-sync remain pending; the seven
   existing activity-group records are unchanged.
+
+## CI follow-up: mutation coverage
+
+- User requested fixing CI on PR #3356.
+- Run `43784341173`, `Check Server / Stryker (0)` and `(1)`, failed in
+  `Run Stryker`: final scores 65.38 and 64.71 below the unchanged 75 threshold.
+- Downloaded mutation JSON reports identify uncovered personal catalogue,
+  malformed/partial source-label, fallback, and repository unknown-grade paths.
+- Add focused behavioral tests through existing public helper/repository APIs,
+  preserving existing coverage and the 1,000-line limit. Remove redundant
+  implementation branches only when equivalent behavior is proved; do not
+  alter exclusions, thresholds, retries, or workflow gates.
+- Reproduce the two exact CI mutation targets locally, fix material findings,
+  run relevant lint/typechecks/tests, commit and push, then monitor the new CI
+  run to a passing conclusion. Record the incident and verification evidence.
+- Local verification complete: exact helper target 77.24%, exact repository
+  target 100%, full unit/mobile suite zero failures, lint and all-package
+  typechecks passed. Independent review found no material issue. Remote CI
+  verification is tracked on PR #3356; no gate or exclusion was changed.

@@ -7,10 +7,10 @@ const grades = [
   { difficultyId: 19, name: "6b+/V4" },
   { difficultyId: 20, name: "6c/V5" },
   { difficultyId: 21, name: "6c+/V5" },
-  { difficultyId: 22, name: "6a/V2" },
+  { difficultyId: 22, name: "7a/V6" },
 ];
-const metadata = (overrides: Record<string, unknown> = {}) => ({
-  difficulty: 22,
+const metadata = (overrides: Record<string, unknown> = {}, difficulty?: number) => ({
+  ...(difficulty === undefined ? {} : { difficulty }),
   metadata: {
     ascent: {
       angle: 40,
@@ -39,12 +39,37 @@ describe("boardseshGradeDisplay", () => {
   it("preserves a personal grade and gives it display precedence", () => {
     expect(
       boardseshGradeDisplay(
-        metadata(),
-        [{ value: "V2", system: "v_scale" }],
+        metadata({}, 22),
+        [{ value: "V6", system: "v_scale" }],
         "boulder",
         DEFAULT_CLIMBING_GRADE_PREFERENCE,
       ),
-    ).toMatchObject({ displayGrade: "V2" });
+    ).toMatchObject({ displayGrade: "V6" });
+  });
+
+  it("preserves source V+ notation for a personal grade", () => {
+    expect(
+      boardseshGradeDisplay(
+        metadata({}, 21),
+        [
+          { value: "6c+", system: "font" },
+          { value: "V5", system: "v_scale" },
+        ],
+        "boulder",
+        DEFAULT_CLIMBING_GRADE_PREFERENCE,
+      ),
+    ).toMatchObject({ displayGrade: "V5+" });
+  });
+
+  it("falls back to recorded personal grades when legacy raw data has no catalogue", () => {
+    expect(
+      boardseshGradeDisplay(
+        { difficulty: 20 },
+        [{ value: "V5", system: "v_scale" }],
+        "boulder",
+        DEFAULT_CLIMBING_GRADE_PREFERENCE,
+      ),
+    ).toMatchObject({ displayGrade: "V5" });
   });
 
   it("keeps historical personal grades displayable without new source metadata", () => {
@@ -140,6 +165,74 @@ describe("boardseshGradeDisplay", () => {
         boulder: "font",
       }),
     ).toMatchObject({ displayGrade: "6B+" });
+    const reordered = metadata({ boardseshDifficulty: 18.672 });
+    reordered.metadata.grades = [...grades].reverse();
+    expect(
+      boardseshGradeDisplay(reordered, [], "boulder", DEFAULT_CLIMBING_GRADE_PREFERENCE),
+    ).toMatchObject({ displayGrade: "V4+" });
+  });
+
+  it("formats lowercase source labels and accepts V-only catalogues", () => {
+    expect(
+      boardseshGradeDisplay(
+        {
+          difficulty: 7,
+          metadata: {
+            ascent: { boardseshDifficulty: 7, boardseshConfidence: "confirmed" },
+            grades: [{ difficultyId: 7, name: "v3" }],
+          },
+        },
+        [],
+        "boulder",
+        DEFAULT_CLIMBING_GRADE_PREFERENCE,
+      ),
+    ).toMatchObject({ displayGrade: "V3" });
+  });
+
+  it("rejects partial labels and uses the consensus name when the ID is uncatalogued", () => {
+    const partial = {
+      metadata: {
+        ascent: { boardseshDifficulty: 19, boardseshConfidence: "confirmed" },
+        grades: [{ difficultyId: 19, name: "6b/V4/5.10a" }],
+      },
+    };
+    expect(
+      boardseshGradeDisplay(partial, [], "boulder", DEFAULT_CLIMBING_GRADE_PREFERENCE),
+    ).toBeNull();
+
+    expect(
+      boardseshGradeDisplay(
+        metadata({
+          boardseshDifficulty: null,
+          consensusDifficulty: 99,
+          consensusDifficultyName: " 6b+/V4 ",
+        }),
+        [],
+        "boulder",
+        DEFAULT_CLIMBING_GRADE_PREFERENCE,
+      ),
+    ).toMatchObject({ displayGrade: "V4+" });
+  });
+
+  it("returns null for missing source data, an absent catalogue, or a non-boulder", () => {
+    expect(
+      boardseshGradeDisplay(undefined, [], "boulder", DEFAULT_CLIMBING_GRADE_PREFERENCE),
+    ).toBeNull();
+    expect(boardseshGradeDisplay([], [], "boulder", DEFAULT_CLIMBING_GRADE_PREFERENCE)).toBeNull();
+    expect(
+      boardseshGradeDisplay(
+        { metadata: { ascent: { boardseshDifficulty: 19, boardseshConfidence: "confirmed" } } },
+        [],
+        "boulder",
+        DEFAULT_CLIMBING_GRADE_PREFERENCE,
+      ),
+    ).toBeNull();
+    expect(
+      boardseshGradeDisplay(metadata(), [], "route", DEFAULT_CLIMBING_GRADE_PREFERENCE),
+    ).toBeNull();
+    expect(
+      boardseshGradeDisplay(metadata(), [], "summit", DEFAULT_CLIMBING_GRADE_PREFERENCE),
+    ).toBeNull();
   });
 
   it("sorts V+ between its base V grade and the next V grade", () => {
