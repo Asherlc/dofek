@@ -131,6 +131,16 @@ closest available recording from provenance within a group. The
 identity separately from representative_activity_id, which retains the former
 field representative. Origin never falls back to field priority.
 
+For groups containing only climbing logs, activity start and stop are the
+earliest and latest logged climb timestamps; a single log has zero duration.
+Groups containing a recorded workout retain the recorded bounds, including an
+unknown end. Raw log observations remain unchanged. The
+[Postgres view](../../drizzle/_views/01_v_activity.sql) and
+[ClickHouse model](../../analytics/models/read_models/deduped_activities.sql)
+derive these bounds with conditional aggregates; see PostgreSQL's
+[aggregate expressions](https://www.postgresql.org/docs/current/sql-expressions.html#SYNTAX-AGGREGATES)
+and ClickHouse's [aggregate combinators](https://clickhouse.com/docs/reference/functions/aggregate-functions/combinators).
+
 The same source defines `fitness.v_activity_group`, the canonical grouping
 projection before recording-origin resolution. Activity visibility and climbing
 log/session/location lookups use this projection for IDs, member IDs and dates;

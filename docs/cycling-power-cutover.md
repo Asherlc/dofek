@@ -7,7 +7,7 @@ intensity factor and power training stress; Critical Power remains separate.
 
 ## Settings and estimation assistance
 
-[Migration 0188](../drizzle/0188_restore_manual_cycling_ftp.sql) restores nullable,
+[Migration 0189](../drizzle/0189_restore_manual_cycling_ftp.sql) restores nullable,
 positive whole-watt FTP on `fitness.sport_settings`, without populating it from
 estimates or restoring profile FTP. Rows remain full snapshots: partial saves
 preserve omitted fields; a new date inherits omitted values from its predecessor.

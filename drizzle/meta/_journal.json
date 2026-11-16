@@ -1321,8 +1321,15 @@
     {
       "idx": 188,
       "version": "7",
-      "when": 1794786220598,
-      "tag": "0188_restore_manual_cycling_ftp",
+      "when": 1794789928820,
+      "tag": "0188_climbing_log_session_bounds",
+      "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1794789928821,
+      "tag": "0189_restore_manual_cycling_ftp",
       "breakpoints": true
     }
   ]

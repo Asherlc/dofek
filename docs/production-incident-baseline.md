@@ -4,9 +4,9 @@
 
 - **Symptoms / impact:** [PR #3351](https://github.com/Asherlc/dofek/pull/3351) could not merge after its first complete CI run. No production migration or deployment was performed. The local focused checks had not covered every affected integration fixture, the Cypress heading expectation, or the new migration's Squawk gate.
 - **First fatal evidence / causes:** In [Migration Lint](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995653101), Squawk rejected migration 0187's 32-bit FTP column and immediately validated check, exiting 123. The new NP view also exposed fixture setup that omitted its summary/fence dependencies; [integration shard 1](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995828999), [shard 3](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995828985), and [shard 5](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995829017) failed. Shard 5 also retained an MCP tool count of 38 after two tools were intentionally removed. The [web E2E job](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995653044) still expected the retired ongoing eFTP heading. Mutation testing exposed surviving permanent behavior, including a 45.45 score against the unchanged 75 threshold in [threshold resolution](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995943097).
-- **Direct corrections / current validation:** The [migration correction](https://github.com/Asherlc/dofek/commit/f10b3f614) aligns bigint storage, Drizzle's number mapping and the upsert cast, and follows the existing `NOT VALID` then `VALIDATE CONSTRAINT` convention. Fresh isolated Postgres tests verify the type, validated positive check, large-value round trip and nullable clears. Both SQL linters pass. Drizzle runs these statements in one transaction, so this does not establish reduced lock duration. Upstream then introduced its own migration 0187; the unreleased FTP migration was renamed to 0188 with unchanged SQL and ordered after that upstream entry. Fixture corrections use canonical summary/fence builders in each isolated schema and retain current NP publication, tombstone and erasure checks; six affected integration files pass locally. Hosted validation of the merged migration chain and the mutation-test additions remain pending.
+- **Direct corrections / current validation:** The [migration correction](https://github.com/Asherlc/dofek/commit/f10b3f614) aligns bigint storage, Drizzle's number mapping and the upsert cast, and follows the existing `NOT VALID` then `VALIDATE CONSTRAINT` convention. Fresh isolated Postgres tests verify the type, validated positive check, large-value round trip and nullable clears. Both SQL linters pass. Drizzle runs these statements in one transaction, so this does not establish reduced lock duration. Upstream introduced migrations 0187 and 0188 while this PR was in validation; the unreleased FTP migration is now 0189 with unchanged SQL and ordered after those upstream entries. Fixture corrections use canonical summary/fence builders in each isolated schema and retain current NP publication, tombstone and erasure checks; six affected integration files pass locally. The final merged migration chain must pass hosted validation.
 - **Local E2E prerequisites:** The isolated test stack pulled its pinned Redis image, completed the server build, then failed before web startup with `No such image: mirror.gcr.io/redis:8.6.3-alpine`. Pulling that exact image restored the prerequisite; the removal actor remains unresolved. The next full-reset attempt failed during image build with `ERR_PNPM_ENOSPC`. Authorized build-cache, unused-image and stopped-container cleanup did not restore usable space. The owner then approved eight specifically listed, unreferenced volumes: seven were already absent when removal was attempted, and only `pulsar-foundation_kafka_data` was removed by this task. Fresh inventory confirmed all eight absent, but the Docker filesystem still reported zero available space. An existing workspace database container also failed to start with an overlay2 `no space left on device` error; it was not recreated or reset. The remaining allocation owner is unresolved. No additional volumes, running containers, image tags, timeout/retry policies or global Docker settings were changed.
-- **Additional CI evidence:** The next [CI run](https://github.com/Asherlc/dofek/actions/runs/43782664536) passed web E2E with the corrected heading expectation, all five integration shards, migration lint and SQLFluff. That run's Spell Check failed on the legitimate PostgreSQL catalog field `convalidated` in the new schema assertions. Adding that field to the existing spelling vocabulary made the exact full CSpell command pass locally, without excluding files or changing the query. New Docker-free tests put all ten affected files above the unchanged mutation threshold; final review and hosted validation of those additions remain pending.
+- **Additional CI evidence:** The next [CI run](https://github.com/Asherlc/dofek/actions/runs/43782664536) passed web E2E with the corrected heading expectation, all five integration shards, migration lint and SQLFluff. That run's Spell Check failed on the legitimate PostgreSQL catalog field `convalidated` in the new schema assertions. Adding that field to the existing spelling vocabulary made the exact full CSpell command pass locally, without excluding files or changing the query. The [test correction](https://github.com/Asherlc/dofek/commit/056b57a4518127a602ef18dde4d02b28473d1ebe) passes 123 focused unit tests and puts all ten affected files above the unchanged mutation threshold. Full workspace typechecks, lint and CSpell pass locally. Independent review approved the corrected fixtures and validation; hosted CI remains required on the final merged revision.
 - **Remaining risk / follow-up:** Do not treat passing assertions, a successful cleanup command or an image pull as a passing workflow. Local Cypress remains blocked before test execution. Require the complete hosted gates on the final revision before merging; retain the local validation limitation. Visual/native acceptance remains separately unverified. Proposed testing guidance: run both new-migration linters before the first push and make every current-view integration fixture create its own required source tables and erasure fence.
 
 ## 2026-11-15 — Local ClickHouse memory guard blocks FTP integration tests
@@ -24,6 +24,55 @@
 - **Fix / mitigation:** Investigation only; no calculation, production data, or configuration changed. Treat the displayed value as a model estimate with stale evidence while correction policy is decided. Missing power must not silently become measured zero power.
 - **Validation / remaining risk:** Separate self-review independently checked the blocked-day calculation against exported observations. Both decay semantics and reference-curve calibration remain unresolved; changing only the minimum qualifying effort duration does not address indefinite retention. No new timeout, retry, or resilience setting was introduced.
 - **Follow-up / retrospective:** Direct observation/history queries and an exact numerical replay isolated the cause without changing production state. Add a regression covering repeated power-unavailable cycling activities, and define evidence freshness and missing-load behavior before implementing a correction. The existing systematic debugging workflow applies; no additional operational tool is needed.
+
+## 2026-11-15 — Databasus backup process killed by memory-cgroup OOM
+
+- **Symptoms / impact:** The scheduled PostgreSQL backup
+  `6cae04a7-92f8-41b3-93dd-0c699bac810e`, created at
+  `2026-11-15 06:00:54 UTC`, failed after `59,764` ms with zero reported MB and
+  `Backup failed due to application restart`. The preceding completed record
+  `d786d1dc-dd10-4d89-ae12-6d872c093486` was created at
+  `2026-11-14 06:00:54 UTC`, with recorded `last_backup_time` at
+  `2026-11-14 06:04:29 UTC`; the
+  [Database Backup Freshness run 43749045666](https://github.com/Asherlc/dofek/actions/runs/43749045666),
+  job `132918679634`, failed at **Check newest database backup**. The service
+  was observed running `1/1` after restart; that does not establish backup
+  recovery.
+- **Evidence / root cause:** The kernel recorded a `CONSTRAINT_MEMCG` OOM at
+  `2026-11-15 06:04:06 UTC`, showed `pg_dump` in the Databasus cgroup, and
+  killed the Databasus `main` process. The checked-in service limit was
+  `209715200` bytes (`200M`); Databasus documents a 500 MB minimum RAM
+  requirement ([installation requirements](https://databasus.com/installation/)).
+  The scheduler remained enabled for `DAILY` at `06:00` with retries disabled
+  and `max_failed_tries_count=0`. The host data filesystem had 64 GB available.
+  Read-only evidence copies are in
+  `/tmp/opencode/ota-followup/backup-recovery-oom-only.log`,
+  `backup-recovery-failed-backup.log`, `backup-recovery-scheduler-state.log`,
+  and `backup-recovery-service-state.log`.
+- **Direct fix / validation:** Increase only the Databasus Swarm memory limit
+  to `512M` in `deploy/docker-compose.yml`, keeping image `v3.32.1`, backup
+  schedule, encryption, storage, and the existing 24-hour freshness gate. A
+  full `docker stack config` render of `deploy/docker-compose.yml` with
+  `deploy/stack.oracle.yml` passed using canonical validated deploy
+  environment files; rendered output was discarded. Locally, Databasus
+  `v3.32.1` completed encrypted synthetic backup
+  `82990a0f-ff13-413e-9178-f7cfd16d06e5` for 750,000 rows in 86,868 ms
+  (reported size 795.03 MB). Peak container memory was 536,563,712 bytes,
+  307,200 bytes below the 536,870,912-byte limit, with no OOM or restart.
+  This narrow margin does not establish production-sized backup headroom. The
+  supported Databasus
+  restore completed into isolated synthetic database `validation_restored`
+  (restore `35619777-fdd8-43d0-b0de-2d90f79020a1`); source and restored
+  aggregates matched across all 750,000 rows (`750000|281250375000|-5087423379273388987779`).
+  The container restart count was `0`. Evidence is retained as supplemental
+  local artifacts under `/tmp/opencode/ota-followup/`. The
+  recovery runbook explains the minimum RAM requirement and that fixture
+  success does not establish production recovery.
+- **Remaining risk / follow-up:** The change is not deployed. No fresh
+  production backup, production freshness check, or isolated restore of a
+  production backup has been verified. Complete these checks after the normal
+  reviewed deployment before declaring recovery. No production configuration
+  or backup operation was changed during diagnosis.
 
 ## 2026-11-15 — OTA publisher rejected a nested trusted checkout
 
