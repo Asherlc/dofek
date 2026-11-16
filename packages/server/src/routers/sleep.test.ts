@@ -1,23 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { requestCacheKey } from "../trpc.ts";
 
-vi.mock("../trpc.ts", async () => {
-  const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC
-    .context<{
-      db: unknown;
-      userId: string | null;
-      timezone: string;
-      accessWindow?: import("../billing/entitlement.ts").AccessWindow;
-      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
-    }>()
-    .create();
-  return {
-    router: trpc.router,
-    protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
-    CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
-  };
-});
+const cache = vi.hoisted(() => new Map<string, unknown>());
+vi.mock("dofek/lib/cache", () => ({
+  queryCache: {
+    get: async (key: string) => cache.get(key),
+    set: async (key: string, value: unknown) => {
+      cache.set(key, value);
+    },
+    invalidate: async (key: string) => {
+      cache.delete(key);
+    },
+  },
+}));
+beforeEach(() => cache.clear());
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
@@ -130,6 +126,29 @@ describe("sleepRouter access window", () => {
 });
 
 describe("sleepRouter stagesByDate", () => {
+  it("supplies duration seconds from legacy server cache entries", async () => {
+    const interval = {
+      stage: "awake",
+      started_at: "2026-11-15T23:00:15Z",
+      ended_at: "2026-11-15T23:01:30Z",
+    };
+    const caller = createSleepCaller(vi.fn());
+    const datedInput = { date: "2026-04-12" };
+    cache.set(requestCacheKey("user-1", "stagesByDate", datedInput, "UTC"), {
+      date: datedInput.date,
+      stages: [interval],
+    });
+    expect(await caller.stagesByDate(datedInput)).toEqual({
+      date: datedInput.date,
+      stages: [{ ...interval, duration_seconds: 75 }],
+    });
+    cache.set(requestCacheKey("user-1", "latestStages", undefined, "UTC"), [interval]);
+    expect(await caller.latestStages()).toEqual([{ ...interval, duration_seconds: 75 }]);
+    const sessionInput = { sessionId: "00000000-0000-0000-0000-000000000001" };
+    cache.set(requestCacheKey("user-1", "stages", sessionInput, "UTC"), [interval]);
+    expect(await caller.stages(sessionInput)).toEqual([{ ...interval, duration_seconds: 75 }]);
+  });
+
   function createSleepCaller(query: ReturnType<typeof vi.fn>) {
     return createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
