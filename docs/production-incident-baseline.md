@@ -122,11 +122,113 @@
   local artifacts under `/tmp/opencode/ota-followup/`. The
   recovery runbook explains the minimum RAM requirement and that fixture
   success does not establish production recovery.
-- **Remaining risk / follow-up:** The change is not deployed. No fresh
-  production backup, production freshness check, or isolated restore of a
-  production backup has been verified. Complete these checks after the normal
-  reviewed deployment before declaring recovery. No production configuration
-  or backup operation was changed during diagnosis.
+- **Production recovery, 2026-11-16 UTC:** The reviewed memory fix merged in
+  [PR #3354](https://github.com/Asherlc/dofek/pull/3354), but normal admission
+  correctly stopped on unresolved
+  [server deployment 7811978352](https://api.github.com/repos/Asherlc/dofek/deployments/7811978352).
+  Its original [stack job](https://github.com/Asherlc/dofek/actions/runs/43775025714/job/133004641705)
+  had already deployed source `3afa94e70e71bc0b0802d1a509c1e5d8b2b00c02`
+  before failing backup freshness and skipping the Sentry deployment record.
+  The user approved a one-time operator exception: acquire the existing server
+  concurrency group, apply the committed `512M` limit with the stock
+  `docker service update --limit-memory 512M --detach=false dofek_databasus`,
+  and verify the missing gates before reconciling that same receipt. The
+  [temporary lock-holder job](https://github.com/Asherlc/dofek/actions/runs/43805725717/job/133095945326)
+  serializes this window; it runs no deployment or backup commands and is not
+  evidence that the original failed workflow succeeded. The operator update
+  converged at 536,870,912 bytes. Allowlisted pre/post inspection preserved the
+  immutable Databasus image, mounts, placement, networks and other operational
+  fields, with only Docker's empty-reservations normalization in addition to
+  memory. Web and worker specifications remained unchanged.
+- **Production backup / restore evidence:** Backup
+  `605089cc-9d8d-4eba-bd6e-59374213c479`, created at
+  `2026-11-16 04:46:12 UTC`, completed with encryption enabled. Its R2 object
+  `Health-20261116-044612-605089cc-9d8d-4eba-bd6e-59374213c479`
+  and matching `.metadata` object were written at `04:48:16` and `04:48:17`
+  UTC; the sidecar identifies the same backup and encrypted format. The
+  unchanged 24-hour freshness checker passed. The authenticated Databasus
+  download decrypted that exact backup; a full sequential `pg_restore`
+  exited zero against an isolated local PostgreSQL 18.3 / TimescaleDB 2.26.4
+  target, with ownership and ACL restoration excluded for the scratch target.
+  Migration count/hash, 104 fitness tables, 24 fitness views, extension
+  versions, and representative counts matched. There were no invalid fitness
+  indexes or unvalidated fitness constraints. The restored activity count was
+  4,985; the later live count was 4,986, with exactly one live activity created
+  after the backup began and none in that time range in the restored snapshot.
+  This is snapshot-aware validation, not a claim of equality to a later live
+  database. The scratch database had an internal-only network and no published
+  ports. It and its volume were removed, and the decrypted download deleted.
+  Local command and aggregate artifacts supplement the durable run, job and
+  receipt links below.
+- **Other recovery gates:** Both live web replicas passed their
+  internal readiness checks for Postgres, ClickHouse and queues; the CDC
+  health-state probe and public authentication-provider API also passed. A
+  request to the public `/readyz` URL returned 404 and is not counted as an
+  external readiness pass. The finalized
+  [exact-source Sentry release](https://east-bay-software.sentry.io/releases/3afa94e70e71bc0b0802d1a509c1e5d8b2b00c02/)
+  already included both `dofek-web` and `dofek-server`; its missing production
+  deployment record `181173543` was added at `2026-11-16 04:56:37 UTC`, labeled
+  as operator recovery. Independent evidence review passed, followed by
+  immediate checks of the exact running lock, two web replicas and worker,
+  Databasus, full target history, and the original pending record. Exactly one
+  operator success status, `22286656379`, was added to that
+  [existing receipt's status history](https://api.github.com/repos/Asherlc/dofek/deployments/7811978352/statuses)
+  at `05:08:32 UTC`. Its source, image, payload and original pending status
+  were preserved; GitHub updated the record's `updated_at` timestamp. The
+  original failed workflow remains failed. The dedicated lock-holder run was
+  then cancelled and its temporary workflow reverted and pushed; no
+  maintenance workflow remains in the intended steady state.
+- **Normal deployment verification:** The resumed
+  [normal CI run, attempt 2](https://github.com/Asherlc/dofek/actions/runs/43803081599/attempts/2)
+  completed successfully at `2026-11-16 05:42:52 UTC`. Its
+  [server stack job](https://github.com/Asherlc/dofek/actions/runs/43803081599/job/133105445356)
+  passed migrations, causal CDC verification, Kafka/topic-policy checks,
+  backup freshness and Sentry. The workflow finalized
+  [new server receipt 7816103842](https://api.github.com/repos/Asherlc/dofek/deployments/7816103842)
+  with [success status 22288158993](https://api.github.com/repos/Asherlc/dofek/deployments/7816103842/statuses)
+  at `05:42:36 UTC`; this receipt required no manual status write. All nine
+  named quality contexts passed on source
+  `4af084fd1f2077174a41c4b674ac54a915ee2362`. A check after deployment found two
+  healthy web replicas and one healthy worker on that exact source and digest
+  `sha256:59be4ad26ca837fe7742a76921d1fd035a2745c050d1bd839c9346a8961cf0d3`.
+- **Scheduled validation / completion:** The next automatic daily backup,
+  `a993b099-96cc-46dd-abd0-1869d37edab8`, started at
+  `2026-11-16 06:00:41 UTC` and completed encrypted in `145,899` ms. Its R2
+  object and matching encryption sidecar identify the same backup and were
+  written at `06:03:07` and `06:03:08 UTC`. Databasus remained `1/1` with the
+  committed `512M` limit. The subsequent
+  [scheduled freshness run](https://github.com/Asherlc/dofek/actions/runs/43816981128)
+  started at `06:28:28 UTC` and passed at `06:29:30 UTC`; the
+  [checker job](https://github.com/Asherlc/dofek/actions/runs/43816981128/job/133131159701)
+  named that automatic backup's sidecar and reported an age of `0.44` hours.
+  No manual workflow dispatch substituted for this scheduled check. All
+  operational recovery acceptance passed, and the recovery-monitor heartbeat
+  was removed. The earlier credential-exposure incident still requires its
+  separate owner response; the Databasus administrator reset does not close it.
+- **Password reset privacy correction, 2026-11-16:** The authorized legacy
+  password reset kept its generated value out of chat, captured tool output
+  and shell history, but passed it in the `docker exec` command arguments.
+  Docker includes those arguments in exec events
+  ([implementation](https://github.com/moby/moby/blob/06db1734267bf7770914b417bff6556d835bf8cc/daemon/exec.go#L151-L154));
+  the reset process also receives them. The earlier privacy claim therefore
+  did not establish that privileged event or process records excluded the
+  password. These records have not been inspected, and retention or access by
+  another party is unverified. No additional password reset, log inspection or
+  cleanup was performed during the documentation correction. The runbook now
+  prefers the supported authenticated HTTPS password-change API, identifies
+  the conditional email-reset flow, and states the CLI's input limitations.
+  Any further credential rotation or event-retention investigation requires
+  separate authorization; the operational backup/deployment checks above do
+  not establish remediation of this credential exposure path.
+- **Retrospective:** Kernel/process correlation established the memory cause;
+  a real encrypted backup and isolated restore established recovery beyond
+  service liveness. Independent review and fresh target-lock/history checks
+  prevented treating the original failed workflow as successful. The access
+  recovery procedure is now in the backup runbook, with pinned supported HTTP
+  paths, legacy CLI limitations and private secret-storage guidance. `512M`
+  meets Databasus's documented minimum; no retry, timeout, schedule or freshness threshold was
+  changed to make the checks pass. The existing backup runbook and CI diagnosis
+  workflow covered the recovery; no additional operational framework is needed.
 
 ## 2026-11-15 — OTA publisher rejected a nested trusted checkout
 
