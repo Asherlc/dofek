@@ -10,6 +10,7 @@ import { area, climb, climbingLogEntry } from "../../../../src/db/schema/climbin
 import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
+import { countActivityOriginCalls } from "./activity-origin-call-test-helpers.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 import { ProviderDetailRepository } from "./provider-detail-repository.ts";
 
@@ -86,7 +87,10 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       .from(activity)
       .where(eq(activity.id, recordedId));
     if (!group) throw new Error("Expected group");
-    const projected = (await repo().getActivityLogSessions([group.id])).get(group.id);
+    const sessionQuery = await countActivityOriginCalls(context, () =>
+      repo().getActivityLogSessions([group.id]),
+    );
+    const projected = sessionQuery.result.get(group.id);
     expect(projected).toHaveLength(2);
     expect(
       projected?.map((session) => [
@@ -98,6 +102,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       ["2026-11-10T01:10:00.000Z", "2026-11-10T01:14:00.000Z", 2],
       ["2026-11-10T01:15:00.000Z", "2026-11-10T01:15:00.000Z", 1],
     ]);
+    expect(sessionQuery.calls).toBe(0);
     const canonicalLogs = await repo().getActivityLogEntries(group.id);
     expect(canonicalLogs.map((entry) => entry.toDetail().id).sort()).toEqual(
       [...result.logEntryIds].sort(),
@@ -645,11 +650,15 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
         coordinates: { latitude: 50, longitude: 50 },
       },
     });
-    const locations = await repo().getActivityMapLocations([first.groupId]);
+    const locationQuery = await countActivityOriginCalls(context, () =>
+      repo().getActivityMapLocations([first.groupId]),
+    );
+    const locations = locationQuery.result;
     expect(locations.get(first.groupId)).toEqual(
       expect.arrayContaining([exact.mapLocation, areaLog.mapLocation]),
     );
     expect(locations.get(first.groupId)).toHaveLength(2);
+    expect(locationQuery.calls).toBe(0);
     expect(
       await new ClimbingActivityLogEntryRepository(
         context.db,

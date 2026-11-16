@@ -4,7 +4,7 @@
 
 - **Symptoms / impact:** [PR #3351](https://github.com/Asherlc/dofek/pull/3351) could not merge after its first complete CI run. No production migration or deployment was performed. The local focused checks had not covered every affected integration fixture, the Cypress heading expectation, or the new migration's Squawk gate.
 - **First fatal evidence / causes:** In [Migration Lint](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995653101), Squawk rejected migration 0187's 32-bit FTP column and immediately validated check, exiting 123. The new NP view also exposed fixture setup that omitted its summary/fence dependencies; [integration shard 1](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995828999), [shard 3](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995828985), and [shard 5](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995829017) failed. Shard 5 also retained an MCP tool count of 38 after two tools were intentionally removed. The [web E2E job](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995653044) still expected the retired ongoing eFTP heading. Mutation testing exposed surviving permanent behavior, including a 45.45 score against the unchanged 75 threshold in [threshold resolution](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995943097).
-- **Direct corrections / current validation:** The [migration correction](https://github.com/Asherlc/dofek/commit/f10b3f614) aligns bigint storage, Drizzle's number mapping and the upsert cast, and follows the existing `NOT VALID` then `VALIDATE CONSTRAINT` convention. Fresh isolated Postgres tests verify the type, validated positive check, large-value round trip and nullable clears. Both SQL linters pass. Drizzle runs these statements in one transaction, so this does not establish reduced lock duration. Fixture corrections use canonical summary/fence builders in each isolated schema and retain current NP publication, tombstone and erasure checks; six affected integration files pass locally. Hosted validation and the mutation-test additions remain pending.
+- **Direct corrections / current validation:** The [migration correction](https://github.com/Asherlc/dofek/commit/f10b3f614) aligns bigint storage, Drizzle's number mapping and the upsert cast, and follows the existing `NOT VALID` then `VALIDATE CONSTRAINT` convention. Fresh isolated Postgres tests verify the type, validated positive check, large-value round trip and nullable clears. Both SQL linters pass. Drizzle runs these statements in one transaction, so this does not establish reduced lock duration. Upstream then introduced its own migration 0187; the unreleased FTP migration was renamed to 0188 with unchanged SQL and ordered after that upstream entry. Fixture corrections use canonical summary/fence builders in each isolated schema and retain current NP publication, tombstone and erasure checks; six affected integration files pass locally. Hosted validation of the merged migration chain and the mutation-test additions remain pending.
 - **Local E2E prerequisites:** The isolated test stack pulled its pinned Redis image, completed the server build, then failed before web startup with `No such image: mirror.gcr.io/redis:8.6.3-alpine`. Pulling that exact image restored the prerequisite; the removal actor remains unresolved. The next full-reset attempt failed during image build with `ERR_PNPM_ENOSPC`. Authorized build-cache, unused-image and stopped-container cleanup did not restore usable space. The owner then approved eight specifically listed, unreferenced volumes: seven were already absent when removal was attempted, and only `pulsar-foundation_kafka_data` was removed by this task. Fresh inventory confirmed all eight absent, but the Docker filesystem still reported zero available space. An existing workspace database container also failed to start with an overlay2 `no space left on device` error; it was not recreated or reset. The remaining allocation owner is unresolved. No additional volumes, running containers, image tags, timeout/retry policies or global Docker settings were changed.
 - **Remaining risk / follow-up:** Do not treat passing assertions, a successful cleanup command or an image pull as a passing workflow. Local Cypress remains blocked before test execution. Continue the Docker-free mutation cases and require the complete hosted gates, including E2E, before merging; retain the local validation limitation. Visual/native acceptance remains separately unverified. Proposed testing guidance: run both new-migration linters before the first push and make every current-view integration fixture create its own required source tables and erasure fence.
 
@@ -23,6 +23,78 @@
 - **Fix / mitigation:** Investigation only; no calculation, production data, or configuration changed. Treat the displayed value as a model estimate with stale evidence while correction policy is decided. Missing power must not silently become measured zero power.
 - **Validation / remaining risk:** Separate self-review independently checked the blocked-day calculation against exported observations. Both decay semantics and reference-curve calibration remain unresolved; changing only the minimum qualifying effort duration does not address indefinite retention. No new timeout, retry, or resilience setting was introduced.
 - **Follow-up / retrospective:** Direct observation/history queries and an exact numerical replay isolated the cause without changing production state. Add a regression covering repeated power-unavailable cycling activities, and define evidence freshness and missing-load behavior before implementing a correction. The existing systematic debugging workflow applies; no additional operational tool is needed.
+
+## 2026-11-15 — OTA publisher rejected a nested trusted checkout
+
+- **Symptoms / impact:** Production OTA run
+  [43745526857](https://github.com/Asherlc/dofek/actions/runs/43745526857)
+  stopped before upload, so it did not publish its selected update. The
+  existing [OTA intent deployment record 7808135811](https://api.github.com/repos/Asherlc/dofek/deployments/7808135811)
+  was later reconciled once to `inactive` with `auto_inactive: false`; its
+  [deployment status list](https://api.github.com/repos/Asherlc/dofek/deployments/7808135811/statuses)
+  records exactly one inactive status. The production server baseline
+  [deployment record 7808336097](https://api.github.com/repos/Asherlc/dofek/deployments/7808336097)
+  was initialized for source `d049f86a57461e6e15e72b9f0707e26b4a085a82` and
+  image digest
+  `sha256:027b41d0f5762ef4560fdc33168cfd16a8f8ba9c060cead0c434d2906a11cdef`;
+  its [deployment status list](https://api.github.com/repos/Asherlc/dofek/deployments/7808336097/statuses)
+  records the successful baseline status. The source and digest were verified
+  in the successful original [release run, attempt 1](https://github.com/Asherlc/dofek/actions/runs/43662538842/attempts/1)
+  and [server stack verification job](https://github.com/Asherlc/dofek/actions/runs/43662538842/job/132654903427).
+  These operator-owned recovery writes have durable record and status links;
+  local recovery packets are supplemental implementation evidence.
+- **Failing job / step / evidence:** The original [OTA publisher job 132917033920](https://github.com/Asherlc/dofek/actions/runs/43745526857/job/132917033920)
+  stopped at **Publish OTA update**. Its supplemental workstation log copy
+  (`/tmp/opencode/task7/monitor-ota-publisher.log`, lines 3192–3196) showed
+  `?? ../../.release-tools/` followed by `Error: Commit all changes. Aborting...`.
+- **Root cause / direct fixes:** The workflow checked out current trusted
+  release controls as a nested `.release-tools` directory inside a historical
+  mobile candidate. EOAS treated that auxiliary checkout as candidate source
+  dirt. The workflow now adds only `/.release-tools/` to that runner clone's
+  Git `info/exclude`, found with `git rev-parse --git-path info/exclude`, before
+  candidate verification. Git documents `info/exclude` as a local exclude
+  source and `/`-anchored patterns as worktree-root paths
+  ([Git ignore documentation](https://git-scm.com/docs/gitignore)). The
+  tracked `.gitignore`, global Git configuration, and EOAS dirty-source guard
+  are unchanged. Tests execute the actual step in a historical temporary Git
+  candidate without a `.gitignore`; tracked edits and untracked candidate app
+  files independently remain dirty and are rejected by the installed EOAS
+  guard.
+  A local `expo-updates runtimeversion:resolve --platform ios --workflow
+  managed` comparison on the same isolated candidate, with identical synthetic
+  public app ID and Sentry DSN, returned the same runtime hash and identical
+  tracked fingerprint-source paths and hashes before and after the exclude
+  entry. Resolver output and its comparison are retained as supplemental local
+  implementation evidence under `/tmp/opencode/ota-followup/`.
+- **Server retry failure and parser fix:** The operator's server admission
+  retry [job 132922667909](https://github.com/Asherlc/dofek/actions/runs/43745526857/job/132922667909)
+  failed because the captured GraphQL response represented `Deployment.payload`
+  as a string containing another JSON-encoded string. GitHub documents
+  [`Deployment.payload` as `String`](https://docs.github.com/en/graphql/reference/deployments#deployment);
+  the two-layer encoding was observed in this response, not assumed as a
+  universal API format. One decode left a string, so the baseline source check
+  reported that deployment `7808336097` did not contain a full source SHA. This
+  was a parser-boundary defect, not a missing or invalid baseline. Both server
+  and OTA history readers now accept the observed two-layer encoding (and
+  existing object or one-layer object-string forms), then reject malformed,
+  triple-encoded, or non-object payloads before mutation. Source SHA, commit
+  OID, digest/runtime, UUID, current-live identity, and intent-ordering checks
+  remain in force. The captured response and decode proof under
+  `/tmp/opencode/ota-followup/` are supplemental implementation evidence.
+- **Validation boundary / remaining risk:** The aux-checkout and payload
+  regressions, workflow checks, and focused local suites validate fixtures and
+  code only. No post-fix production publisher run or production OTA republish
+  has occurred; the existing server retry used the old control source and
+  failed before the parser fix. A future production retry requires the new
+  trusted controls and fresh normal release admission. TestFlight receipt
+  deployment [7808157768](https://api.github.com/repos/Asherlc/dofek/deployments/7808157768)
+  and its [deployment status list](https://api.github.com/repos/Asherlc/dofek/deployments/7808157768/statuses)
+  record the successful upload; the corresponding [upload job](https://github.com/Asherlc/dofek/actions/runs/43745526857/job/132917033959)
+  passed without re-upload. The earlier disclosed credential exposure remains
+  a separate, unresolved operator-owned follow-up; this work did not read or
+  rotate production credentials. Local fixture, workflow, and API capture files
+  under `/tmp/opencode/` are supplemental implementation evidence, not required
+  operator instructions.
 
 ## 2026-11-15 — Local Docker disk pressure during CI gate validation
 
@@ -38226,3 +38298,60 @@ Local qualification and CI are separate from production throughput acceptance. T
   was not performed during this task because it is outside the approved scope.
 - **Follow-up:** Rotate the affected production credentials through the
   established secret rotation workflow and verify consumers afterward.
+
+## 2026-11-15 — Activities list delayed by PostgreSQL activity expansion
+
+- **Symptoms / impact:** The production web Activities page waits for its
+  activity cards. Two uncached `calendar.weekListV2` requests took 12,316 ms
+  and 8,649 ms; the accompanying `calendar.activityOverview` requests took
+  10,822 ms and 5,867 ms.
+- **Evidence:** Axiom `dofek-logs`, 23:31–23:35 UTC, traces
+  `7553a2d760d85b8b26fdd78cb23f3997` and
+  `97b57b6d30045738a112662ef6d03f74`. PostgreSQL slow-statement logs show
+  `SELECT a.id::text AS id FROM fitness.v_activity a` taking 7,275 ms,
+  3,339 ms, 2,970 ms and 2,681 ms. Climbing-log hydration queries against
+  `fitness.v_climbing_log_entry`, joined to `fitness.v_activity`, took
+  3,770 ms and 3,640 ms during the second request. ClickHouse
+  `system.query_log` records the initial activity SELECT at 457 ms and
+  143 ms respectively. The second request's recorded application queue
+  waits were each below 1 ms.
+- **Root cause:** The request paths repeatedly expand the PostgreSQL
+  activity view, including provenance hydration before the local-date
+  filter. A read-only reproduction of the current-period visibility query
+  took 3,211 ms and returned 80 IDs, while its provenance input aggregate
+  ran 1,885 times. The overview performs two sequential visibility queries;
+  list map/session lookups expand the view again. This is request-time
+  PostgreSQL work, rather than an expensive initial ClickHouse activity
+  scan. Plan interpretation follows PostgreSQL's
+  [EXPLAIN documentation](https://www.postgresql.org/docs/18/using-explain.html).
+- **Direct fix:** Following approval, extract the existing canonical grouping
+  into `fitness.v_activity_group`; the full activity view adds its unchanged
+  provenance and title fields. Visibility and climbing log/session/location
+  queries use the group projection. Migration 0187 installs both definitions.
+  No cache, timeout, retry, analytics model or production configuration changes
+  were added.
+- **Validation:** Five real-PostgreSQL assertions first failed on unnecessary
+  resolver calls (three visibility checks and two climbing projections).
+  A read-only comparison on production data returned identical sets of 80
+  current-period IDs. Three before/after visibility-query plan samples took
+  2,266/82 ms, 2,153/75 ms and 2,214/84 ms. The candidate query embedded the new
+  group-view definition; no production DDL was executed for this measurement.
+  This verifies the query improvement, not a deployed page-load measurement.
+  All 203 focused database tests, repository lint, recursive package typechecks,
+  migration policy and migration SQL lint passed; migration 0187 applied locally.
+  Independent review found no actionable issues. The additional local analytics
+  build could not complete its fresh-ClickHouse prerequisite: bootstrap first
+  reported `Cannot reserve 1.00 MiB, not enough space`, then `errno: 28` writing
+  `v_activity.sql.tmp`. The shared Docker VM had zero available bytes. Approved
+  stopped-container/unused-image cleanup briefly recovered 883 MiB, but the
+  filesystem filled again. No database volumes or running services were removed.
+- **Remaining risk / follow-up:** Release the migration with the repository
+  changes through the normal deployment workflow, then measure uncached
+  `calendar.weekListV2` and `calendar.activityOverview` again. Production
+  remains on the previous implementation until that release. Complete the
+  additional local analytics check when shared Docker capacity is available.
+- **Retrospective:** Correlating Axiom procedure timings with both engines'
+  query logs located the bottleneck; the tRPC `db_duration_ms` label alone
+  did not identify the engine. Proposed loading-runbook addition for review:
+  “When ClickHouse queries are short, inspect PostgreSQL visibility and
+  enrichment queries before adding analytics models.”

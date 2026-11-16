@@ -1314,8 +1314,15 @@
     {
       "idx": 187,
       "version": "7",
-      "when": 1794762000000,
-      "tag": "0187_restore_manual_cycling_ftp",
+      "when": 1794786220597,
+      "tag": "0187_activity_group_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1794786220598,
+      "tag": "0188_restore_manual_cycling_ftp",
       "breakpoints": true
     }
   ]
