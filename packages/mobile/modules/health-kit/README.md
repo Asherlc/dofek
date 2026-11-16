@@ -71,6 +71,10 @@ after reading the quantities and reuses it for both interval bounds. This avoids
 constructing and configuring two formatters per point while preserving the same
 fractional-second timestamp output. The synthetic large-series regression guards
 host formatting cost; a matching native build still needs device CPU validation.
+Successful native running-series transports also emit a Sentry structured log
+with the HealthKit type identifier, transported point count, and elapsed
+milliseconds. It includes no sample values and measures extraction plus
+timestamp formatting.
 
 The existing account-erasure cutoff filters parents before expansion. Anchored
 queries finish expansion before registering a pending anchor, then JavaScript

@@ -166,6 +166,26 @@ public class HealthKitModule: Module {
         )
     }
 
+    private func transportQuantitySamples(
+        _ parents: [HKSample],
+        typeIdentifier: String
+    ) async throws -> [[String: Any]] {
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        let points = try await HealthKitQuantitySeriesTransport.transportSamples(
+            parents, typeIdentifier: typeIdentifier
+        ) { parents in
+            try await HealthKitQuantitySeriesTransport.read(parents, store: self.healthStore)
+        }
+        if HealthKitQuantitySeriesTransport.runningIdentifiers.contains(typeIdentifier) {
+            SentrySDK.logger.info("HealthKit quantity series transport completed", attributes: [
+                "typeIdentifier": typeIdentifier,
+                "pointCount": points.count,
+                "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000,
+            ])
+        }
+        return points
+    }
+
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     public func definition() -> ModuleDefinition {
         Name("HealthKit")
@@ -341,11 +361,9 @@ public class HealthKitModule: Module {
                 }
                 Task {
                     do {
-                        let samples = try await HealthKitQuantitySeriesTransport.transportSamples(
+                        let samples = try await self.transportQuantitySamples(
                             parents, typeIdentifier: typeIdentifier
-                        ) { parents in
-                            try await HealthKitQuantitySeriesTransport.read(parents, store: self.healthStore)
-                        }
+                        )
                         promise.resolve(samples)
                     } catch {
                         self.rejectHealthKitError(
@@ -821,11 +839,9 @@ public class HealthKitModule: Module {
                         let parents = objects.added.filter {
                             self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
                         }
-                        let samples = try await HealthKitQuantitySeriesTransport.transportSamples(
+                        let samples = try await self.transportQuantitySamples(
                             parents, typeIdentifier: typeIdentifier
-                        ) { parents in
-                            try await HealthKitQuantitySeriesTransport.read(parents, store: self.healthStore)
-                        }
+                        )
                         return (
                             HealthKitAnchoredPayload(
                                 samples: samples,
