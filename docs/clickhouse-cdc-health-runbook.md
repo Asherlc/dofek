@@ -5,6 +5,16 @@ source tables are current, or when `scripts/check-clickhouse-cdc.ts` fails.
 
 ## Prevention
 
+PeerDB source-column drops are detected but are not propagated to the mirror;
+PeerDB writes `NULL` for a dropped source column in later rows. Keep the column
+in the ClickHouse destination, even after the application stops reading it, or
+normalization inserts can fail with `No such column` and stall every table in
+the flow. PeerDB documents this behavior in its
+[schema-change guide](https://docs.peerdb.io/features/schema-changes). When
+retiring a mirrored source column, remove application and curated-view reads as
+needed, but retain the raw mirror column unless the PeerDB mirror is explicitly
+recreated with a revised mapping.
+
 `scripts/check-clickhouse-cdc.ts` checks the required PeerDB logical replication
 slots and selected active ClickHouse mirrors.
 

@@ -62,6 +62,23 @@ describe("HeartRateZonesChart", () => {
     if (!option) throw new Error("Expected chart option");
 
     expect(getCategoryAxisData(option)).toEqual(["Below Zone 1", "Zone 1", "Zone 2"]);
+    const yAxis = option.yAxis;
+    if (typeof yAxis !== "object" || yAxis === null) throw new Error("Expected heart-rate axis");
+    expect(Reflect.get(yAxis, "show")).toBe(true);
+    const axisLabel = Reflect.get(yAxis, "axisLabel");
+    expect(axisLabel).toMatchObject({
+      align: "right",
+      margin: 10,
+      show: true,
+      interval: 0,
+      rich: {
+        zone: expect.objectContaining({ fontWeight: 600 }),
+        name: expect.objectContaining({ fontSize: 10 }),
+      },
+    });
+    const grid = option.grid;
+    if (typeof grid !== "object" || grid === null) throw new Error("Expected zone chart grid");
+    expect(Reflect.get(grid, "left")).toBe(150);
     expect(formatCategoryAxisLabel(option, "Zone 1")).toBe("{zone|Zone 1}\n{name|Recovery}");
     expect(formatCategoryAxisLabel(option, "Zone 2")).toBe("{zone|Zone 2}\n{name|Aerobic}");
   });
@@ -118,11 +135,16 @@ describe("HeartRateZonesChart", () => {
         ftp={250}
         loading={false}
         zones={[
-          { zone: 1, label: "Endurance", minPct: 56, maxPct: 75, seconds: 300, percent: 100 },
+          { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300, percent: 33.3 },
+          { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 66.7 },
         ]}
       />,
     );
-    expect(getCategoryAxisData(capturedOptions[0] ?? {})).toEqual(["Zone 1"]);
+    const powerOption = capturedOptions[0];
+    expect(powerOption).toBeDefined();
+    if (!powerOption) throw new Error("Expected power-zone chart option");
+    expect(getCategoryAxisData(powerOption)).toEqual(["Zone 1", "Zone 2"]);
+    expect(formatCategoryAxisLabel(powerOption, "Zone 2")).toBe("{zone|Zone 2}\n{name|Endurance}");
 
     rerender(
       <WeeklyHrZonesChart

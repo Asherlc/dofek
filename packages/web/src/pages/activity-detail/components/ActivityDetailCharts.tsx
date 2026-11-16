@@ -22,7 +22,10 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ActivityHeartRateContext } from "../../../../../server/src/contracts/activity-metric-sources.ts";
+import type {
+  ActivityHeartRateContext,
+  ActivityMetric,
+} from "../../../../../server/src/contracts/activity-metric-sources.ts";
 import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
 import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
 import { DofekChart } from "../../../components/DofekChart.tsx";
@@ -30,17 +33,17 @@ import { ChartLoadingSkeleton } from "../../../components/LoadingSkeleton.tsx";
 import {
   chartThemeColors,
   dofekAxis,
-  dofekGrid,
   dofekLegend,
   dofekTooltip,
   escapeTooltipHtml,
 } from "../../../lib/chartTheme.ts";
 
-const CHART_COLORS = {
+export const CHART_COLORS = {
   heartRate: activityMetricColors.heartRate,
   power: activityMetricColors.power,
   speed: activityMetricColors.speed,
   cadence: activityMetricColors.cadence,
+  skinTemperature: activityMetricColors.skinTemperature,
   altitude: "#6b7280",
 };
 
@@ -48,7 +51,7 @@ const CHART_COLORS = {
  * Builds ECharts event handlers that translate axis pointer hover into a GPS position callback.
  * Used by MetricsChart and ElevationChart to sync hover with the RouteMap.
  */
-function buildAxisPointerEvents(
+export function buildAxisPointerEvents(
   dataPoints: StreamPoint[],
   onHoverPosition?: (position: { lat: number; lng: number } | null) => void,
 ) {
@@ -75,7 +78,7 @@ function buildAxisPointerEvents(
   };
 }
 
-function chartSeriesData(series: ActivityChartSeries) {
+export function chartSeriesData(series: ActivityChartSeries, precision = 0) {
   const data: Array<{
     value: [number, number | null];
     name: string;
@@ -96,7 +99,7 @@ function chartSeriesData(series: ActivityChartSeries) {
     data.push({
       value: [sample.timestamp, sample.value],
       name: `Sample ${sample.index + 1} · ${timestampLabel}`,
-      displayValue: formatNumber(sample.value, 0),
+      displayValue: formatNumber(sample.value, precision),
       itemStyle: { opacity: sample.showMarker ? 1 : 0 },
     });
   }
@@ -104,10 +107,12 @@ function chartSeriesData(series: ActivityChartSeries) {
 }
 
 interface MetricDefinition {
+  key: ActivityMetric;
   name: string;
   axisName: string;
   color: string;
-  data: Array<number | null>;
+  samples: Array<{ recordedAt: string; value: number | null }>;
+  precision?: number;
 }
 
 export function MetricsChart({
@@ -124,6 +129,7 @@ export function MetricsChart({
   onHoverPosition,
   renderLegend,
   metricSources = [],
+  sourceAttribution = {},
   error,
   climbAnnotations = [],
   highlightedClimbId,
@@ -153,6 +159,7 @@ export function MetricsChart({
     selectedId: string;
     onChange: (sourceId: string) => void;
   }>;
+  sourceAttribution?: Partial<Record<ActivityMetric, string>>;
   renderLegend?: (controls: {
     isVisible: (name: string) => boolean;
     toggle: (name: string) => void;
@@ -169,7 +176,16 @@ export function MetricsChart({
   }, []);
   const timeline = activityChartSeries(
     heartRateContext?.points ??
-      points.map((point) => ({ recordedAt: point.recordedAt, value: null })),
+      (activityWindow
+        ? points.map((point) => ({ recordedAt: point.recordedAt, value: null }))
+        : [
+            ...points.map((point) => ({ recordedAt: point.recordedAt, value: null })),
+            ...points.flatMap((point) =>
+              point.skinTemperature != null && point.skinTemperatureRecordedAt != null
+                ? [{ recordedAt: point.skinTemperatureRecordedAt, value: null }]
+                : [],
+            ),
+          ]),
     heartRateContext?.window ?? activityWindow,
   );
   const climbs = climbingChartPositions(climbAnnotations, timeline.startedAt, timeline.endedAt);
@@ -233,33 +249,56 @@ export function MetricsChart({
   const metrics: MetricDefinition[] = [];
   if (hasHr || metricSources.some((source) => source.key === "heartRate"))
     metrics.push({
+      key: "heartRate",
       name: "Heart Rate",
       axisName: "Heart Rate (bpm)",
       color: CHART_COLORS.heartRate,
-      data: points.map((p) => p.heartRate),
+      samples: points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate })),
     });
   if (hasPower || metricSources.some((source) => source.key === "power"))
     metrics.push({
+      key: "power",
       name: "Power",
       axisName: "Power (W)",
       color: CHART_COLORS.power,
-      data: points.map((p) => p.power),
+      samples: points.map((p) => ({ recordedAt: p.recordedAt, value: p.power })),
     });
   if (hasSpeed || metricSources.some((source) => source.key === "speed"))
     metrics.push({
+      key: "speed",
       name: "Speed",
       axisName: `Speed (${units.speedLabel})`,
       color: CHART_COLORS.speed,
-      data: points.map((p) =>
-        p.speed != null ? +formatNumber(units.convertSpeed(p.speed * 3.6)) : null,
-      ),
+      samples: points.map((p) => ({
+        recordedAt: p.recordedAt,
+        value: p.speed != null ? +formatNumber(units.convertSpeed(p.speed * 3.6)) : null,
+      })),
     });
   if (hasCadence || metricSources.some((source) => source.key === "cadence"))
     metrics.push({
+      key: "cadence",
       name: "Cadence",
       axisName: cadenceAxisLabel(activityType),
       color: CHART_COLORS.cadence,
-      data: points.map((p) => p.cadence),
+      samples: points.map((p) => ({ recordedAt: p.recordedAt, value: p.cadence })),
+    });
+  if (metricSources.some((source) => source.key === "skinTemperature"))
+    metrics.push({
+      key: "skinTemperature",
+      name: "Skin Temperature",
+      axisName: `Skin Temperature (${units.temperatureLabel})`,
+      color: CHART_COLORS.skinTemperature,
+      precision: 1,
+      samples: points.flatMap((point) =>
+        point.skinTemperature != null && point.skinTemperatureRecordedAt != null
+          ? [
+              {
+                recordedAt: point.skinTemperatureRecordedAt,
+                value: units.convertTemperature(point.skinTemperature),
+              },
+            ]
+          : [],
+      ),
     });
 
   const customLegend =
@@ -305,6 +344,14 @@ export function MetricsChart({
                       className="max-w-60 rounded-r-md border-l border-border px-2"
                     />
                   ))}
+                {sourceAttribution[metric.key] &&
+                  (metric.samples.some((sample) => sample.value != null) ||
+                    (metric.key === "heartRate" &&
+                      heartRateContext?.points.some((sample) => sample.value != null))) && (
+                    <span role="status" className="px-2 text-xs text-muted">
+                      {sourceAttribution[metric.key]}
+                    </span>
+                  )}
               </div>
             ))}
           </fieldset>
@@ -332,7 +379,10 @@ export function MetricsChart({
         max: "dataMax",
         position,
         showSplitLine,
-        axisLabel: { color: metric.color, formatter: (value: number) => formatNumber(value, 0) },
+        axisLabel: {
+          color: metric.color,
+          formatter: (value: number) => formatNumber(value, metric.precision ?? 0),
+        },
       }),
       show: visible,
       offset: !isFirst && visibleRightBefore > 0 ? visibleRightBefore * 60 : 0,
@@ -346,14 +396,10 @@ export function MetricsChart({
     yAxisIndex: index,
     data: chartSeriesData(
       activityChartSeries(
-        metric.name === "Heart Rate" && heartRateContext
-          ? heartRateContext.points
-          : points.map((point, dataIndex) => ({
-              recordedAt: point.recordedAt,
-              value: metric.data[dataIndex] ?? null,
-            })),
+        metric.name === "Heart Rate" && heartRateContext ? heartRateContext.points : metric.samples,
         heartRateContext?.window ?? activityWindow,
       ),
+      metric.precision,
     ),
     connectNulls: false,
     showSymbol: true,
@@ -363,6 +409,9 @@ export function MetricsChart({
     emphasis: { itemStyle: { opacity: 1 } },
     lineStyle: { width: 1.5, color: metric.color },
     itemStyle: { color: metric.color },
+    tooltip: {
+      valueFormatter: (value: number) => formatNumber(value, metric.precision ?? 0),
+    },
     ...(metric.name === "Heart Rate" && climbs.length > 0
       ? {
           markLine: {
@@ -451,7 +500,6 @@ export function MetricsChart({
           },
         },
       }),
-      valueFormatter: (value: number) => formatNumber(value, 0),
     },
     legend: { ...dofekLegend(customLegend === undefined), selected: legendSelected },
     dataZoom: [
@@ -543,92 +591,6 @@ export function MetricsChart({
           </ul>
         </details>
       )}
-    </figure>
-  );
-}
-
-export function ElevationChart({
-  points,
-  loading,
-  units,
-  onHoverPosition,
-}: {
-  points: StreamPoint[];
-  loading: boolean;
-  units: UnitConverter;
-  onHoverPosition?: (position: { lat: number; lng: number } | null) => void;
-}) {
-  const elevation = activityChartSeries(
-    points.map((point) => ({
-      recordedAt: point.recordedAt,
-      value: point.altitude != null ? Math.round(units.convertElevation(point.altitude)) : null,
-    })),
-  );
-  const chartEvents = useMemo(
-    () => buildAxisPointerEvents(points, onHoverPosition),
-    [points, onHoverPosition],
-  );
-
-  if (loading) return <ChartLoadingSkeleton height={200} />;
-  if (elevation.samples.length === 0) return null;
-
-  const option = {
-    aria: {
-      label: {
-        description:
-          "Elevation over activity time. Dots mark recorded samples; gaps indicate unobserved time.",
-      },
-    },
-    grid: dofekGrid("single", { top: 10, right: 20, bottom: 30, left: 50 }),
-    tooltip: dofekTooltip({
-      formatter: (params: Array<{ value: [number, number | null]; dataIndex: number }>) => {
-        const firstParam = params[0];
-        if (!firstParam || firstParam.value[1] == null) return "";
-        return `${escapeTooltipHtml(formatDateTime(new Date(firstParam.value[0])))}<br/>Elevation: ${firstParam.value[1]} ${escapeTooltipHtml(units.elevationLabel)}`;
-      },
-    }),
-    xAxis: {
-      ...dofekAxis.time({
-        axisLabel: {
-          formatter: (value: number) => formatTimeOnly(new Date(value)),
-        },
-      }),
-      min: elevation.startedAt,
-      max: elevation.endedAt,
-    },
-    yAxis: { ...dofekAxis.value({ name: `Elevation (${units.elevationLabel})` }), scale: true },
-    series: [
-      {
-        type: "line",
-        data: chartSeriesData(elevation),
-        connectNulls: false,
-        showSymbol: true,
-        showAllSymbol: true,
-        symbol: "circle",
-        symbolSize: 6,
-        emphasis: { itemStyle: { opacity: 1 } },
-        itemStyle: { color: CHART_COLORS.altitude },
-        lineStyle: { width: 1.5, color: CHART_COLORS.altitude },
-        areaStyle: {
-          color: {
-            type: "linear",
-            x: 0,
-            y: 0,
-            x2: 0,
-            y2: 1,
-            colorStops: [
-              { offset: 0, color: "rgba(107,114,128,0.3)" },
-              { offset: 1, color: "rgba(107,114,128,0.05)" },
-            ],
-          },
-        },
-      },
-    ],
-  };
-
-  return (
-    <figure className="m-0">
-      <DofekChart option={option} height={200} onEvents={chartEvents} timeRangeMode="data" />
     </figure>
   );
 }

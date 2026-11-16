@@ -59,8 +59,9 @@ export function activityMetricSourcePresentation(
   }
   const family = providerFamily(providerId);
   if (family && (family.methodLabel === "Cloud" || family.methodLabel === "Bluetooth")) {
+    const sourceDevice = providerId === "whoop_ble" ? sourceName?.trim() : undefined;
     return {
-      displayName: family.label,
+      displayName: sourceDevice ? deviceDisplayName(sourceDevice) : family.label,
       providerId,
       sourceName,
       attribution: {
