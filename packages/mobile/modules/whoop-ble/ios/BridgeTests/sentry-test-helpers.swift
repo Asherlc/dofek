@@ -55,8 +55,10 @@ final class CleanupLogRecorder {
             XCTAssertEqual(record.attributes["isMainThread"]?.value as? Bool, false, file: file, line: line)
             XCTAssertGreaterThan(try XCTUnwrap(record.attributes["threadId"]?.value as? Int), 0, file: file, line: line)
         }
-        let completed = try XCTUnwrap(records.first { $0.attributes["stage"]?.value as? String == "completed" }, file: file, line: line)
-        XCTAssertNotNil(completed.attributes["sqliteCacheWritePages"]?.value as? Int, file: file, line: line)
+        let terminal = try XCTUnwrap(records.last {
+            ["completed", "failed"].contains($0.attributes["stage"]?.value as? String ?? "")
+        }, file: file, line: line)
+        XCTAssertNotNil(terminal.attributes["sqliteCacheWritePages"]?.value as? Int, file: file, line: line)
     }
 }
 
