@@ -745,7 +745,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 200M
+          memory: 512M
       labels:
         - traefik.enable=true
         - traefik.http.routers.databasus.rule=${DATABASUS_HOST_RULE:-Host(`databasus.dofek.asherlc.com`)}
