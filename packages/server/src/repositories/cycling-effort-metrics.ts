@@ -11,7 +11,6 @@ import { cyclingPowerCoveragePolicy } from "dofek/analytics/cycling-power-policy
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { cyclingThresholdUncertainty } from "../contracts/cycling-threshold.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { evaluateCyclingPowerWindows } from "./cycling-power-window-metrics.ts";
@@ -170,7 +169,7 @@ export function prepareCyclingEffortMetrics(
   const workout = prepareCyclingWorkoutMetrics({
     coveragePolicy: cyclingPowerCoveragePolicy,
     durationSeconds: duration,
-    thresholdWatts: context.activityPowerMetrics?.eftp ?? null,
+    thresholdWatts: context.activityPowerMetrics?.ftp ?? null,
     samples: clean.samples,
     settings: workoutSettings(settings),
     intervals: context.intervals,
@@ -296,29 +295,13 @@ export function calculateCyclingEffortMetrics(
   }
   const weight = selectNearbyWeight(context.activityDate, context.weightObservations);
   const activityPower = context.activityPowerMetrics;
-  const ftp =
-    activityPower?.eftp != null && activityPower.eftp > 0 && Number.isFinite(activityPower.eftp)
-      ? {
-          value: activityPower.eftp,
-          effectiveFrom: activityPower.started_at,
-          kind: "computed" as const,
-          method: "computed_eftp" as const,
-          modelVersion: activityPower.model_version,
-          uncertainty: cyclingThresholdUncertainty,
-          evidenceActivityId: activityPower.evidence_activity_id,
-          evidenceAt: activityPower.evidence_at,
-          evidenceDurationSeconds: activityPower.evidence_duration_seconds,
-          evidencePowerWatts: activityPower.evidence_power,
-        }
-      : null;
-  const ageDays = activityPower?.evidence_at
-    ? Math.max(
-        0,
-        Math.round(
-          (Date.parse(activityPower.started_at) - Date.parse(activityPower.evidence_at)) / 86400000,
-        ),
-      )
-    : null;
+  const ftp = activityPower?.threshold ?? null;
+  const hasFtp = ftp?.value != null;
+  const ftpUnavailableReason =
+    ftp != null && !hasFtp
+      ? "Cycling FTP was cleared for this activity date."
+      : "No configured cycling FTP is effective for this activity date.";
+  const ageDays = null;
   const qualityEvidence = (stream: keyof typeof streamFields) => {
     const evidence = [
       ...new Map(
@@ -360,27 +343,22 @@ export function calculateCyclingEffortMetrics(
   if (providerMoving?.seconds != null && !validProviderMoving)
     reasons.push("Provider moving duration exceeds elapsed duration");
   const missingProjectionReason =
-    "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.";
+    "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.";
   const workoutUnavailableReasons = adjustedWorkout.unavailableReasons.map((item) =>
     context.activityPowerMetrics == null &&
     ["normalized_power", "intensity_factor", "training_stress_score"].includes(item.metric)
       ? { ...item, reason: missingProjectionReason }
-      : ftp == null && ["intensity_factor", "training_stress_score"].includes(item.metric)
+      : !hasFtp && ["intensity_factor", "training_stress_score"].includes(item.metric)
         ? {
             ...item,
-            reason:
-              "No qualifying computed cycling threshold evidence is available for this activity.",
+            reason: ftpUnavailableReason,
           }
         : item,
   );
   const unavailableReasons = [...workoutUnavailableReasons];
   const unavailable = (metric: string, reason: string) =>
     unavailableReasons.push({ metric, reason });
-  if (!ftp)
-    unavailable(
-      "power_zones",
-      "No qualifying computed cycling threshold evidence is available for this activity.",
-    );
+  if (!hasFtp) unavailable("power_zones", ftpUnavailableReason);
   if (!adjustedWorkout.heartRateZones)
     unavailable("heart_rate_zones", "no contemporaneous threshold HR and valid zone boundaries");
   if (weight.value_kg == null) unavailable("watts_per_kg", weight.reason);
@@ -424,7 +402,7 @@ export function calculateCyclingEffortMetrics(
       "normalized_watts_per_kg",
       weight.value_kg == null ? weight.reason : "normalized power is unavailable",
     );
-  if (ftp && !adjustedWorkout.powerZones)
+  if (hasFtp && !adjustedWorkout.powerZones)
     unavailable("power_zones", "no valid contemporaneous power zone boundaries");
   return {
     workout: { ...adjustedWorkout, unavailableReasons: workoutUnavailableReasons },
@@ -432,11 +410,10 @@ export function calculateCyclingEffortMetrics(
       ftp,
       thresholdHeartRateBpm: settings?.thresholdHr ?? null,
       ageDays,
-      freshness: ftp == null ? ("unavailable" as const) : ("computed" as const),
-      freshnessReason:
-        ftp == null
-          ? "No qualifying computed cycling threshold evidence is available for this activity."
-          : "Computed from the canonical cycling power history effective for this activity; physiological accuracy is unverified.",
+      freshness: hasFtp ? ("configured" as const) : ("unavailable" as const),
+      freshnessReason: !hasFtp
+        ? ftpUnavailableReason
+        : "User-entered cycling FTP effective for this activity date; physiological accuracy is unverified.",
     },
     movement: {
       elapsedSeconds: duration,
@@ -606,7 +583,7 @@ export async function loadCyclingEffortMetrics(
       { userId, activityIds },
     ),
     loadDirectWeightObservations(store, userId, timezone, firstDate, lastDate),
-    new CyclingThresholdRepository(store, userId, timezone).getForActivities(activityIds),
+    new CyclingThresholdRepository(db, store, userId, timezone).getForActivities(activityIds),
   ]);
   const preparations = activities.map((activity) => {
     const coreSamples = data.sampleRows.filter((row) => row.activity_id === activity.activity_id);

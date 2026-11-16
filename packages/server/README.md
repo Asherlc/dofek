@@ -39,13 +39,16 @@ with incomplete power coverage withheld from weekly totals.
 
 ## Architecture
 
-Activity cards and the performance-management chart use canonical cycling
-power TSS from the [cycling power analytics](../../src/analytics/README.md).
-Heart-rate-derived TSS and its learned conversion are removed. Noncycling
-cards omit TSS; incomplete power stress withholds the PMC chart with an
-explanation. The TSS-derived ramp-rate and monotony charts are retired;
-the separate analytical HR-zone-load channel retains its descriptive summaries.
-See the
+Activity cards and training-load consumers resolve the user's dated manual
+cycling FTP in Postgres and combine it in bulk with normalized power from the
+[cycling power analytics](../../src/analytics/README.md). Missing FTP or NP
+keeps cycling stress unavailable while preserving the ride in load totals;
+FTP remains available to power zones when NP is missing. `power.ftpSuggestions`
+reads bounded precomputed power curves and returns separate reference-curve and
+95% 20-minute options with evidence and limitations; selecting an option does
+not change settings. Heart-rate-derived TSS and its learned conversion are
+removed. The TSS-derived ramp-rate and monotony charts are retired; the separate
+analytical HR-zone-load channel retains its descriptive summaries. See the
 [evidence review](../../docs/tss-evidence-review-2026-11-02.md) for the distinction
 between a load index and validated recovery prediction.
 

@@ -9,6 +9,8 @@ const captured: {
   validateSearch:
     | ((search: Record<string, unknown>) => {
         tab?: SettingsCategory;
+        section?: "cycling-ftp";
+        date?: string;
       })
     | null;
 } = { validateSearch: null };
@@ -19,6 +21,8 @@ vi.mock("@tanstack/react-router", () => ({
     (options: {
       validateSearch?: (search: Record<string, unknown>) => {
         tab?: SettingsCategory;
+        section?: "cycling-ftp";
+        date?: string;
       };
     }) => {
       captured.validateSearch = options.validateSearch ?? null;
@@ -48,6 +52,25 @@ describe("settings search validation", () => {
   it("keeps the Advanced tab deep-link value", () => {
     expect(normalizeSettingsCategory("advanced")).toBe("advanced");
     expect(captured.validateSearch?.({ tab: "advanced" })).toEqual({ tab: "advanced" });
+  });
+
+  it("keeps the FTP section and a valid local calendar date", () => {
+    expect(
+      captured.validateSearch?.({
+        tab: "models-units",
+        section: "cycling-ftp",
+        date: "2026-11-03",
+      }),
+    ).toEqual({ tab: "models-units", section: "cycling-ftp", date: "2026-11-03" });
+  });
+
+  it("drops unknown FTP sections and impossible date targets", () => {
+    expect(captured.validateSearch?.({ section: "cycling-history", date: "2026-11-03" })).toEqual({
+      date: "2026-11-03",
+    });
+    expect(captured.validateSearch?.({ section: "cycling-ftp", date: "2026-02-30" })).toEqual({
+      section: "cycling-ftp",
+    });
   });
 
   it("makes developer integrations discoverable in Advanced settings search", () => {

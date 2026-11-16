@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { cyclingThresholdUncertaintySchema } from "../contracts/cycling-threshold.ts";
 
 const nullableNumber = z.number().nullable();
 const nullableString = z.string().nullable();
@@ -43,21 +42,7 @@ const thresholdSchema = z
     kind: z.literal("configured"),
   })
   .strict();
-const computedPowerThresholdSchema = z
-  .object({
-    value: z.number().positive(),
-    unit: z.literal("W"),
-    effective_from: z.string(),
-    kind: z.literal("computed"),
-    method: z.literal("computed_eftp"),
-    model_version: z.string(),
-    uncertainty: cyclingThresholdUncertaintySchema,
-    evidence_activity_id: z.uuid().nullable(),
-    evidence_at: nullableString,
-    evidence_duration_seconds: nullableNumber,
-    evidence_power_watts: nullableNumber,
-  })
-  .strict();
+const ftpThresholdSchema = thresholdSchema.extend({ value: z.number().positive().nullable() });
 const intervalSchema = z
   .object({
     index: z.number().int(),
@@ -146,7 +131,7 @@ export const cyclingTrainingMetricsOutputSchema = z
               member_activity_ids: z.array(z.uuid()),
               thresholds: z
                 .object({
-                  ftp: computedPowerThresholdSchema.nullable(),
+                  ftp: ftpThresholdSchema.nullable(),
                   threshold_heart_rate: thresholdSchema.nullable(),
                 })
                 .strict(),

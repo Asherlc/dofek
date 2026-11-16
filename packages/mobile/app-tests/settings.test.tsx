@@ -44,6 +44,21 @@ vi.mock("../components/PersonalizationPanel", () => ({
   PersonalizationPanel: () => React.createElement("div", null, "PersonalizationPanel"),
 }));
 
+vi.mock("../components/CyclingFtpSettings", () => ({
+  CyclingFtpSettings: ({
+    sectionDate,
+    focusSection,
+  }: {
+    sectionDate?: string;
+    focusSection?: boolean;
+  }) =>
+    React.createElement(
+      "span",
+      { "data-testid": "cycling-ftp-settings" },
+      `${sectionDate ?? "today"}:${String(focusSection)}`,
+    ),
+}));
+
 vi.mock("../components/AccountErasurePanel", () => ({
   AccountErasurePanel: () => React.createElement("div", null, "AccountErasurePanel"),
 }));
@@ -60,7 +75,7 @@ vi.mock("../components/McpClientSetupPanel", () => ({
 
 const mockRouterPush = vi.fn();
 const mockRouterSetParams = vi.fn();
-let mockSearchParams: { tab?: string } = {};
+let mockSearchParams: { tab?: string; section?: string; date?: string } = {};
 const mockLogout = vi.fn();
 let mockAuthServerUrl = "https://test.example.com";
 const mockBillingStatusInvalidate = vi.fn();
@@ -399,7 +414,11 @@ describe("SettingsScreen categories", () => {
       .getAllByRole("button", { name: "Data Sources" })
       .find((button) => button.getAttribute("aria-selected") === "true");
     expect(selectedDataSourceCategory).toBeTruthy();
-    expect(mockRouterSetParams).toHaveBeenCalledWith({ tab: "data-sources" });
+    expect(mockRouterSetParams).toHaveBeenCalledWith({
+      tab: "data-sources",
+      section: undefined,
+      date: undefined,
+    });
   });
 
   it("respects a billing category deep link", async () => {
@@ -413,6 +432,17 @@ describe("SettingsScreen categories", () => {
     expect(screen.getByRole("button", { name: "Billing" }).getAttribute("aria-selected")).toBe(
       "true",
     );
+  });
+
+  it("targets the Cycling FTP section and preserves its local effective date", async () => {
+    mockSearchParams = { section: "cycling-ftp", date: "2026-05-15" };
+    const { default: SettingsScreen } = await import("../app/settings");
+    render(<SettingsScreen />);
+
+    expect(screen.getByTestId("cycling-ftp-settings").textContent).toBe("2026-05-15:true");
+    expect(
+      screen.getByRole("button", { name: "Models & Units" }).getAttribute("aria-selected"),
+    ).toBe("true");
   });
 
   it.each([

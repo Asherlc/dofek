@@ -135,6 +135,7 @@ export interface StreamPoint {
 export type ActivityHrZones = import("@dofek/zones/zones").ActivityHrZone[];
 
 export interface ActivityPowerZonesResult {
+  activityDate: string;
   zones: import("@dofek/zones/zones").ActivityPowerZone[];
   ftp: number | null;
   thresholdEvidence: CyclingThresholdEvidence;
@@ -377,7 +378,7 @@ export const activityRouter = router({
       return repo.getHrZones(input.id, input.heartRateSourceId);
     }),
 
-  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM, keyVersion: "computed-eftp-v1" })
+  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM, keyVersion: "manual-ftp-zones-v2" })
     .input(z.object({ id: z.guid(), powerSourceId: z.string().min(1).max(4096).optional() }))
     .output(activityPowerZonesSchema)
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
@@ -402,13 +403,24 @@ export const activityRouter = router({
         });
       }
 
-      const thresholds = new CyclingThresholdRepository(ctx.sensorStore, ctx.userId, ctx.timezone);
+      const thresholds = new CyclingThresholdRepository(
+        ctx.db,
+        ctx.sensorStore,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      );
       const metrics = (await thresholds.getForActivities([activity.id])).get(activity.id) ?? null;
       const thresholdEvidence = cyclingThresholdEvidenceFromMetrics(metrics);
       const ftp = thresholdEvidence.value;
       const zones =
         ftp === null ? [] : await activityRepo.getPowerZones(activity.id, ftp, input.powerSourceId);
-      return { zones, ftp, thresholdEvidence };
+      return {
+        activityDate: metrics?.activity_date ?? activity.displayed_date,
+        zones,
+        ftp,
+        thresholdEvidence,
+      };
     }),
 
   powerWork: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })

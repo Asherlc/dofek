@@ -14,6 +14,7 @@ import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
+import { buildAccountErasureFenceTableSql } from "../../../../src/metric-stream/clickhouse-table.ts";
 import { routeMapPreview } from "../lib/map-preview.ts";
 import { buildTestAnalyticsTableStatement } from "../routers/clickhouse-integration-test-models.ts";
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
@@ -28,12 +29,14 @@ async function createCalendarFixture(
 ) {
   const client = createClickHouseClientFromEnv();
   const database = `calendar_test_${randomUUID().replaceAll("-", "")}`;
-  const rewrite = (query: string) => query.replace(/\b(analytics|postgres_fitness)\b/g, database);
+  const rewrite = (query: string) =>
+    query.replace(/\b(analytics|postgres_fitness|ingest)\b/g, database);
   context.addCleanup(async () => {
     await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client.close?.();
   });
   await client.command({ query: `CREATE DATABASE ${database}` });
+  await client.command({ query: rewrite(buildAccountErasureFenceTableSql()) });
   for (const statement of [
     buildPostgresFitnessActivityRawTableStatement(),
     buildTestAnalyticsTableStatement("analytics.deduped_activities"),
@@ -168,12 +171,14 @@ describe("Activities list source tree hydration", () => {
     );
     const client = createClickHouseClientFromEnv();
     const database = `source_tree_test_${randomUUID().replaceAll("-", "")}`;
-    const rewrite = (query: string) => query.replace(/\b(analytics|postgres_fitness)\b/g, database);
+    const rewrite = (query: string) =>
+      query.replace(/\b(analytics|postgres_fitness|ingest)\b/g, database);
     context.addCleanup(async () => {
       await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
       await client.close?.();
     });
     await client.command({ query: `CREATE DATABASE ${database}` });
+    await client.command({ query: rewrite(buildAccountErasureFenceTableSql()) });
     for (const table of ["deduped_activities", "activity_location_sample"]) {
       await client.command({
         query: rewrite(buildTestAnalyticsTableStatement(`analytics.${table}`)),

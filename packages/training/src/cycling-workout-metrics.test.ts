@@ -763,11 +763,11 @@ describe("computeCyclingWorkoutMetrics", () => {
       expect.arrayContaining([
         {
           metric: "intensity_factor",
-          reason: "no computed threshold is available for this activity",
+          reason: "no configured FTP is effective for this activity date",
         },
         {
           metric: "training_stress_score",
-          reason: "no computed threshold is available for this activity",
+          reason: "no configured FTP is effective for this activity date",
         },
         { metric: "heart_rate", reason: "no heart-rate samples are available" },
         {

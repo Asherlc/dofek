@@ -1,4 +1,4 @@
--- Canonical definition of the fitness.v_activity view.
+-- Canonical definitions of activity groups and their recording provenance.
 -- This file is the source definition for fresh databases, local test schemas,
 -- and future forward migrations that need to update the deployed view.
 --
@@ -6,7 +6,7 @@
 -- deployed view definition must change.
 -- Git merge conflicts here force developers to reconcile concurrent changes.
 
-CREATE OR REPLACE VIEW fitness.v_activity AS
+CREATE OR REPLACE VIEW fitness.v_activity_group AS
 WITH apple_health_revisions AS (
   -- HealthKit replaces a workout by sync identifier even when its UUID and times change.
   -- Rank before lifecycle filtering so a removed latest revision cannot revive an older one.
@@ -302,7 +302,11 @@ group_bounds AS (
       MIN(r.started_at) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log'),
       MIN(r.started_at)
     ) AS started_at,
-    MAX(r.ended_at) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log') AS ended_at
+    CASE
+      WHEN COUNT(*) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log') = 0
+        THEN MAX(r.started_at)
+      ELSE MAX(r.ended_at) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log')
+    END AS ended_at
   FROM final_groups AS fg
   INNER JOIN ranked AS r ON fg.activity_id = r.id
   GROUP BY fg.group_id
@@ -328,7 +332,7 @@ absent_source_links AS (
 
 merged AS (
   SELECT
-    b.group_id,
+    b.group_id AS id,
     b.canonical_id,
     b.provider_id,
     b.user_id,
@@ -415,8 +419,14 @@ merged AS (
   LEFT JOIN absent_source_links ON b.group_id = absent_source_links.group_id
 )
 
+-- Keep canonical dates and membership available without resolving recording origin.
+SELECT * FROM merged;
+
+--> statement-breakpoint
+
+CREATE OR REPLACE VIEW fitness.v_activity AS
 SELECT
-  m.group_id AS id,
+  m.id,
   m.provider_id,
   m.user_id,
   origin.primary_activity_id,
@@ -448,7 +458,7 @@ SELECT
   origin.origin_candidate_member_ids,
   origin.origin_evidence,
   primary_activity.canonical_type::text AS primary_canonical_type
-FROM merged AS m
+FROM fitness.v_activity_group AS m
 -- Build provenance only after the requested canonical groups have been selected.
 CROSS JOIN
   LATERAL (

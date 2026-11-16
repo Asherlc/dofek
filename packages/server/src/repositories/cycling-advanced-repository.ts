@@ -9,6 +9,7 @@ import {
   rangeDaysParams,
 } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
+import { clickHouseActivityLocalDate } from "./activity-local-date.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { activityRepositoryFor } from "./activity-repository.ts";
 import {
@@ -16,12 +17,14 @@ import {
   PedalDynamicsModel,
   VerticalAscentModel,
 } from "./cycling-advanced-models.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
+import { SportSettingsRepository } from "./sport-settings-repository.ts";
 
 const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 
 export type ActivityVariabilityEmptyReason =
   | "no_cycling_activities"
-  | "no_ftp_estimate"
+  | "no_configured_ftp"
   | "no_normalized_power";
 
 // ---------------------------------------------------------------------------
@@ -34,7 +37,6 @@ const variabilityRowSchema = z.object({
   name: z.string(),
   np: z.coerce.number(),
   avg_power: z.coerce.number(),
-  intensity_factor: z.coerce.number(),
   total_count: z.coerce.number(),
 });
 
@@ -99,6 +101,33 @@ export class CyclingAdvancedRepository {
     }
 
     const rangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
+    const history = await new SportSettingsRepository(this.#db, this.#userId).history("cycling");
+    const ftpIntervals = history.flatMap((setting, index) => {
+      if (setting.ftp == null) return [];
+      return [{ start: setting.effectiveFrom, end: history[index - 1]?.effectiveFrom ?? null }];
+    });
+    const activityDate = clickHouseActivityLocalDate("activity");
+    const ftpEligibilityParams: Record<string, string> = {};
+    const ftpEligibility =
+      ftpIntervals.length === 0
+        ? "0"
+        : ftpIntervals
+            .map((interval, index) => {
+              const start = `ftpStart${index}`;
+              ftpEligibilityParams[start] = interval.start;
+              let upperBound = "";
+              if (interval.end) {
+                const end = `ftpEnd${index}`;
+                ftpEligibilityParams[end] = interval.end;
+                upperBound = `AND ${activityDate} < toDate({${end}:String})`;
+              }
+              return `(${activityDate} >= toDate({${start}:String}) ${upperBound})`;
+            })
+            .join(" OR ");
+    const commonFilters = `asum.user_id = {userId:UUID}
+        AND has({activityTypes:Array(String)}, asum.canonical_type)
+        ${rangeFilter}
+        AND metrics.normalized_power IS NOT NULL`;
     const rows = await this.#sensorStore.query(
       variabilityRowSchema,
       `SELECT
@@ -106,66 +135,71 @@ export class CyclingAdvancedRepository {
         toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
         asum.name AS name,
         round(metrics.normalized_power, 1) AS np,
-        metrics.intensity_factor AS intensity_factor,
         round(asum.smoothed_avg_power, 1) AS avg_power,
         toInt32(count() OVER ()) AS total_count
-      FROM analytics.activity_summary asum
+      FROM analytics.activity_summary AS asum
+      INNER JOIN analytics.deduped_activities AS activity FINAL
+        ON activity.activity_id = asum.activity_id
+       AND activity.user_id = asum.user_id
+       AND activity.is_deleted = 0
       INNER JOIN analytics.cycling_activity_power_metrics metrics
         ON metrics.user_id = asum.user_id AND metrics.activity_id = asum.activity_id
-      WHERE asum.user_id = {userId:UUID}
-        AND has({activityTypes:Array(String)}, asum.canonical_type)
-        ${rangeFilter}
-        AND metrics.normalized_power IS NOT NULL
-        AND metrics.intensity_factor IS NOT NULL
+      WHERE ${commonFilters}
+        AND (${ftpEligibility})
       ORDER BY asum.started_at DESC
-      LIMIT {limit:Int32}
-      OFFSET {offset:Int32}`,
+      LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+      `,
       {
         userId: this.#userId,
         timezone: this.#timezone,
         ...rangeDaysParams(days),
         activityTypes: CYCLING_TYPES,
+        ...ftpEligibilityParams,
         limit,
         offset,
       },
     );
 
-    let totalCount = rows[0]?.total_count ?? 0;
-    let emptyReason: ActivityVariabilityEmptyReason | null = null;
-
-    if (rows.length === 0) {
-      // The count() OVER () total is absent on an empty page, so it cannot
-      // distinguish "no normalized power data" from "offset past the data".
-      // Re-query the count so pagination stays correct and the UI shows the
-      // right empty state instead of a misleading "no_normalized_power".
-      const countRows = await this.#sensorStore.query(
-        variabilityCountSchema,
-        `SELECT countIf(metrics.intensity_factor IS NOT NULL) AS total, count() AS power_total
-        FROM analytics.activity_summary asum
-        INNER JOIN analytics.cycling_activity_power_metrics metrics
-          ON metrics.user_id = asum.user_id AND metrics.activity_id = asum.activity_id
-        WHERE asum.user_id = {userId:UUID}
-          AND has({activityTypes:Array(String)}, asum.canonical_type)
-          ${rangeFilter}
-          AND metrics.normalized_power IS NOT NULL`,
-        {
-          userId: this.#userId,
-          ...rangeDaysParams(days),
-          activityTypes: CYCLING_TYPES,
-        },
-      );
-      totalCount = countRows[0]?.total ?? 0;
-      emptyReason =
-        totalCount === 0
-          ? (countRows[0]?.power_total ?? 0) > 0
-            ? "no_ftp_estimate"
-            : "no_normalized_power"
-          : null;
-    }
+    const normalizedPowerCountRows =
+      rows.length === 0
+        ? await this.#sensorStore.query(
+            variabilityCountSchema,
+            `SELECT countIf(${ftpEligibility}) AS total, count() AS power_total
+          FROM analytics.activity_summary AS asum
+          INNER JOIN analytics.deduped_activities AS activity FINAL
+            ON activity.activity_id = asum.activity_id
+           AND activity.user_id = asum.user_id
+           AND activity.is_deleted = 0
+          INNER JOIN analytics.cycling_activity_power_metrics metrics
+            ON metrics.user_id = asum.user_id AND metrics.activity_id = asum.activity_id
+          WHERE ${commonFilters}`,
+            {
+              userId: this.#userId,
+              timezone: this.#timezone,
+              ...rangeDaysParams(days),
+              activityTypes: CYCLING_TYPES,
+              ...ftpEligibilityParams,
+            },
+          )
+        : [];
+    const thresholds = await new CyclingThresholdRepository(
+      this.#db,
+      this.#sensorStore,
+      this.#userId,
+      this.#timezone,
+    ).getForActivities(rows.map((row) => row.activity_id));
+    const pageRows = rows.flatMap((row) => {
+      const intensityFactor = thresholds.get(row.activity_id)?.intensity_factor;
+      return intensityFactor == null ? [] : [{ row, intensityFactor }];
+    });
+    const totalCount = Number(rows[0]?.total_count ?? normalizedPowerCountRows[0]?.total ?? 0);
+    const powerTotal = Number(normalizedPowerCountRows[0]?.power_total ?? 0);
+    const emptyReason: ActivityVariabilityEmptyReason | null =
+      totalCount > 0 ? null : powerTotal > 0 ? "no_configured_ftp" : "no_normalized_power";
 
     return {
-      models: rows.map(
-        (row) =>
+      models: pageRows.map(
+        ({ row, intensityFactor }) =>
           new ActivityVariabilityModel(
             {
               activityId: row.activity_id,
@@ -174,7 +208,7 @@ export class CyclingAdvancedRepository {
               normalizedPower: row.np,
               averagePower: row.avg_power,
             },
-            row.intensity_factor,
+            intensityFactor,
           ),
       ),
       totalCount,

@@ -759,6 +759,7 @@ table fitness.sport_settings {
   sport text [not null]
   threshold_hr smallint
   threshold_pace_per_km real
+  ftp bigint
   power_zone_pcts jsonb
   hr_zone_pcts jsonb
   pace_zone_pcts jsonb
@@ -770,6 +771,7 @@ table fitness.sport_settings {
   indexes {
     (user_id, sport, effective_from) [name: 'sport_settings_user_sport_date_idx', unique]
     user_id [name: 'sport_settings_user_idx']
+
   }
 }
 

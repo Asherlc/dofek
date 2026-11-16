@@ -1,5 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { CyclingThresholdRepository } from "../repositories/cycling-threshold-repository.ts";
+import {
+  SportSettingsRepository,
+  type SportSettingsRow,
+} from "../repositories/sport-settings-repository.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
@@ -55,8 +60,50 @@ import { cyclingAdvancedRouter } from "./cycling-advanced.ts";
 
 const createCaller = createTestCallerFactory(cyclingAdvancedRouter);
 
-function makeCaller(rowSets: unknown[][], rawActivityCount?: number) {
+function makeCaller(
+  rowSets: unknown[][],
+  rawActivityCount?: number,
+  settingsHistory: SportSettingsRow[] = [
+    {
+      id: "setting-1",
+      userId: "user-1",
+      sport: "cycling",
+      thresholdHr: null,
+      thresholdPacePerKm: null,
+      ftp: 250,
+      powerZonePcts: null,
+      hrZonePcts: null,
+      paceZonePcts: null,
+      effectiveFrom: "2024-01-01",
+      notes: null,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+    },
+  ],
+) {
   const count = rawActivityCount ?? (rowSets.length > 0 ? 1 : 0);
+  vi.spyOn(SportSettingsRepository.prototype, "history").mockResolvedValue(settingsHistory);
+  vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockImplementation(
+    async (ids) =>
+      new Map(
+        ids.map((id) => [
+          id,
+          {
+            activity_id: id,
+            started_at: "2024-01-15T10:00:00.000Z",
+            ended_at: "2024-01-15T11:00:00.000Z",
+            activity_date: "2024-01-15",
+            canonical_type: "cycling",
+            normalized_power: 230,
+            power_sample_count: 1,
+            ftp: 250,
+            intensity_factor: 0.92,
+            power_tss: 84.64,
+            threshold: null,
+          },
+        ]),
+      ),
+  );
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue([{ activity_count: count }]) },
     userId: "user-1",
@@ -68,11 +115,13 @@ function makeCaller(rowSets: unknown[][], rawActivityCount?: number) {
 // These router tests verify the router → repository → model wiring. Detailed
 // SQL/computation assertions live in the repository's own unit tests.
 describe("cyclingAdvancedRouter", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   describe("activityVariability", () => {
-    it("returns empty when FTP estimation has no data", async () => {
-      const caller = makeCaller([[], [{ total: 0, power_total: 1 }]]);
+    it("returns empty when normalized power exists but no FTP is configured", async () => {
+      const caller = makeCaller([[], [{ total: 0, power_total: 1 }]], undefined, []);
       const result = await caller.activityVariability({ days: 90 });
-      expect(result).toEqual({ rows: [], totalCount: 0, emptyReason: "no_ftp_estimate" });
+      expect(result).toEqual({ rows: [], totalCount: 0, emptyReason: "no_configured_ftp" });
     });
 
     it("computes VI and renders canonical per-activity IF", async () => {

@@ -212,6 +212,27 @@ describe("selected chart range query builders", () => {
     expect(cacheSetCalls.at(-1)?.ttlMs).toBe(1);
   });
 
+  it("bounds a current-FTP chart cache to the user's local midnight", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-15T06:30:00.000Z"));
+    const testRouter = router({
+      pmcChart: selectedChartRangeQuery("pmc.chart", 60 * 60 * 1000, () => ({ ok: true }), {
+        expiresAt: "localDayBoundary",
+      }),
+    });
+    const caller = createTestCallerFactory(testRouter)({
+      db: {},
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+    });
+
+    await caller.pmcChart({ days: 90 });
+
+    expect(cacheSetCalls.at(-1)?.ttlMs).toBeGreaterThan(29 * 60 * 1000);
+    expect(cacheSetCalls.at(-1)?.ttlMs).toBeLessThanOrEqual(30 * 60 * 1000 + 1_000);
+    vi.useRealTimers();
+  });
+
   it("validates days-only selected chart outputs", async () => {
     const testRouter = router({
       powerCurve: selectedChartRangeQuery(

@@ -518,8 +518,11 @@ export function computeCyclingWorkoutMetrics(
   }
   const validFtp = input.thresholdWatts;
   if (validFtp == null) {
-    addUnavailable("intensity_factor", "no computed threshold is available for this activity");
-    addUnavailable("training_stress_score", "no computed threshold is available for this activity");
+    addUnavailable("intensity_factor", "no configured FTP is effective for this activity date");
+    addUnavailable(
+      "training_stress_score",
+      "no configured FTP is effective for this activity date",
+    );
   } else if (normalizedPower == null) {
     addUnavailable("intensity_factor", "normalized power is unavailable");
     addUnavailable("training_stress_score", "normalized power is unavailable");

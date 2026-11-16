@@ -133,7 +133,6 @@ describe("Router SQL validity", () => {
   // ── Power ──
   describe("power", () => {
     it("powerCurve", () => expectValidSql("power.powerCurve", { days: 90 }));
-    it("eftpTrend", () => expectValidSql("power.eftpTrend", { days: 90 }));
   });
 
   // ── PMC ──

@@ -97,14 +97,10 @@ describe("runAnalyticsBuild", () => {
     expect(end).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();
   });
-  it("builds threshold-dependent models after projection and records both phases together", async () => {
+  it("builds normalized-power serving models after projection and records both phases together", async () => {
     const order: string[] = [];
     let phase = 0;
-    const selected = [
-      "activity_summary_rows",
-      "cycling_threshold_history",
-      "cycling_activity_power_metrics",
-    ];
+    const selected = ["activity_summary_rows", "cycling_activity_power_metrics"];
     const recordRun = vi.fn(async () => {
       order.push("record");
       return { datasets: 1, failed: 0 };
@@ -132,14 +128,14 @@ describe("runAnalyticsBuild", () => {
         )(name),
       projectCyclingPower: async () => {
         order.push("project");
-        return { pendingActivities: 0, pendingUsers: 0, projectedUsers: 1 };
+        return { pendingActivities: 0 };
       },
       recordRun,
     });
     expect(order).toEqual([
       "dbt:activity_summary_rows",
       "project",
-      "dbt:cycling_threshold_history cycling_activity_power_metrics",
+      "dbt:cycling_activity_power_metrics",
       "record",
     ]);
     expect(recordRun).toHaveBeenCalledWith(
@@ -153,11 +149,7 @@ describe("runAnalyticsBuild", () => {
 
   it("records downstream failure without claiming the input phase completed the dataset", async () => {
     let phase = 0;
-    const selected = [
-      "activity_summary_rows",
-      "cycling_threshold_history",
-      "cycling_activity_power_metrics",
-    ];
+    const selected = ["activity_summary_rows", "cycling_activity_power_metrics"];
     const recordRun = vi.fn(async () => ({ datasets: 1, failed: 1 }));
     await expect(
       runAnalyticsBuild({
@@ -179,8 +171,6 @@ describe("runAnalyticsBuild", () => {
           )(name),
         projectCyclingPower: async () => ({
           pendingActivities: 0,
-          pendingUsers: 0,
-          projectedUsers: 1,
         }),
         recordRun,
       }),
@@ -189,7 +179,6 @@ describe("runAnalyticsBuild", () => {
       expect.objectContaining({
         modelResults: [
           expect.objectContaining({ name: "activity_summary_rows", status: "succeeded" }),
-          expect.objectContaining({ name: "cycling_threshold_history", status: "failed" }),
           expect.objectContaining({ name: "cycling_activity_power_metrics", status: "failed" }),
         ],
       }),
@@ -197,15 +186,9 @@ describe("runAnalyticsBuild", () => {
   });
 
   it("does not run downstream models when an input model failed", async () => {
-    const selected = [
-      "activity_summary_rows",
-      "cycling_threshold_history",
-      "cycling_activity_power_metrics",
-    ];
+    const selected = ["activity_summary_rows", "cycling_activity_power_metrics"];
     const projectCyclingPower = vi.fn(async () => ({
       pendingActivities: 0,
-      pendingUsers: 0,
-      projectedUsers: 0,
     }));
     const runDbt = vi.fn(async () => 1);
     const recordRun = vi.fn(async () => ({ datasets: 1, failed: 1 }));
@@ -236,20 +219,18 @@ describe("runAnalyticsBuild", () => {
       expect.objectContaining({
         modelResults: [
           expect.objectContaining({ name: "activity_summary_rows", status: "failed" }),
-          expect.objectContaining({ name: "cycling_threshold_history", status: "skipped" }),
           expect.objectContaining({ name: "cycling_activity_power_metrics", status: "skipped" }),
         ],
       }),
     );
   });
 
-  it("drains activity and user batches before downstream builds and processing success", async () => {
+  it("drains activity batches before downstream builds and processing success", async () => {
     const order: string[] = [];
     const batches = [
-      { pendingActivities: 174, pendingUsers: 34, projectedUsers: 0 },
-      { pendingActivities: 74, pendingUsers: 34, projectedUsers: 0 },
-      { pendingActivities: 0, pendingUsers: 2, projectedUsers: 32 },
-      { pendingActivities: 0, pendingUsers: 0, projectedUsers: 2 },
+      { pendingActivities: 174 },
+      { pendingActivities: 74 },
+      { pendingActivities: 0 },
     ];
     const selected = ["activity_summary_rows", "cycling_activity_power_metrics"];
     const result = await runAnalyticsBuild({
@@ -274,7 +255,7 @@ describe("runAnalyticsBuild", () => {
       projectCyclingPower: async () => {
         const batch = batches.shift();
         if (!batch) throw new Error("Projection ran after the backlog was drained");
-        order.push(`project:${batch.pendingActivities}:${batch.pendingUsers}`);
+        order.push(`project:${batch.pendingActivities}`);
         return batch;
       },
       recordRun: async () => {
@@ -285,10 +266,9 @@ describe("runAnalyticsBuild", () => {
     expect(result).toEqual({ datasets: 1, failed: 0 });
     expect(order).toEqual([
       "dbt:activity_summary_rows",
-      "project:174:34",
-      "project:74:34",
-      "project:0:2",
-      "project:0:0",
+      "project:174",
+      "project:74",
+      "project:0",
       "dbt:cycling_activity_power_metrics",
       "record",
     ]);
@@ -317,11 +297,7 @@ describe("runAnalyticsBuild", () => {
         projectCyclingPower: async (asOf: Date) => {
           instants.push(asOf?.toISOString() ?? null);
           vi.setSystemTime(new Date("2026-11-03T00:00:01Z"));
-          return {
-            pendingActivities: 0,
-            pendingUsers: instants.length === 1 ? 1 : 0,
-            projectedUsers: 32,
-          };
+          return { pendingActivities: instants.length === 1 ? 1 : 0 };
         },
         recordRun: async () => ({ datasets: 1, failed: 0 }),
       });
@@ -353,11 +329,11 @@ describe("runAnalyticsBuild", () => {
         ]),
         projectCyclingPower: async () => {
           if (++batches > 2) throw new Error("Repeated a stalled projection");
-          return { pendingActivities: 1, pendingUsers: 1, projectedUsers: 0 };
+          return { pendingActivities: 1 };
         },
         recordRun,
       }),
-    ).rejects.toThrow("Cycling power projection made no progress: 1 activities and 1 users remain");
+    ).rejects.toThrow("Cycling power projection made no progress: 1 activities remain");
     expect(batches).toBe(2);
     expect(runDbt).toHaveBeenCalledOnce();
     expect(recordRun).not.toHaveBeenCalled();
@@ -371,8 +347,6 @@ describe("runAnalyticsBuild", () => {
     await runAnalyticsBuild({
       projectCyclingPower: async () => ({
         pendingActivities: 0,
-        pendingUsers: 0,
-        projectedUsers: 0,
       }),
       selectedModels: ["provider_stats"],
       artifactDirectory: "/tmp/dofek-dbt-snapshot",
@@ -441,8 +415,6 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         projectCyclingPower: async () => ({
           pendingActivities: 0,
-          pendingUsers: 0,
-          projectedUsers: 0,
         }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
@@ -483,8 +455,6 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         projectCyclingPower: async () => ({
           pendingActivities: 0,
-          pendingUsers: 0,
-          projectedUsers: 0,
         }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
@@ -528,8 +498,6 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         projectCyclingPower: async () => ({
           pendingActivities: 0,
-          pendingUsers: 0,
-          projectedUsers: 0,
         }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
@@ -584,8 +552,6 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         projectCyclingPower: async () => ({
           pendingActivities: 0,
-          pendingUsers: 0,
-          projectedUsers: 0,
         }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
@@ -622,8 +588,6 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         projectCyclingPower: async () => ({
           pendingActivities: 0,
-          pendingUsers: 0,
-          projectedUsers: 0,
         }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
@@ -656,8 +620,6 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         projectCyclingPower: async () => ({
           pendingActivities: 0,
-          pendingUsers: 0,
-          projectedUsers: 0,
         }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
@@ -686,8 +648,6 @@ describe("runAnalyticsBuild", () => {
     const error = await runAnalyticsBuild({
       projectCyclingPower: async () => ({
         pendingActivities: 0,
-        pendingUsers: 0,
-        projectedUsers: 0,
       }),
       loadPendingDatasets: async () => [],
       selectedModels: ["provider_stats", "provider_stats_downstream"],
@@ -730,8 +690,6 @@ describe("runAnalyticsBuild", () => {
       runAnalyticsBuild({
         projectCyclingPower: async () => ({
           pendingActivities: 0,
-          pendingUsers: 0,
-          projectedUsers: 0,
         }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],

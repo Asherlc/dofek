@@ -1,7 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChartRange } from "../lib/chart-range.ts";
 import { makeMockSensorStore } from "../lib/test-helpers.ts";
 import { CyclingAnalyticsRepository } from "./cycling-analytics-repository.ts";
+import {
+  type CyclingActivityPowerMetrics,
+  CyclingThresholdRepository,
+} from "./cycling-threshold-repository.ts";
 
 vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: vi.fn().mockResolvedValue(null),
@@ -71,166 +75,106 @@ function powerComparisonRow(
 }
 
 describe("CyclingAnalyticsRepository", () => {
+  function mockThresholds(ftp: number | null, np: number | null) {
+    vi.spyOn(CyclingThresholdRepository.prototype, "getCurrent").mockResolvedValue({
+      value: ftp,
+      unit: "watt",
+      method: "configured",
+      effective_from: ftp == null ? null : "2026-01-01",
+      source_record_id: ftp == null ? null : "00000000-0000-4000-8000-000000000001",
+      unavailable_reason: ftp == null ? "No configured cycling FTP is effective today." : null,
+    });
+    vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockImplementation(
+      async (ids) =>
+        new Map(
+          ids.map((id) => {
+            const intensityFactor = ftp == null || np == null ? null : np / ftp;
+            const metrics: CyclingActivityPowerMetrics = {
+              activity_id: id,
+              started_at: "2026-07-10T10:00:00.000Z",
+              ended_at: "2026-07-10T11:00:00.000Z",
+              activity_date: "2026-07-10",
+              canonical_type: "cycling",
+              normalized_power: np,
+              power_sample_count: np == null ? 0 : 3600,
+              ftp,
+              intensity_factor: intensityFactor,
+              power_tss: intensityFactor == null ? null : (intensityFactor ** 2 * 3600) / 36,
+              threshold:
+                ftp == null
+                  ? null
+                  : {
+                      value: ftp,
+                      unit: "watt",
+                      effective_from: "2026-01-01",
+                      source_record_id: "00000000-0000-4000-8000-000000000001",
+                      kind: "configured",
+                    },
+            };
+            return [id, metrics] as const;
+          }),
+        ),
+    );
+  }
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-14T12:00:00.000Z"));
+    mockThresholds(250, 250);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
-  it("uses ongoing canonical eFTP independently of selected-period CP", async () => {
-    const sensorStore = makeMockSensorStore();
-    vi.mocked(sensorStore.query).mockImplementation(async (_schema, query) => {
-      if (query.includes("ORDER BY history.event_at DESC"))
-        return [
-          {
-            event_at: "2026-07-14T00:00:00Z",
-            activity_id: null,
-            eftp: 245,
-            evidence_activity_id: "11111111-1111-4111-8111-111111111111",
-            evidence_at: "2026-07-10T01:00:00Z",
-            evidence_duration_seconds: 1200,
-            evidence_power: 260,
-            model_version: "v1",
-          },
-        ];
-      if (query.includes("cycling_threshold_history"))
-        return [{ date: "2026-07-10", eftp: 250, activityName: "Intervals" }];
-      if (query.includes("activity_power_curve"))
-        return [
-          powerComparisonRow(120, 550, 570),
-          powerComparisonRow(300, 400, 420),
-          powerComparisonRow(600, 350, 370),
-        ];
-      return [performanceActivityRow()];
-    });
+  it("preserves zero intensity factor when normalized power is zero", async () => {
+    mockThresholds(250, 0);
+    const sensorStore = makeMockSensorStore([cyclingActivityRow({ normalized_power: 0 })]);
     const repository = new CyclingAnalyticsRepository(
       { execute: vi.fn().mockResolvedValue([]) },
       "11111111-1111-4111-8111-111111111111",
-      "America/Los_Angeles",
+      "UTC",
       sensorStore,
     );
-    const result = await repository.getPerformance(ChartRange.fromDays(90));
-    expect(result.eftpTrend.currentEftp).toBe(245);
-    expect(result.eftpTrend.trend).toEqual([
-      { date: "2026-07-10", eftp: 250, activityName: "Intervals" },
-    ]);
-    expect(result.estimateEvidence.eftp.method).toContain("ongoing");
-    expect(result.estimateEvidence.eftp).toMatchObject({
-      confidence: "limited",
-      confidenceLabel: "Training estimate",
-      confidenceDetail:
-        "The ongoing estimate carries supported effort evidence forward and applies modeled decay independently of the displayed range.",
-      sourceWorkouts: [
-        { id: "11111111-1111-4111-8111-111111111111", name: null, date: "2026-07-09" },
-      ],
+    const result = await repository.getActivities(ChartRange.fromDays(90), {
+      activityLimit: 20,
+      activityOffset: 0,
+      variabilityLimit: 20,
+      variabilityOffset: 0,
     });
+    expect(result.variability.rows).toHaveLength(1);
+    expect(result.variability.rows[0]?.intensityFactor).toBe(0);
   });
 
-  it.each([80, null])(
-    "preserves canonical power-only load and its availability for stress %s",
-    async (powerTss) => {
-      const sensorStore = makeMockSensorStore();
-      vi.mocked(sensorStore.query).mockImplementation(async (_schema, query) =>
-        query.includes("cycling_threshold_history") || query.includes("activity_power_curve")
-          ? []
-          : [
-              performanceActivityRow({
-                avg_hr: null,
-                max_hr: null,
-                global_max_hr: null,
-                hr_samples: 0,
-                power_tss: powerTss,
-              }),
-            ],
-      );
-      const repository = new CyclingAnalyticsRepository(
-        { execute: vi.fn().mockResolvedValue([]) },
-        "11111111-1111-4111-8111-111111111111",
-        "UTC",
-        sensorStore,
-      );
-      const result = await repository.getPerformance(ChartRange.fromDays(90));
-      expect(result.estimateEvidence.eftp).toMatchObject({
-        confidence: "not_available",
-        confidenceLabel: "Not available",
-        sourceWorkouts: [],
-      });
-      expect(result.estimateEvidence.eftp.confidenceDetail).toContain(
-        "No qualifying cycling power evidence",
-      );
-      if (powerTss === null) {
-        expect(result.pmc.data).toEqual([]);
-        expect(result.availability.pmc).toMatchObject({
-          status: "insufficient_data",
-          message: result.pmc.unavailableReason,
-        });
-      } else {
-        expect(result.pmc.unavailableReason).toBeNull();
-        expect(result.availability.pmc.status).toBe("available");
-        expect(result.pmc.data.find((point) => point.date === "2026-07-10")?.load).toBe(80);
-      }
-    },
-  );
+  it("keeps activity cards when the batched threshold lookup has no matching row", async () => {
+    const getForActivities = vi
+      .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
+      .mockResolvedValue(new Map());
+    const sensorStore = makeMockSensorStore([cyclingActivityRow()]);
+    const repository = new CyclingAnalyticsRepository(
+      { execute: vi.fn().mockResolvedValue([]) },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
 
-  it.each([
-    { activityId: null, at: "2026-07-10T01:00:00Z" },
-    { activityId: "11111111-1111-4111-8111-111111111111", at: null },
-  ])(
-    "withholds incomplete source-workout links for $activityId and $at",
-    async ({ activityId, at }) => {
-      const sensorStore = makeMockSensorStore();
-      vi.mocked(sensorStore.query).mockImplementation(async (_schema, query) =>
-        query.includes("ORDER BY history.event_at DESC")
-          ? [
-              {
-                event_at: "2026-07-14T00:00:00Z",
-                activity_id: null,
-                eftp: 245,
-                evidence_activity_id: activityId,
-                evidence_at: at,
-                evidence_duration_seconds: 1200,
-                evidence_power: 260,
-                model_version: "v1",
-              },
-            ]
-          : [],
-      );
-      const repository = new CyclingAnalyticsRepository(
-        { execute: vi.fn().mockResolvedValue([]) },
-        "11111111-1111-4111-8111-111111111111",
-        "UTC",
-        sensorStore,
-      );
-      expect(
-        (await repository.getPerformance(ChartRange.fromDays(90))).estimateEvidence.eftp
-          .sourceWorkouts,
-      ).toEqual([]);
-    },
-  );
+    const result = await repository.getActivities(ChartRange.fromDays(90), {
+      activityLimit: 20,
+      activityOffset: 0,
+      variabilityLimit: 20,
+      variabilityOffset: 0,
+    });
 
-  it.each([0, -0.1, null])(
-    "handles variability intensity-factor boundary %s",
-    async (intensityFactor) => {
-      const sensorStore = makeMockSensorStore([
-        cyclingActivityRow({ intensity_factor: intensityFactor }),
-      ]);
-      const repository = new CyclingAnalyticsRepository(
-        { execute: vi.fn().mockResolvedValue([]) },
-        "11111111-1111-4111-8111-111111111111",
-        "UTC",
-        sensorStore,
-      );
-      const result = await repository.getActivities(ChartRange.fromDays(90), {
-        activityLimit: 20,
-        activityOffset: 0,
-        variabilityLimit: 20,
-        variabilityOffset: 0,
-      });
-      expect(result.variability.rows).toHaveLength(intensityFactor === 0 ? 1 : 0);
-      if (intensityFactor === 0) expect(result.variability.rows[0]?.intensityFactor).toBe(0);
-    },
-  );
+    expect(result.activities.items).toMatchObject([{ id: "11111111-1111-4111-8111-111111111111" }]);
+    expect(result.variability).toMatchObject({
+      rows: [],
+      totalCount: 0,
+      emptyReason: "no_normalized_power",
+    });
+    expect(getForActivities).toHaveBeenCalledWith(["11111111-1111-4111-8111-111111111111"]);
+  });
 
-  it("loads power exploration and canonical threshold history", async () => {
+  it("loads power exploration and configured FTP-dependent load", async () => {
     const sensorStore = makeMockSensorStore();
     vi.mocked(sensorStore.query)
       .mockResolvedValueOnce([
@@ -272,7 +216,7 @@ describe("CyclingAnalyticsRepository", () => {
 
     const result = await repository.getPerformance(ChartRange.fromDays(90));
 
-    expect(sensorStore.query).toHaveBeenCalledTimes(4);
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
     expect(result.powerCurve.recent.points).toEqual([
       {
         durationSeconds: 300,
@@ -323,6 +267,62 @@ describe("CyclingAnalyticsRepository", () => {
       expect.objectContaining({ userId: "11111111-1111-4111-8111-111111111111", timezone: "UTC" }),
       { priority: "dashboard" },
     );
+  });
+
+  it("keeps PMC date mapping safe when a ride has no batched threshold metric", async () => {
+    const getForActivities = vi
+      .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
+      .mockResolvedValue(new Map());
+    const sensorStore = makeMockSensorStore();
+    const comparisonRows = [
+      {
+        duration_seconds: 300,
+        recent_best_power: 400,
+        recent_activity_date: "2026-07-10",
+        season_best_power: 500,
+        season_activity_date: "2026-03-15",
+      },
+    ];
+    const activityRows = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        date: "2026-07-10",
+        duration_min: 60,
+        avg_hr: 150,
+        max_hr: 180,
+        global_max_hr: 190,
+        resting_hr: 55,
+        avg_power: 250,
+        power_samples: 3600,
+        hr_samples: 3600,
+        normalized_power: 280,
+        power_tss: 80,
+        activity_name: "Intervals",
+        latest_weight_kg: 80,
+      },
+    ];
+    vi.mocked(sensorStore.query).mockImplementation(async (schema, queryText) => {
+      const rows = queryText?.includes("analytics.activity_power_curve")
+        ? comparisonRows
+        : queryText?.includes("analytics.daily_cycling")
+          ? activityRows
+          : [];
+      return rows.map((row) => schema.parse(row));
+    });
+    const repository = new CyclingAnalyticsRepository(
+      {
+        execute: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]),
+      },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getPerformance(ChartRange.fromDays(90));
+
+    expect(getForActivities).toHaveBeenCalledWith(["11111111-1111-4111-8111-111111111111"]);
+    expect(result.pmc).toBeDefined();
+    expect(result.pmc.data).toBeInstanceOf(Array);
   });
 
   it("builds critical-power summaries and omits incomplete curve points", async () => {
@@ -677,6 +677,7 @@ describe("CyclingAnalyticsRepository", () => {
   });
 
   it("loads ride cards and all activity charts with one ClickHouse statement", async () => {
+    mockThresholds(300, 280);
     const sensorStore = makeMockSensorStore([
       {
         id: "11111111-1111-4111-8111-111111111111",
@@ -1119,7 +1120,7 @@ describe("CyclingAnalyticsRepository", () => {
       variabilityOffset: 0,
     });
 
-    expect(sensorStore.query).toHaveBeenCalledTimes(5);
+    expect(sensorStore.query).toHaveBeenCalledTimes(3);
     for (const queryCall of vi.mocked(sensorStore.query).mock.calls) {
       expect(queryCall[1]).toContain("accessStartDate");
       expect(queryCall[1]).toContain("accessEndDateExclusive");
@@ -1127,12 +1128,12 @@ describe("CyclingAnalyticsRepository", () => {
         accessStartDate: "2026-07-01T00:00:00.000Z",
         accessEndDateExclusive: "2026-07-08T00:00:00.000Z",
       });
-      if (!queryCall[1].includes("cycling_threshold_history"))
-        expect(queryCall[3]).toEqual({ priority: "dashboard" });
+      expect(queryCall[3]).toEqual({ priority: "dashboard" });
     }
   });
 
-  it("reports a missing threshold estimate when power data exists without an FTP estimate", async () => {
+  it("reports a missing configured FTP when power data exists", async () => {
+    mockThresholds(null, 220);
     const sensorStore = makeMockSensorStore([
       {
         id: "11111111-1111-4111-8111-111111111111",
@@ -1175,7 +1176,7 @@ describe("CyclingAnalyticsRepository", () => {
     expect(result.variability).toMatchObject({
       rows: [],
       totalCount: 0,
-      emptyReason: "no_ftp_estimate",
+      emptyReason: "no_configured_ftp",
     });
   });
 
@@ -1186,11 +1187,12 @@ describe("CyclingAnalyticsRepository", () => {
       emptyReason: "no_normalized_power",
     },
     {
-      label: "missing FTP estimate",
+      label: "missing configured FTP",
       row: cyclingActivityRow({ intensity_factor: null }),
-      emptyReason: "no_ftp_estimate",
+      emptyReason: "no_configured_ftp",
     },
   ])("rejects $label before calculating variability", async ({ row, emptyReason }) => {
+    if (emptyReason === "no_configured_ftp") mockThresholds(null, row.normalized_power ?? 220);
     const sensorStore = makeMockSensorStore([row]);
     const repository = new CyclingAnalyticsRepository(
       { execute: vi.fn().mockResolvedValue([]) },

@@ -77,13 +77,14 @@ export const pmcRouter = router({
             available: "Training load data is available from the training load read model.",
             insufficientData:
               result.unavailableReason ??
-              "No training load data is available from the training load read model. Record cycling power with a usable threshold to show this chart.",
+              "No training load data is available from the training load read model. Set a dated FTP and record cycling power to show this chart.",
           },
         }),
       };
     },
     {
-      keyVersion: "pmc-chart-power-v2",
+      expiresAt: "localDayBoundary",
+      keyVersion: "pmc-chart-manual-ftp-v3",
       outputSchema: pmcChartOutputSchema,
     },
   ),

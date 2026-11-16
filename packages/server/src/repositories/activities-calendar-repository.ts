@@ -17,6 +17,7 @@ import { clickHouseActivityCalendarDate } from "./activity-local-date.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { getActivityMapReadiness, getActivityRoutePreviews } from "./activity-route-preview.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 import { ProviderAbsentActivitiesCalendarRepository } from "./provider-absent-activities-calendar-repository.ts";
 
 /** Per-activity calendar data with route summaries and transparent training stress. */
@@ -138,7 +139,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             asum.avg_hr AS avg_hr,
             asum.max_hr AS max_hr,
             asum.avg_power AS avg_power,
-            metrics.power_tss AS power_tss,
+            NULL AS power_tss,
             asum.total_distance AS total_distance,
             asum.elevation_gain_m AS elevation_gain_m,
             asum.centroid_lat AS centroid_lat,
@@ -156,8 +157,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           LEFT JOIN analytics.activity_summary asum
             ON asum.user_id = activity.user_id
            AND asum.activity_id = activity.activity_id
-          LEFT JOIN analytics.cycling_activity_power_metrics metrics
-            ON metrics.user_id = activity.user_id AND metrics.activity_id = activity.activity_id
           WHERE activity.user_id = {userId:UUID}
             AND activity.is_deleted = 0
             AND (activity.ended_at IS NOT NULL OR activity.provider_type = 'climbing_log')
@@ -174,7 +173,19 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       this.timezone,
       this.accessWindow,
     ).filterToVisibleCanonicalActivities(activityRowsMatchingType);
-    return { rows: filteredActivityRows };
+    const powerMetrics = await new CyclingThresholdRepository(
+      this.db,
+      this.#sensorStore,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).getForActivities(filteredActivityRows.map((row) => row.id));
+    return {
+      rows: filteredActivityRows.map((row) => ({
+        ...row,
+        power_tss: powerMetrics.get(row.id)?.power_tss ?? null,
+      })),
+    };
   }
 
   async #getActiveDayGroups(

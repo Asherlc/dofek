@@ -75,7 +75,17 @@ or increase the 24-hour threshold.
    `pgdata` and `secret.key` are both required to recover the full UI state:
    <https://databasus.com/faq#how-to-backup-databasus-itself>.
 
-5. Trigger a backup from Databasus. Re-run the freshness command and require a
+5. If a backup fails with an application restart while `pg_dump` is running,
+   compare the kernel OOM timestamp with the service's memory limit. A
+   `1/1` task does not rule out a memory-cgroup kill during backup. Databasus
+   lists 500 MB RAM as its minimum
+   ([installation requirements](https://databasus.com/installation/)); this
+   stack assigns it `512M`. The memory fix alone is not recovery evidence:
+   local synthetic backup/restore tests validate only their fixture. After
+   deployment, require a fresh production backup, the freshness check, and an
+   isolated restore of that backup.
+
+6. Trigger a backup from Databasus. Re-run the freshness command and require a
    successful result before declaring the recovery point current.
 
 Never inspect or print a Swarm service's environment. Use the authorized

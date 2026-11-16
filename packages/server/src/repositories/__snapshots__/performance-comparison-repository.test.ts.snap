@@ -262,22 +262,22 @@ exports[`PerformanceComparisonRepository > binds cursors to the reference and co
           "thresholds": {
             "ageDays": null,
             "freshness": "unavailable",
-            "freshnessReason": "No qualifying computed cycling threshold evidence is available for this activity.",
+            "freshnessReason": "No configured cycling FTP is effective for this activity date.",
             "ftp": null,
             "thresholdHeartRateBpm": null,
           },
           "unavailableReasons": [
             {
               "metric": "normalized_power",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "intensity_factor",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "training_stress_score",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "heart_rate",
@@ -297,7 +297,7 @@ exports[`PerformanceComparisonRepository > binds cursors to the reference and co
             },
             {
               "metric": "power_zones",
-              "reason": "No qualifying computed cycling threshold evidence is available for this activity.",
+              "reason": "No configured cycling FTP is effective for this activity date.",
             },
             {
               "metric": "heart_rate_zones",
@@ -433,15 +433,15 @@ exports[`PerformanceComparisonRepository > binds cursors to the reference and co
             "unavailableReasons": [
               {
                 "metric": "normalized_power",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "intensity_factor",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "training_stress_score",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "heart_rate",
@@ -811,22 +811,22 @@ exports[`PerformanceComparisonRepository > binds cursors to the reference and co
           "thresholds": {
             "ageDays": null,
             "freshness": "unavailable",
-            "freshnessReason": "No qualifying computed cycling threshold evidence is available for this activity.",
+            "freshnessReason": "No configured cycling FTP is effective for this activity date.",
             "ftp": null,
             "thresholdHeartRateBpm": null,
           },
           "unavailableReasons": [
             {
               "metric": "normalized_power",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "intensity_factor",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "training_stress_score",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "heart_rate",
@@ -846,7 +846,7 @@ exports[`PerformanceComparisonRepository > binds cursors to the reference and co
             },
             {
               "metric": "power_zones",
-              "reason": "No qualifying computed cycling threshold evidence is available for this activity.",
+              "reason": "No configured cycling FTP is effective for this activity date.",
             },
             {
               "metric": "heart_rate_zones",
@@ -982,15 +982,15 @@ exports[`PerformanceComparisonRepository > binds cursors to the reference and co
             "unavailableReasons": [
               {
                 "metric": "normalized_power",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "intensity_factor",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "training_stress_score",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "heart_rate",
@@ -2149,22 +2149,22 @@ exports[`PerformanceComparisonRepository > supports the explicit activity name e
           "thresholds": {
             "ageDays": null,
             "freshness": "unavailable",
-            "freshnessReason": "No qualifying computed cycling threshold evidence is available for this activity.",
+            "freshnessReason": "No configured cycling FTP is effective for this activity date.",
             "ftp": null,
             "thresholdHeartRateBpm": null,
           },
           "unavailableReasons": [
             {
               "metric": "normalized_power",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "intensity_factor",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "training_stress_score",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "heart_rate",
@@ -2184,7 +2184,7 @@ exports[`PerformanceComparisonRepository > supports the explicit activity name e
             },
             {
               "metric": "power_zones",
-              "reason": "No qualifying computed cycling threshold evidence is available for this activity.",
+              "reason": "No configured cycling FTP is effective for this activity date.",
             },
             {
               "metric": "heart_rate_zones",
@@ -2320,15 +2320,15 @@ exports[`PerformanceComparisonRepository > supports the explicit activity name e
             "unavailableReasons": [
               {
                 "metric": "normalized_power",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "intensity_factor",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "training_stress_score",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "heart_rate",
@@ -2444,6 +2444,7 @@ exports[`PerformanceComparisonRepository > supports the explicit activity name e
   "[{"value":["/* performance-comparison:strength */\\n        SELECT\\n          a.id::text AS activity_id,\\n          strength.id::text AS set_id,\\n          strength.activity_id::text AS set_activity_id,\\n          source_activity.provider_id AS set_provider,\\n          strength.exercise_id::text AS exercise_id,\\n          strength.exercise_index,\\n          strength.set_index,\\n          strength.set_type::text AS set_type,\\n          strength.weight_kg,\\n          strength.reps,\\n          strength.rpe\\n        FROM fitness.v_activity AS a\\n        JOIN fitness.strength_set AS strength ON strength.activity_id = ANY(a.member_activity_ids)\\n        JOIN fitness.activity AS source_activity ON source_activity.id = strength.activity_id\\n        WHERE a.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n          AND a.id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]}]},{"value":[")\\n          "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[]},{"value":["\\n        ORDER BY a.id, strength.exercise_index, strength.set_index, strength.id"]}]",
   "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
   "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
+  "[{"value":["\\n        WITH requested AS (SELECT ARRAY["]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]}]},{"value":["]::uuid[] AS ids),\\n        visible_activity AS (\\n          SELECT requested_input.requested_id, canonical_activity.id, canonical_activity.user_id,\\n            canonical_activity.started_at, canonical_activity.ended_at,\\n            "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["CASE\\n    WHEN "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".local_time_source IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"provider_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"device_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"user_home_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"gps_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"home_zone_fallback",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"provider_offset",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"device_offset",{"value":[""]}]}]},{"value":[") AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".start_utc_offset_minutes IS NOT NULL\\n      THEN (("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".started_at AT TIME ZONE 'UTC')\\n        + "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".start_utc_offset_minutes * INTERVAL '1 minute')::date\\n    ELSE ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".started_at AT TIME ZONE "]},"UTC",{"value":[")::date\\n  END"]}]},{"value":[" AS activity_date, canonical_activity.canonical_type\\n          FROM fitness.v_activity AS canonical_activity\\n          CROSS JOIN requested\\n          CROSS JOIN LATERAL unnest(requested.ids) AS requested_input(requested_id)\\n          WHERE canonical_activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n            AND (canonical_activity.id = requested_input.requested_id\\n              OR requested_input.requested_id = ANY(canonical_activity.member_activity_ids))\\n            AND NOT EXISTS (\\n              SELECT 1 FROM fitness.activity AS withdrawn\\n              WHERE withdrawn.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n                AND withdrawn.id = requested_input.requested_id\\n                AND withdrawn.provider_absent_at IS NOT NULL\\n                AND withdrawn.deleted_at IS NULL\\n            )\\n          UNION\\n          SELECT absent_activity.id AS requested_id, absent_activity.id, absent_activity.user_id,\\n            absent_activity.started_at, absent_activity.ended_at,\\n            "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["CASE\\n    WHEN "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".local_time_source IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"provider_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"device_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"user_home_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"gps_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"home_zone_fallback",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"provider_offset",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"device_offset",{"value":[""]}]}]},{"value":[") AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".start_utc_offset_minutes IS NOT NULL\\n      THEN (("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".started_at AT TIME ZONE 'UTC')\\n        + "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".start_utc_offset_minutes * INTERVAL '1 minute')::date\\n    ELSE ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".started_at AT TIME ZONE "]},"UTC",{"value":[")::date\\n  END"]}]},{"value":[" AS activity_date, absent_activity.canonical_type\\n          FROM fitness.activity AS absent_activity\\n          CROSS JOIN requested\\n          WHERE absent_activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n            AND absent_activity.provider_absent_at IS NOT NULL\\n            AND absent_activity.deleted_at IS NULL\\n            AND absent_activity.id = ANY(requested.ids)\\n        )\\n        SELECT activity.requested_id::text AS requested_id,\\n          activity.id::text AS activity_id,\\n          activity.started_at, activity.ended_at,\\n          activity.activity_date,\\n          activity.canonical_type,\\n          settings.ftp,\\n          settings.effective_from AS threshold_effective_from,\\n          settings.id::text AS threshold_source_record_id\\n        FROM visible_activity AS activity\\n        LEFT JOIN LATERAL (\\n          SELECT id, ftp, effective_from\\n          FROM fitness.sport_settings\\n          WHERE user_id = activity.user_id AND sport = 'cycling'\\n            AND effective_from <= activity.activity_date\\n          ORDER BY effective_from DESC\\n          LIMIT 1\\n        ) AS settings ON true\\n        WHERE activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n          "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[]},{"value":["\\n      "]}]",
 ]
 `;
 
@@ -2710,22 +2711,22 @@ exports[`PerformanceComparisonRepository > supports the explicit cycling route e
           "thresholds": {
             "ageDays": null,
             "freshness": "unavailable",
-            "freshnessReason": "No qualifying computed cycling threshold evidence is available for this activity.",
+            "freshnessReason": "No configured cycling FTP is effective for this activity date.",
             "ftp": null,
             "thresholdHeartRateBpm": null,
           },
           "unavailableReasons": [
             {
               "metric": "normalized_power",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "intensity_factor",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "training_stress_score",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "heart_rate",
@@ -2745,7 +2746,7 @@ exports[`PerformanceComparisonRepository > supports the explicit cycling route e
             },
             {
               "metric": "power_zones",
-              "reason": "No qualifying computed cycling threshold evidence is available for this activity.",
+              "reason": "No configured cycling FTP is effective for this activity date.",
             },
             {
               "metric": "heart_rate_zones",
@@ -2881,15 +2882,15 @@ exports[`PerformanceComparisonRepository > supports the explicit cycling route e
             "unavailableReasons": [
               {
                 "metric": "normalized_power",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "intensity_factor",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "training_stress_score",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "heart_rate",
@@ -3005,6 +3006,7 @@ exports[`PerformanceComparisonRepository > supports the explicit cycling route e
   "[{"value":["/* performance-comparison:strength */\\n        SELECT\\n          a.id::text AS activity_id,\\n          strength.id::text AS set_id,\\n          strength.activity_id::text AS set_activity_id,\\n          source_activity.provider_id AS set_provider,\\n          strength.exercise_id::text AS exercise_id,\\n          strength.exercise_index,\\n          strength.set_index,\\n          strength.set_type::text AS set_type,\\n          strength.weight_kg,\\n          strength.reps,\\n          strength.rpe\\n        FROM fitness.v_activity AS a\\n        JOIN fitness.strength_set AS strength ON strength.activity_id = ANY(a.member_activity_ids)\\n        JOIN fitness.activity AS source_activity ON source_activity.id = strength.activity_id\\n        WHERE a.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n          AND a.id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]}]},{"value":[")\\n          "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[]},{"value":["\\n        ORDER BY a.id, strength.exercise_index, strength.set_index, strength.id"]}]",
   "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
   "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
+  "[{"value":["\\n        WITH requested AS (SELECT ARRAY["]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]}]},{"value":["]::uuid[] AS ids),\\n        visible_activity AS (\\n          SELECT requested_input.requested_id, canonical_activity.id, canonical_activity.user_id,\\n            canonical_activity.started_at, canonical_activity.ended_at,\\n            "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["CASE\\n    WHEN "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".local_time_source IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"provider_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"device_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"user_home_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"gps_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"home_zone_fallback",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"provider_offset",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"device_offset",{"value":[""]}]}]},{"value":[") AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".start_utc_offset_minutes IS NOT NULL\\n      THEN (("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".started_at AT TIME ZONE 'UTC')\\n        + "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".start_utc_offset_minutes * INTERVAL '1 minute')::date\\n    ELSE ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".started_at AT TIME ZONE "]},"UTC",{"value":[")::date\\n  END"]}]},{"value":[" AS activity_date, canonical_activity.canonical_type\\n          FROM fitness.v_activity AS canonical_activity\\n          CROSS JOIN requested\\n          CROSS JOIN LATERAL unnest(requested.ids) AS requested_input(requested_id)\\n          WHERE canonical_activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n            AND (canonical_activity.id = requested_input.requested_id\\n              OR requested_input.requested_id = ANY(canonical_activity.member_activity_ids))\\n            AND NOT EXISTS (\\n              SELECT 1 FROM fitness.activity AS withdrawn\\n              WHERE withdrawn.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n                AND withdrawn.id = requested_input.requested_id\\n                AND withdrawn.provider_absent_at IS NOT NULL\\n                AND withdrawn.deleted_at IS NULL\\n            )\\n          UNION\\n          SELECT absent_activity.id AS requested_id, absent_activity.id, absent_activity.user_id,\\n            absent_activity.started_at, absent_activity.ended_at,\\n            "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["CASE\\n    WHEN "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".local_time_source IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"provider_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"device_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"user_home_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"gps_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"home_zone_fallback",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"provider_offset",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"device_offset",{"value":[""]}]}]},{"value":[") AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".start_utc_offset_minutes IS NOT NULL\\n      THEN (("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".started_at AT TIME ZONE 'UTC')\\n        + "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".start_utc_offset_minutes * INTERVAL '1 minute')::date\\n    ELSE ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".started_at AT TIME ZONE "]},"UTC",{"value":[")::date\\n  END"]}]},{"value":[" AS activity_date, absent_activity.canonical_type\\n          FROM fitness.activity AS absent_activity\\n          CROSS JOIN requested\\n          WHERE absent_activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n            AND absent_activity.provider_absent_at IS NOT NULL\\n            AND absent_activity.deleted_at IS NULL\\n            AND absent_activity.id = ANY(requested.ids)\\n        )\\n        SELECT activity.requested_id::text AS requested_id,\\n          activity.id::text AS activity_id,\\n          activity.started_at, activity.ended_at,\\n          activity.activity_date,\\n          activity.canonical_type,\\n          settings.ftp,\\n          settings.effective_from AS threshold_effective_from,\\n          settings.id::text AS threshold_source_record_id\\n        FROM visible_activity AS activity\\n        LEFT JOIN LATERAL (\\n          SELECT id, ftp, effective_from\\n          FROM fitness.sport_settings\\n          WHERE user_id = activity.user_id AND sport = 'cycling'\\n            AND effective_from <= activity.activity_date\\n          ORDER BY effective_from DESC\\n          LIMIT 1\\n        ) AS settings ON true\\n        WHERE activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n          "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[]},{"value":["\\n      "]}]",
 ]
 `;
 
@@ -3271,22 +3273,22 @@ exports[`PerformanceComparisonRepository > supports the explicit standardized te
           "thresholds": {
             "ageDays": null,
             "freshness": "unavailable",
-            "freshnessReason": "No qualifying computed cycling threshold evidence is available for this activity.",
+            "freshnessReason": "No configured cycling FTP is effective for this activity date.",
             "ftp": null,
             "thresholdHeartRateBpm": null,
           },
           "unavailableReasons": [
             {
               "metric": "normalized_power",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "intensity_factor",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "training_stress_score",
-              "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+              "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
             },
             {
               "metric": "heart_rate",
@@ -3306,7 +3308,7 @@ exports[`PerformanceComparisonRepository > supports the explicit standardized te
             },
             {
               "metric": "power_zones",
-              "reason": "No qualifying computed cycling threshold evidence is available for this activity.",
+              "reason": "No configured cycling FTP is effective for this activity date.",
             },
             {
               "metric": "heart_rate_zones",
@@ -3442,15 +3444,15 @@ exports[`PerformanceComparisonRepository > supports the explicit standardized te
             "unavailableReasons": [
               {
                 "metric": "normalized_power",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "intensity_factor",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "training_stress_score",
-                "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+                "reason": "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
               },
               {
                 "metric": "heart_rate",
@@ -3566,6 +3568,7 @@ exports[`PerformanceComparisonRepository > supports the explicit standardized te
   "[{"value":["/* performance-comparison:strength */\\n        SELECT\\n          a.id::text AS activity_id,\\n          strength.id::text AS set_id,\\n          strength.activity_id::text AS set_activity_id,\\n          source_activity.provider_id AS set_provider,\\n          strength.exercise_id::text AS exercise_id,\\n          strength.exercise_index,\\n          strength.set_index,\\n          strength.set_type::text AS set_type,\\n          strength.weight_kg,\\n          strength.reps,\\n          strength.rpe\\n        FROM fitness.v_activity AS a\\n        JOIN fitness.strength_set AS strength ON strength.activity_id = ANY(a.member_activity_ids)\\n        JOIN fitness.activity AS source_activity ON source_activity.id = strength.activity_id\\n        WHERE a.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n          AND a.id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]}]},{"value":[")\\n          "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[]},{"value":["\\n        ORDER BY a.id, strength.exercise_index, strength.set_index, strength.id"]}]",
   "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
   "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
+  "[{"value":["\\n        WITH requested AS (SELECT ARRAY["]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]}]},{"value":["]::uuid[] AS ids),\\n        visible_activity AS (\\n          SELECT requested_input.requested_id, canonical_activity.id, canonical_activity.user_id,\\n            canonical_activity.started_at, canonical_activity.ended_at,\\n            "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["CASE\\n    WHEN "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".local_time_source IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"provider_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"device_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"user_home_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"gps_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"home_zone_fallback",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"provider_offset",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"device_offset",{"value":[""]}]}]},{"value":[") AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".start_utc_offset_minutes IS NOT NULL\\n      THEN (("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".started_at AT TIME ZONE 'UTC')\\n        + "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".start_utc_offset_minutes * INTERVAL '1 minute')::date\\n    ELSE ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["canonical_activity"]}]},{"value":[".started_at AT TIME ZONE "]},"UTC",{"value":[")::date\\n  END"]}]},{"value":[" AS activity_date, canonical_activity.canonical_type\\n          FROM fitness.v_activity AS canonical_activity\\n          CROSS JOIN requested\\n          CROSS JOIN LATERAL unnest(requested.ids) AS requested_input(requested_id)\\n          WHERE canonical_activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n            AND (canonical_activity.id = requested_input.requested_id\\n              OR requested_input.requested_id = ANY(canonical_activity.member_activity_ids))\\n            AND NOT EXISTS (\\n              SELECT 1 FROM fitness.activity AS withdrawn\\n              WHERE withdrawn.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n                AND withdrawn.id = requested_input.requested_id\\n                AND withdrawn.provider_absent_at IS NOT NULL\\n                AND withdrawn.deleted_at IS NULL\\n            )\\n          UNION\\n          SELECT absent_activity.id AS requested_id, absent_activity.id, absent_activity.user_id,\\n            absent_activity.started_at, absent_activity.ended_at,\\n            "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["CASE\\n    WHEN "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".local_time_source IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"provider_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"device_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"user_home_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"gps_timezone",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"home_zone_fallback",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"provider_offset",{"value":[""]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"device_offset",{"value":[""]}]}]},{"value":[") AND "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".start_utc_offset_minutes IS NOT NULL\\n      THEN (("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".started_at AT TIME ZONE 'UTC')\\n        + "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".start_utc_offset_minutes * INTERVAL '1 minute')::date\\n    ELSE ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":["absent_activity"]}]},{"value":[".started_at AT TIME ZONE "]},"UTC",{"value":[")::date\\n  END"]}]},{"value":[" AS activity_date, absent_activity.canonical_type\\n          FROM fitness.activity AS absent_activity\\n          CROSS JOIN requested\\n          WHERE absent_activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n            AND absent_activity.provider_absent_at IS NOT NULL\\n            AND absent_activity.deleted_at IS NULL\\n            AND absent_activity.id = ANY(requested.ids)\\n        )\\n        SELECT activity.requested_id::text AS requested_id,\\n          activity.id::text AS activity_id,\\n          activity.started_at, activity.ended_at,\\n          activity.activity_date,\\n          activity.canonical_type,\\n          settings.ftp,\\n          settings.effective_from AS threshold_effective_from,\\n          settings.id::text AS threshold_source_record_id\\n        FROM visible_activity AS activity\\n        LEFT JOIN LATERAL (\\n          SELECT id, ftp, effective_from\\n          FROM fitness.sport_settings\\n          WHERE user_id = activity.user_id AND sport = 'cycling'\\n            AND effective_from <= activity.activity_date\\n          ORDER BY effective_from DESC\\n          LIMIT 1\\n        ) AS settings ON true\\n        WHERE activity.user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["::uuid\\n          "]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[]},{"value":["\\n      "]}]",
 ]
 `;
 

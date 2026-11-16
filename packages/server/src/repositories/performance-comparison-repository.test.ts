@@ -940,14 +940,7 @@ describe("PerformanceComparisonRepository", () => {
           activity_id: id,
           started_at: "2026-06-01T17:00:00.000Z",
           normalized_power: index === 0 ? 180 : 195,
-          eftp: null,
-          intensity_factor: null,
-          power_tss: null,
-          model_version: "test-cycling-model",
-          evidence_activity_id: null,
-          evidence_at: null,
-          evidence_duration_seconds: null,
-          evidence_power: null,
+          power_sample_count: 1800,
         }));
       if (text.includes("cycling-training-metrics:samples"))
         return [FIRST_ID, SECOND_ID].flatMap((id, index) =>
@@ -1009,7 +1002,7 @@ describe("PerformanceComparisonRepository", () => {
       metrics: {
         cycling: {
           average_power_watts: 195,
-          normalized_power_watts: 195,
+          normalized_power_watts: null,
           average_heart_rate_bpm: 143,
           max_heart_rate_bpm: 143,
           average_cadence_rpm: 90,

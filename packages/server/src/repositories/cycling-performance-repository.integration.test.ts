@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
-import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-schema.ts";
+import { activity } from "../../../../src/db/schema/activity.ts";
+import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { buildTestAnalyticsTableStatement } from "../routers/clickhouse-integration-test-models.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
@@ -13,15 +16,21 @@ describe("CyclingPerformanceRepository integration", () => {
   const query = (sql: string) => sql.replaceAll("analytics.", `${database}.`);
   const execute = async (sql: string) => client.command({ query: query(sql) });
   let sensorStore: ActivitySensorStore;
+  let context: TestContext;
 
   beforeAll(async () => {
+    context = await setupTestDatabase();
     await client.command({ query: `CREATE DATABASE ${database}` });
     for (const sql of [
       buildTestAnalyticsTableStatement("analytics.cycling_activity"),
       buildTestAnalyticsTableStatement("analytics.activity_power_curve"),
-      ...cyclingPowerSchemaStatements(),
     ])
       await execute(sql);
+    await client.command({
+      query: `CREATE TABLE ${database}.cycling_activity_power_metrics
+      (user_id UUID, activity_id UUID, started_at DateTime64(6, 'UTC'), ended_at DateTime64(6, 'UTC'),
+      canonical_type String, power_sample_count UInt64, normalized_power Nullable(Float64)) ENGINE=Memory`,
+    });
     sensorStore = new ClickHouseActivitySensorStore({
       command: (options) => client.command({ ...options, query: query(options.query) }),
       query: (options) => client.query({ ...options, query: query(options.query) }),
@@ -31,24 +40,45 @@ describe("CyclingPerformanceRepository integration", () => {
   afterAll(async () => {
     await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client.close?.();
+    await context?.cleanup();
   });
+
+  async function registerActivity(userId: string, activityId: string) {
+    const providerId = `cycling-performance-${userId}`;
+    await context.db.execute(sql`INSERT INTO fitness.user_profile(id,name)
+      VALUES (${userId}::uuid,'Cycling performance fixture')`);
+    await ensureProvider(context.db, providerId, "Cycling performance fixture", undefined, userId);
+    await context.db.insert(activity).values({
+      id: activityId,
+      groupId: activityId,
+      userId,
+      providerId,
+      externalId: activityId,
+      canonicalType: "cycling",
+      providerType: "cycling",
+      startedAt: new Date("2026-08-30T12:00:00Z"),
+      endedAt: new Date("2026-08-30T13:00:00Z"),
+    });
+    await context.db.execute(sql`INSERT INTO fitness.sport_settings
+      (user_id,sport,ftp,effective_from) VALUES (${userId}::uuid,'cycling',250,'2026-08-30')`);
+  }
 
   it("counts canonical normalized power when summary power fields are unavailable", async () => {
     const userId = randomUUID();
     const activityId = randomUUID();
+    await registerActivity(userId, activityId);
     await execute(
-      `INSERT INTO analytics.cycling_activity (activity_id,user_id,canonical_type,modality,started_at,ended_at,source_providers,is_deleted,refresh_version,refreshed_at) VALUES ('${activityId}','${userId}','cycling','indoor','2026-08-30 12:00:00','2026-08-30 13:00:00',['wahoo'],0,1,now64(9))`,
-    );
-    await execute(
-      `INSERT INTO analytics.cycling_power_observation_rows VALUES ('${userId}','${activityId}',220,1,'np-v1',0,100,now64(6))`,
+      `INSERT INTO analytics.cycling_activity (activity_id,user_id,canonical_type,modality,started_at,ended_at,source_providers,power_samples,average_power,best_twenty_minute_power,is_deleted,refresh_version,refreshed_at) VALUES ('${activityId}','${userId}','cycling','indoor','2026-08-30 12:00:00','2026-08-30 13:00:00',['wahoo'],0,NULL,NULL,0,1,now64(9))`,
     );
     await execute(
-      `INSERT INTO analytics.cycling_power_history_rows VALUES ('${userId}',1,today(),'model-v1',[(1.0,'${activityId}',250.0,0.88,100.0,NULL,0.0,0.0,0.0)],200,now64(6))`,
+      `INSERT INTO analytics.cycling_activity_power_metrics VALUES ('${userId}','${activityId}','2026-08-30 12:00:00','2026-08-30 13:00:00','cycling',3600,220)`,
     );
-    const result = await new CyclingPerformanceRepository(sensorStore, userId, "UTC").listRange(
-      "2026-08-30",
-      "2026-09-01",
-    );
+    const result = await new CyclingPerformanceRepository(
+      context.db,
+      sensorStore,
+      userId,
+      "UTC",
+    ).listRange("2026-08-30", "2026-09-01");
     expect(result.summary.power_availability_by_modality.indoor).toEqual({
       first_observed: "2026-08-30",
       last_observed: "2026-08-30",
@@ -63,6 +93,7 @@ describe("CyclingPerformanceRepository integration", () => {
     const userId = randomUUID();
     const activityId = randomUUID();
     const outOfRangeActivityId = randomUUID();
+    await registerActivity(userId, activityId);
     await execute(
       `INSERT INTO analytics.cycling_activity VALUES
       (
@@ -94,21 +125,21 @@ describe("CyclingPerformanceRepository integration", () => {
     );
 
     await execute(
-      `INSERT INTO analytics.cycling_power_observation_rows VALUES ('${userId}','${activityId}',220,1,'np-v1',0,100,now64(6))`,
+      `INSERT INTO analytics.cycling_activity_power_metrics VALUES ('${userId}','${activityId}','2026-08-30 16:00:00','2026-08-30 17:02:00','cycling',1000,220)`,
     );
-    await execute(
-      `INSERT INTO analytics.cycling_power_history_rows VALUES ('${userId}',1,today(),'model-v1',[(1.0,'${activityId}',237.5,0.926,100.0,'${activityId}',1.0,1200.0,250.0)],200,now64(6))`,
-    );
-    const result = await new CyclingPerformanceRepository(sensorStore, userId, "UTC").listRange(
-      "2026-08-30",
-      "2026-09-01",
-    );
+    const result = await new CyclingPerformanceRepository(
+      context.db,
+      sensorStore,
+      userId,
+      "UTC",
+    ).listRange("2026-08-30", "2026-09-01");
 
     expect(result.activities).toEqual([
       expect.objectContaining({
         activity_id: activityId,
-        estimated_ftp_watts: 237.5,
-        intensity_factor: 0.926,
+        ftp_watts: 250,
+        ftp_source: expect.objectContaining({ kind: "configured", value: 250 }),
+        intensity_factor: 0.88,
         elevation_gain_m: 736,
         best_efforts_watts: { "5s": 900, "1m": 500, "5m": 300, "20m": 250 },
       }),
