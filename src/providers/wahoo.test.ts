@@ -544,7 +544,13 @@ describe("WahooClient — Zod runtime validation", () => {
 
   it("rejects a single workout response with wrong shape", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return Response.json({ workout: { id: "not-a-number" } });
+      return Response.json({
+        id: "not-a-number",
+        workout_type_id: 0,
+        starts: "2026-03-01T10:00:00Z",
+        created_at: "2026-03-01T10:00:00Z",
+        updated_at: "2026-03-01T10:00:00Z",
+      });
     };
 
     const client = new WahooClient("token", mockFetch);
@@ -1547,22 +1553,20 @@ describe("WahooProvider — precise webhook assertions", () => {
 });
 
 describe("WahooClient.getWorkout", () => {
-  it("fetches a single workout by ID", async () => {
+  it("parses Wahoo's flat single-workout response by ID", async () => {
     const mockFetch = vi.fn().mockResolvedValue(
       Response.json({
-        workout: {
-          id: 42,
-          workout_type_id: 0,
-          starts: "2026-03-01T10:00:00Z",
-          created_at: "2026-03-01T10:00:00Z",
-          updated_at: "2026-03-01T10:00:00Z",
-        },
+        id: 42,
+        workout_type_id: 0,
+        starts: "2026-03-01T10:00:00Z",
+        created_at: "2026-03-01T10:00:00Z",
+        updated_at: "2026-03-01T10:00:00Z",
       }),
     );
 
     const client = new WahooClient("test-token", mockFetch);
     const result = await client.getWorkout(42);
-    expect(result.workout.id).toBe(42);
+    expect(result.id).toBe(42);
     expect(mockFetch).toHaveBeenCalledOnce();
     const url = String(mockFetch.mock.calls[0]?.[0]);
     expect(url).toContain("/v1/workouts/42");
