@@ -31,6 +31,7 @@ export function makeWhoopCaptureStats(): WhoopCaptureStats {
       activeUploadCount: 0,
       blockedUploadStreams: [],
       lastUploadError: null,
+      lastUploadOutcome: null,
       bufferInstanceId: "11111111-1111-4111-8111-111111111111",
       bufferCreatedAt: "2026-10-23T00:00:00.000Z",
       checkpointAt: "2026-10-23T01:00:00.000Z",

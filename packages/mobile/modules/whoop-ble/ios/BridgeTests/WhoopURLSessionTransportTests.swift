@@ -26,7 +26,13 @@ final class WhoopURLSessionTransportTests: XCTestCase {
         }
         transport.onAttemptFailure = { identity, error, attempt in
             XCTAssertEqual(identity, "generation.batch")
-            XCTAssertEqual((error as? URLError)?.code, .networkConnectionLost)
+            let nativeError = error as NSError
+            XCTAssertEqual(nativeError.domain, NSURLErrorDomain)
+            XCTAssertEqual(nativeError.code, URLError.networkConnectionLost.rawValue)
+            let context = nativeError.userInfo[WhoopUploadTelemetry.transportContextKey] as? [String: Any]
+            XCTAssertEqual(context?["transportPath"] as? String, "live")
+            XCTAssertEqual(context?["siblingTaskPending"] as? Bool, true)
+            XCTAssertNotNil(context?["taskIdentifier"] as? Int)
             XCTAssertEqual(attempt, 1)
             attemptFailure.fulfill()
         }
@@ -55,6 +61,8 @@ final class WhoopURLSessionTransportTests: XCTestCase {
             XCTAssertEqual(data, Data("live".utf8))
             XCTAssertEqual(context.attempt, 1)
             XCTAssertEqual(context.responseURL, request.url)
+            XCTAssertEqual(context.transportPath, "live")
+            XCTAssertNotNil(context.taskIdentifier)
             completion.fulfill()
         }
         transport.start(request: request, file: file, identity: "generation.batch", attempt: 1)

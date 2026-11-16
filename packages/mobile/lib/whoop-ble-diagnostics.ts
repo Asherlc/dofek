@@ -104,6 +104,24 @@ export class WhoopBleDiagnostics {
       activeUploadCount: buffers.activeUploadCount,
       blockedUploadStreams: buffers.blockedUploadStreams.join(","),
       lastUploadError: buffers.lastUploadError,
+      ...(buffers.lastUploadOutcome
+        ? {
+            uploadOutcomeStage: buffers.lastUploadOutcome.stage,
+            uploadOutcomeAt: buffers.lastUploadOutcome.occurredAt,
+            uploadBatchIdentity: buffers.lastUploadOutcome.batchIdentity,
+            uploadStream: buffers.lastUploadOutcome.stream,
+            uploadRoute: buffers.lastUploadOutcome.route,
+            uploadBatchSampleCount: buffers.lastUploadOutcome.batchSampleCount,
+            uploadAttempt: buffers.lastUploadOutcome.attempt,
+            uploadTaskIdentifier: buffers.lastUploadOutcome.taskIdentifier,
+            uploadTransportPath: buffers.lastUploadOutcome.transportPath,
+            uploadHttpStatus: buffers.lastUploadOutcome.statusCode,
+            uploadResponseOriginValidated: buffers.lastUploadOutcome.responseOriginValidated,
+            uploadAcknowledgmentValidated: buffers.lastUploadOutcome.acknowledgmentValidated,
+            uploadOutboxState: buffers.lastUploadOutcome.outboxState,
+            uploadSiblingTaskPending: buffers.lastUploadOutcome.siblingTaskPending,
+          }
+        : {}),
     });
   }
 }

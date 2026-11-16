@@ -147,8 +147,13 @@ a command characteristic.
 `getDataPathStats()` also exposes `lastKnownDeviceId`, capture timestamps, and a typed `buffers`
 snapshot containing `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`,
 `imu`, `realtime`, `sensorRecords`, `activeUploadCount`, `blockedUploadStreams`, and
-`lastUploadError`. Stream counters describe persisted queue changes. The buffer
-identity is the persisted account/server generation; it survives ordinary process
+`lastUploadError`. It also includes the latest `lastUploadOutcome`, correlating a
+durable batch with its stream, sample count, URLSession task/path, HTTP status,
+validated acknowledgment, and whether the batch remains in the outbox. Native
+upload exceptions carry the same metadata in the `whoop_upload` Sentry context
+while preserving the original error domain and code. These fields contain no
+sample values or request bodies. Stream counters describe persisted queue
+changes. The buffer identity is the persisted account/server generation; it survives ordinary process
 recreation. Creation/checkpoint times describe the current native uploader and
 snapshot. Capture timestamps distinguish phone-observed notifications from the
 strap's latest valid reported heart rate; see the [bridge contract](index.ts).

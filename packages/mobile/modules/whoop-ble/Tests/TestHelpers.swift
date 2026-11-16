@@ -21,6 +21,8 @@ final class TestWhoopCentralManager: WhoopBleCentralManaging {
 extension WhoopBleBackgroundUploaderTests {
     func setup(
         reportError: @escaping (Error) -> Void = { _ in },
+        reportUploadOutcome: @escaping (WhoopUploadOutcome) -> Void = { _ in },
+        removeBodyFile: @escaping (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) },
         now: @escaping () -> Date = Date.init
     ) throws -> (WhoopBleBackgroundUploader, WhoopBleSampleStore, TestWhoopUploadTransport) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -29,7 +31,8 @@ extension WhoopBleBackgroundUploaderTests {
         let transport = TestWhoopUploadTransport()
         let uploader = try WhoopBleBackgroundUploader(
             store: store, directory: directory.appendingPathComponent("bodies"), transport: transport,
-            reportError: reportError, now: now
+            reportError: reportError, reportUploadOutcome: reportUploadOutcome,
+            removeBodyFile: removeBodyFile, now: now
         )
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "secret", headers: [:])
         return (uploader, store, transport)
@@ -81,7 +84,7 @@ final class CleanupStageRecorder {
 }
 
 final class TestWhoopUploadTransport: WhoopUploadTransport {
-    var onCompletion: ((String, Int?, Data, (attempt: Int?, responseURL: URL?), Error?) -> Void)?
+    var onCompletion: WhoopUploadCompletion?
     var onAttemptFailure: ((String, Error, Int?) -> Void)?
     var onFinishEvents: (() -> Void)?
     var tasks: [String] = []
@@ -118,11 +121,11 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
         guard requests.last(where: { $0.2 == task.2 })?.0 == task.0 else { return }
         tasks.removeAll { $0 == task.2 }
         pairedTasks.remove(task.2)
-        onCompletion?(task.2, status, Data(body.utf8), (attempts[task.2], task.0.url), nil)
+        onCompletion?(task.2, status, Data(body.utf8), (attempts[task.2], task.0.url, index + 1, "test"), nil)
     }
-    func failOnePath(identity: String) {
+    func failOnePath(identity: String, error: Error = URLError(.networkConnectionLost)) {
         pairedTasks.remove(identity)
-        onAttemptFailure?(identity, URLError(.networkConnectionLost), attempts[identity])
+        onAttemptFailure?(identity, error, attempts[identity])
     }
 }
 
