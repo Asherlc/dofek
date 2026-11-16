@@ -191,7 +191,7 @@ describe("ClimbingTab", () => {
     const chart = screen.getByText("Grade Progression component");
     expect(map.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("Error: Reconnect the location provider")).toBeVisible();
-    expect(screen.getByRole("status")).toHaveTextContent("Updating climbing");
+    expect(screen.getByText("Updating climbing…")).toHaveAttribute("role", "status");
     expect(locationMapQuery).toHaveBeenCalledWith(
       { days: 90 },
       expect.objectContaining({ placeholderData: expect.any(Function) }),

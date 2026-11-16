@@ -25,6 +25,9 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const PendingMetadata: Story = {
+  args: { data: { ...fixture, enrichmentPending: true } },
+};
 export const UnknownOnly: Story = {
   args: {
     data: {
