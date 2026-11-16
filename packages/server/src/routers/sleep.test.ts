@@ -180,7 +180,24 @@ describe("sleepRouter stagesByDate", () => {
     expect(query.mock.calls[0]?.[2]).toMatchObject({ days: 0, endDate: "2026-04-18" });
   });
 
-  it("validates calendar dates and keeps omitted input valid", async () => {
+  it("defaults omitted input to the latest recorded sleep night", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        date: "2026-04-16",
+        started_at: "2026-04-16T23:00:00Z",
+        ended_at: "2026-04-17T07:00:00Z",
+        staging_available: true,
+      },
+    ]);
+    const caller = createSleepCaller(query);
+
+    await expect(caller.stagesByDate()).resolves.toEqual({ date: "2026-04-16", stages: [] });
+    expect(query.mock.calls[0]?.[1]).toContain("ORDER BY sleep.date DESC");
+    expect(query.mock.calls[0]?.[2]).toMatchObject({ userId: "user-1" });
+    expect(query.mock.calls[0]?.[2]).not.toHaveProperty("endDate");
+  });
+
+  it("validates calendar dates and keeps empty object input valid", async () => {
     const caller = createSleepCaller(vi.fn().mockResolvedValue([]));
 
     await expect(caller.stagesByDate({})).resolves.toEqual({ date: null, stages: [] });
