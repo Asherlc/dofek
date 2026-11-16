@@ -68,7 +68,8 @@ describe("activityMetricSourcePresentation", () => {
       "apple_health",
       "Apple Health",
     ],
-    ["whoop", null, "WHOOP (Cloud)", "WHOOP", "cloud", "Cloud"],
+    ["whoop", "Apple Watch", "WHOOP (Cloud)", "WHOOP", "cloud", "Cloud"],
+    ["whoop_ble", "   ", "WHOOP (Bluetooth)", "WHOOP", "bluetooth", "Bluetooth"],
     [
       "whoop_ble",
       "opaque-strap",

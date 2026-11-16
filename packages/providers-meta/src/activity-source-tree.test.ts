@@ -9,16 +9,23 @@ import { providerLabel } from "./providers.ts";
 
 describe("activitySourceNodePresentation", () => {
   it.each([
-    ["whoop", "WHOOP (Cloud)", "WHOOP", "cloud"],
-    ["whoop_ble", "WHOOP (Bluetooth)", "WHOOP", "bluetooth"],
-    ["whoop", "WHOOP 4.0", "WHOOP 4.0", null],
-    ["apple_health", "Apple Health", "Apple Health", null],
-  ])("presents %s source %s", (providerId, label, displayName, kind) => {
+    ["whoop", "WHOOP (Cloud)", "WHOOP", "cloud", null],
+    ["whoop_ble", "WHOOP (Bluetooth)", "WHOOP", "bluetooth", null],
+    [
+      "whoop_ble",
+      "WHOOP (Bluetooth)",
+      "A050E4D0-67D0-4F4D-9A43-756F7D343DA1",
+      "bluetooth",
+      "A050E4D0-67D0-4F4D-9A43-756F7D343DA1",
+    ],
+    ["whoop", "WHOOP 4.0", "WHOOP 4.0", null, null],
+    ["apple_health", "Apple Health", "Apple Health", null, "Apple Watch"],
+  ])("presents %s source %s", (providerId, label, displayName, kind, sourceName) => {
     const presentation = activitySourceNodePresentation({
       id: "record",
       providerId,
       label,
-      sourceName: "Apple Watch",
+      sourceName,
       description: null,
       url: null,
       children: [],
