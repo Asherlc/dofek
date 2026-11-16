@@ -257,13 +257,19 @@ public class WhoopBleModule: Module {
             let operationId = UUID().uuidString
             let startedAt = ProcessInfo.processInfo.systemUptime
             var stage = "ble_suspend"
-            func recordStage(_ nextStage: String) {
+            func recordStage(_ nextStage: String, attributes extraAttributes: [String: String] = [:]) {
                 stage = nextStage
-                SentrySDK.logger.info("WHOOP cleanup stage", attributes: [
-                    "operation": "disableUploads", "operationId": operationId, "stage": stage,
-                    "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
-                    "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
-                ])
+                var attributes: [String: SentryAttribute] = [:]
+                attributes["operation"] = SentryAttribute(string: "disableUploads")
+                attributes["operationId"] = SentryAttribute(string: operationId)
+                attributes["stage"] = SentryAttribute(string: stage)
+                attributes["isMainThread"] = SentryAttribute(boolean: Thread.isMainThread)
+                attributes["threadId"] = SentryAttribute(integer: Int(pthread_mach_thread_np(pthread_self())))
+                attributes["durationMs"] = SentryAttribute(double: (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000)
+                for (key, value) in extraAttributes {
+                    attributes[key] = SentryAttribute(string: value)
+                }
+                SentrySDK.logger.info("WHOOP cleanup stage", attributes: attributes)
             }
 
             recordStage("ble_suspend")
@@ -278,7 +284,9 @@ public class WhoopBleModule: Module {
                 let uploader = try self.uploader
                 recordStage("uploader_disable")
                 let cutoff = UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date
-                try uploader.disable(cutoff: cutoff, onStage: recordStage)
+                try uploader.disable(cutoff: cutoff) { nextStage in
+                    recordStage(nextStage.name, attributes: nextStage.attributes)
+                }
                 recordStage("completed")
                 self.cleanupFailure = nil
             } catch {

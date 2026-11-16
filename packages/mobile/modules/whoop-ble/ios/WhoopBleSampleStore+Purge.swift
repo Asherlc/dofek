@@ -2,8 +2,8 @@ import Foundation
 
 extension WhoopBleSampleStore {
     /// Stage observers must not re-enter the store.
-    func purge(onStage: (String) -> Void = { _ in }) throws {
-        onStage("store_lock_wait")
+    func purge(onStage: WhoopCleanupStageHandler = { _ in }) throws {
+        onStage(WhoopCleanupStage("store_lock_wait"))
         try synchronized {
             try restoreSecureDeleteLocked()
             if try metadata("purge_pending") != nil {
@@ -32,27 +32,38 @@ extension WhoopBleSampleStore {
         secureDeleteToRestore = nil
     }
 
-    func finishPendingPurgeLocked(onStage: (String) -> Void = { _ in }) throws {
+    func finishPendingPurgeLocked(onStage: WhoopCleanupStageHandler = { _ in }) throws {
         guard try metadata("purge_pending") != nil else { return }
-        onStage("store_vacuum")
+        onStage(WhoopCleanupStage("store_vacuum"))
         try execute("VACUUM")
-        guard let checkpoint = try rows("PRAGMA wal_checkpoint(TRUNCATE)").first,
-              try field("busy", in: checkpoint) as Int == 0 else {
+        onStage(WhoopCleanupStage("store_wal_checkpoint"))
+        guard let checkpoint = try rows("PRAGMA wal_checkpoint(TRUNCATE)").first else {
+            throw StoreError("WHOOP sample storage could not checkpoint the purged queue")
+        }
+        let busy: Int = try field("busy", in: checkpoint)
+        let logFrames: Int = try field("log", in: checkpoint)
+        let checkpointedFrames: Int = try field("checkpointed", in: checkpoint)
+        onStage(WhoopCleanupStage("store_wal_checkpoint_completed", attributes: [
+            "checkpointBusy": String(busy),
+            "checkpointLogFrames": String(logFrames),
+            "checkpointedFrames": String(checkpointedFrames),
+        ]))
+        guard busy == 0 else {
             throw StoreError("WHOOP sample storage could not checkpoint the purged queue")
         }
         try execute("DELETE FROM metadata WHERE key = ?", ["purge_pending"])
     }
 
-    func purgeLocked(onStage: (String) -> Void = { _ in }) throws {
-        onStage("store_reset_stats")
+    func purgeLocked(onStage: WhoopCleanupStageHandler = { _ in }) throws {
+        onStage(WhoopCleanupStage("store_reset_stats"))
         try execute("UPDATE stats SET received = 0, confirmed = 0, erased = 0, cleared = 0, lastConfirmed = NULL")
-        onStage("store_delete_samples")
+        onStage(WhoopCleanupStage("store_delete_samples"))
         try execute("DELETE FROM samples")
-        onStage("store_delete_batches")
+        onStage(WhoopCleanupStage("store_delete_batches"))
         try execute("DELETE FROM batches")
-        onStage("store_clear_binding")
+        onStage(WhoopCleanupStage("store_clear_binding"))
         try execute("DELETE FROM metadata WHERE key = ?", ["binding"])
-        onStage("store_rotate_generation")
+        onStage(WhoopCleanupStage("store_rotate_generation"))
         try setMetadata("generation", UUID().uuidString)
     }
 }
