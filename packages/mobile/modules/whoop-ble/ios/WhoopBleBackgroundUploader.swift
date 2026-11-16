@@ -125,6 +125,7 @@ final class WhoopBleBackgroundUploader: NSObject {
             let binding = WhoopUploadBinding(userId: userId, serverURL: origin)
             let bindingChanged = try store.binding != binding
             if bindingChanged {
+                lastUploadOutcome = nil
                 self.token = nil; self.headers = [:]
                 try cancelOwnedTasks()
                 active.removeAll(); pairedActive.removeAll(); submitted.removeAll(); authRetriedEpoch.removeAll()
@@ -168,6 +169,7 @@ final class WhoopBleBackgroundUploader: NSObject {
     }
 
     private func disableLocked(cutoff: Date? = nil, onStage: (String) -> Void) throws {
+        lastUploadOutcome = nil
         token = nil; headers = [:]; blocked.removeAll()
         onStage("uploader_cancel_tasks")
         try cancelOwnedTasks()
@@ -186,7 +188,6 @@ final class WhoopBleBackgroundUploader: NSObject {
         // Invalidate persisted completion identity even if file cleanup fails.
         onStage("uploader_store_purge")
         try store.purge(onStage: onStage)
-        lastUploadOutcome = nil
         onStage("uploader_remove_bodies")
         try removeBodies()
     }
@@ -336,7 +337,8 @@ final class WhoopBleBackgroundUploader: NSObject {
         var cleanupError: Error?
         do {
             guard let batch = try store.pendingBatches().first(where: { self.identity($0) == identity }) else {
-                guard identity.hasPrefix(try store.generation + ".") else { return }
+                guard let generation = try? store.generation,
+                      identity.hasPrefix(generation + ".") else { return }
                 reportOutcome(batchNotFound(identity: identity, status: status, context: context))
                 return
             }

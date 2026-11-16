@@ -144,6 +144,53 @@ extension WhoopBleBackgroundUploaderTests {
         XCTAssertTrue(latest is NSNull, "Late completion for \(oldIdentity) must not repopulate telemetry after purge")
     }
 
+    func testPurgeCleanupFailureKeepsOutcomeClearedAfterGenerationRotates() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: directory) }
+        let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: directory) }
+        let transport = TestWhoopUploadTransport()
+        let uploader = try WhoopBleBackgroundUploader(
+            store: store, directory: directory.appendingPathComponent("bodies"), transport: transport,
+            reportError: { _ in })
+        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "token", headers: [:])
+        try uploader.append(deviceId: "a", samplesByStream: [.imu: rows])
+        try uploader.flush(); try settle(uploader)
+        transport.complete(0)
+        try settle(uploader)
+        XCTAssertNotNil(try uploader.diagnostics()["lastUploadOutcome"] as? [String: Any])
+        let generation = try store.generation
+
+        try probe.withDeniedVacuum {
+            XCTAssertThrowsError(try uploader.disable())
+        }
+
+        XCTAssertNotEqual(try store.generation, generation)
+        XCTAssertTrue(try uploader.diagnostics()["lastUploadOutcome"] is NSNull)
+    }
+
+    func testFailedGenerationLookupDoesNotCreateCompletionErrorOrOutcome() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: directory) }
+        let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: directory) }
+        var errors: [Error] = []
+        var outcomes: [WhoopUploadOutcome] = []
+        let transport = TestWhoopUploadTransport()
+        let uploader = try WhoopBleBackgroundUploader(
+            store: store, directory: directory.appendingPathComponent("bodies"), transport: transport,
+            reportError: { errors.append($0) }, reportUploadOutcome: { outcomes.append($0) })
+        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "token", headers: [:])
+        try uploader.append(deviceId: "a", samplesByStream: [.imu: rows])
+        try uploader.flush(); try settle(uploader)
+        try uploader.purge(cutoff: Date(timeIntervalSince1970: 1_800_000_000))
+        try probe.executeFixture("DELETE FROM metadata WHERE key = 'generation'")
+
+        transport.complete(0)
+        _ = try uploader.sampleCount(stream: .imu)
+
+        XCTAssertTrue(errors.isEmpty)
+        XCTAssertTrue(outcomes.isEmpty)
+    }
+
     func testBodyFileCleanupFailureReportsRetiredOutcomeBeforeErrorOnce() throws {
         var errors: [Error] = []
         var outcomes: [WhoopUploadOutcome] = []
