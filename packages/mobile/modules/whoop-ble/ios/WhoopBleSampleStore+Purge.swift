@@ -44,9 +44,9 @@ extension WhoopBleSampleStore {
         let logFrames: Int = try field("log", in: checkpoint)
         let checkpointedFrames: Int = try field("checkpointed", in: checkpoint)
         onStage(WhoopCleanupStage("store_wal_checkpoint_completed", attributes: [
-            "checkpointBusy": String(busy),
-            "checkpointLogFrames": String(logFrames),
-            "checkpointedFrames": String(checkpointedFrames),
+            "checkpointBusy": .integer(busy),
+            "checkpointLogFrames": .integer(logFrames),
+            "checkpointedFrames": .integer(checkpointedFrames),
         ]))
         guard busy == 0 else {
             throw StoreError("WHOOP sample storage could not checkpoint the purged queue")

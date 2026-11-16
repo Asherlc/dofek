@@ -403,3 +403,12 @@ func expectedCleanupStages(hasRetainedCutoff: Bool) -> [String] {
     }
     return stages
 }
+
+func assertCheckpointFrameCounts(_ records: [SentryLog]) throws {
+    let checkpoint = try XCTUnwrap(records.first {
+        $0.attributes["stage"]?.value as? String == "store_wal_checkpoint_completed"
+    })
+    for key in ["checkpointBusy", "checkpointLogFrames", "checkpointedFrames"] {
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(checkpoint.attributes[key]?.value as? Int), 0)
+    }
+}

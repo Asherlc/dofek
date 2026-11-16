@@ -95,13 +95,7 @@ final class WhoopBleModuleTests: XCTestCase {
             records.map { $0.attributes["stage"]?.value as? String },
             expectedCleanupStages(hasRetainedCutoff: hasRetainedCutoff)
         )
-        let checkpoint = try XCTUnwrap(records.first {
-            $0.attributes["stage"]?.value as? String == "store_wal_checkpoint_completed"
-        })
-        for key in ["checkpointBusy", "checkpointLogFrames", "checkpointedFrames"] {
-            let value = try XCTUnwrap(checkpoint.attributes[key]?.value as? String)
-            XCTAssertGreaterThanOrEqual(try XCTUnwrap(Int(value)), 0)
-        }
+        try assertCheckpointFrameCounts(records)
         try logs.assertOperationMetadata()
         module.connectionManager.syncOnBleQueue { XCTAssertTrue(module.captureSuspended) }
     }

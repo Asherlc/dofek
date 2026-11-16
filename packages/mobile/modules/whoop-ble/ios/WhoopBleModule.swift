@@ -254,49 +254,27 @@ public class WhoopBleModule: Module {
         }.runOnQueue(self.moduleQueue)
 
         AsyncFunction("disableUploads") {
-            let operationId = UUID().uuidString
-            let startedAt = ProcessInfo.processInfo.systemUptime
-            var stage = "ble_suspend"
-            func recordStage(_ nextStage: String, attributes extraAttributes: [String: String] = [:]) {
-                stage = nextStage
-                var attributes: [String: SentryAttribute] = [:]
-                attributes["operation"] = SentryAttribute(string: "disableUploads")
-                attributes["operationId"] = SentryAttribute(string: operationId)
-                attributes["stage"] = SentryAttribute(string: stage)
-                attributes["isMainThread"] = SentryAttribute(boolean: Thread.isMainThread)
-                attributes["threadId"] = SentryAttribute(integer: Int(pthread_mach_thread_np(pthread_self())))
-                attributes["durationMs"] = SentryAttribute(double: (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000)
-                for (key, value) in extraAttributes {
-                    attributes[key] = SentryAttribute(string: value)
-                }
-                SentrySDK.logger.info("WHOOP cleanup stage", attributes: attributes)
-            }
-
-            recordStage("ble_suspend")
+            var telemetry = WhoopBleCleanupTelemetry()
+            telemetry.record("ble_suspend")
             self.connectionManager.syncOnBleQueue {
                 self.captureSuspended = true
                 self.watchdog.stop()
             }
-            recordStage("disconnect")
+            telemetry.record("disconnect")
             self.connectionManager.disconnect()
             do {
-                recordStage("uploader_bootstrap")
+                telemetry.record("uploader_bootstrap")
                 let uploader = try self.uploader
-                recordStage("uploader_disable")
+                telemetry.record("uploader_disable")
                 let cutoff = UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date
                 try uploader.disable(cutoff: cutoff) { nextStage in
-                    recordStage(nextStage.name, attributes: nextStage.attributes)
+                    telemetry.record(nextStage.name, attributes: nextStage.attributes)
                 }
-                recordStage("completed")
+                telemetry.record("completed")
                 self.cleanupFailure = nil
             } catch {
                 self.cleanupFailure = error.localizedDescription
-                SentrySDK.logger.error("WHOOP cleanup failed", attributes: [
-                    "operation": "disableUploads", "operationId": operationId,
-                    "stage": "failed", "failedStage": stage,
-                    "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
-                    "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
-                ])
+                telemetry.recordFailure()
                 SentrySDK.capture(error: error) { scope in scope.setUser(nil) }
                 throw error
             }

@@ -30,11 +30,16 @@ struct WhoopStoredBatch {
     let sampleCount: Int
 }
 
+enum WhoopCleanupAttribute {
+    case string(String)
+    case integer(Int)
+}
+
 struct WhoopCleanupStage {
     let name: String
-    let attributes: [String: String]
+    let attributes: [String: WhoopCleanupAttribute]
 
-    init(_ name: String, attributes: [String: String] = [:]) {
+    init(_ name: String, attributes: [String: WhoopCleanupAttribute] = [:]) {
         self.name = name
         self.attributes = attributes
     }
