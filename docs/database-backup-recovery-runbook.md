@@ -100,20 +100,25 @@ Retrieve the current credential privately from Infisical's `prod` environment:
 the legacy `admin` account). These are operator credentials, not
 application-service environment inputs.
 
-With the owner's explicit approval and a valid authenticated session, use
-`PUT /api/v1/users/change-password` over HTTPS. The pinned `v3.32.1` API accepts
+With the owner's explicit approval, first use `GET /api/v1/users/me` over HTTPS
+to verify that the authenticated account matches the intended administrator
+from `DATABASUS_ADMIN_EMAIL`; retain its user ID for the subsequent identity
+check ([profile endpoint](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/controllers/user_controller.go#L274-L295)).
+Then use `PUT /api/v1/users/change-password` over HTTPS. This endpoint changes
+the authenticated user's password. The pinned `v3.32.1` API accepts
 the new password as JSON field `newPassword`, with Bearer authentication
 ([controller](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/controllers/user_controller.go#L189-L232),
 [request schema](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/dto/dto.go#L38-L40)).
 Use an HTTP client that reads the password and token from private memory or
 protected files; do not place either value in command arguments, URLs, chat,
-shell history, request traces or logs. Save the approved replacement privately
-in Infisical and verify sign-in plus an authenticated read.
+shell history, request traces or logs. After a successful change, verify sign-in
+with the replacement and confirm the same administrator ID with `/users/me`.
+Only then save the replacement privately in Infisical.
 
 Without an authenticated session, the supported email recovery flow is
 `POST /api/v1/users/send-reset-password-code`, followed by
-`POST /api/v1/users/reset-password` with the emailed code and new password in
-the request body. It requires working mail delivery and a valid account email;
+`POST /api/v1/users/reset-password` with `email`, `code` and `newPassword` in
+the JSON request body. It requires working mail delivery and a valid account email;
 the placeholder `admin` does not satisfy the email validation
 ([pinned routes](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/controllers/user_controller.go#L399-L485),
 [request schemas](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/dto/dto.go#L98-L107)).
