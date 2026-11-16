@@ -1,7 +1,25 @@
-import type { ActivityMetricSource } from "@dofek/providers/activity-metric-source";
+import {
+  type ActivityMetricSource,
+  activityMetricSourcePresentation,
+  activityMetricSourceSchema,
+} from "@dofek/providers/activity-metric-source";
+import { providerSourceLabel } from "@dofek/providers/providers";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ActivityMetricSourcePicker } from "./ActivityMetricSourcePicker";
+
+const whoopBleSourceFor = (deviceId: string) => {
+  const providerId = "whoop_ble";
+  const label = providerSourceLabel(providerId, deviceId);
+  return activityMetricSourceSchema.parse({
+    id: JSON.stringify([providerId, deviceId]),
+    label,
+    presentation: activityMetricSourcePresentation(providerId, deviceId, label),
+  });
+};
+const whoopBleSource = whoopBleSourceFor("A050E4D0-67D0-4F4D-9A43-756F7D343DA1");
+const secondWhoopBleSource = whoopBleSourceFor("B160F5E1-78E1-50A5-AB54-86708E454EB2");
+const whoopBleSources = [whoopBleSource, secondWhoopBleSource];
 
 const sources: ActivityMetricSource[] = [
   {
@@ -24,16 +42,7 @@ const sources: ActivityMetricSource[] = [
       attribution: { kind: "cloud", label: "via WHOOP Cloud" },
     },
   },
-  {
-    id: "opaque-bluetooth",
-    label: "WHOOP (via Bluetooth)",
-    presentation: {
-      displayName: "WHOOP",
-      providerId: "whoop",
-      sourceName: null,
-      attribution: { kind: "bluetooth", label: "via Bluetooth" },
-    },
-  },
+  ...whoopBleSources,
 ];
 
 describe("ActivityMetricSourcePicker", () => {
@@ -192,8 +201,9 @@ describe("ActivityMetricSourcePicker", () => {
 
   it.each([
     ["opaque-cloud", "cloud-outline", "WHOOP (via WHOOP Cloud)"],
-    ["opaque-bluetooth", "bluetooth-outline", "WHOOP (via Bluetooth)"],
+    [whoopBleSource.id, "bluetooth-outline", whoopBleSource.label],
   ])("uses the structured attribution icon for %s", (selectedId, icon, fullLabel) => {
+    const selectedWhoopBleSource = whoopBleSources.find((source) => source.id === selectedId);
     render(
       <ActivityMetricSourcePicker
         label="Heart Rate"
@@ -206,11 +216,15 @@ describe("ActivityMetricSourcePicker", () => {
     const trigger = screen.getByRole("button", { name: `Heart Rate source: ${fullLabel}` });
     expect(trigger.querySelector(`[data-icon="${icon}"]`)).toBeTruthy();
     expect(trigger.querySelector('[data-icon="chevron-down"]')).toBeTruthy();
-    expect(trigger.textContent).toBe("Heart Rate · ");
+    expect(trigger.textContent).toBe(
+      selectedWhoopBleSource
+        ? `Heart Rate · ${selectedWhoopBleSource.presentation.displayName}`
+        : "Heart Rate · ",
+    );
     fireEvent.click(trigger);
     const option = screen.getByRole("radio", { name: fullLabel });
     expect(option.querySelector(`[data-icon="${icon}"]`)).toBeTruthy();
-    expect(option.textContent).toBe("");
+    expect(option.textContent).toBe(selectedWhoopBleSource?.presentation.displayName ?? "");
   });
 
   it("distinguishes duplicate names and switches by source ID", () => {
@@ -227,29 +241,63 @@ describe("ActivityMetricSourcePicker", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Heart Rate source: WHOOP (via WHOOP Cloud)" }),
     );
+    expect(screen.queryByRole("radio", { name: "Auto" })).toBeNull();
     expect(
       screen.getByRole("radio", { name: "WHOOP (via WHOOP Cloud)", checked: true }),
     ).toBeTruthy();
     const bluetoothChoice = screen.getByRole("radio", {
-      name: "WHOOP (via Bluetooth)",
+      name: whoopBleSource.label,
       checked: false,
     });
     expect(bluetoothChoice.style.minHeight).toBe("44px");
+    const secondBluetoothChoice = screen.getByRole("radio", {
+      name: secondWhoopBleSource.label,
+      checked: false,
+    });
+    expect(secondBluetoothChoice.textContent).toBe(secondWhoopBleSource.presentation.displayName);
     fireEvent.click(bluetoothChoice);
-    expect(onChange).toHaveBeenCalledExactlyOnceWith("opaque-bluetooth");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(whoopBleSource.id);
     expect(screen.queryByRole("radio")).toBeNull();
     rerender(
       <ActivityMetricSourcePicker
         label="Heart Rate"
         sources={sources}
-        selectedId="opaque-bluetooth"
+        selectedId={whoopBleSource.id}
         serverUrl=""
         onChange={onChange}
       />,
     );
     expect(
-      screen.getByRole("button", { name: "Heart Rate source: WHOOP (via Bluetooth)" }).textContent,
-    ).toBe("Heart Rate · ");
+      screen.getByRole("button", { name: `Heart Rate source: ${whoopBleSource.label}` })
+        .textContent,
+    ).toBe(`Heart Rate · ${whoopBleSource.presentation.displayName}`);
+
+    const selectedBluetoothTrigger = screen.getByRole("button", {
+      name: `Heart Rate source: ${whoopBleSource.label}`,
+    });
+    fireEvent.click(selectedBluetoothTrigger);
+    const secondBluetoothOption = screen.getByRole("radio", {
+      name: secondWhoopBleSource.label,
+      checked: false,
+    });
+    expect(secondBluetoothOption.textContent).toBe(secondWhoopBleSource.presentation.displayName);
+    fireEvent.click(secondBluetoothOption);
+    expect(onChange).toHaveBeenLastCalledWith(secondWhoopBleSource.id);
+    rerender(
+      <ActivityMetricSourcePicker
+        label="Heart Rate"
+        sources={sources}
+        selectedId={secondWhoopBleSource.id}
+        serverUrl=""
+        onChange={onChange}
+      />,
+    );
+    const secondBluetoothTrigger = screen.getByRole("button", {
+      name: `Heart Rate source: ${secondWhoopBleSource.label}`,
+    });
+    expect(secondBluetoothTrigger.textContent).toContain(
+      secondWhoopBleSource.presentation.displayName,
+    );
   });
 
   it("dismisses the chooser without changing the selected source", () => {

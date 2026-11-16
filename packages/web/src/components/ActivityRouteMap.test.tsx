@@ -93,8 +93,14 @@ describe("ActivityRouteMap", () => {
     await waitFor(() => expect(maps).toHaveLength(1));
     expect(maps[0]?.options.style).toMatchObject({
       version: 8,
-      sources: { openmaptiles: expect.anything() },
+      sources: {
+        openmaptiles: {
+          type: "vector",
+          attribution: expect.stringContaining("OpenStreetMap"),
+        },
+      },
     });
+    expect(maps[0]?.options).toMatchObject({ attributionControl: {} });
     act(() => maps[0]?.fire("load"));
     expect(screen.queryByRole("status")).toBeNull();
   });

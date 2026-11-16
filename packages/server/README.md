@@ -727,7 +727,12 @@ versions its response cache when this contract changes; the
 invalidates cached responses from the older contract.
 
 Activity views offer independent source controls for heart rate, power, speed,
-cadence, and elevation. Heart rate prefers sources explicitly linked to a member
+cadence, elevation, and skin temperature. Skin temperature comes from the
+already-decoded `analytics.daily_health_sensor FINAL` samples, uses strap
+measurement time and provider/device identity, and remains separate from generic
+ambient temperature. Its selected source uses the same owned activity window
+and stream, with its measurement timestamp retained independently from other
+channels. Heart rate prefers sources explicitly linked to a member
 activity or matching its reported recording device. Within that tier, or when
 no direct recording is evidenced, it prefers the most distinct valid sample
 timestamps in the activity window, using provider priority to break ties.
@@ -742,10 +747,12 @@ zones follow their respective selected sources.
 `activity.metricSources` lists available sources in the owned activity window,
 including standalone recordings and canonical member activities. `activity.stream`
 accepts a `sources` map; zone endpoints accept their metric's source ID.
+Temperature samples are filtered by decoded `measured_at`, not by their
+reception day. Cloud daily summaries do not become activity stream points.
 For climbing detail charts, `activity.heartRateContext` returns a separate window
 with five minutes before the recorded activity start and after its recorded end,
 plus downsampled observations from the selected HR source. The
-[context repository](src/repositories/activity-metric-sources-repository.ts)
+[context repository](src/repositories/activity-heart-rate-context.ts)
 reuses the same user/member isolation and source selection. This display window
 does not change the activity, its summaries, or its zone calculations.
 The [source repository](src/repositories/activity-metric-sources-repository.ts) retains zero power, speed, and cadence samples

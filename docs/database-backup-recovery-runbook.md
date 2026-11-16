@@ -91,6 +91,53 @@ or increase the 24-hour threshold.
 Never inspect or print a Swarm service's environment. Use the authorized
 Infisical workflow to verify credential presence.
 
+## Recover Databasus Administrator Access
+
+Databasus manages its users in its own persistent database; the service's
+presence in infrastructure code does not provision its administrator password.
+Retrieve the current credential privately from Infisical's `prod` environment:
+`DATABASUS_ADMIN_PASSWORD` and account name `DATABASUS_ADMIN_EMAIL` (currently
+the legacy `admin` account). These are operator credentials, not
+application-service environment inputs.
+
+With the owner's explicit approval, first use `GET /api/v1/users/me` over HTTPS
+to verify that the authenticated account matches the intended administrator
+from `DATABASUS_ADMIN_EMAIL`; retain its user ID for the subsequent identity
+check ([profile endpoint](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/controllers/user_controller.go#L274-L295)).
+Then use `PUT /api/v1/users/change-password` over HTTPS. This endpoint changes
+the authenticated user's password. The pinned `v3.32.1` API accepts
+the new password as JSON field `newPassword`, with Bearer authentication
+([controller](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/controllers/user_controller.go#L189-L232),
+[request schema](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/dto/dto.go#L38-L40)).
+Use an HTTP client that reads the password and token from private memory or
+protected files; do not place either value in command arguments, URLs, chat,
+shell history, request traces or logs. After a successful change, verify sign-in
+with the replacement and confirm the same administrator ID with `/users/me`.
+Only then save the replacement privately in Infisical.
+
+Without an authenticated session, the supported email recovery flow is
+`POST /api/v1/users/send-reset-password-code`, followed by
+`POST /api/v1/users/reset-password` with `email`, `code` and `newPassword` in
+the JSON request body. It requires working mail delivery and a valid account email;
+the placeholder `admin` does not satisfy the email validation
+([pinned routes](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/controllers/user_controller.go#L399-L485),
+[request schemas](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/dto/dto.go#L98-L107)).
+Do not assume this flow is configured on the production instance.
+
+The legacy CLI is not a private-input alternative: its
+[`--new-password` flag is the only password input](https://github.com/databasus/databasus/blob/v3.32.1/backend/cmd/main.go#L135-L169),
+with no supported stdin, environment-variable or password-file mode. Passing
+the flag through `docker exec` places the password in Docker's exec event
+arguments ([Docker implementation](https://github.com/moby/moby/blob/06db1734267bf7770914b417bff6556d835bf8cc/daemon/exec.go#L151-L154)).
+Starting an interactive shell first does not remove it from the reset process's
+arguments. If neither supported HTTP path is available, stop for an explicit
+owner decision; do not promise that the CLI keeps the password out of process
+arguments or event records, and do not invent an unsupported input option.
+
+The supported password update changes the hash and time at which it was set,
+without replacing backup keys, schedules or stored backups
+([pinned implementation](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/repositories/user_repository.go#L55-L61)).
+
 ## Prove the Backup Can Restore
 
 Never test a restore against production.
