@@ -22,7 +22,10 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ActivityHeartRateContext } from "../../../../../server/src/contracts/activity-metric-sources.ts";
+import type {
+  ActivityHeartRateContext,
+  ActivityMetric,
+} from "../../../../../server/src/contracts/activity-metric-sources.ts";
 import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
 import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
 import { DofekChart } from "../../../components/DofekChart.tsx";
@@ -105,6 +108,7 @@ function chartSeriesData(series: ActivityChartSeries, precision = 0) {
 }
 
 interface MetricDefinition {
+  key: ActivityMetric;
   name: string;
   axisName: string;
   color: string;
@@ -126,6 +130,7 @@ export function MetricsChart({
   onHoverPosition,
   renderLegend,
   metricSources = [],
+  sourceAttribution = {},
   error,
   climbAnnotations = [],
   highlightedClimbId,
@@ -155,6 +160,7 @@ export function MetricsChart({
     selectedId: string;
     onChange: (sourceId: string) => void;
   }>;
+  sourceAttribution?: Partial<Record<ActivityMetric, string>>;
   renderLegend?: (controls: {
     isVisible: (name: string) => boolean;
     toggle: (name: string) => void;
@@ -235,6 +241,7 @@ export function MetricsChart({
   const metrics: MetricDefinition[] = [];
   if (hasHr || metricSources.some((source) => source.key === "heartRate"))
     metrics.push({
+      key: "heartRate",
       name: "Heart Rate",
       axisName: "Heart Rate (bpm)",
       color: CHART_COLORS.heartRate,
@@ -242,6 +249,7 @@ export function MetricsChart({
     });
   if (hasPower || metricSources.some((source) => source.key === "power"))
     metrics.push({
+      key: "power",
       name: "Power",
       axisName: "Power (W)",
       color: CHART_COLORS.power,
@@ -249,6 +257,7 @@ export function MetricsChart({
     });
   if (hasSpeed || metricSources.some((source) => source.key === "speed"))
     metrics.push({
+      key: "speed",
       name: "Speed",
       axisName: `Speed (${units.speedLabel})`,
       color: CHART_COLORS.speed,
@@ -259,6 +268,7 @@ export function MetricsChart({
     });
   if (hasCadence || metricSources.some((source) => source.key === "cadence"))
     metrics.push({
+      key: "cadence",
       name: "Cadence",
       axisName: cadenceAxisLabel(activityType),
       color: CHART_COLORS.cadence,
@@ -266,6 +276,7 @@ export function MetricsChart({
     });
   if (metricSources.some((source) => source.key === "skinTemperature"))
     metrics.push({
+      key: "skinTemperature",
       name: "Skin Temperature",
       axisName: `Skin Temperature (${units.temperatureLabel})`,
       color: CHART_COLORS.skinTemperature,
@@ -325,6 +336,14 @@ export function MetricsChart({
                       className="max-w-60 rounded-r-md border-l border-border px-2"
                     />
                   ))}
+                {sourceAttribution[metric.key] &&
+                  (metric.samples.some((sample) => sample.value != null) ||
+                    (metric.key === "heartRate" &&
+                      heartRateContext?.points.some((sample) => sample.value != null))) && (
+                    <span role="status" className="px-2 text-xs text-muted">
+                      {sourceAttribution[metric.key]}
+                    </span>
+                  )}
               </div>
             ))}
           </fieldset>

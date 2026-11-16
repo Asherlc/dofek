@@ -292,6 +292,48 @@ it("plots skin temperature at its own recorded times in the selected units", () 
   expect(heartRateSeries?.tooltip?.valueFormatter?.(140)).toBe("140");
 });
 
+it("associates pending chart readings with the completed source beside the requested picker", () => {
+  render(
+    <MetricsChart
+      {...args}
+      metricSources={[
+        {
+          key: "power",
+          label: "Power",
+          sources: [
+            {
+              id: "wahoo",
+              label: "Wahoo",
+              presentation: {
+                displayName: "Wahoo",
+                providerId: "wahoo",
+                sourceName: null,
+                attribution: null,
+              },
+            },
+            {
+              id: "garmin",
+              label: "Garmin",
+              presentation: {
+                displayName: "Garmin",
+                providerId: "garmin",
+                sourceName: null,
+                attribution: null,
+              },
+            },
+          ],
+          selectedId: "garmin",
+          onChange: vi.fn(),
+        },
+      ]}
+      sourceAttribution={{ power: "Showing previous readings from Wahoo" }}
+    />,
+  );
+
+  expect(screen.getByRole("status")).toHaveTextContent("Showing previous readings from Wahoo");
+  expect(screen.getByRole("button", { name: "Power source: Garmin" })).toBeInTheDocument();
+});
+
 it("keeps one decimal place for Celsius temperature labels and tooltips", () => {
   render(
     <MetricsChart

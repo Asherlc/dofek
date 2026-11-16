@@ -16,7 +16,7 @@ import type { Meta, StoryObj } from "@storybook/react-native";
 import { useState } from "react";
 import { ActivityIndicator, Modal, Platform, Pressable, Text, View } from "react-native";
 import { colors } from "../../theme";
-import { AreaChart, CHART_COLORS, LineChart } from "./ActivityDetailCharts";
+import { ActivityMetricsCharts, AreaChart, CHART_COLORS, LineChart } from "./ActivityDetailCharts";
 import { ActivityMetricSourcePicker } from "./ActivityMetricSourcePicker";
 
 const meta = {
@@ -96,6 +96,45 @@ export const SparseSkinTemperatureReadings: Story = {
       recordedAt: new Date(Date.UTC(2026, 9, 20, 16, index * 10)).toISOString(),
       value,
     })),
+  },
+};
+export const PendingSourceSelection: Story = {
+  render: () => {
+    const powerMetric = activityMetricSourcePreview.find((metric) => metric.key === "power");
+    if (!powerMetric) throw new Error("Power preview metric is required");
+    return (
+      <ActivityMetricsCharts
+        points={activityPreviewPoints(defaultActivityMetricSources)}
+        sourceControls={[
+          {
+            key: "power",
+            label: "Power",
+            sources: powerMetric.sources,
+            selectedId: "garmin",
+            onChange: () => {},
+          },
+        ]}
+        sourceAttribution={{ power: "Showing previous readings from Wahoo" }}
+        serverUrl={logoServer}
+        activityWindow={{
+          startedAt: "2026-10-18T17:30:00.000Z",
+          endedAt: "2026-10-18T19:30:00.000Z",
+        }}
+        cadenceLabel="rpm"
+        isClimbingActivity={false}
+        highlightedClimbId={null}
+        onSelectClimb={() => {}}
+        hasHr={false}
+        hasPower
+        hasAltitude={false}
+        units={new UnitConverter("metric")}
+        hasGps={false}
+        onHoverIndex={() => {}}
+        onHoverTime={() => {}}
+        onScrubStart={() => {}}
+        onScrubEnd={() => {}}
+      />
+    );
   },
 };
 export const MissingSamples: Story = {

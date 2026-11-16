@@ -140,6 +140,29 @@ export const SparseSkinTemperatureReadings: Story = {
   name: "Sparse skin temperature readings",
 };
 
+export const PendingSourceSelection: Story = {
+  args: {
+    points: activityPreviewPoints(defaultActivityMetricSources),
+    activityType: "cycling",
+    hasHr: false,
+    hasPower: true,
+    hasSpeed: false,
+    hasCadence: false,
+    metricSources: [
+      {
+        key: "power",
+        label: "Power",
+        sources: activityMetricSourcePreview
+          .filter((metric) => metric.key === "power")
+          .flatMap((metric) => metric.sources),
+        selectedId: "garmin",
+        onChange: () => {},
+      },
+    ],
+    sourceAttribution: { power: "Showing previous readings from Wahoo" },
+  },
+};
+
 function MetricControl({
   metric,
   sourceId,

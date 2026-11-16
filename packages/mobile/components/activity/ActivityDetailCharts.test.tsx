@@ -1,8 +1,10 @@
 import { formatDateTime } from "@dofek/format/format";
+import { UnitConverter } from "@dofek/format/units";
+import { activityMetricSourcePreview } from "@dofek/training/fixtures/activity-metric-sources";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { AreaChart, LineChart } from "./ActivityDetailCharts";
+import { ActivityMetricsCharts, AreaChart, LineChart } from "./ActivityDetailCharts";
 
 const scrub = vi.hoisted(() => {
   const callbacks: { onHoverTime?: (timestamp: number | null) => void } = {};
@@ -32,6 +34,125 @@ function expectVisibleDots(container: HTMLElement, count: number) {
 }
 
 describe("ActivityDetailCharts", () => {
+  it("uses the in-window skin temperature measurement time in the accessible reading", () => {
+    const rowRecordedAt = "2026-04-14T10:30:05.000Z";
+    const skinTemperatureRecordedAt = "2026-04-14T10:37:41.000Z";
+    const skinTemperature = activityMetricSourcePreview.find(
+      (metric) => metric.key === "skinTemperature",
+    );
+    expect(skinTemperature).toBeDefined();
+    const selectedSource = skinTemperature?.sources[0];
+    expect(selectedSource).toBeDefined();
+    render(
+      <ActivityMetricsCharts
+        points={[
+          {
+            recordedAt: rowRecordedAt,
+            heartRate: null,
+            power: null,
+            speed: null,
+            cadence: null,
+            altitude: null,
+            skinTemperature: 32.18,
+            skinTemperatureRecordedAt,
+            lat: null,
+            lng: null,
+          },
+        ]}
+        sourceControls={[
+          {
+            key: "skinTemperature",
+            label: "Skin Temperature",
+            sources: skinTemperature?.sources ?? [],
+            selectedId: selectedSource?.id ?? "unknown",
+            onChange: vi.fn(),
+          },
+        ]}
+        serverUrl=""
+        activityWindow={{
+          startedAt: "2026-04-14T10:00:00.000Z",
+          endedAt: "2026-04-14T11:00:00.000Z",
+        }}
+        cadenceLabel="rpm"
+        isClimbingActivity={false}
+        highlightedClimbId={null}
+        onSelectClimb={vi.fn()}
+        hasHr={false}
+        hasPower={false}
+        hasAltitude={false}
+        units={new UnitConverter("metric")}
+        hasGps={false}
+        onHoverIndex={vi.fn()}
+        onHoverTime={vi.fn()}
+        onScrubStart={vi.fn()}
+        onScrubEnd={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "View Skin Temperature data" }));
+    expect(
+      screen.getByLabelText(
+        `Sample 1 · ${formatDateTime(new Date(skinTemperatureRecordedAt))}: 32.2 °C`,
+      ),
+    ).toBeDefined();
+    expect(
+      screen.queryByLabelText(`Sample 1 · ${formatDateTime(new Date(rowRecordedAt))}: 32.2 °C`),
+    ).toBeNull();
+  });
+
+  it("shows the completed source beside a pending chart source selection", () => {
+    const powerMetric = activityMetricSourcePreview.find((metric) => metric.key === "power");
+    expect(powerMetric).toBeDefined();
+    render(
+      <ActivityMetricsCharts
+        points={[
+          {
+            recordedAt: "2026-04-14T10:30:00.000Z",
+            heartRate: null,
+            power: 180,
+            speed: null,
+            cadence: null,
+            altitude: null,
+            skinTemperature: null,
+            skinTemperatureRecordedAt: null,
+            lat: null,
+            lng: null,
+          },
+        ]}
+        sourceControls={[
+          {
+            key: "power",
+            label: "Power",
+            sources: powerMetric?.sources ?? [],
+            selectedId: "garmin",
+            onChange: vi.fn(),
+          },
+        ]}
+        sourceAttribution={{ power: "Showing previous readings from Wahoo" }}
+        serverUrl=""
+        activityWindow={{
+          startedAt: "2026-04-14T10:00:00.000Z",
+          endedAt: "2026-04-14T11:00:00.000Z",
+        }}
+        cadenceLabel="rpm"
+        isClimbingActivity={false}
+        highlightedClimbId={null}
+        onSelectClimb={vi.fn()}
+        hasHr={false}
+        hasPower
+        hasAltitude={false}
+        units={new UnitConverter("metric")}
+        hasGps={false}
+        onHoverIndex={vi.fn()}
+        onHoverTime={vi.fn()}
+        onScrubStart={vi.fn()}
+        onScrubEnd={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Showing previous readings from Wahoo")).toBeDefined();
+  });
+
   it("retains climbs at activity boundaries outside the HR sample range", () => {
     const { container } = render(
       <LineChart

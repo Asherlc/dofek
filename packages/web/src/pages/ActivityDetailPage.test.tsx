@@ -1764,12 +1764,24 @@ describe("ActivityDetailPage", () => {
     const previousStream = [{ recordedAt: "2026-03-18T07:00:00Z" }];
     const previousZones = [{ zone: 1, seconds: 120 }];
 
-    expect(getPlaceholderData(mockStreamUseQuery.mock.calls[0]?.[1])?.(previousStream)).toBe(
-      previousStream,
-    );
-    expect(getPlaceholderData(mockHrZonesUseQuery.mock.calls[0]?.[1])?.(previousZones)).toBe(
-      previousZones,
-    );
+    const previousStreamQuery = {
+      queryKey: [["activity", "stream"], { input: { id: "test-123" } }],
+    };
+    const previousHrZonesQuery = {
+      queryKey: [["activity", "hrZones"], { input: { id: "test-123" } }],
+    };
+    expect(
+      getPlaceholderData(mockStreamUseQuery.mock.calls[0]?.[1])?.(
+        previousStream,
+        previousStreamQuery,
+      ),
+    ).toBe(previousStream);
+    expect(
+      getPlaceholderData(mockHrZonesUseQuery.mock.calls[0]?.[1])?.(
+        previousZones,
+        previousHrZonesQuery,
+      ),
+    ).toBe(previousZones);
   });
 
   it.each([true, false])(

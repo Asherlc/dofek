@@ -1693,12 +1693,21 @@ describe("ActivityDetailScreen", () => {
     const previousStream = [{ recordedAt: "2026-04-14T10:00:00.000Z" }];
     const previousZones = [{ zone: 1, seconds: 120 }];
 
-    expect(getPlaceholderData(mockStreamQuery.mock.calls[0]?.[1])?.(previousStream)).toBe(
-      previousStream,
-    );
-    expect(getPlaceholderData(mockHrZonesQuery.mock.calls[0]?.[1])?.(previousZones)).toBe(
-      previousZones,
-    );
+    const previousStreamQuery = {
+      queryKey: [["activity", "stream"], { input: { id: baseCyclingActivity.id } }],
+    };
+    const previousHrZonesQuery = {
+      queryKey: [["activity", "hrZones"], { input: { id: baseCyclingActivity.id } }],
+    };
+    expect(
+      getPlaceholderData(mockStreamQuery.mock.calls[0]?.[1])?.(previousStream, previousStreamQuery),
+    ).toBe(previousStream);
+    expect(
+      getPlaceholderData(mockHrZonesQuery.mock.calls[0]?.[1])?.(
+        previousZones,
+        previousHrZonesQuery,
+      ),
+    ).toBe(previousZones);
   });
 
   it("renders without crashing when stream has heart rate and power data", async () => {

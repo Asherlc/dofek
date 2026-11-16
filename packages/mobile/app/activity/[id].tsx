@@ -9,7 +9,6 @@ import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
-import { activityQueryPlaceholder } from "@dofek/training/activity-query-placeholder";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
@@ -26,10 +25,6 @@ import {
   Text,
   View,
 } from "react-native";
-import type {
-  ActivityMetricSourceSelection,
-  ActivityMetric as SourceMetric,
-} from "../../../server/src/contracts/activity-metric-sources.ts";
 import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ActivityClimbingPanel } from "../../components/ActivityClimbingPanel";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
@@ -38,6 +33,7 @@ import { ActivityDetailHeader } from "../../components/activity/ActivityDetailHe
 import { RecomputeActivityButton } from "../../components/activity/RecomputeActivityButton";
 import { statsStyles, styles } from "../../components/activity/styles";
 import { useActivityMapHover } from "../../components/activity/useActivityMapHover";
+import { useActivityMetrics } from "../../components/activity/useActivityMetrics";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
 import { CyclingThresholdDetails } from "../../components/CyclingThresholdDetails";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
@@ -58,7 +54,9 @@ const EMPTY_ROUTE_POINTS: ComponentProps<typeof RouteMap>["points"] = [];
 
 // ── Stats Grid ──
 
-type StatItem = ActivityMetric | { label: string; value: string; qualifier?: string };
+type StatItem =
+  | ActivityMetric
+  | { label: string; value: string; qualifier?: string; attribution?: string };
 
 function StatsGrid({ stats }: { stats: StatItem[] }) {
   return (
@@ -103,6 +101,14 @@ function StatsGrid({ stats }: { stats: StatItem[] }) {
             {"qualifier" in stat && stat.qualifier && (
               <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
                 {stat.qualifier}
+              </Text>
+            )}
+            {"attribution" in stat && stat.attribution && (
+              <Text
+                accessibilityLiveRegion="polite"
+                style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}
+              >
+                {stat.attribution}
               </Text>
             )}
           </View>
@@ -336,38 +342,22 @@ export default function ActivityDetailScreen() {
     { id: id ?? "" },
     { ...ACTIVITY_IMAGES_QUERY_OPTIONS, enabled: !!id },
   );
-  const metricSources = trpc.activity.metricSources.useQuery(
-    { id: id ?? "", responseVersion: 2 },
-    { enabled: !!id },
-  );
   const hardware = trpc.activity.hardware.useQuery({ id: id ?? "" }, { enabled: !!id });
-  const [sourceSelection, setSourceSelection] = useState<{
-    activityId: string;
-    sources: ActivityMetricSourceSelection;
-  } | null>(null);
-  const sources: ActivityMetricSourceSelection = {};
-  for (const metric of metricSources.data ?? []) {
-    const selected =
-      sourceSelection?.activityId === id ? sourceSelection.sources[metric.key] : undefined;
-    sources[metric.key] = metric.sources.some((source) => source.id === selected)
-      ? selected
-      : metric.defaultSourceId;
-  }
-  const selectSource = (metric: SourceMetric, sourceId: string) =>
-    setSourceSelection((previous) => ({
-      activityId: id ?? "",
-      sources: { ...(previous?.activityId === id ? previous.sources : {}), [metric]: sourceId },
-    }));
-  const sourceControls = (metricSources.data ?? []).map((metric) => ({
-    ...metric,
-    selectedId: sources[metric.key] ?? metric.defaultSourceId,
-    onChange: (sourceId: string) => selectSource(metric.key, sourceId),
-  }));
-  const heartRateSourceInput = sources.heartRate ? { heartRateSourceId: sources.heartRate } : {};
-  const stream = trpc.activity.stream.useQuery(
-    { id: id ?? "", maxPoints: 200, sources },
-    { enabled: !!id, placeholderData: (previousData) => previousData },
-  );
+  const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
+  const isClimbingActivity =
+    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
+  const metrics = useActivityMetrics(id, { isCycling, isClimbing: isClimbingActivity });
+  const {
+    metricSources,
+    sourceControls,
+    stream,
+    hrZones,
+    points,
+    hasPower,
+    powerWork,
+    powerZones,
+    heartRateContext,
+  } = metrics;
   const route = trpc.activity.route.useQuery(
     { id: id ?? "", maxPoints: 200 },
     {
@@ -376,38 +366,11 @@ export default function ActivityDetailScreen() {
         query.state.data?.status === "processing" ? processingPollInterval("active") : false,
     },
   );
-  const hrZones = trpc.activity.hrZones.useQuery(
-    { id: id ?? "", ...heartRateSourceInput },
-    { enabled: !!id, placeholderData: (previousData) => previousData },
-  );
-  const points = stream.data ?? [];
-  const hasPower = points.some((p) => p.power != null);
-  const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
-  const powerWork = trpc.activity.powerWork.useQuery(
-    { id: id ?? "", powerSourceId: sources.power },
-    {
-      enabled: !!id && isCycling,
-      placeholderData: activityQueryPlaceholder(id),
-    },
-  );
-  const powerZones = trpc.activity.powerZones.useQuery(
-    { id: id ?? "", powerSourceId: sources.power },
-    {
-      enabled: !!id && isCycling && hasPower,
-      placeholderData: activityQueryPlaceholder(id),
-    },
-  );
   const isStrengthActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "strength");
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id: id ?? "" },
     { enabled: !!id && isStrengthActivity },
-  );
-  const isClimbingActivity =
-    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
-  const heartRateContext = trpc.activity.heartRateContext.useQuery(
-    { id: id ?? "", maxPoints: 200, ...heartRateSourceInput },
-    { enabled: !!id && isClimbingActivity, placeholderData: activityQueryPlaceholder(id) },
   );
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
     { activityId: id ?? "", responseVersion: 5 },
@@ -647,6 +610,7 @@ export default function ActivityDetailScreen() {
       label: "Energy Output",
       value: `${formatNumber(powerWork.data.workKilojoules, 0)} kJ`,
       qualifier: powerWork.data.coverage.coveragePct < 99 ? "Partial power data" : undefined,
+      attribution: metrics.attributionHints.powerWork,
     });
   }
   stats.push(
@@ -818,6 +782,13 @@ export default function ActivityDetailScreen() {
       <ActivityMetricsCharts
         points={points}
         sourceControls={sourceControls}
+        sourceAttribution={{
+          ...metrics.attributionHints.stream,
+          heartRate:
+            isClimbingActivity && heartRateContext.data !== undefined
+              ? metrics.attributionHints.heartRateContext
+              : metrics.attributionHints.stream.heartRate,
+        }}
         serverUrl={serverUrl}
         activityWindow={activity}
         cadenceLabel={cadenceUnit(activity.activityType)}
@@ -838,24 +809,47 @@ export default function ActivityDetailScreen() {
       />
 
       {(hasHr || zones.length > 0) && (
-        <HrZonesChart
-          zones={zones}
-          loading={hrZones.isLoading}
-          errorMessage={
-            hrZones.error
-              ? userFacingErrorMessage(
-                  hrZones.error,
-                  "Heart rate zones could not be loaded. Please try again.",
-                )
-              : undefined
-          }
-        />
+        <View>
+          {zones.length > 0 && metrics.attributionHints.hrZones && (
+            <Text
+              accessibilityLiveRegion="polite"
+              style={{ color: colors.textSecondary, fontSize: 12 }}
+            >
+              {metrics.attributionHints.hrZones}
+            </Text>
+          )}
+          <HrZonesChart
+            zones={zones}
+            loading={hrZones.isLoading}
+            errorMessage={
+              hrZones.error
+                ? userFacingErrorMessage(
+                    hrZones.error,
+                    "Heart rate zones could not be loaded. Please try again.",
+                  )
+                : undefined
+            }
+          />
+        </View>
       )}
 
       {/* Power Zones (cycling only, requires eFTP) */}
       {powerZones.error && <QueryStatePanel variant="error" message={powerZones.error.message} />}
       {isCycling && hasPower && powerZones.data != null && (
         <View style={{ gap: 8 }}>
+          {powerZones.data.ftp != null &&
+            powerZones.data.zones.length > 0 &&
+            metrics.attributionHints.powerZones && (
+              <Text
+                accessibilityLiveRegion="polite"
+                style={{ color: colors.textSecondary, fontSize: 12 }}
+              >
+                {metrics.attributionHints.powerZones.replace(
+                  "previous readings",
+                  "previous power zone readings",
+                )}
+              </Text>
+            )}
           <CyclingThresholdDetails evidence={powerZones.data.thresholdEvidence} />
           {powerZones.data.ftp != null && <PowerZonesChart zones={powerZones.data.zones} />}
         </View>

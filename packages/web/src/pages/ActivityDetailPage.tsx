@@ -16,7 +16,6 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerLabel } from "@dofek/providers/providers";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
-import { activityQueryPlaceholder } from "@dofek/training/activity-query-placeholder";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import {
@@ -35,11 +34,7 @@ import {
 } from "@dofek/training/training";
 import { Link, useParams } from "@tanstack/react-router";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  ActivityMetricSourceSelection,
-  ActivityPowerWork,
-  ActivityMetric as SourceMetric,
-} from "../../../server/src/contracts/activity-metric-sources.ts";
+import type { ActivityPowerWork } from "../../../server/src/contracts/activity-metric-sources.ts";
 import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
@@ -66,6 +61,7 @@ import {
 import { DeleteActivityButton } from "./activity-detail/components/DeleteActivityButton.tsx";
 import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
 import { UnattachedClimbingLogEntries } from "./activity-detail/components/UnattachedClimbingLogEntries.tsx";
+import { useActivityMetrics } from "./activity-detail/useActivityMetrics.ts";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
 import { RecordDetailModal } from "./RecordDetailModal.tsx";
 
@@ -78,34 +74,22 @@ export function ActivityDetailPage() {
   const detail = trpc.activity.byId.useQuery({ id });
   const hardware = trpc.activity.hardware.useQuery({ id });
   const images = trpc.activity.images.useQuery({ id }, ACTIVITY_IMAGES_QUERY_OPTIONS);
-  const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "", responseVersion: 2 });
-  const [sourceSelection, setSourceSelection] = useState<{
-    activityId: string;
-    sources: ActivityMetricSourceSelection;
-  } | null>(null);
-  const sources: ActivityMetricSourceSelection = {};
-  for (const metric of metricSources.data ?? []) {
-    const selected =
-      sourceSelection?.activityId === id ? sourceSelection.sources[metric.key] : undefined;
-    sources[metric.key] = metric.sources.some((source) => source.id === selected)
-      ? selected
-      : metric.defaultSourceId;
-  }
-  const selectSource = (metric: SourceMetric, sourceId: string) =>
-    setSourceSelection((previous) => ({
-      activityId: id ?? "",
-      sources: { ...(previous?.activityId === id ? previous.sources : {}), [metric]: sourceId },
-    }));
-  const sourceControls = (metricSources.data ?? []).map((metric) => ({
-    ...metric,
-    selectedId: sources[metric.key] ?? metric.defaultSourceId,
-    onChange: (sourceId: string) => selectSource(metric.key, sourceId),
-  }));
-  const heartRateSourceInput = sources.heartRate ? { heartRateSourceId: sources.heartRate } : {};
-  const stream = trpc.activity.stream.useQuery(
-    { id, maxPoints: 500, sources },
-    { placeholderData: (previousData) => previousData },
-  );
+  const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
+  const isClimbingActivity =
+    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
+  const metrics = useActivityMetrics(id, { isCycling, isClimbing: isClimbingActivity });
+  const {
+    metricSources,
+    sources,
+    sourceControls,
+    stream,
+    hrZones,
+    points,
+    hasPower,
+    powerWork,
+    powerZones,
+    heartRateContext,
+  } = metrics;
   const route = trpc.activity.route.useQuery(
     { id, maxPoints: 500 },
     {
@@ -113,35 +97,11 @@ export function ActivityDetailPage() {
         query.state.data?.status === "processing" ? processingPollInterval("active") : false,
     },
   );
-  const hrZones = trpc.activity.hrZones.useQuery(
-    { id, ...heartRateSourceInput },
-    { placeholderData: (previousData) => previousData },
-  );
-  const points = stream.data ?? [];
-  const hasPower = points.some((p) => p.power != null);
-  const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
-  const powerWork = trpc.activity.powerWork.useQuery(
-    { id, powerSourceId: sources.power },
-    {
-      enabled: isCycling,
-      placeholderData: activityQueryPlaceholder(id),
-    },
-  );
-  const powerZones = trpc.activity.powerZones.useQuery(
-    { id, powerSourceId: sources.power },
-    { enabled: isCycling && hasPower, placeholderData: activityQueryPlaceholder(id) },
-  );
   const isStrengthActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "strength");
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id },
     { enabled: isStrengthActivity },
-  );
-  const isClimbingActivity =
-    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
-  const heartRateContext = trpc.activity.heartRateContext.useQuery(
-    { id, maxPoints: 500, ...heartRateSourceInput },
-    { enabled: isClimbingActivity, placeholderData: activityQueryPlaceholder(id) },
   );
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
     { activityId: id, responseVersion: 5 },
@@ -316,6 +276,7 @@ export function ActivityDetailPage() {
           onRetry: () => void images.refetch(),
         }}
         powerWork={isCycling ? powerWork.data : undefined}
+        powerWorkSourceHint={metrics.attributionHints.powerWork}
         units={units}
         hardware={hardware.data}
         hardwareLoading={hardware.isLoading}
@@ -407,6 +368,13 @@ export function ActivityDetailPage() {
             loading={stream.isLoading}
             error={stream.error}
             metricSources={sourceControls.filter((metric) => metric.key !== "altitude")}
+            sourceAttribution={{
+              ...metrics.attributionHints.stream,
+              heartRate:
+                isClimbingActivity && heartRateContext.data !== undefined
+                  ? metrics.attributionHints.heartRateContext
+                  : metrics.attributionHints.stream.heartRate,
+            }}
             units={units}
             onHoverPosition={hasGps ? handleChartHover : undefined}
           />
@@ -518,14 +486,20 @@ export function ActivityDetailPage() {
             {sourceControls
               .filter((metric) => metric.key === "altitude")
               .map((metric) => (
-                <ActivityMetricSourcePicker
-                  key={metric.key}
-                  label="Elevation"
-                  className="mb-2 rounded-lg border border-border px-3"
-                  sources={metric.sources}
-                  selectedId={metric.selectedId}
-                  onChange={metric.onChange}
-                />
+                <div key={metric.key}>
+                  <ActivityMetricSourcePicker
+                    label="Elevation"
+                    className="mb-2 rounded-lg border border-border px-3"
+                    sources={metric.sources}
+                    selectedId={metric.selectedId}
+                    onChange={metric.onChange}
+                  />
+                  {hasAltitude && metrics.attributionHints.stream.altitude && (
+                    <p role="status" className="mb-2 text-xs text-muted">
+                      {metrics.attributionHints.stream.altitude}
+                    </p>
+                  )}
+                </div>
               ))}
             <ElevationChart
               points={points}
@@ -538,6 +512,11 @@ export function ActivityDetailPage() {
 
         {showHrZones && (
           <Section title="Heart Rate Zones">
+            {zones.length > 0 && metrics.attributionHints.hrZones && (
+              <p role="status" className="mb-2 text-xs text-muted">
+                {metrics.attributionHints.hrZones}
+              </p>
+            )}
             {hrZones.error && !hrZonesHaveCachedData ? (
               <QueryStatePanel error={hrZones.error} height={250} />
             ) : (
@@ -551,6 +530,16 @@ export function ActivityDetailPage() {
 
         {isCycling && hasPower && (powerZones.error || powerZones.data != null) && (
           <Section title="Power Zones">
+            {metrics.attributionHints.powerZones &&
+              powerZones.data?.ftp != null &&
+              powerZones.data.zones.length > 0 && (
+                <p role="status" className="mb-2 text-xs text-muted">
+                  {metrics.attributionHints.powerZones.replace(
+                    "previous readings",
+                    "previous power zone readings",
+                  )}
+                </p>
+              )}
             {powerZones.error && powerZones.data == null ? (
               <QueryStatePanel error={powerZones.error} height={250} />
             ) : powerZones.data ? (
@@ -576,12 +565,14 @@ export function ActivityDetailPage() {
 export function ActivityHeader({
   activity,
   powerWork,
+  powerWorkSourceHint,
   units,
   photos,
   ...sourceDetails
 }: {
   activity: ActivityDetail;
   powerWork?: ActivityPowerWork;
+  powerWorkSourceHint?: string;
   units: UnitConverter;
   photos?: Omit<ComponentProps<typeof ActivityPhotos>, "heading">;
 } & Omit<ComponentProps<typeof ActivitySourceDisclosure>, "tree">) {
@@ -594,7 +585,9 @@ export function ActivityHeader({
     viewerTimezone,
   );
 
-  const stats: Array<ActivityMetric | { label: string; value: string; description?: string }> = [];
+  const stats: Array<
+    ActivityMetric | { label: string; value: string; description?: string; attribution?: string }
+  > = [];
 
   stats.push({
     label: "Duration",
@@ -650,6 +643,7 @@ export function ActivityHeader({
             label: "Energy Output",
             value: `${formatNumber(powerWork.workKilojoules, 0)} kJ`,
             description: powerWork.coverage.coveragePct < 99 ? "Partial power data" : undefined,
+            attribution: powerWorkSourceHint,
           },
         ]
       : []),
@@ -763,6 +757,11 @@ export function ActivityHeader({
                 ) : null}
                 {"description" in s && s.description ? (
                   <div className="text-xs text-subtle">{s.description}</div>
+                ) : null}
+                {"attribution" in s && s.attribution ? (
+                  <div role="status" className="text-xs text-subtle">
+                    {s.attribution}
+                  </div>
                 ) : null}
               </section>
             );

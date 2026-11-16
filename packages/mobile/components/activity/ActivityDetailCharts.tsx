@@ -25,6 +25,7 @@ import Svg, {
 } from "react-native-svg";
 import type {
   ActivityHeartRateContext,
+  ActivityMetric,
   ActivityMetricSources,
 } from "../../../server/src/contracts/activity-metric-sources.ts";
 import type { StreamPoint } from "../../../server/src/routers/activity.ts";
@@ -72,6 +73,7 @@ type ActivityMetricControl = ActivityMetricSources[number] & {
 export function ActivityMetricsCharts({
   points,
   sourceControls,
+  sourceAttribution = {},
   serverUrl,
   activityWindow,
   cadenceLabel,
@@ -92,6 +94,7 @@ export function ActivityMetricsCharts({
 }: {
   points: StreamPoint[];
   sourceControls: ActivityMetricControl[];
+  sourceAttribution?: Partial<Record<ActivityMetric, string>>;
   serverUrl: string;
   activityWindow: ActivityChartWindow;
   cadenceLabel: string;
@@ -110,23 +113,32 @@ export function ActivityMetricsCharts({
   onScrubStart: () => void;
   onScrubEnd: () => void;
 }) {
-  const sourcePicker = (metric: ActivityMetricControl, showLabel = true) => (
-    <ActivityMetricSourcePicker
-      key={metric.key}
-      label={metric.label}
-      showLabel={showLabel}
-      serverUrl={serverUrl}
-      sources={metric.sources}
-      selectedId={metric.selectedId}
-      onChange={metric.onChange}
-    />
+  const sourcePicker = (metric: ActivityMetricControl, showLabel = true, hasData = true) => (
+    <View key={metric.key}>
+      <ActivityMetricSourcePicker
+        label={metric.label}
+        showLabel={showLabel}
+        serverUrl={serverUrl}
+        sources={metric.sources}
+        selectedId={metric.selectedId}
+        onChange={metric.onChange}
+      />
+      {hasData && sourceAttribution[metric.key] && (
+        <Text
+          accessibilityLiveRegion="polite"
+          style={{ color: colors.textSecondary, fontSize: 12 }}
+        >
+          {sourceAttribution[metric.key]}
+        </Text>
+      )}
+    </View>
   );
   const scrub = hasGps ? { onScrubStart, onScrubEnd } : {};
   return (
     <>
       {sourceControls
         .filter((metric) => metric.key === "heartRate")
-        .map((metric) => sourcePicker(metric))}
+        .map((metric) => sourcePicker(metric, true, hasHr))}
       {hasHr && (
         <>
           <LineChart
@@ -158,7 +170,7 @@ export function ActivityMetricsCharts({
       )}
       {sourceControls
         .filter((metric) => metric.key === "power")
-        .map((metric) => sourcePicker(metric))}
+        .map((metric) => sourcePicker(metric, true, hasPower))}
       {hasPower && (
         <LineChart
           data={points.map((point) => ({ recordedAt: point.recordedAt, value: point.power }))}
@@ -171,7 +183,13 @@ export function ActivityMetricsCharts({
       )}
       {sourceControls
         .filter((metric) => metric.key === "speed")
-        .map((metric) => sourcePicker(metric))}
+        .map((metric) =>
+          sourcePicker(
+            metric,
+            true,
+            points.some((point) => point.speed != null),
+          ),
+        )}
       {points.some((point) => point.speed != null) && (
         <LineChart
           data={points.map((point) => ({
@@ -187,7 +205,13 @@ export function ActivityMetricsCharts({
       )}
       {sourceControls
         .filter((metric) => metric.key === "cadence")
-        .map((metric) => sourcePicker(metric))}
+        .map((metric) =>
+          sourcePicker(
+            metric,
+            true,
+            points.some((point) => point.cadence != null),
+          ),
+        )}
       {points.some((point) => point.cadence != null) && (
         <LineChart
           data={points.map((point) => ({ recordedAt: point.recordedAt, value: point.cadence }))}
@@ -200,7 +224,13 @@ export function ActivityMetricsCharts({
       )}
       {sourceControls
         .filter((metric) => metric.key === "skinTemperature")
-        .map((metric) => sourcePicker(metric))}
+        .map((metric) =>
+          sourcePicker(
+            metric,
+            true,
+            points.some((point) => point.skinTemperature != null),
+          ),
+        )}
       {points.some((point) => point.skinTemperature != null) && (
         <LineChart
           data={points.flatMap((point) =>
@@ -224,7 +254,7 @@ export function ActivityMetricsCharts({
       )}
       {sourceControls
         .filter((metric) => metric.key === "altitude")
-        .map((metric) => sourcePicker(metric, false))}
+        .map((metric) => sourcePicker(metric, false, hasAltitude))}
       {hasAltitude && (
         <AreaChart
           data={points.map((point) => ({
