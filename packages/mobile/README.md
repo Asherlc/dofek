@@ -145,7 +145,9 @@ viewer. Labels match web through [shared formatters](../format/src/climbing-log.
 See the
 [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
-Activity details compose attached climbs in [ActivityClimbingPanel](./components/ActivityClimbingPanel.tsx):
+Activity details load attached and suggested logs through the route-local
+[climbing hook](./components/activity/useActivityClimbing.ts) and compose them in
+[ActivityClimbingPanel](./components/ActivityClimbingPanel.tsx):
 one interactive map above a grouped list on narrow screens, including same-day
 attachment suggestions under Unattached. Selecting a row or
 map point highlights the same occurrence; Log details opens the existing

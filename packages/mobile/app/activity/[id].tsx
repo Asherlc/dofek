@@ -9,12 +9,11 @@ import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
-import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import { cadenceUnit, isActivityDetailType, isCyclingActivity } from "@dofek/training/training";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { type ComponentProps, useCallback, useMemo, useState } from "react";
+import { type ComponentProps, useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -25,13 +24,13 @@ import {
   Text,
   View,
 } from "react-native";
-import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ActivityClimbingPanel } from "../../components/ActivityClimbingPanel";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import { ActivityMetricsCharts, chartStyles } from "../../components/activity/ActivityDetailCharts";
 import { ActivityDetailHeader } from "../../components/activity/ActivityDetailHeader";
 import { RecomputeActivityButton } from "../../components/activity/RecomputeActivityButton";
 import { statsStyles, styles } from "../../components/activity/styles";
+import { useActivityClimbing } from "../../components/activity/useActivityClimbing";
 import { useActivityMapHover } from "../../components/activity/useActivityMapHover";
 import { useActivityMetrics } from "../../components/activity/useActivityMetrics";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
@@ -372,80 +371,18 @@ export default function ActivityDetailScreen() {
     { id: id ?? "" },
     { enabled: !!id && isStrengthActivity },
   );
-  const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
-    { activityId: id ?? "", responseVersion: 5 },
-    { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
-  );
-  const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
-    { activityId: id, responseVersion: 5 },
-    { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
-  );
-  const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
-  const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
+  const climbing = useActivityClimbing(id, isClimbingActivity);
+  const climbingEntries = climbing.entries;
+  const entrySuggestions = climbing.suggestions;
+  const climbingEntriesLoading = climbing.loading;
+  const selectedClimbingEntryId = climbing.selectedEntryId;
+  const setSelectedClimbingEntryId = climbing.setSelectedEntryId;
   const [highlightedClimbId, setHighlightedClimbId] = useState<string | null>(null);
-  const selectedClimbingEntry = [
-    ...(climbingEntries.data ?? []),
-    ...(entrySuggestions.data ?? []),
-  ].find((entry) => entry.id === selectedClimbingEntryId);
-  const climbingLocations = useMemo(
-    () =>
-      buildClimbingMapLocations([
-        ...(climbingEntries.data ?? []),
-        ...(entrySuggestions.data ?? []),
-      ]),
-    [climbingEntries.data, entrySuggestions.data],
-  );
-  const climbMarkers = useMemo(
-    () =>
-      isClimbingActivity
-        ? buildClimbingMapMarkers([
-            ...(climbingEntries.data ?? []),
-            ...(entrySuggestions.data ?? []),
-          ])
-        : [],
-    [isClimbingActivity, climbingEntries.data, entrySuggestions.data],
-  );
-  const [entryAttachState, setEntryAttachState] = useState<
-    Record<string, { pending: boolean; error: string | null }>
-  >({});
-  const attachEntry = trpc.climbing.attachClimbingLogEntry.useMutation({
-    onSuccess: async (_result, input) => {
-      await Promise.all([
-        trpcUtils.activity.images.invalidate({ id: input.activityId }),
-        trpcUtils.climbing.activityLogEntries.invalidate({
-          activityId: input.activityId,
-          responseVersion: 5,
-        }),
-        trpcUtils.climbing.sessionSummary.invalidate(),
-        trpcUtils.mobileDashboard.trainingV2.invalidate(),
-        trpcUtils.climbing.volumeByGrade.invalidate(),
-        trpcUtils.climbing.strengths.invalidate(),
-        trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
-          activityId: input.activityId,
-          responseVersion: 5,
-        }),
-      ]);
-    },
-  });
-  const handleAttachEntry = (entryId: string) => {
-    if (!id) return;
-    setEntryAttachState((current) => ({ ...current, [entryId]: { pending: true, error: null } }));
-    attachEntry.mutate(
-      { activityId: id, climbingLogEntryId: entryId },
-      {
-        onSuccess: () =>
-          setEntryAttachState((current) => ({
-            ...current,
-            [entryId]: { pending: false, error: null },
-          })),
-        onError: (error) =>
-          setEntryAttachState((current) => ({
-            ...current,
-            [entryId]: { pending: false, error: userFacingErrorMessage(error) },
-          })),
-      },
-    );
-  };
+  const selectedClimbingEntry = climbing.selectedEntry;
+  const climbingLocations = climbing.locations;
+  const climbMarkers = climbing.markers;
+  const entryAttachState = climbing.attachmentStates;
+  const handleAttachEntry = climbing.attachEntry;
   const isHangboardingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "hangboard");
   const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
@@ -844,10 +781,7 @@ export default function ActivityDetailScreen() {
                 accessibilityLiveRegion="polite"
                 style={{ color: colors.textSecondary, fontSize: 12 }}
               >
-                {metrics.attributionHints.powerZones.replace(
-                  "previous readings",
-                  "previous power zone readings",
-                )}
+                {metrics.attributionHints.powerZones}
               </Text>
             )}
           <CyclingThresholdDetails evidence={powerZones.data.thresholdEvidence} />

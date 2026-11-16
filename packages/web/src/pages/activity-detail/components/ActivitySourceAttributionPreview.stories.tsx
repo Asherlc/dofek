@@ -12,7 +12,7 @@ import {
   ModalDialogTitle,
 } from "../../../components/ModalDialog.tsx";
 import { ProviderLogo } from "../../../components/ProviderLogo.tsx";
-import { ElevationChart } from "./ActivityDetailCharts.tsx";
+import { ElevationChart } from "./ElevationChart.tsx";
 
 type Treatment = "icons" | "pills";
 type Route = "health" | "cloud" | "bluetooth";

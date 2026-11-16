@@ -1,20 +1,8 @@
 import { hashKey } from "@tanstack/react-query";
 import { useState } from "react";
-import type { ActivityMetric } from "../../../../server/src/contracts/activity-metric-sources.ts";
+import type { SourceBindings } from "../../../../server/src/contracts/activity-metric-sources.ts";
 
 type Family = "stream" | "heartRateContext" | "hrZones" | "powerZones" | "powerWork";
-
-export type SourceBindings = Readonly<
-  Partial<
-    Record<
-      ActivityMetric,
-      Readonly<{
-        sourceId: string;
-        label: string | null;
-      }>
-    >
-  >
->;
 
 export interface DisplayedSources {
   readonly sources: SourceBindings;

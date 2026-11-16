@@ -1,77 +1,19 @@
 import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, within } from "storybook/test";
-import type { ActivityDetail } from "../../../server/src/models/activity.ts";
-import { activityPhotoFixture } from "../components/ActivityPhoto.fixtures.ts";
+import { activityPhotoFixture } from "../../../components/ActivityPhoto.fixtures.ts";
 import {
   walkingHardware,
   walkingSourceTree,
-} from "../components/ActivitySourceDisclosure.fixtures.ts";
-import { detailSourceTree, removedDetailSourceTree } from "./ActivityDetailPage.fixtures.ts";
-import { ActivityHeader } from "./ActivityDetailPage.tsx";
+} from "../../../components/ActivitySourceDisclosure.fixtures.ts";
+import {
+  baseActivity,
+  detailSourceTree,
+  removedDetailSourceTree,
+} from "../../ActivityDetailPage.fixtures.ts";
+import { ActivityHeader } from "./ActivityDetailHeader.tsx";
 
 // ── ActivityHeader ──────────────────────────────────────────
-
-const baseActivity: ActivityDetail = {
-  climbingLogSessions: [],
-  id: "abc-123",
-  activityType: "cycling",
-  primaryActivityType: null,
-  rawType: "cycling",
-  modality: null,
-  startedAt: "2026-03-31T08:00:00Z",
-  displayedDate: "2026-03-31",
-  endedAt: "2026-03-31T09:30:00Z",
-  durationMin: 90,
-  localTimeContext: {
-    timezone: "America/Los_Angeles",
-    startUtcOffsetMinutes: -420,
-    endUtcOffsetMinutes: -420,
-    source: "provider_timezone",
-  },
-  name: "Morning Ride",
-  notes: null,
-  perceivedExertion: null,
-  providerId: "garmin",
-  subsource: null,
-  sourceProviders: ["garmin", "strava", "apple_health", "whoop"],
-  sourceLinks: [
-    {
-      providerId: "garmin",
-      externalId: "123",
-      subsource: null,
-      label: "Garmin Connect",
-      url: "https://connect.garmin.com/modern/activity/123",
-      providerAbsentAt: null,
-    },
-  ],
-  sourceTree: detailSourceTree,
-  avgHr: 145,
-  avgHrState: { status: "available" },
-  maxHr: 175,
-  maxHrState: { status: "available" },
-  avgPower: 220,
-  avgPowerState: { status: "available" },
-  maxPower: 450,
-  maxPowerState: { status: "available" },
-  avgSpeed: 8.5,
-  avgSpeedState: { status: "available" },
-  maxSpeed: 15.2,
-  maxSpeedState: { status: "available" },
-  avgCadence: 85,
-  avgCadenceState: { status: "available" },
-  totalDistance: 42000,
-  totalDistanceState: { status: "available" },
-  elevationGain: 350,
-  elevationGainState: { status: "available" },
-  elevationLoss: 340,
-  elevationLossState: { status: "available" },
-  sampleCount: 5400,
-  sampleCountState: { status: "available" },
-  providerAbsentAt: null,
-  sourceDecision: null,
-  fitRecoveryWarning: null,
-};
 
 const climbingSourceTree = {
   primary: {

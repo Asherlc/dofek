@@ -49,6 +49,62 @@ export const activityMetricSourcesSchema = z.array(
 );
 export type ActivityMetricSources = z.infer<typeof activityMetricSourcesSchema>;
 
+export type SourceBindings = Readonly<
+  Partial<
+    Record<
+      ActivityMetric,
+      Readonly<{
+        sourceId: string;
+        label: string | null;
+      }>
+    >
+  >
+>;
+
+export function offeredActivityMetricSources(
+  selection: ActivityMetricSourceSelection | undefined,
+  metrics: ActivityMetricSources | undefined,
+): ActivityMetricSourceSelection {
+  const sources: ActivityMetricSourceSelection = {};
+  for (const metric of metrics ?? []) {
+    const selected = selection?.[metric.key];
+    sources[metric.key] = metric.sources.some((source) => source.id === selected)
+      ? selected
+      : metric.defaultSourceId;
+  }
+  return sources;
+}
+
+export function activityMetricSourceBindings(
+  selection: ActivityMetricSourceSelection,
+  metrics: ActivityMetricSources | undefined,
+): SourceBindings {
+  const result: Partial<Record<ActivityMetric, { sourceId: string; label: string | null }>> = {};
+  for (const metric of metrics ?? []) {
+    const sourceId = selection[metric.key];
+    if (!sourceId) continue;
+    result[metric.key] = {
+      sourceId,
+      label: metric.sources.find((source) => source.id === sourceId)?.label ?? null,
+    };
+  }
+  return result;
+}
+
+export function formatActivityMetricSourceHint(
+  previousInput: boolean,
+  sources: SourceBindings | undefined,
+  metric: ActivityMetric,
+  requestedId: string | undefined,
+  readingsDescription = "readings",
+): string | undefined {
+  if (!previousInput || sources?.[metric]?.sourceId === requestedId) return undefined;
+  const label = sources?.[metric]?.label;
+  return label
+    ? `Showing previous ${readingsDescription} from ${label}`
+    : `Showing previous ${readingsDescription}; source unavailable`;
+}
+
 export const activityHeartRateContextSchema = z.object({
   window: z.object({ startedAt: z.iso.datetime(), endedAt: z.iso.datetime().nullable() }),
   points: z.array(z.object({ recordedAt: z.iso.datetime(), value: z.number().nullable() })),

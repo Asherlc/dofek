@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { activityPowerZonesSchema } from "./activity-metric-sources.ts";
+import {
+  type ActivityMetricSources,
+  activityMetricSourceBindings,
+  activityPowerZonesSchema,
+  formatActivityMetricSourceHint,
+  offeredActivityMetricSources,
+} from "./activity-metric-sources.ts";
 import { cyclingThresholdUncertainty } from "./cycling-threshold.ts";
 
 const evidence = {
@@ -16,6 +22,89 @@ const evidence = {
   uncertainty: cyclingThresholdUncertainty,
 };
 const zone = { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 30, percent: 100 };
+const metricSources = [
+  {
+    key: "heartRate",
+    label: "Heart Rate",
+    defaultSourceId: "whoop",
+    sources: [
+      {
+        id: "whoop",
+        label: "WHOOP",
+        presentation: {
+          displayName: "WHOOP",
+          providerId: "whoop",
+          sourceName: null,
+          attribution: { kind: "cloud", label: "Cloud" },
+        },
+      },
+      {
+        id: "garmin",
+        label: "Garmin Edge 840",
+        presentation: {
+          displayName: "Garmin Edge 840",
+          providerId: "garmin",
+          sourceName: "Edge 840",
+          attribution: null,
+        },
+      },
+    ],
+  },
+] satisfies ActivityMetricSources;
+
+describe("activity metric source decisions", () => {
+  it("keeps offered selections and defaults removed or unknown IDs", () => {
+    expect(offeredActivityMetricSources({ heartRate: "garmin" }, metricSources)).toEqual({
+      heartRate: "garmin",
+    });
+    expect(offeredActivityMetricSources({ heartRate: "removed-device" }, metricSources)).toEqual({
+      heartRate: "whoop",
+    });
+    expect(offeredActivityMetricSources({ cadence: "unknown-metric" }, metricSources)).toEqual({
+      heartRate: "whoop",
+    });
+    expect(offeredActivityMetricSources(undefined, undefined)).toEqual({});
+  });
+
+  it("binds matching labels and preserves an unknown source with a null label", () => {
+    expect(activityMetricSourceBindings({ heartRate: "garmin" }, metricSources)).toEqual({
+      heartRate: { sourceId: "garmin", label: "Garmin Edge 840" },
+    });
+    expect(activityMetricSourceBindings({ heartRate: "removed-device" }, metricSources)).toEqual({
+      heartRate: { sourceId: "removed-device", label: null },
+    });
+  });
+
+  it("formats attribution only while previous readings use a different source", () => {
+    expect(
+      formatActivityMetricSourceHint(
+        true,
+        { heartRate: { sourceId: "whoop", label: "WHOOP" } },
+        "heartRate",
+        "garmin",
+      ),
+    ).toBe("Showing previous readings from WHOOP");
+    expect(
+      formatActivityMetricSourceHint(
+        true,
+        { power: { sourceId: "removed", label: null } },
+        "power",
+        "garmin",
+        "power zone readings",
+      ),
+    ).toBe("Showing previous power zone readings; source unavailable");
+    expect(
+      formatActivityMetricSourceHint(
+        true,
+        { heartRate: { sourceId: "whoop", label: "WHOOP" } },
+        "heartRate",
+        "whoop",
+      ),
+    ).toBeUndefined();
+    expect(formatActivityMetricSourceHint(false, undefined, "heartRate", "garmin")).toBeUndefined();
+  });
+});
+
 describe("activity power zones contract", () => {
   it("accepts a consistent threshold and explicit unavailable zones", () => {
     expect(

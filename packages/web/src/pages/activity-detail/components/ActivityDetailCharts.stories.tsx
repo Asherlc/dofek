@@ -14,7 +14,8 @@ import {
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
-import { ElevationChart, MetricsChart } from "./ActivityDetailCharts.tsx";
+import { MetricsChart } from "./ActivityDetailCharts.tsx";
+import { ElevationChart } from "./ElevationChart.tsx";
 
 const meta = {
   title: "Pages/ActivityDetail/Charts",

@@ -109,6 +109,7 @@ export const PendingSourceSelection: Story = {
           {
             key: "power",
             label: "Power",
+            defaultSourceId: defaultActivityMetricSources.power,
             sources: powerMetric.sources,
             selectedId: "garmin",
             onChange: () => {},

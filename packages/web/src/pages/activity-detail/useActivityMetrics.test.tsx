@@ -27,7 +27,7 @@ vi.mock("../../lib/trpc.ts", () => ({
 }));
 
 import type { activityQueryPlaceholder } from "@dofek/training/activity-query-placeholder";
-import type { ActivityMetricSources } from "../../../../server/src/contracts/activity-metric-sources.ts";
+import { detailPageMetricSources as metricSources } from "../ActivityDetailPage.fixtures.ts";
 import { useActivityMetrics } from "./useActivityMetrics.ts";
 
 function isPlaceholderCallback(
@@ -35,63 +35,6 @@ function isPlaceholderCallback(
 ): value is ReturnType<typeof activityQueryPlaceholder> {
   return typeof value === "function";
 }
-
-const metricSources: ActivityMetricSources = [
-  {
-    key: "heartRate",
-    label: "Heart Rate",
-    defaultSourceId: "hr-a",
-    sources: [
-      {
-        id: "hr-a",
-        label: "Heart rate A",
-        presentation: {
-          displayName: "A",
-          providerId: "whoop",
-          sourceName: null,
-          attribution: null,
-        },
-      },
-      {
-        id: "hr-b",
-        label: "Heart rate B",
-        presentation: {
-          displayName: "B",
-          providerId: "garmin",
-          sourceName: null,
-          attribution: null,
-        },
-      },
-    ],
-  },
-  {
-    key: "power",
-    label: "Power",
-    defaultSourceId: "power-a",
-    sources: [
-      {
-        id: "power-a",
-        label: "Power A",
-        presentation: {
-          displayName: "A",
-          providerId: "wahoo",
-          sourceName: null,
-          attribution: null,
-        },
-      },
-      {
-        id: "power-b",
-        label: "Power B",
-        presentation: {
-          displayName: "B",
-          providerId: "garmin",
-          sourceName: null,
-          attribution: null,
-        },
-      },
-    ],
-  },
-];
 
 function query(data: unknown, options: Record<string, unknown> = {}) {
   return {
@@ -128,7 +71,11 @@ describe("useActivityMetrics", () => {
       useActivityMetrics("activity-a", { isCycling: true, isClimbing: true }),
     );
     expect(dependencies.stream).toHaveBeenLastCalledWith(
-      { id: "activity-a", maxPoints: 500, sources: { heartRate: "hr-a", power: "power-a" } },
+      {
+        id: "activity-a",
+        maxPoints: 500,
+        sources: { heartRate: "hr-a", power: "power-a", altitude: "altitude-a" },
+      },
       expect.objectContaining({ placeholderData: expect.any(Function) }),
     );
     expect(dependencies.powerZones.mock.calls.at(-1)?.[1]).toMatchObject({ enabled: true });
@@ -155,8 +102,119 @@ describe("useActivityMetrics", () => {
     expect(dependencies.stream.mock.calls.at(-1)?.[0]).toEqual({
       id: "activity-a",
       maxPoints: 500,
-      sources: { heartRate: "hr-b", power: "power-a" },
+      sources: { heartRate: "hr-b", power: "power-a", altitude: "altitude-a" },
     });
+  });
+
+  it("forwards independent source selections to streams, HR zones, and power queries", () => {
+    const { result } = renderHook(() =>
+      useActivityMetrics("activity-a", { isCycling: true, isClimbing: false }),
+    );
+    const heartRate = result.current.sourceControls.find((source) => source.key === "heartRate");
+    const power = result.current.sourceControls.find((source) => source.key === "power");
+    const altitude = result.current.sourceControls.find((source) => source.key === "altitude");
+    if (!heartRate || !power || !altitude) throw new Error("Expected all metric source controls");
+
+    expect([heartRate.selectedId, power.selectedId, altitude.selectedId]).toEqual([
+      "hr-a",
+      "power-a",
+      "altitude-a",
+    ]);
+    act(() => heartRate.onChange("hr-b"));
+    expect(dependencies.stream.mock.calls.at(-1)?.[0]).toEqual({
+      id: "activity-a",
+      maxPoints: 500,
+      sources: { heartRate: "hr-b", power: "power-a", altitude: "altitude-a" },
+    });
+    expect(dependencies.hrZones.mock.calls.at(-1)?.[0]).toEqual({
+      id: "activity-a",
+      heartRateSourceId: "hr-b",
+    });
+    const previousHrZones = [{ zone: 1, seconds: 240 }];
+    const hrPlaceholderValue = dependencies.hrZones.mock.calls.at(-1)?.[1].placeholderData;
+    if (!isPlaceholderCallback(hrPlaceholderValue))
+      throw new Error("HR zone placeholder callback missing");
+    expect(
+      hrPlaceholderValue(previousHrZones, {
+        queryKey: [
+          ["activity", "hrZones"],
+          { input: { id: "activity-a", heartRateSourceId: "hr-a" } },
+        ],
+      }),
+    ).toBe(previousHrZones);
+    expect(
+      hrPlaceholderValue(previousHrZones, {
+        queryKey: [["activity", "hrZones"], { input: { id: "activity-b" } }],
+      }),
+    ).toBeUndefined();
+
+    act(() =>
+      result.current.sourceControls.find((source) => source.key === "power")?.onChange("power-b"),
+    );
+    act(() =>
+      result.current.sourceControls
+        .find((source) => source.key === "altitude")
+        ?.onChange("altitude-b"),
+    );
+    expect(dependencies.stream.mock.calls.at(-1)?.[0]).toEqual({
+      id: "activity-a",
+      maxPoints: 500,
+      sources: { heartRate: "hr-b", power: "power-b", altitude: "altitude-b" },
+    });
+    expect(dependencies.hrZones.mock.calls.at(-1)?.[0]).toEqual({
+      id: "activity-a",
+      heartRateSourceId: "hr-b",
+    });
+    expect(dependencies.powerWork.mock.calls.at(-1)?.[0]).toEqual({
+      id: "activity-a",
+      powerSourceId: "power-b",
+    });
+    expect(dependencies.powerZones.mock.calls.at(-1)?.[0]).toEqual({
+      id: "activity-a",
+      powerSourceId: "power-b",
+    });
+    expect(dependencies.powerWork.mock.calls.at(-1)?.[1]).toMatchObject({ enabled: true });
+    expect(dependencies.powerZones.mock.calls.at(-1)?.[1]).toMatchObject({ enabled: true });
+
+    const previousWork = { workKilojoules: 120, coverage: { coveragePct: 100 } };
+    const workPlaceholderValue = dependencies.powerWork.mock.calls.at(-1)?.[1].placeholderData;
+    if (!isPlaceholderCallback(workPlaceholderValue))
+      throw new Error("Power work placeholder callback missing");
+    expect(
+      workPlaceholderValue(previousWork, {
+        queryKey: [
+          ["activity", "powerWork"],
+          { input: { id: "activity-a", powerSourceId: "power-a" }, type: "query" },
+        ],
+      }),
+    ).toBe(previousWork);
+    expect(
+      workPlaceholderValue(previousWork, {
+        queryKey: [
+          ["activity", "powerWork"],
+          { input: { id: "activity-b", powerSourceId: "power-a" }, type: "query" },
+        ],
+      }),
+    ).toBeUndefined();
+    expect(workPlaceholderValue(previousWork, undefined)).toBeUndefined();
+
+    const previousZones = { ftp: 240 };
+    const placeholderValue = dependencies.powerZones.mock.calls.at(-1)?.[1].placeholderData;
+    if (!isPlaceholderCallback(placeholderValue))
+      throw new Error("Power zone placeholder callback missing");
+    expect(
+      placeholderValue(previousZones, {
+        queryKey: [
+          ["activity", "powerZones"],
+          { input: { id: "activity-a", powerSourceId: "old" } },
+        ],
+      }),
+    ).toBe(previousZones);
+    expect(
+      placeholderValue(previousZones, {
+        queryKey: [["activity", "powerZones"], { input: { id: "activity-b" } }],
+      }),
+    ).toBeUndefined();
   });
 
   it("keeps initial canonical source attribution unknown when metric metadata arrives", () => {
@@ -188,5 +246,12 @@ describe("useActivityMetrics", () => {
     });
     rerender();
     expect(result.current.sourceControls[0]?.selectedId).toBe("hr-a");
+  });
+
+  it("gates cycling-only power queries while preserving HR context for climbing", () => {
+    renderHook(() => useActivityMetrics("activity-a", { isCycling: false, isClimbing: true }));
+    expect(dependencies.powerZones.mock.calls.at(-1)?.[1]).toMatchObject({ enabled: false });
+    expect(dependencies.powerWork.mock.calls.at(-1)?.[1]).toMatchObject({ enabled: false });
+    expect(dependencies.heartRateContext.mock.calls.at(-1)?.[1]).toMatchObject({ enabled: true });
   });
 });

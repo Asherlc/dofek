@@ -113,7 +113,7 @@ export function ActivityMetricsCharts({
   onScrubStart: () => void;
   onScrubEnd: () => void;
 }) {
-  const sourcePicker = (metric: ActivityMetricControl, showLabel = true, hasData = true) => (
+  const sourcePicker = (metric: ActivityMetricControl, showLabel: boolean, hasData: boolean) => (
     <View key={metric.key}>
       <ActivityMetricSourcePicker
         label={metric.label}

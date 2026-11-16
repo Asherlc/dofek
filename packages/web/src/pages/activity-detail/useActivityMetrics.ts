@@ -6,9 +6,14 @@ import type {
   ActivityMetric,
   ActivityMetricSourceSelection,
 } from "../../../../server/src/contracts/activity-metric-sources.ts";
+import {
+  activityMetricSourceBindings,
+  formatActivityMetricSourceHint,
+  offeredActivityMetricSources,
+} from "../../../../server/src/contracts/activity-metric-sources.ts";
 import { useAuth } from "../../lib/auth-context.tsx";
 import { trpc } from "../../lib/trpc.ts";
-import { type SourceBindings, useActivityQueryOwner } from "./useActivityQueryOwner.ts";
+import { useActivityQueryOwner } from "./useActivityQueryOwner.ts";
 
 type ActivityInputs = AppRouterInputs["activity"];
 type StreamInput = ActivityInputs["stream"];
@@ -16,27 +21,6 @@ type ContextInput = ActivityInputs["heartRateContext"];
 type HrZonesInput = ActivityInputs["hrZones"];
 type PowerZonesInput = ActivityInputs["powerZones"];
 type PowerWorkInput = ActivityInputs["powerWork"];
-
-function sourceBindings(
-  selection: ActivityMetricSourceSelection,
-  metrics:
-    | readonly {
-        key: ActivityMetric;
-        sources: readonly { id: string; label: string }[];
-      }[]
-    | undefined,
-): SourceBindings {
-  const result: Partial<Record<ActivityMetric, { sourceId: string; label: string | null }>> = {};
-  for (const metric of metrics ?? []) {
-    const sourceId = selection[metric.key];
-    if (!sourceId) continue;
-    result[metric.key] = {
-      sourceId,
-      label: metric.sources.find((source) => source.id === sourceId)?.label ?? null,
-    };
-  }
-  return result;
-}
 
 export function useActivityMetrics(
   id: string,
@@ -49,13 +33,10 @@ export function useActivityMetrics(
     scopeKey: string | null;
     sources: ActivityMetricSourceSelection;
   } | null>(null);
-  const sources: ActivityMetricSourceSelection = {};
-  for (const metric of metricSources.data ?? []) {
-    const selected = selection?.scopeKey === scopeKey ? selection.sources[metric.key] : undefined;
-    sources[metric.key] = metric.sources.some((source) => source.id === selected)
-      ? selected
-      : metric.defaultSourceId;
-  }
+  const sources = offeredActivityMetricSources(
+    selection?.scopeKey === scopeKey ? selection.sources : undefined,
+    metricSources.data,
+  );
   const sourceControls = (metricSources.data ?? []).map((metric) => ({
     ...metric,
     selectedId: sources[metric.key] ?? metric.defaultSourceId,
@@ -94,14 +75,14 @@ export function useActivityMetrics(
     enabled: isClimbing,
     placeholderData: activityQueryPlaceholder(id),
   });
-  const streamSources = sourceBindings(streamInput.sources ?? {}, metricSources.data);
-  const hrSources = sourceBindings(
+  const streamSources = activityMetricSourceBindings(streamInput.sources ?? {}, metricSources.data);
+  const hrSources = activityMetricSourceBindings(
     heartRateSourceInput.heartRateSourceId
       ? { heartRate: heartRateSourceInput.heartRateSourceId }
       : {},
     metricSources.data,
   );
-  const powerSources = sourceBindings(
+  const powerSources = activityMetricSourceBindings(
     sources.power ? { power: sources.power } : {},
     metricSources.data,
   );
@@ -128,20 +109,14 @@ export function useActivityMetrics(
     heartRateContext,
     hrSources,
   );
-  const sourceHint = (
-    owner: typeof streamOwner,
-    metric: ActivityMetric,
-    requestedId: string | undefined,
-  ) => {
-    if (!owner?.previousInput || owner.sources[metric]?.sourceId === requestedId) return undefined;
-    const label = owner.sources[metric]?.label;
-    return label
-      ? `Showing previous readings from ${label}`
-      : "Showing previous readings; source unavailable";
-  };
   const streamAttributionHints: Partial<Record<ActivityMetric, string>> = {};
   for (const metric of metricSources.data ?? []) {
-    const hint = sourceHint(streamOwner, metric.key, sources[metric.key]);
+    const hint = formatActivityMetricSourceHint(
+      streamOwner?.previousInput ?? false,
+      streamOwner?.sources,
+      metric.key,
+      sources[metric.key],
+    );
     if (hint) streamAttributionHints[metric.key] = hint;
   }
 
@@ -156,19 +131,33 @@ export function useActivityMetrics(
     heartRateContext,
     points,
     hasPower,
-    owners: {
-      stream: streamOwner,
-      heartRateContext: contextOwner,
-      hrZones: hrZonesOwner,
-      powerZones: powerZonesOwner,
-      powerWork: powerWorkOwner,
-    },
     attributionHints: {
       stream: streamAttributionHints,
-      heartRateContext: sourceHint(contextOwner, "heartRate", sources.heartRate),
-      hrZones: sourceHint(hrZonesOwner, "heartRate", sources.heartRate),
-      powerZones: sourceHint(powerZonesOwner, "power", sources.power),
-      powerWork: sourceHint(powerWorkOwner, "power", sources.power),
+      heartRateContext: formatActivityMetricSourceHint(
+        contextOwner?.previousInput ?? false,
+        contextOwner?.sources,
+        "heartRate",
+        sources.heartRate,
+      ),
+      hrZones: formatActivityMetricSourceHint(
+        hrZonesOwner?.previousInput ?? false,
+        hrZonesOwner?.sources,
+        "heartRate",
+        sources.heartRate,
+      ),
+      powerZones: formatActivityMetricSourceHint(
+        powerZonesOwner?.previousInput ?? false,
+        powerZonesOwner?.sources,
+        "power",
+        sources.power,
+        "power zone readings",
+      ),
+      powerWork: formatActivityMetricSourceHint(
+        powerWorkOwner?.previousInput ?? false,
+        powerWorkOwner?.sources,
+        "power",
+        sources.power,
+      ),
     },
   };
 }

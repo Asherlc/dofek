@@ -79,7 +79,9 @@ The activity panel and breakdown use named, focusable scroll sections, following
 Those two files have an approved exception for Biome's
 [`noNoninteractiveTabindex`](https://biomejs.dev/linter/rules/no-noninteractive-tabindex/javascript/)
 rule; all other rules remain enabled.
-The activity [climbing panel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx)
+The activity detail page loads attached and suggested climbs through its
+[climbing hook](src/pages/activity-detail/useActivityClimbing.ts). The activity
+[climbing panel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx)
 uses a single-column list grouped by Area beside its shared map; other log
 collections retain the responsive [breakdown](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
 Hovering or keyboard focusing a climb also emphasizes its existing HR chart
@@ -106,7 +108,7 @@ of distance and elevation for indoor and virtual rides, including reported zeros
 See [the card](src/components/ActivityCardContent.tsx) and the
 [shared cycling classification](../training/src/endurance-types.ts).
 
-The [activity detail header](src/pages/ActivityDetailPage.tsx) also omits distance
+The [activity detail header](src/pages/activity-detail/components/ActivityDetailHeader.tsx) also omits distance
 for indoor and virtual cycling. Rides show **Energy Output** in kJ from the
 server's full recorded power samples, following the selected power source.
 Incomplete coverage carries a **Partial power data** qualifier. This is mechanical
@@ -179,7 +181,7 @@ unconnected records appear as other matching sources. Dofek remains implicit.
 See [ActivityCardContent](src/components/ActivityCardContent.tsx) and
 [ActivitySourceDisclosure](src/components/ActivitySourceDisclosure.tsx).
 
-The [activity detail header](src/pages/ActivityDetailPage.tsx) places Lineage
+The [activity detail header](src/pages/activity-detail/components/ActivityDetailHeader.tsx) places Lineage
 beside the title and opens its tree in an anchored flyout. It reuses
 [Radix Popover](https://www.radix-ui.com/primitives/docs/components/popover)
 for positioning, outside-click dismissal, Escape, and focus restoration. Its required `sourceTree` comes from
@@ -217,7 +219,8 @@ The [source repository](../server/src/repositories/activity-metric-sources-repos
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.
 
-The [metric and elevation charts](src/pages/activity-detail/components/ActivityDetailCharts.tsx)
+The [metric chart](src/pages/activity-detail/components/ActivityDetailCharts.tsx) and
+[elevation chart](src/pages/activity-detail/components/ElevationChart.tsx)
 position observations by elapsed time and evaluate continuity independently for
 each metric. Skin temperature uses selected-device decoded samples and its own
 measurement timestamps, so downsampled heart-rate times do not shift its

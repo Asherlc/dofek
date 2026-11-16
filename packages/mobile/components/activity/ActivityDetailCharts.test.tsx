@@ -1,6 +1,9 @@
 import { formatDateTime } from "@dofek/format/format";
 import { UnitConverter } from "@dofek/format/units";
-import { activityMetricSourcePreview } from "@dofek/training/fixtures/activity-metric-sources";
+import {
+  activityMetricSourcePreview,
+  defaultActivityMetricSources,
+} from "@dofek/training/fixtures/activity-metric-sources";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -40,9 +43,9 @@ describe("ActivityDetailCharts", () => {
     const skinTemperature = activityMetricSourcePreview.find(
       (metric) => metric.key === "skinTemperature",
     );
-    expect(skinTemperature).toBeDefined();
-    const selectedSource = skinTemperature?.sources[0];
-    expect(selectedSource).toBeDefined();
+    if (!skinTemperature) throw new Error("Expected skin temperature fixture");
+    const selectedSource = skinTemperature.sources[0];
+    if (!selectedSource) throw new Error("Expected skin temperature source fixture");
     render(
       <ActivityMetricsCharts
         points={[
@@ -63,8 +66,9 @@ describe("ActivityDetailCharts", () => {
           {
             key: "skinTemperature",
             label: "Skin Temperature",
-            sources: skinTemperature?.sources ?? [],
-            selectedId: selectedSource?.id ?? "unknown",
+            defaultSourceId: defaultActivityMetricSources.skinTemperature,
+            sources: skinTemperature.sources,
+            selectedId: selectedSource.id,
             onChange: vi.fn(),
           },
         ]}
@@ -123,6 +127,7 @@ describe("ActivityDetailCharts", () => {
           {
             key: "power",
             label: "Power",
+            defaultSourceId: defaultActivityMetricSources.power,
             sources: powerMetric?.sources ?? [],
             selectedId: "garmin",
             onChange: vi.fn(),
