@@ -2,16 +2,42 @@ import type { AnyRouter } from "@trpc/server";
 import { initTRPC } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { vi } from "vitest";
-import type { z } from "zod";
+import { z } from "zod";
 import type {
   ProviderDataGenerationContext,
   ProviderDataScope,
 } from "../../../../src/db/provider-data-deletion.ts";
 import type { Database } from "../../../../src/db/typed-sql.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { Context } from "../trpc.ts";
 
 const trpc = initTRPC.context<Context>().create();
+
+const activityProjectionSchema = z.object({
+  id: z.string(),
+  representative_activity_id: z.string(),
+  member_activity_ids: z.array(z.string()),
+  source_providers: z.array(z.string()),
+  source_external_ids: z.array(z.object({ memberActivityId: z.string() }).passthrough()),
+  started_at: z.string(),
+  ended_at: z.string(),
+  raw: z.record(z.string(), z.unknown()),
+  timezone: z.string().nullable(),
+  local_time_source: z.string(),
+  perceived_exertion: z.number().nullable(),
+});
+
+export function readActivityProjectionForTest(database: Database, memberActivityId: string) {
+  return executeWithSchema(
+    database,
+    activityProjectionSchema,
+    sql`SELECT id, representative_activity_id, member_activity_ids::text[], source_providers,
+      source_external_ids, started_at::text, ended_at::text, raw, timezone,
+      local_time_source, perceived_exertion
+      FROM fitness.v_activity WHERE ${memberActivityId}::uuid = ANY(member_activity_ids)`,
+  );
+}
 
 export async function resolveProviderDataGenerationsForTest(
   database: Database,

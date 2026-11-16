@@ -76,6 +76,13 @@ describe("providerSourceLabel", () => {
     expect(providerSourceLabel("apple_health", "Strong")).toBe("Strong (via Apple Health)");
   });
 
+  it("retains WHOOP Bluetooth device IDs in the complete source label", () => {
+    expect(providerSourceLabel("whoop_ble", " A050E4D0-67D0-4F4D-9A43-756F7D343DA1 ")).toBe(
+      "WHOOP (Bluetooth) · A050E4D0-67D0-4F4D-9A43-756F7D343DA1",
+    );
+    expect(providerSourceLabel("whoop_ble", "  ")).toBe("WHOOP (Bluetooth)");
+  });
+
   it("falls back to the provider label in other cases", () => {
     expect(providerSourceLabel("apple_health", null)).toBe("Apple Health");
     expect(providerSourceLabel("whoop", "Strong")).toBe("WHOOP (Cloud)");

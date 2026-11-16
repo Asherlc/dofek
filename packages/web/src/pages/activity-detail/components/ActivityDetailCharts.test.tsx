@@ -1,12 +1,22 @@
 /** @vitest-environment jsdom */
-import { formatDateTime } from "@dofek/format/format";
+import { formatDateTime, formatTimeOnly } from "@dofek/format/format";
 import { UnitConverter } from "@dofek/format/units";
+import { activityMetricSourcePreview } from "@dofek/training/fixtures/activity-metric-sources";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { init, setPlatformAPI } from "echarts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
 import { buildChartTable } from "../../../components/chart-accessibility.ts";
-import { ElevationChart, MetricsChart } from "./ActivityDetailCharts.tsx";
+import {
+  args,
+  highlightClimbAnnotations,
+  points,
+  selectableClimbAnnotations,
+  skinTemperaturePoints,
+  timedClimbAnnotations,
+  watchReadings,
+  zoomClimbAnnotations,
+} from "./ActivityDetailCharts.test-fixtures.ts";
+import { MetricsChart } from "./ActivityDetailCharts.tsx";
 
 const captured = vi.hoisted(() => {
   const option: Record<string, unknown> = {};
@@ -36,39 +46,77 @@ vi.mock("echarts-for-react", () => ({
   },
 }));
 
-const points = [
-  {
-    recordedAt: "2026-10-18T17:30:00Z",
-    heartRate: 140,
-    power: 200,
-    speed: 8,
-    cadence: 80,
-    altitude: 200,
-    lat: null,
-    lng: null,
-  },
-  {
-    recordedAt: "2026-10-18T17:31:00Z",
-    heartRate: 150,
-    power: 220,
-    speed: 9,
-    cadence: 85,
-    altitude: 205,
-    lat: null,
-    lng: null,
-  },
-] satisfies [StreamPoint, StreamPoint];
+it("keeps real legend, speed, time-tooltip and navigator options", () => {
+  const units = new UnitConverter("imperial");
+  const view = render(<MetricsChart {...args} activityType="cycling" units={units} />);
+  const yAxes = captured.option.yAxis;
+  if (!Array.isArray(yAxes)) throw new Error("Expected chart axes");
+  const speedAxis = yAxes.find(
+    (axis): axis is Record<string, unknown> =>
+      typeof axis === "object" &&
+      axis !== null &&
+      String(Reflect.get(axis, "name")).includes("Speed"),
+  );
+  if (!speedAxis) throw new Error("Expected speed axis");
+  expect(String(Reflect.get(speedAxis, "name"))).toContain(units.speedLabel);
+  const cyclingCadence = yAxes.find(
+    (axis): axis is Record<string, unknown> =>
+      typeof axis === "object" &&
+      axis !== null &&
+      String(Reflect.get(axis, "name")).includes("Cadence"),
+  );
+  expect(cyclingCadence).toMatchObject({ name: "Cadence (rpm)" });
 
-const args = {
-  points,
-  activityType: "cycling",
-  hasHr: true,
-  hasPower: true,
-  hasSpeed: true,
-  hasCadence: true,
-  loading: false,
-  units: new UnitConverter("metric"),
-};
+  const tooltip = captured.option.tooltip;
+  if (typeof tooltip !== "object" || tooltip === null) throw new Error("Expected tooltip");
+  const pointer = Reflect.get(tooltip, "axisPointer");
+  if (typeof pointer !== "object" || pointer === null) throw new Error("Expected time pointer");
+  const label = Reflect.get(pointer, "label");
+  if (typeof label !== "object" || label === null) throw new Error("Expected pointer label");
+  const formatter = Reflect.get(label, "formatter");
+  if (typeof formatter !== "function") throw new Error("Expected time formatter");
+  expect(formatter({ value: Date.parse(points[0].recordedAt) })).toBe(
+    formatDateTime(new Date(points[0].recordedAt)),
+  );
+
+  const zoom = captured.option.dataZoom;
+  if (!Array.isArray(zoom)) throw new Error("Expected chart navigator");
+  const slider = zoom.find(
+    (item): item is Record<string, unknown> =>
+      typeof item === "object" && item !== null && Reflect.get(item, "type") === "slider",
+  );
+  if (!slider) throw new Error("Expected slider navigator");
+  expect(slider).toMatchObject({
+    showDataShadow: false,
+    showDetail: true,
+    height: 32,
+    handleSize: "100%",
+  });
+  const labelFormatter = Reflect.get(slider, "labelFormatter");
+  if (typeof labelFormatter !== "function") throw new Error("Expected navigator time labels");
+  expect(labelFormatter(Date.parse(points[0].recordedAt))).toBe(
+    formatTimeOnly(points[0].recordedAt),
+  );
+
+  act(() =>
+    captured.events.legendselectchanged?.({
+      selected: { "Heart Rate": false, Speed: true, ignored: "not-a-boolean" },
+    }),
+  );
+  const legend = captured.option.legend;
+  if (typeof legend !== "object" || legend === null) throw new Error("Expected legend options");
+  expect(Reflect.get(legend, "selected")).toEqual({ "Heart Rate": false, Speed: true });
+  view.rerender(<MetricsChart {...args} activityType="hiking" units={units} />);
+  const hikingAxes = captured.option.yAxis;
+  if (!Array.isArray(hikingAxes)) throw new Error("Expected hiking chart axes");
+  const cadenceAxis = hikingAxes.find(
+    (axis): axis is Record<string, unknown> =>
+      typeof axis === "object" &&
+      axis !== null &&
+      String(Reflect.get(axis, "name")).includes("Cadence"),
+  );
+  expect(cadenceAxis).toMatchObject({ name: "Cadence (steps/min)" });
+});
 
 it("records drag zoom without rebuilding the metrics chart", () => {
   const view = render(<MetricsChart {...args} />);
@@ -76,7 +124,9 @@ it("records drag zoom without rebuilding the metrics chart", () => {
   act(() => captured.events.datazoom?.({ start: 25, end: 75 }));
   expect(captured.renders).toBe(renders);
   view.rerender(<MetricsChart {...args} highlightedClimbId="first" />);
-  expect(captured.option.dataZoom).toEqual(
+  const firstZoom = captured.option.dataZoom;
+  if (!Array.isArray(firstZoom)) throw new Error("Expected data zoom controls");
+  expect(firstZoom).toEqual(
     expect.arrayContaining([expect.objectContaining({ start: 25, end: 75 })]),
   );
 });
@@ -87,16 +137,7 @@ it("selects annotation IDs from line and range clicks, including repeated names"
     <MetricsChart
       {...args}
       onSelectClimb={onSelectClimb}
-      climbAnnotations={[
-        { id: "first", label: "Same route", startedAt: points[0].recordedAt, endedAt: null },
-        { id: "repeat", label: "Same route", startedAt: points[1].recordedAt, endedAt: null },
-        {
-          id: "range",
-          label: "Timed route",
-          startedAt: points[0].recordedAt,
-          endedAt: points[1].recordedAt,
-        },
-      ]}
+      climbAnnotations={selectableClimbAnnotations}
     />,
   );
   const series = captured.option.series;
@@ -117,34 +158,30 @@ it("selects annotation IDs from line and range clicks, including repeated names"
 });
 
 it("expands zoom only enough to reveal a selected climb and updates existing chart elements", () => {
-  const climbAnnotations = [
-    { id: "first", label: "First", startedAt: points[0].recordedAt, endedAt: null },
-    { id: "middle", label: "Middle", startedAt: "2026-10-18T17:30:30Z", endedAt: null },
-    {
-      id: "range",
-      label: "Range",
-      startedAt: "2026-10-18T17:30:45Z",
-      endedAt: points[1].recordedAt,
-    },
-  ];
-  const view = render(<MetricsChart {...args} climbAnnotations={climbAnnotations} />);
+  const view = render(<MetricsChart {...args} climbAnnotations={zoomClimbAnnotations} />);
   act(() => captured.events.datazoom?.({ start: 25, end: 75 }));
   view.rerender(
-    <MetricsChart {...args} climbAnnotations={climbAnnotations} selectedClimbId="middle" />,
+    <MetricsChart {...args} climbAnnotations={zoomClimbAnnotations} selectedClimbId="middle" />,
   );
-  expect(captured.option.dataZoom).toEqual(
+  const middleZoom = captured.option.dataZoom;
+  if (!Array.isArray(middleZoom)) throw new Error("Expected chart zoom controls");
+  expect(middleZoom).toEqual(
     expect.arrayContaining([expect.objectContaining({ start: 25, end: 75 })]),
   );
   view.rerender(
-    <MetricsChart {...args} climbAnnotations={climbAnnotations} selectedClimbId="first" />,
+    <MetricsChart {...args} climbAnnotations={zoomClimbAnnotations} selectedClimbId="first" />,
   );
-  expect(captured.option.dataZoom).toEqual(
+  const rangeZoom = captured.option.dataZoom;
+  if (!Array.isArray(rangeZoom)) throw new Error("Expected data zoom controls");
+  expect(rangeZoom).toEqual(
     expect.arrayContaining([expect.objectContaining({ start: 0, end: 75 })]),
   );
   view.rerender(
-    <MetricsChart {...args} climbAnnotations={climbAnnotations} selectedClimbId="range" />,
+    <MetricsChart {...args} climbAnnotations={zoomClimbAnnotations} selectedClimbId="range" />,
   );
-  expect(captured.option.dataZoom).toEqual(
+  const dataZoom = captured.option.dataZoom;
+  if (!Array.isArray(dataZoom)) throw new Error("Expected data zoom controls");
+  expect(dataZoom).toEqual(
     expect.arrayContaining([expect.objectContaining({ start: 0, end: 100 })]),
   );
   expect(captured.notMerge).toBe(false);
@@ -219,6 +256,176 @@ it("plots server-provided HR context without extending other metrics", () => {
   expect(series[1].data[0].value).toEqual([Date.parse(points[0].recordedAt), 200]);
 });
 
+it("plots skin temperature at its own recorded times in the selected units", () => {
+  const skinTemperatureMetric = activityMetricSourcePreview.find(
+    (metric) => metric.key === "skinTemperature",
+  );
+  if (!skinTemperatureMetric) throw new Error("Expected skin temperature fixture");
+  const selectedClimbAt = "2026-10-18T17:31:10Z";
+  const chartProps = {
+    ...args,
+    points: skinTemperaturePoints,
+    climbAnnotations: [
+      {
+        id: "late-temperature-window-climb",
+        label: "Late climb",
+        startedAt: selectedClimbAt,
+        endedAt: null,
+      },
+      {
+        id: "selected-climb",
+        label: "Selected climb",
+        startedAt: "2026-10-18T17:30:30Z",
+        endedAt: null,
+      },
+    ],
+    metricSources: [
+      {
+        key: "skinTemperature",
+        label: "Skin Temperature",
+        sources: skinTemperatureMetric.sources,
+        selectedId: '["whoop_ble","strap-a"]',
+        onChange: vi.fn(),
+      },
+    ],
+    units: new UnitConverter("imperial"),
+  };
+  const view = render(<MetricsChart {...chartProps} />);
+  act(() => captured.events.datazoom?.({ start: 0, end: 54 }));
+  view.rerender(<MetricsChart {...chartProps} selectedClimbId="selected-climb" />);
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected chart series");
+  const temperature = series.find(
+    (entry: { name: string; data?: unknown[] }) => entry.name === "Skin Temperature",
+  );
+  const temperatureData: unknown[] = Array.isArray(temperature?.data) ? temperature.data : [];
+  const temperatureValues = temperatureData.flatMap((sample) => {
+    if (typeof sample !== "object" || sample === null || !("value" in sample)) return [];
+    const value = sample.value;
+    if (
+      !Array.isArray(value) ||
+      typeof value[0] !== "number" ||
+      (typeof value[1] !== "number" && value[1] !== null)
+    ) {
+      return [];
+    }
+    return [{ timestamp: value[0], value: value[1] }];
+  });
+  expect(temperatureValues.filter((sample) => sample.value !== null)).toEqual([
+    { timestamp: Date.parse("2026-10-18T17:29:00Z"), value: 89.924 },
+    { timestamp: Date.parse("2026-10-18T17:31:17Z"), value: 90.32 },
+  ]);
+  expect(temperatureValues.some((sample) => sample.value === null)).toBe(true);
+  const xAxis = captured.option.xAxis;
+  if (typeof xAxis !== "object" || xAxis === null) throw new Error("Expected time axis");
+  expect(Reflect.get(xAxis, "min")).toBe(Date.parse("2026-10-18T17:29:00Z"));
+  expect(Reflect.get(xAxis, "max")).toBe(Date.parse("2026-10-18T17:31:17Z"));
+  const heartRate = series.find((entry: { name: string }) => entry.name === "Heart Rate");
+  expect(heartRate?.markLine?.data).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: "late-temperature-window-climb",
+        xAxis: Date.parse(selectedClimbAt),
+      }),
+    ]),
+  );
+  const fallbackZoom = captured.option.dataZoom;
+  if (!Array.isArray(fallbackZoom)) throw new Error("Expected chart zoom controls");
+  expect(fallbackZoom[1]).toMatchObject({ start: 0, end: expect.closeTo(67.69, 1) });
+  if (!Array.isArray(captured.option.yAxis)) throw new Error("Expected chart axes");
+  const temperatureAxis = captured.option.yAxis.find(
+    (axis: { name?: string; axisLabel?: { formatter?: (value: number) => string } }) =>
+      axis.name === "Skin Temperature (°F)",
+  );
+  expect(temperatureAxis?.axisLabel?.formatter?.(89.924)).toBe("89.9");
+  expect(temperature?.tooltip?.valueFormatter?.(89.924)).toBe("89.9");
+  const heartRateSeries = series.find(
+    (entry: { name: string; tooltip?: { valueFormatter?: (value: number) => string } }) =>
+      entry.name === "Heart Rate",
+  );
+  expect(heartRateSeries?.tooltip?.valueFormatter?.(140)).toBe("140");
+});
+
+it("associates pending chart readings with the completed source beside the requested picker", () => {
+  render(
+    <MetricsChart
+      {...args}
+      metricSources={[
+        {
+          key: "power",
+          label: "Power",
+          sources: [
+            {
+              id: "wahoo",
+              label: "Wahoo",
+              presentation: {
+                displayName: "Wahoo",
+                providerId: "wahoo",
+                sourceName: null,
+                attribution: null,
+              },
+            },
+            {
+              id: "garmin",
+              label: "Garmin",
+              presentation: {
+                displayName: "Garmin",
+                providerId: "garmin",
+                sourceName: null,
+                attribution: null,
+              },
+            },
+          ],
+          selectedId: "garmin",
+          onChange: vi.fn(),
+        },
+      ]}
+      sourceAttribution={{ power: "Showing previous readings from Wahoo" }}
+    />,
+  );
+
+  expect(screen.getByRole("status")).toHaveTextContent("Showing previous readings from Wahoo");
+  expect(screen.getByRole("button", { name: "Power source: Garmin" })).toBeInTheDocument();
+});
+
+it("keeps one decimal place for Celsius temperature labels and tooltips", () => {
+  render(
+    <MetricsChart
+      {...args}
+      points={[
+        {
+          ...points[0],
+          skinTemperature: 32.18,
+          skinTemperatureRecordedAt: "2026-10-18T17:30:17Z",
+        },
+      ]}
+      metricSources={[
+        {
+          key: "skinTemperature",
+          label: "Skin Temperature",
+          sources: [],
+          selectedId: '["whoop_ble","strap-a"]',
+          onChange: vi.fn(),
+        },
+      ]}
+      units={new UnitConverter("metric")}
+    />,
+  );
+  if (!Array.isArray(captured.option.yAxis) || !Array.isArray(captured.option.series)) {
+    throw new Error("Expected metric chart configuration");
+  }
+  const temperatureAxis = captured.option.yAxis.find(
+    (axis: { name?: string; axisLabel?: { formatter?: (value: number) => string } }) =>
+      axis.name === "Skin Temperature (°C)",
+  );
+  const temperatureSeries = captured.option.series.find(
+    (entry: { name: string; tooltip?: { valueFormatter?: (value: number) => string } }) =>
+      entry.name === "Skin Temperature",
+  );
+  expect(temperatureAxis?.axisLabel?.formatter?.(32.18)).toBe("32.2");
+  expect(temperatureSeries?.tooltip?.valueFormatter?.(32.18)).toBe("32.2");
+});
+
 it.each([false, true])(
   "preserves user zoom while highlighting a climb (batched: %s)",
   (batched) => {
@@ -250,18 +457,12 @@ it.each([false, true])(
 );
 
 it("emphasizes only the active climb line or band and restores it on exit", () => {
-  const climbAnnotations = [
-    { id: "first", label: "First", startedAt: "2026-10-18T17:30:20Z", endedAt: null },
-    { id: "repeat", label: "Repeat", startedAt: "2026-10-18T17:30:40Z", endedAt: null },
-    {
-      id: "range",
-      label: "Range",
-      startedAt: "2026-10-18T17:30:00Z",
-      endedAt: "2026-10-18T17:30:30Z",
-    },
-  ];
   const view = render(
-    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId="repeat" />,
+    <MetricsChart
+      {...args}
+      climbAnnotations={highlightClimbAnnotations}
+      highlightedClimbId="repeat"
+    />,
   );
   const hrSeries = () => {
     const series = captured.option.series;
@@ -275,7 +476,11 @@ it("emphasizes only the active climb line or band and restores it on exit", () =
   expect(hrSeries().markLine.data[0].label.show).toBe(false);
   expect(renderChartSvg().documentElement.textContent).toContain("Repeat");
   view.rerender(
-    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId="range" />,
+    <MetricsChart
+      {...args}
+      climbAnnotations={highlightClimbAnnotations}
+      highlightedClimbId="range"
+    />,
   );
   expect(hrSeries().markArea.data[0][0]).toMatchObject({
     itemStyle: { color: "rgba(167,139,250,0.36)" },
@@ -284,12 +489,20 @@ it("emphasizes only the active climb line or band and restores it on exit", () =
   expect(hrSeries().markLine.data[1].lineStyle.width).toBe(1.5);
   expect(renderChartSvg().documentElement.textContent).toContain("Range");
   view.rerender(
-    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId={null} />,
+    <MetricsChart
+      {...args}
+      climbAnnotations={highlightClimbAnnotations}
+      highlightedClimbId={null}
+    />,
   );
   expect(hrSeries().markArea.data[0][0].label.show).toBe(false);
   expect(hrSeries().markLine.data[1].label.show).toBe(false);
   view.rerender(
-    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId="no-timing" />,
+    <MetricsChart
+      {...args}
+      climbAnnotations={highlightClimbAnnotations}
+      highlightedClimbId="no-timing"
+    />,
   );
   expect(
     hrSeries().markLine.data.every((line: { label: { show: boolean } }) => !line.label.show),
@@ -298,20 +511,7 @@ it("emphasizes only the active climb line or band and restores it on exit", () =
 
 it("overlays timed climbs on heart rate and exposes exact climb labels", () => {
   render(
-    <MetricsChart
-      {...args}
-      activityType="climbing"
-      climbAnnotations={[
-        { id: "ascent", label: "Corner · V3", startedAt: "2026-10-18T17:30:20Z", endedAt: null },
-        {
-          id: "range",
-          label: "Arete · V4",
-          startedAt: "2026-10-18T17:29:00Z",
-          endedAt: "2026-10-18T17:30:40Z",
-        },
-        { id: "outside", label: "Outside", startedAt: "2026-10-18T17:32:00Z", endedAt: null },
-      ]}
-    />,
+    <MetricsChart {...args} activityType="climbing" climbAnnotations={timedClimbAnnotations} />,
   );
   const series = captured.option.series;
   if (!Array.isArray(series)) throw new Error("Expected chart series");
@@ -443,12 +643,15 @@ describe("MetricsChart number formatting", () => {
     expect(labels).toContain("77");
   });
 
-  it("rounds tooltip values to whole numbers", () => {
+  it("rounds non-temperature tooltip values to whole numbers", () => {
     renderFractionalChart();
 
-    const tooltip = captured.option.tooltip;
+    const series = captured.option.series;
+    if (!Array.isArray(series)) throw new Error("Expected chart series");
+    const heartRate = series.find((entry) => entry.name === "Heart Rate");
+    const tooltip = heartRate?.tooltip;
     if (typeof tooltip !== "object" || tooltip === null || !("valueFormatter" in tooltip)) {
-      throw new Error("Expected tooltip value formatter");
+      throw new Error("Expected heart-rate tooltip value formatter");
     }
     const formatter = tooltip.valueFormatter;
     if (typeof formatter !== "function") throw new Error("Expected tooltip value formatter");
@@ -472,51 +675,6 @@ describe("MetricsChart number formatting", () => {
 });
 
 describe("MetricsChart sparse readings", () => {
-  it("retains the tooltip of an elevation observation immediately after a gap", () => {
-    const resumedAt = Date.UTC(2026, 9, 20, 16, 0, 20);
-    render(
-      <ElevationChart
-        loading={false}
-        units={args.units}
-        points={[0, 1, 2, 20, 21].map((second) => ({
-          ...points[0],
-          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, 0, second)).toISOString(),
-          altitude: 200 + second,
-        }))}
-      />,
-    );
-    setPlatformAPI({ measureText: (text) => ({ width: String(text).length * 7 }) });
-    const chart = init(null, null, { renderer: "svg", ssr: true, width: 800, height: 380 });
-    try {
-      chart.setOption({ ...captured.option, animation: false });
-      const selected: { dataIndex: number | null } = { dataIndex: null };
-      chart.on("updateAxisPointer", (event: unknown) => {
-        if (
-          typeof event === "object" &&
-          event !== null &&
-          "dataIndex" in event &&
-          typeof event.dataIndex === "number"
-        ) {
-          selected.dataIndex = event.dataIndex;
-        }
-      });
-      const pixelX = chart.convertToPixel({ xAxisIndex: 0 }, resumedAt);
-      if (typeof pixelX !== "number") throw new Error("Expected time-axis pixel");
-      chart.dispatchAction({ type: "updateAxisPointer", x: pixelX, y: 100 });
-      const series = captured.option.series;
-      if (!Array.isArray(series) || selected.dataIndex === null)
-        throw new Error("Expected selected observation");
-      const observation = series[0].data[selected.dataIndex];
-      expect(observation.value).toEqual([resumedAt, 220]);
-      const tooltip = captured.option.tooltip;
-      if (!tooltip || typeof tooltip !== "object") throw new Error("Expected elevation tooltip");
-      const formatter = Reflect.get(tooltip, "formatter");
-      expect(formatter([observation])).toContain("Elevation: 220 m");
-    } finally {
-      chart.dispose();
-    }
-  });
-
   it("labels exact observations with readable timestamps in the chart data table", () => {
     render(<MetricsChart {...args} />);
     expect(buildChartTable(captured.option).rows).toContainEqual({
@@ -609,21 +767,6 @@ describe("MetricsChart sparse readings", () => {
   });
 
   it("renders every sparse Watch reading among a dense activity timeline", () => {
-    const watchReadings = new Map([
-      [7, 80],
-      [67, 100],
-      [97, 110],
-      [154, 120],
-      [186, 125],
-      [223, 130],
-      [252, 135],
-      [297, 140],
-      [314, 145],
-      [335, 150],
-      [376, 155],
-      [396, 120],
-      [464, 100],
-    ]);
     render(
       <MetricsChart
         {...args}

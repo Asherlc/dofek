@@ -1115,10 +1115,11 @@ Workflows using this path:
 - `.github/workflows/deploy-ota.yml`
 - `.github/workflows/mobile-preview-ota.yml`
 
-PR preview object cleanup:
+PR preview uploads and cleanup:
 
 - `.github/workflows/cleanup-pr-r2.yml` waits for the same PR’s mobile publication through [GitHub workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency), loads required identity before deleting, then removes `pr-<number>/` objects from `dofek-storybook` and `<app-id>/pr-<number>/` objects from `dofek-ota-releases` when the PR closes. Both deletions can be rerun safely using [AWS recursive removal](https://docs.aws.amazon.com/cli/latest/reference/s3/rm.html). The historical `dofek-ota` bucket remains untouched.
 - R2 lifecycle rules in `deploy/storage.tf` also expire preview prefixes after 14 days as a safety net if a workflow-run cleanup is missed.
+- `.github/workflows/storybook-preview.yml` explicitly selects the AWS CLI `classic` S3 transfer client before uploading previews. In a controlled AWS CLI 2.40.0 replay, CRT returned failure after R2's HTTP 429 / `ServiceUnavailable`, while `classic` retried the same response under the default standard retry behavior; the native `classic` upload to R2 also succeeded. The pinned [CRT status classifier](https://github.com/awslabs/aws-c-s3/blob/1e5889547f1bdfd1d950829971503091e2dc91fd/source/s3_meta_request.c#L1808-L1829) and [recoverable error map](https://github.com/awslabs/aws-c-s3/blob/1e5889547f1bdfd1d950829971503091e2dc91fd/source/s3_util.c#L908-L925) explain the observed response handling; the pinned [AWS CLI 2.40.0 standard retry checker](https://github.com/aws/aws-cli/blob/2.40.0/awscli/botocore/retries/standard.py#L502-L527) recognizes an unmodeled HTTP 429. Keep the standard retry mode and attempt budget unchanged. AWS documents the [transfer-client selection](https://docs.aws.amazon.com/cli/latest/topic/s3-config.html#preferred_transfer_client); Cloudflare documents R2's [S3 API compatibility](https://developers.cloudflare.com/r2/api/s3/api/).
 
 Postgres backup status:
 
