@@ -1,5 +1,10 @@
 # Cycling power algorithms: research and consolidation
 
+Historical research record. The user superseded its computed-only product direction
+on 2026-11-15 with the [approved manual FTP design](superpowers/specs/2026-11-15-manual-cycling-ftp-design.md).
+Keep the research findings as context; use the [current cutover notes](cycling-power-cutover.md)
+for release behavior.
+
 Research date: 2026-11-01. This document describes measured research and the implemented working-branch
 design. The application changes have not been deployed.
 

@@ -64,7 +64,7 @@ the arithmetic's finite range; critical-power fitting withholds such a model.
 Normalized power uses complete 30-second windows, retaining zero power and
 withholding results when elapsed coverage is incomplete. Its mathematical basis
 is documented by [TrainingPeaks](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).
-Power TSS uses `(NP / eFTP)² × seconds / 36`, following the
+Power TSS uses `(NP / FTP)² × seconds / 36` with a caller-supplied threshold, following the
 [published definition](https://www.trainingpeaks.com/learn/articles/estimating-training-stress-score-tss/).
 
 The `resample-signal` module returns sparse, complete one-second buckets with

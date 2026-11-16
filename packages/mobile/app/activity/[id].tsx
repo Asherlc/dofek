@@ -770,7 +770,7 @@ export default function ActivityDetailScreen() {
         </View>
       )}
 
-      {/* Power Zones (cycling only, requires eFTP) */}
+      {/* Power Zones and dated manual FTP settings link */}
       {powerZones.error && <QueryStatePanel variant="error" message={powerZones.error.message} />}
       {isCycling && hasPower && powerZones.data != null && (
         <View style={{ gap: 8 }}>
@@ -785,6 +785,20 @@ export default function ActivityDetailScreen() {
               </Text>
             )}
           <CyclingThresholdDetails evidence={powerZones.data.thresholdEvidence} />
+          {!powerZones.error && !powerZones.isFetching && powerZones.data.ftp == null ? (
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Set cycling FTP for this activity date"
+              onPress={() =>
+                router.push(
+                  `/settings?tab=models-units&section=cycling-ftp&date=${powerZones.data?.activityDate ?? ""}`,
+                )
+              }
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <Text style={{ color: colors.accent }}>Set FTP for this date</Text>
+            </Pressable>
+          ) : null}
           {powerZones.data.ftp != null && <PowerZonesChart zones={powerZones.data.zones} />}
         </View>
       )}

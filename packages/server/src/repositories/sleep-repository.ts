@@ -11,7 +11,7 @@ import { fetchLatestSleepNight, fetchSleepNights } from "./clickhouse-sleep-repo
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const sleepStageRowSchema = z.object({
+export const sleepStageRowSchema = z.object({
   stage: z.enum(["deep", "light", "rem", "awake"]),
   started_at: z.string(),
   ended_at: z.string(),
@@ -99,14 +99,44 @@ export class SleepRepository extends BaseRepository {
     });
     if (!latestSleep) return [];
 
+    return this.#getStagesForSleepNight(latestSleep);
+  }
+
+  /** Sleep stages for one requested sleep date, or the latest available date by default. */
+  async getStagesByDate(date?: string) {
+    const sleepNight = date
+      ? (
+          await fetchSleepNights({
+            sensorStore: this.#requireSensorStore(),
+            userId: this.userId,
+            timezone: this.timezone,
+            endDate: date,
+            days: 0,
+            accessWindow: this.accessWindow,
+          })
+        )[0]
+      : await fetchLatestSleepNight({
+          sensorStore: this.#requireSensorStore(),
+          userId: this.userId,
+          timezone: this.timezone,
+          accessWindow: this.accessWindow,
+        });
+
+    return {
+      date: sleepNight?.date ?? date ?? null,
+      stages: sleepNight ? await this.#getStagesForSleepNight(sleepNight) : [],
+    };
+  }
+
+  async #getStagesForSleepNight(sleepNight: { started_at: string; ended_at: string | null }) {
     return this.query(
       sleepStageRowSchema,
       sql`WITH best_stage_session AS (
 						SELECT ss.id
 						FROM fitness.sleep_session ss
 						WHERE ss.user_id = ${this.userId}
-							AND ss.started_at <= COALESCE(${latestSleep.ended_at}::timestamptz, ${latestSleep.started_at}::timestamptz + interval '12 hours')
-							AND COALESCE(ss.ended_at, ss.started_at + interval '12 hours') >= ${latestSleep.started_at}::timestamptz
+								AND ss.started_at <= COALESCE(${sleepNight.ended_at}::timestamptz, ${sleepNight.started_at}::timestamptz + interval '12 hours')
+								AND COALESCE(ss.ended_at, ss.started_at + interval '12 hours') >= ${sleepNight.started_at}::timestamptz
 							AND EXISTS (SELECT 1 FROM fitness.sleep_stage s2 WHERE s2.session_id = ss.id)
 						ORDER BY
 							(SELECT count(*) FROM fitness.sleep_stage s3 WHERE s3.session_id = ss.id) DESC,

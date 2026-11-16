@@ -87,6 +87,8 @@ export const cyclingAdvancedRouter = router({
         emptyReason,
       };
     },
+    z.custom<ActivityVariabilityResult>(),
+    { keyVersion: "manual-ftp-variability-v2" },
   ),
 
   verticalAscentRate: selectedChartRangeQuery(

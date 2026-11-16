@@ -66,6 +66,10 @@ export function ActivityDetailPage() {
         query.state.data?.status === "processing" ? processingPollInterval("active") : false,
     },
   );
+  const powerZonesData = powerZones.data;
+  const powerZonesError = powerZones.error;
+  const powerZonesLoading = powerZones.isLoading;
+  const powerZonesFetching = powerZones.isFetching;
   const isStrengthActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "strength");
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
@@ -434,28 +438,49 @@ export function ActivityDetailPage() {
           </Section>
         )}
 
-        {isCycling && hasPower && (powerZones.error || powerZones.data != null) && (
+        {isCycling && hasPower && (powerZonesError || powerZonesData != null) && (
           <Section title="Power Zones">
             {metrics.attributionHints.powerZones &&
-              powerZones.data?.ftp != null &&
-              powerZones.data.zones.length > 0 && (
+              powerZonesData?.ftp != null &&
+              powerZonesData.zones.length > 0 && (
                 <p role="status" className="mb-2 text-xs text-muted">
                   {metrics.attributionHints.powerZones}
                 </p>
               )}
-            {powerZones.error && powerZones.data == null ? (
-              <QueryStatePanel error={powerZones.error} height={250} />
-            ) : powerZones.data ? (
+            {powerZonesError && !powerZonesData ? (
+              <QueryStatePanel error={powerZonesError} height={250} />
+            ) : null}
+            {powerZonesLoading && !powerZonesData ? (
+              <p role="status" aria-busy="true">
+                Loading power zones…
+              </p>
+            ) : null}
+            {powerZonesData ? (
               <>
-                <CyclingThresholdDetails evidence={powerZones.data.thresholdEvidence} />
-                {powerZones.data.ftp != null && (
+                {(powerZonesData.ftp != null || (!powerZonesError && !powerZonesFetching)) && (
+                  <CyclingThresholdDetails evidence={powerZonesData.thresholdEvidence} />
+                )}
+                {powerZonesData.ftp != null && (
                   <PowerZonesChart
-                    zones={powerZones.data.zones}
-                    ftp={powerZones.data.ftp}
-                    loading={powerZones.isLoading}
+                    zones={powerZonesData.zones}
+                    ftp={powerZonesData.ftp}
+                    loading={powerZonesLoading}
                   />
                 )}
-                {powerZones.error ? <QueryStatePanel error={powerZones.error} height={72} /> : null}
+                {powerZonesData.ftp == null && !powerZonesError && !powerZonesFetching ? (
+                  <Link
+                    to="/settings"
+                    search={{
+                      tab: "models-units" as const,
+                      section: "cycling-ftp",
+                      date: powerZonesData.activityDate,
+                    }}
+                    className="inline-flex rounded border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-surface-hover"
+                  >
+                    Set FTP
+                  </Link>
+                ) : null}
+                {powerZonesError ? <QueryStatePanel error={powerZonesError} height={72} /> : null}
               </>
             ) : null}
           </Section>

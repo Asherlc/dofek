@@ -7,7 +7,6 @@ import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climb
 import { sourceHardware } from "../components/ActivitySourceDisclosure.fixtures.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 import {
-  detailPageThresholdEvidence as computedThresholdEvidence,
   detailPageActivityTitleCases,
   detailPageAvailableArete,
   detailPageCachedHrZone,
@@ -26,8 +25,9 @@ import {
   detailPageStrengthExercises,
   detailPageSuggestedClimb,
   detailPageSummitOuting,
-  detailSourceTree,
+  detailPageUnavailablePowerZones,
   detailPageWithFirstHeartRate,
+  detailSourceTree,
 } from "./ActivityDetailPage.fixtures.ts";
 import {
   activityRouteParams,
@@ -61,6 +61,8 @@ import {
   queryResult,
   renderWithUnits,
   resetActivityDetailPageMocks,
+  setCyclingPowerActivity,
+  setCyclingPowerZoneResult,
 } from "./ActivityDetailPage.test-helpers.tsx";
 
 function getQueryEnabledFlag(value: unknown): boolean | undefined {
@@ -403,12 +405,14 @@ describe("ActivityDetailPage", () => {
   });
 
   it.each([
-    { stream: "empty", points: [] },
+    { stream: "empty", points: [], cyclingWithoutPower: false },
     {
       stream: "all-null",
       points: [detailPageNullStreamPoint],
+      cyclingWithoutPower: true,
     },
-  ])("hides sensor sections for an $stream stream", async ({ points }) => {
+  ])("hides sensor sections for an $stream stream", async ({ points, cyclingWithoutPower }) => {
+    if (cyclingWithoutPower) Object.assign(mockActivity, { activityType: "cycling" });
     mockStreamUseQuery.mockReturnValue(queryResult(points));
     mockRouteUseQuery.mockReturnValue(queryResult({ status: "unavailable" }));
     renderWithUnits(<ActivityDetailPage />);
@@ -417,6 +421,7 @@ describe("ActivityDetailPage", () => {
     expect(screen.queryByText("Performance")).toBeNull();
     expect(screen.queryByText("Elevation Profile")).toBeNull();
     expect(screen.queryByText("Heart Rate Zones")).toBeNull();
+    if (cyclingWithoutPower) expect(screen.queryByRole("link", { name: "Set FTP" })).toBeNull();
   });
 
   it("shows a strength exercise section error", async () => {
@@ -499,65 +504,63 @@ describe("ActivityDetailPage", () => {
   });
 
   it("shows a power zone section error", async () => {
-    const originalStream = [...mockStreamPoints];
-    Object.assign(mockActivity, { activityType: "cycling", avgPower: 220, maxPower: 360 });
-    mockStreamPoints.splice(
-      0,
-      mockStreamPoints.length,
-      ...originalStream.map((point) => ({ ...point, power: 210 })),
-    );
-    mockPowerZonesUseQuery.mockReturnValue(
-      queryResult<NonNullable<ReturnType<typeof mockPowerZonesUseQuery>["data"]>>(undefined, {
-        error: new Error("Power zones are unavailable."),
-        isError: true,
-      }),
-    );
+    setCyclingPowerZoneResult(undefined, {
+      error: new Error("Power zones are unavailable."),
+      isError: true,
+    });
 
     renderWithUnits(<ActivityDetailPage />);
 
     expect(screen.getByText("Power zones are unavailable.")).toBeDefined();
+    expect(screen.queryByRole("link", { name: "Set FTP" })).toBeNull();
   });
 
-  it("shows the server reason when computed cycling threshold evidence is unavailable", async () => {
-    const originalStream = [...mockStreamPoints];
-    mockStreamPoints.splice(
-      0,
-      mockStreamPoints.length,
-      ...originalStream.map((point) => ({ ...point, power: 210 })),
-    );
-    Object.assign(mockActivity, { activityType: "cycling", avgPower: 220, maxPower: 360 });
-    mockPowerZonesUseQuery.mockReturnValue(
-      queryResult({
-        ftp: null,
-        zones: [],
-        thresholdEvidence: {
-          ...computedThresholdEvidence,
-          value: null,
-          unavailable_reason: "No supported sustained power effort is available.",
-        },
-      }),
-    );
+  it("shows Set FTP for a power activity with no applicable FTP", async () => {
+    setCyclingPowerZoneResult(detailPageUnavailablePowerZones);
     renderWithUnits(<ActivityDetailPage />);
-    expect(screen.getByText("No supported sustained power effort is available.")).toBeDefined();
+
+    expect(screen.getByText("No FTP setting applies to this activity.")).toBeDefined();
+    const setFtpLink = screen.getByRole("link", { name: "Set FTP" });
+    expect(setFtpLink.getAttribute("href")).toBe("/settings");
+    expect(setFtpLink.getAttribute("data-search")).toBe(
+      JSON.stringify({ tab: "models-units", section: "cycling-ftp", date: "2026-03-18" }),
+    );
+  });
+
+  it("hides the missing-FTP explanation and link while cached null FTP is refetching", async () => {
+    setCyclingPowerZoneResult(detailPageUnavailablePowerZones, { isFetching: true });
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.queryByText("No FTP setting applies to this activity.")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Set FTP" })).toBeNull();
+  });
+
+  it("shows Set FTP for zero-watt rides even with incomplete normalized-power coverage", async () => {
+    mockPowerWorkUseQuery.mockReturnValue(
+      queryResult({ workKilojoules: null, coverage: { coveredSeconds: 30, coveragePct: 1 } }),
+    );
+    setCyclingPowerZoneResult(detailPageUnavailablePowerZones);
+    setCyclingPowerActivity(0);
+    Object.assign(mockActivity, {
+      avgPower: 0,
+      avgPowerState: { status: "available" },
+      maxPower: 0,
+      maxPowerState: { status: "available" },
+    });
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByRole("link", { name: "Set FTP" }).getAttribute("data-search")).toContain(
+      "2026-03-18",
+    );
   });
 
   it("does not show a transient power zone section before a nullable result resolves", async () => {
-    const originalStream = [...mockStreamPoints];
-    Object.assign(mockActivity, { activityType: "cycling", avgPower: 220, maxPower: 360 });
-    mockStreamPoints.splice(
-      0,
-      mockStreamPoints.length,
-      ...originalStream.map((point) => ({ ...point, power: 210 })),
-    );
-    mockPowerZonesUseQuery.mockReturnValue(
-      queryResult<NonNullable<ReturnType<typeof mockPowerZonesUseQuery>["data"]>>(undefined, {
-        isLoading: true,
-      }),
-    );
+    setCyclingPowerZoneResult(undefined, { isLoading: true });
 
     renderWithUnits(<ActivityDetailPage />);
 
     expect(screen.queryByText("Power Zones")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Set FTP" })).toBeNull();
   });
   it.each([
     { isFetching: true, error: null },
@@ -968,11 +971,7 @@ describe("ActivityDetailPage", () => {
 
     describe("retained activity details", () => {
       it("keeps cached heart-rate and power zones visible with refresh errors", async () => {
-        const cyclingPoints = mockStreamPoints.map((point) => ({ ...point, power: 210 }));
-        mockActivityByIdUseQuery.mockReturnValue(
-          queryResult({ ...mockActivity, activityType: "cycling", avgPower: 210, maxPower: 260 }),
-        );
-        mockStreamUseQuery.mockReturnValue(queryResult(cyclingPoints));
+        setCyclingPowerActivity();
         mockHrZonesUseQuery.mockReturnValue(
           queryResult([detailPageCachedHrZone], {
             error: new Error("Heart-rate zones refresh failed"),
@@ -980,10 +979,10 @@ describe("ActivityDetailPage", () => {
           }),
         );
         mockPowerZonesUseQuery.mockReturnValue(
-          queryResult(
-            { ...detailPageCachedPowerZones, thresholdEvidence: computedThresholdEvidence },
-            { error: new Error("Power zones refresh failed"), isError: true },
-          ),
+          queryResult(detailPageCachedPowerZones, {
+            error: new Error("Power zones refresh failed"),
+            isError: true,
+          }),
         );
         renderWithUnits(<ActivityDetailPage />);
 
@@ -991,6 +990,8 @@ describe("ActivityDetailPage", () => {
         expect(screen.getByText("Power Zones")).toBeTruthy();
         expect(screen.getByText("Heart-rate zones refresh failed")).toBeTruthy();
         expect(screen.getByText("Power zones refresh failed")).toBeTruthy();
+        expect(screen.getByText("Applied FTP: 250 W")).toBeTruthy();
+        expect(screen.queryByRole("link", { name: "Set FTP" })).toBeNull();
       });
     });
   });

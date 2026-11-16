@@ -3,8 +3,7 @@ import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import { createFileRoute } from "@tanstack/react-router";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
-import { CyclingThresholdDetails } from "../../components/CyclingThresholdDetails.tsx";
-import { EftpTrendChart } from "../../components/EftpTrendChart.tsx";
+
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
@@ -139,7 +138,6 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
             <EstimateEvidencePanel
               recent={estimateEvidence.recent}
               season={estimateEvidence.season}
-              eftp={estimateEvidence.eftp}
               recentDays={days}
             />
           )}
@@ -153,19 +151,6 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
               data={performance.data?.pmc.data ?? []}
               model={performance.data?.pmc.model}
               availability={performance.data?.availability?.pmc}
-              loading={performance.isLoading}
-            />
-          </Section>
-
-          {/* eFTP Trend */}
-          <Section title="Ongoing Estimated Threshold Power">
-            {performance.data && (
-              <CyclingThresholdDetails evidence={performance.data.eftpTrend.currentEvidence} />
-            )}
-            <EftpTrendChart
-              data={performance.data?.eftpTrend.trend ?? []}
-              currentEftp={performance.data?.eftpTrend.currentEftp ?? null}
-              availability={performance.data?.availability?.eftpTrend}
               loading={performance.isLoading}
             />
           </Section>
@@ -363,12 +348,10 @@ function PeriodLabel({
 function EstimateEvidencePanel({
   recent,
   season,
-  eftp,
   recentDays,
 }: {
   recent: PeriodEstimateEvidence;
   season: PeriodEstimateEvidence;
-  eftp: EstimateEvidence;
   recentDays: TimeRangeDays;
 }) {
   return (
@@ -398,7 +381,6 @@ function EstimateEvidencePanel({
           title="Estimated aerobic capacity · Season"
           evidence={season.vo2Max}
         />
-        <EstimateEvidenceBlock title="Estimated Threshold Power trend" evidence={eftp} />
       </div>
     </section>
   );

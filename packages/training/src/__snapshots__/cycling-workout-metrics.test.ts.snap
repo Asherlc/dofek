@@ -66,11 +66,11 @@ exports[`computeCyclingWorkoutMetrics > computes cardiac drift from equal elapse
   "unavailableReasons": [
     {
       "metric": "intensity_factor",
-      "reason": "no computed threshold is available for this activity",
+      "reason": "no configured FTP is effective for this activity date",
     },
     {
       "metric": "training_stress_score",
-      "reason": "no computed threshold is available for this activity",
+      "reason": "no configured FTP is effective for this activity date",
     },
   ],
 }
@@ -501,11 +501,11 @@ exports[`computeCyclingWorkoutMetrics > does not manufacture FTP-dependent metri
   "unavailableReasons": [
     {
       "metric": "intensity_factor",
-      "reason": "no computed threshold is available for this activity",
+      "reason": "no configured FTP is effective for this activity date",
     },
     {
       "metric": "training_stress_score",
-      "reason": "no computed threshold is available for this activity",
+      "reason": "no configured FTP is effective for this activity date",
     },
     {
       "metric": "heart_rate",
@@ -597,11 +597,11 @@ exports[`computeCyclingWorkoutMetrics > sorts irregular samples while preserving
     },
     {
       "metric": "intensity_factor",
-      "reason": "no computed threshold is available for this activity",
+      "reason": "no configured FTP is effective for this activity date",
     },
     {
       "metric": "training_stress_score",
-      "reason": "no computed threshold is available for this activity",
+      "reason": "no configured FTP is effective for this activity date",
     },
     {
       "metric": "heart_rate",
@@ -689,11 +689,11 @@ exports[`computeCyclingWorkoutMetrics > supports native five-second sampling wit
   "unavailableReasons": [
     {
       "metric": "intensity_factor",
-      "reason": "no computed threshold is available for this activity",
+      "reason": "no configured FTP is effective for this activity date",
     },
     {
       "metric": "training_stress_score",
-      "reason": "no computed threshold is available for this activity",
+      "reason": "no configured FTP is effective for this activity date",
     },
     {
       "metric": "cardiac_drift",

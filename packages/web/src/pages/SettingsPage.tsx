@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { AccountErasurePanel } from "../components/AccountErasurePanel.tsx";
 import { ClimbingGradeSystemToggle } from "../components/ClimbingGradeSystemToggle.tsx";
+import { CyclingFtpSettings } from "../components/CyclingFtpSettings.tsx";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
@@ -266,6 +267,15 @@ export function SettingsPage() {
             subtitle="Connect remote MCP clients and manage access tokens"
           >
             <McpTokensPanel />
+          </PageSection>
+        ) : null}
+
+        {activeCategory === "models-units" ? (
+          <PageSection title="Cycling FTP">
+            <CyclingFtpSettings
+              sectionDate={search.section === "cycling-ftp" ? search.date : undefined}
+              focusSection={search.section === "cycling-ftp"}
+            />
           </PageSection>
         ) : null}
 

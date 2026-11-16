@@ -157,7 +157,7 @@ vi.mock("react-native-svg", () => ({
 const activityRouteParams = vi.hoisted(() => ({ id: "00000000-0000-0000-0000-000000000001" }));
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => activityRouteParams,
-  useRouter: () => ({ back: mockRouterBack }),
+  useRouter: () => ({ back: mockRouterBack, push: mockRouterPush }),
 }));
 
 vi.mock("../../components/ChartTitleWithTooltip", () => ({
@@ -343,22 +343,12 @@ const mockHeartRateContextQuery =
   >();
 const mockRouteQuery = vi.fn();
 const mockHrZonesQuery = vi.fn();
-const computedThresholdEvidence = {
+const configuredThresholdEvidence = {
   value: 250,
   unit: "watt" as const,
-  method: "computed_eftp" as const,
-  event_at: "2026-03-05T12:00:00Z",
-  evidence_activity_id: "00000000-0000-4000-8000-000000000101",
-  evidence_at: "2026-03-01T12:00:00Z",
-  evidence_duration_seconds: 1200,
-  evidence_power: 265,
-  model_version: "v1",
-  uncertainty: {
-    kind: "not_quantifiable" as const,
-    watts: null,
-    reason:
-      "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
-  },
+  method: "configured" as const,
+  effective_from: "2026-02-01",
+  source_record_id: "00000000-0000-4000-8000-000000000101",
   unavailable_reason: null,
 };
 const mockPowerZonesQuery = vi.fn();
@@ -373,6 +363,7 @@ const mockRestoreStatus = vi.fn<
   () => { data: { status: "pending" | "completed"; error: null } | undefined; error: null }
 >(() => ({ data: undefined, error: null }));
 const mockRouterBack = vi.fn();
+const mockRouterPush = vi.fn();
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -736,6 +727,7 @@ beforeEach(() => {
   mockCalendarActivityOverviewInvalidate.mockClear();
   mockCalendarDataInvalidate.mockClear();
   mockRouterBack.mockClear();
+  mockRouterPush.mockClear();
   vi.mocked(Alert.alert).mockClear();
   vi.mocked(captureException).mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
@@ -2089,29 +2081,110 @@ describe("ActivityDetailScreen", () => {
     expect(screen.queryByText("No heart rate zone data")).toBeNull();
   });
 
-  it("shows the server reason when computed cycling threshold evidence is unavailable", async () => {
+  it("links power-present rides without FTP to the activity's local date", async () => {
+    mockStreamQuery.mockReturnValue({
+      data: streamPointsWithHrAndPower.map((point) => ({ ...point, power: 0 })),
+      isLoading: false,
+    });
     mockPowerZonesQuery.mockReturnValue({
       data: {
         ftp: null,
+        activityDate: "2026-05-15",
         zones: [],
         thresholdEvidence: {
-          ...computedThresholdEvidence,
+          ...configuredThresholdEvidence,
           value: null,
-          unavailable_reason: "No supported sustained power effort is available.",
+          effective_from: null,
+          source_record_id: null,
+          unavailable_reason: "No FTP is configured.",
         },
       },
       isLoading: false,
     });
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
-    expect(screen.getByText("No supported sustained power effort is available.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: "Set cycling FTP for this activity date" }));
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/settings?tab=models-units&section=cycling-ftp&date=2026-05-15",
+    );
+  });
+
+  it("does not show the FTP setup link while power zones are loading, failed, or power is absent", async () => {
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    mockPowerZonesQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetching: true,
+      error: null,
+    });
+    const loading = render(React.createElement(ActivityDetailScreen));
+    expect(
+      screen.queryByRole("link", { name: "Set cycling FTP for this activity date" }),
+    ).toBeNull();
+    loading.unmount();
+
+    mockPowerZonesQuery.mockReturnValue({
+      data: {
+        ftp: null,
+        activityDate: "2026-05-15",
+        zones: [],
+        thresholdEvidence: {
+          ...configuredThresholdEvidence,
+          value: null,
+          effective_from: null,
+          source_record_id: null,
+          unavailable_reason: "No FTP",
+        },
+      },
+      isLoading: false,
+      isFetching: true,
+      error: null,
+    });
+    const refreshing = render(React.createElement(ActivityDetailScreen));
+    expect(
+      screen.queryByRole("link", { name: "Set cycling FTP for this activity date" }),
+    ).toBeNull();
+    refreshing.unmount();
+
+    mockPowerZonesQuery.mockReturnValue({
+      data: {
+        ftp: null,
+        activityDate: "2026-05-15",
+        zones: [],
+        thresholdEvidence: {
+          ...configuredThresholdEvidence,
+          value: null,
+          effective_from: null,
+          source_record_id: null,
+          unavailable_reason: "No FTP",
+        },
+      },
+      isLoading: false,
+      error: new Error("Power zones failed to refresh"),
+    });
+    const failed = render(React.createElement(ActivityDetailScreen));
+    expect(
+      screen.queryByRole("link", { name: "Set cycling FTP for this activity date" }),
+    ).toBeNull();
+    failed.unmount();
+
+    mockStreamQuery.mockReturnValue({
+      data: streamPointsWithHrAndPower.map((point) => ({ ...point, power: null })),
+      isLoading: false,
+    });
+    mockPowerZonesQuery.mockReturnValue({ data: null, isLoading: false, error: null });
+    render(React.createElement(ActivityDetailScreen));
+    expect(
+      screen.queryByRole("link", { name: "Set cycling FTP for this activity date" }),
+    ).toBeNull();
   });
 
   it("labels the power zone chart with zone names", async () => {
     mockPowerZonesQuery.mockReturnValue({
       data: {
         ftp: 250,
-        thresholdEvidence: computedThresholdEvidence,
+        activityDate: "2026-05-15",
+        thresholdEvidence: configuredThresholdEvidence,
         zones: [
           { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300, percent: 33.3 },
           { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 66.7 },
@@ -2125,8 +2198,8 @@ describe("ActivityDetailScreen", () => {
 
     expect(screen.getByText("Zone 1")).toBeTruthy();
     expect(screen.getByText("Recovery")).toBeTruthy();
-    expect(screen.getByText("Computed eFTP: 250 W")).toBeTruthy();
-    const previousZones = { ftp: 250, thresholdEvidence: computedThresholdEvidence, zones: [] };
+    expect(screen.getByText(/FTP: 250 W/).textContent).toContain("effective 2026-02-01");
+    const previousZones = { ftp: 250, thresholdEvidence: configuredThresholdEvidence, zones: [] };
     const placeholder = getPlaceholderData(mockPowerZonesQuery.mock.calls.at(-1)?.[1]);
     expect(
       placeholder?.(previousZones, {
@@ -2141,13 +2214,9 @@ describe("ActivityDetailScreen", () => {
         queryKey: [["activity", "powerZones"], { input: { id: "different-ride" }, type: "query" }],
       }),
     ).toBeUndefined();
-    expect(screen.getByText(/Evidence:/)).toBeTruthy();
-    fireEvent.click(screen.getByText("Estimate uncertainty"));
     expect(
-      screen.getByText(
-        "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
-      ),
-    ).toBeTruthy();
+      screen.queryByRole("link", { name: "Set cycling FTP for this activity date" }),
+    ).toBeNull();
     expect(screen.getByText("Zone 2")).toBeTruthy();
     expect(screen.getByText("Endurance")).toBeTruthy();
   });
@@ -2970,7 +3039,8 @@ it.each([false, true])(
     });
     const zones = {
       ftp: 250,
-      thresholdEvidence: computedThresholdEvidence,
+      activityDate: "2026-05-15",
+      thresholdEvidence: configuredThresholdEvidence,
       zones: [{ zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 100 }],
     };
     mockPowerZonesQuery.mockImplementation((input: { powerSourceId?: string }) => ({

@@ -1,49 +1,46 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CyclingThresholdEvidence } from "../../../server/src/contracts/cycling-threshold.ts";
-import { CyclingThresholdDetails } from "./CyclingThresholdDetails.tsx";
+import { CyclingThresholdDetails } from "./CyclingThresholdDetails";
 
-const evidence: CyclingThresholdEvidence = {
+const baseEvidence: CyclingThresholdEvidence = {
   value: 250,
   unit: "watt",
-  method: "computed_eftp",
-  event_at: "2026-06-01T00:00:00Z",
-  evidence_activity_id: null,
-  evidence_at: "2026-05-31T12:00:00Z",
-  evidence_duration_seconds: 1200,
-  evidence_power: 265,
-  model_version: "v1",
+  method: "configured",
+  effective_from: "2026-06-01",
+  source_record_id: "00000000-0000-4000-8000-000000000101",
   unavailable_reason: null,
-  uncertainty: {
-    kind: "not_quantifiable",
-    watts: null,
-    reason: "Individual uncertainty is not quantified.",
-  },
 };
+
 afterEach(cleanup);
 describe("CyclingThresholdDetails", () => {
-  it("shows unavailable evidence with the server's reason", () => {
-    render(
-      <CyclingThresholdDetails
-        evidence={{ ...evidence, value: null, unavailable_reason: "No qualifying effort" }}
-      />,
-    );
-    expect(screen.getByRole("status").textContent).toBe("No qualifying effort");
+  it("shows applied FTP when value is set", () => {
+    const evidence = { ...baseEvidence };
+    render(<CyclingThresholdDetails evidence={evidence} />);
+    expect(screen.getByText(/Applied FTP: 250 W/)).toBeVisible();
   });
-  it.each(["evidence_at", "evidence_duration_seconds", "evidence_power"] as const)(
-    "withholds the evidence line when %s is missing",
+
+  it("shows effective from date when provided", () => {
+    const evidence = { ...baseEvidence, value: 250, effective_from: "2026-06-01" };
+    render(<CyclingThresholdDetails evidence={evidence} />);
+    expect(screen.getByText(/Effective from/)).toBeVisible();
+    expect(screen.getByText(/Jun 1, 2026/)).toBeVisible();
+  });
+
+  it.each(["effective_from"] as const)(
+    "withholds the Effective from line when %s is missing",
     (field) => {
-      render(<CyclingThresholdDetails evidence={{ ...evidence, [field]: null }} />);
-      expect(screen.getByText("Computed eFTP: 250 W")).toBeVisible();
-      expect(screen.queryByText(/Evidence:/)).toBeNull();
+      const evidence = { ...baseEvidence, [field]: null };
+      render(<CyclingThresholdDetails evidence={evidence} />);
+      expect(screen.queryByText(/Applied FTP: 250 W/)).toBeVisible();
+      expect(screen.queryByText(/Effective from/)).toBeNull();
     },
   );
-  it("retains measured zero effort power and explains eFTP in the disclosure", () => {
-    render(<CyclingThresholdDetails evidence={{ ...evidence, evidence_power: 0 }} />);
-    expect(screen.getByText(/Evidence:.*0 W/)).toBeVisible();
-    fireEvent.click(screen.getByText("Estimate uncertainty"));
-    expect(screen.getByText("eFTP means estimated functional threshold power.")).toBeVisible();
-    expect(screen.getByText(evidence.uncertainty.reason)).toBeVisible();
+
+  it("shows applied FTP for a valid user-entered value", () => {
+    const evidence = { ...baseEvidence, value: 100 };
+    render(<CyclingThresholdDetails evidence={evidence} />);
+    expect(screen.getByText(/Applied FTP: 100 W/)).toBeVisible();
   });
 });

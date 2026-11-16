@@ -1,7 +1,6 @@
 import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import { attemptScopeSchema, ropeMethodSchema } from "@dofek/training/climbing-log";
 import { z } from "zod";
-import { cyclingThresholdUncertaintySchema } from "../contracts/cycling-threshold.ts";
 import { comparisonIdentityRowSchema } from "../repositories/performance-comparison-identity.ts";
 import { identityEquivalenceSchema } from "../repositories/performance-comparison-types.ts";
 import {
@@ -378,22 +377,17 @@ export const cyclingEffortMetricsSchema = z
       .object({
         ftp: z
           .object({
-            value: z.number(),
-            effectiveFrom: z.string(),
-            kind: z.literal("computed"),
-            method: z.literal("computed_eftp"),
-            modelVersion: z.string(),
-            uncertainty: cyclingThresholdUncertaintySchema,
-            evidenceActivityId: z.uuid().nullable(),
-            evidenceAt: z.string().nullable(),
-            evidenceDurationSeconds: nullableNumber,
-            evidencePowerWatts: nullableNumber,
+            value: z.number().positive().nullable(),
+            unit: z.literal("watt"),
+            effective_from: z.string(),
+            source_record_id: z.uuid(),
+            kind: z.literal("configured"),
           })
           .strict()
           .nullable(),
         thresholdHeartRateBpm: nullableNumber,
         ageDays: nullableNumber,
-        freshness: z.enum(["unavailable", "computed"]),
+        freshness: z.enum(["unavailable", "configured"]),
         freshnessReason: z.string(),
       })
       .strict(),

@@ -10,7 +10,6 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
   correlation: ["correlation.computeV2"],
   cycling: [
     "power.powerCurve",
-    "power.eftpTrend",
     "pmc.chart",
     "efficiency.aerobicEfficiency",
     "cyclingAdvanced.activityVariability",

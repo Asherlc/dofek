@@ -8,15 +8,12 @@ import type {
   ActivityMetricSources,
 } from "../../../server/src/contracts/activity-metric-sources.ts";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
+import type { CyclingThresholdEvidence } from "../../../server/src/contracts/cycling-threshold.ts";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { useAuth } from "../lib/auth-context.tsx";
 import * as maplibreTestHelpers from "../lib/maplibre-test-helpers.ts";
 import { UnitContext } from "../lib/unitContext.ts";
-import {
-  type detailPageThresholdEvidence as computedThresholdEvidence,
-  detailPageActivity,
-  detailPageStreamPoints,
-} from "./ActivityDetailPage.fixtures.ts";
+import { detailPageActivity, detailPageStreamPoints } from "./ActivityDetailPage.fixtures.ts";
 
 export const maps = maplibreTestHelpers.maps;
 export const markers = maplibreTestHelpers.markers;
@@ -59,8 +56,17 @@ export const activityRouteParams = routeMocks.activityRouteParams;
 vi.mock("@tanstack/react-router", () => ({
   useParams: () => routeMocks.activityRouteParams,
   useNavigate: () => vi.fn(),
-  Link: ({ children, ...props }: { children: ReactNode; to: string }) => (
-    <a href={props.to}>{children}</a>
+  Link: ({
+    children,
+    ...props
+  }: {
+    children: ReactNode;
+    to: string;
+    search?: Record<string, unknown>;
+  }) => (
+    <a href={props.to} data-search={JSON.stringify(props.search)}>
+      {children}
+    </a>
   ),
 }));
 
@@ -81,6 +87,15 @@ vi.mock("../lib/auth-context.tsx", () => ({ useAuth: () => authenticatedRoute })
 export const mockActivity = structuredClone(detailPageActivity);
 export const mockStreamPoints = detailPageStreamPoints.map((point) => ({ ...point }));
 const initialMockStreamPoints = mockStreamPoints.map((point) => ({ ...point }));
+
+export function setCyclingPowerActivity(power = 210) {
+  Object.assign(mockActivity, { activityType: "cycling", avgPower: 220, maxPower: 360 });
+  mockStreamPoints.splice(
+    0,
+    mockStreamPoints.length,
+    ...mockStreamPoints.map((point) => ({ ...point, power })),
+  );
+}
 
 interface MockQueryResult<T> {
   data: T | undefined;
@@ -197,11 +212,9 @@ interface MockPowerZone {
 }
 
 interface MockPowerZonesResult {
+  activityDate: string;
   ftp: number | null;
-  thresholdEvidence: Omit<typeof computedThresholdEvidence, "value" | "unavailable_reason"> & {
-    value: number | null;
-    unavailable_reason: string | null;
-  };
+  thresholdEvidence: CyclingThresholdEvidence;
   zones: MockPowerZone[];
 }
 
@@ -271,6 +284,21 @@ export const mockPowerZonesUseQuery = vi.fn(
     isLoading: false,
   }),
 );
+
+export function setCyclingPowerZoneResult(
+  data: MockPowerZonesResult | undefined,
+  overrides: Partial<MockQueryResult<MockPowerZonesResult>> = {},
+) {
+  setCyclingPowerActivity();
+  mockPowerZonesUseQuery.mockReturnValue({
+    data,
+    error: null,
+    isError: false,
+    isLoading: false,
+    ...overrides,
+  });
+}
+
 export const mockPowerWorkUseQuery = vi.fn(
   (
     _input?: unknown,

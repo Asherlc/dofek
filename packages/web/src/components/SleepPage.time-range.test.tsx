@@ -17,10 +17,15 @@ describe("SleepPage time range", () => {
     render(<SleepPage />);
 
     clearQueryCalls();
+    fireEvent.change(screen.getByLabelText("Night date"), {
+      target: { value: "2026-07-06" },
+    });
+    clearQueryCalls();
     fireEvent.click(screen.getByRole("radio", { name: "7d" }));
 
     expectCallsContaining([
       { name: "sleep.list", input: { days: 7, endDate: "2026-07-08" } },
+      { name: "sleep.stagesByDate", input: { date: "2026-07-06" } },
       { name: "insights.compute", input: { days: 90, endDate: "2026-07-08" } },
     ]);
     expectRegistryCovered("sleep");
@@ -30,6 +35,7 @@ describe("SleepPage time range", () => {
 
     expectCallsContaining([
       { name: "sleep.list", input: { days: null, endDate: "2026-07-08" } },
+      { name: "sleep.stagesByDate", input: { date: "2026-07-06" } },
       { name: "insights.compute", input: { days: null, endDate: "2026-07-08" } },
     ]);
     expectRegistryCovered("sleep");

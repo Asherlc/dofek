@@ -264,12 +264,10 @@ exports[`AnalyticalTrainingLoadRepository > applies provider and modality filter
           SELECT
             cycling.activity_id AS activity_id,
             toDate(toTimeZone(activity.started_at, {timezone:String})) AS date,
-            metrics.power_tss AS power_tss,
+            NULL AS power_tss,
             activity.source_providers AS source_providers,
             false AS date_was_authoritative
           FROM analytics.cycling_activity AS cycling FINAL
-          LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
-            ON metrics.activity_id = cycling.activity_id AND metrics.user_id = cycling.user_id
           INNER JOIN analytics.deduped_activities AS activity FINAL
             ON activity.activity_id = cycling.activity_id AND activity.user_id = cycling.user_id
           WHERE cycling.user_id = {userId:UUID}
@@ -995,7 +993,7 @@ exports[`AnalyticalTrainingLoadRepository > does not turn unsupported activity l
             "analysis_timezone_activities": 1,
             "authoritative_activities": 0,
           },
-          "reason": "Computed eFTP or normalized power is unavailable for 1 cycling activity.",
+          "reason": "Configured FTP or normalized power is unavailable for 1 cycling activity.",
           "rolling": {
             "acute_7d_sum": null,
             "acute_coverage_days": 0,
@@ -1468,12 +1466,10 @@ exports[`AnalyticalTrainingLoadRepository > returns a complete date spine with i
           SELECT
             cycling.activity_id AS activity_id,
             toDate(toTimeZone(activity.started_at, {timezone:String})) AS date,
-            metrics.power_tss AS power_tss,
+            NULL AS power_tss,
             activity.source_providers AS source_providers,
             false AS date_was_authoritative
           FROM analytics.cycling_activity AS cycling FINAL
-          LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
-            ON metrics.activity_id = cycling.activity_id AND metrics.user_id = cycling.user_id
           INNER JOIN analytics.deduped_activities AS activity FINAL
             ON activity.activity_id = cycling.activity_id AND activity.user_id = cycling.user_id
           WHERE cycling.user_id = {userId:UUID}

@@ -315,7 +315,7 @@ function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress 
   }
   return {
     status: "missing",
-    reason: "Record cycling power with sufficient sustained-effort evidence for computed eFTP.",
+    reason: "Set a dated cycling FTP and record normalized power to calculate training stress.",
   };
 }
 

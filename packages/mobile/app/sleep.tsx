@@ -1,18 +1,22 @@
 import {
   formatDateLong,
   formatDateShort,
+  formatDateYmd,
   formatDurationMinutes,
   formatHour,
   formatIntensity,
   isToday,
   isYesterday,
+  shiftDateYmd,
 } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { getMissingSleepStates } from "@dofek/format/sleep-data-state";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
-import { useRef } from "react";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { useRef, useState } from "react";
 import {
+  Pressable,
   RefreshControl,
   ScrollView,
   type ScrollViewInstance,
@@ -122,10 +126,19 @@ export default function SleepScreen() {
   const scrollViewRef = useRef<ScrollViewInstance>(null);
   const sleepSourcesYRef = useRef(0);
   const { days, setDays } = useTimeRangePreference("sleep");
+  const [selectedDate, setSelectedDate] = useState<string>();
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
-  const latestStagesQuery = trpc.sleep.latestStages.useQuery();
+  const stagesByDateQuery = trpc.sleep.stagesByDate.useQuery(
+    selectedDate ? { date: selectedDate } : undefined,
+  );
   const consistencyQuery = trpc.recovery.sleepConsistency.useQuery({ days });
   const processingStatus = useProcessingStatus({ datasets: ["sleep"] });
+  const today = formatDateYmd(new Date());
+  const displayDate = selectedDate ?? stagesByDateQuery.data?.date ?? today;
+  const selectedStages =
+    selectedDate === undefined || stagesByDateQuery.data?.date === selectedDate
+      ? stagesByDateQuery.data?.stages
+      : undefined;
 
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
@@ -187,6 +200,70 @@ export default function SleepScreen() {
         loading={processingStatus.isLoading}
       />
 
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Night’s Stages</Text>
+        <View style={styles.stageDateControls}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Previous day"
+            style={styles.stageDateButton}
+            onPress={() => {
+              const previousDate = shiftDateYmd(displayDate, -1);
+              if (previousDate <= today) setSelectedDate(previousDate);
+            }}
+          >
+            <Text style={styles.stageDateButtonText}>Previous</Text>
+          </Pressable>
+          <DateTimePicker
+            accessibilityLabel="Night date"
+            display="compact"
+            maximumDate={new Date(`${today}T23:59:59`)}
+            mode="date"
+            onChange={(event, date) => {
+              if (event.type !== "dismissed" && date) {
+                const pickedDate = formatDateYmd(date);
+                if (pickedDate <= today) setSelectedDate(pickedDate);
+              }
+            }}
+            value={new Date(`${displayDate}T12:00:00`)}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Next day"
+            accessibilityState={{ disabled: displayDate >= today }}
+            disabled={displayDate >= today}
+            style={[styles.stageDateButton, displayDate >= today && styles.stageDateButtonDisabled]}
+            onPress={() => {
+              const nextDate = shiftDateYmd(displayDate, 1);
+              if (nextDate <= today) setSelectedDate(nextDate);
+            }}
+          >
+            <Text style={styles.stageDateButtonText}>Next</Text>
+          </Pressable>
+        </View>
+        {stagesByDateQuery.isError && !selectedStages ? (
+          <QueryStatePanel
+            variant="error"
+            message={userFacingErrorMessage(stagesByDateQuery.error)}
+          />
+        ) : selectedStages ? (
+          <>
+            {stagesByDateQuery.isError && (
+              <Text accessibilityRole="alert" style={styles.stageUnavailable}>
+                Refresh failed: {userFacingErrorMessage(stagesByDateQuery.error)}
+              </Text>
+            )}
+            {selectedStages.length > 0 || stagesByDateQuery.isError ? (
+              <Hypnogram data={selectedStages} />
+            ) : (
+              <Text style={styles.stageUnavailable}>No sleep stages recorded for this date.</Text>
+            )}
+          </>
+        ) : stagesByDateQuery.isLoading ? (
+          <Text style={styles.stageUnavailable}>Loading sleep stages...</Text>
+        ) : null}
+      </View>
+
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading sleep data...</Text>
@@ -219,14 +296,6 @@ export default function SleepScreen() {
                   </Text>
                 </View>
               )}
-            </View>
-          )}
-
-          {/* Hypnogram */}
-          {(latestStagesQuery.data?.length ?? 0) > 0 && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Last Night's Stages</Text>
-              <Hypnogram data={latestStagesQuery.data ?? []} />
             </View>
           )}
 
@@ -385,6 +454,25 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     gap: 12,
+  },
+  stageDateControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  stageDateButton: {
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  stageDateButtonDisabled: {
+    opacity: 0.45,
+  },
+  stageDateButtonText: {
+    color: colors.blue,
+    fontSize: 13,
+    fontWeight: "600",
   },
   cardTitle: {
     fontSize: 13,

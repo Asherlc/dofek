@@ -281,27 +281,33 @@ export const detailPageRouteBoundsPoints = [
   { lat: 7, lng: 8 },
   { lat: 9, lng: 10 },
 ];
+export const detailPageConfiguredThresholdEvidence = {
+  value: 250,
+  unit: "watt" as const,
+  method: "configured" as const,
+  effective_from: "2026-03-01",
+  source_record_id: "00000000-0000-4000-8000-000000000101",
+  unavailable_reason: null,
+};
+
 export const detailPageCachedPowerZones = {
+  activityDate: "2026-03-18",
   ftp: 250,
-  thresholdEvidence: {
-    value: 250,
-    unit: "watt" as const,
-    method: "computed_eftp" as const,
-    event_at: "2026-03-05T12:00:00Z",
-    evidence_activity_id: "00000000-0000-4000-8000-000000000101",
-    evidence_at: "2026-03-01T12:00:00Z",
-    evidence_duration_seconds: 1200,
-    evidence_power: 265,
-    model_version: "v1",
-    uncertainty: {
-      kind: "not_quantifiable" as const,
-      watts: null,
-      reason:
-        "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
-    },
-    unavailable_reason: null,
-  },
+  thresholdEvidence: detailPageConfiguredThresholdEvidence,
   zones: [{ zone: 1, label: "Endurance", minPct: 56, maxPct: 75, seconds: 240, percent: 100 }],
+};
+
+export const detailPageUnavailablePowerZones = {
+  activityDate: "2026-03-18",
+  ftp: null,
+  zones: [],
+  thresholdEvidence: {
+    ...detailPageConfiguredThresholdEvidence,
+    value: null,
+    effective_from: null,
+    source_record_id: null,
+    unavailable_reason: "No FTP setting applies to this activity.",
+  },
 };
 
 export const detailPageMetricSources: ActivityMetricSources = [
@@ -545,23 +551,4 @@ export const detailPageHangboardDetails = {
     totalRestDurationSeconds: 3,
     exercises: [{ label: "Repeaters", workIntervalCount: 1, workDurationSeconds: 7 }],
   },
-};
-
-export const detailPageThresholdEvidence = {
-  value: 250,
-  unit: "watt" as const,
-  method: "computed_eftp" as const,
-  event_at: "2026-03-05T12:00:00Z",
-  evidence_activity_id: "00000000-0000-4000-8000-000000000101",
-  evidence_at: "2026-03-01T12:00:00Z",
-  evidence_duration_seconds: 1200,
-  evidence_power: 265,
-  model_version: "v1",
-  uncertainty: {
-    kind: "not_quantifiable" as const,
-    watts: null,
-    reason:
-      "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
-  },
-  unavailable_reason: null,
 };

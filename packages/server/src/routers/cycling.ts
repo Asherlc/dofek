@@ -2,7 +2,6 @@ import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { cyclingEftpTrendSchema } from "../contracts/cycling-threshold.ts";
 import { trainingChartAvailabilitySchema } from "../contracts/training-chart-availability.ts";
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
@@ -78,16 +77,13 @@ const performanceOutputSchema = z.object({
     season: powerSummaryPeriodSchema,
   }),
   pmc: pmcSchema,
-  eftpTrend: cyclingEftpTrendSchema,
   availability: z.object({
     powerCurve: trainingChartAvailabilitySchema,
     pmc: trainingChartAvailabilitySchema,
-    eftpTrend: trainingChartAvailabilitySchema,
   }),
   estimateEvidence: z.object({
     recent: estimateEvidenceByPeriodSchema,
     season: estimateEvidenceByPeriodSchema,
-    eftp: estimateEvidenceSchema,
   }),
 });
 
@@ -121,7 +117,7 @@ const activitiesOutputSchema = z.object({
     ),
     totalCount: z.number(),
     emptyReason: z
-      .enum(["no_cycling_activities", "no_ftp_estimate", "no_normalized_power"])
+      .enum(["no_cycling_activities", "no_configured_ftp", "no_normalized_power"])
       .nullable(),
   }),
   verticalAscent: z.array(
@@ -185,7 +181,7 @@ export const cyclingRouter = router({
     CacheTTL.LONG,
     async ({ ctx, range }) =>
       performanceOutputSchema.parse(await requireRepository(ctx).getPerformance(range)),
-    { keyVersion: "cycling-performance-power-stress-v4" },
+    { expiresAt: "localDayBoundary", keyVersion: "manual-ftp-power-stress-v6" },
   ),
   activities: selectedChartCustomRangeQuery(
     "cycling.activities",
@@ -200,6 +196,6 @@ export const cyclingRouter = router({
     async ({ ctx, input, range }) =>
       activitiesOutputSchema.parse(await requireRepository(ctx).getActivities(range, input)),
     activitiesOutputSchema,
-    { keyVersion: "cycling-activity-computed-eftp-ascent-v4" },
+    { keyVersion: "cycling-activity-manual-ftp-ascent-v5" },
   ),
 });

@@ -330,19 +330,16 @@ SELECT 1 AS value
     }
   });
 
-  it.each(["cycling_threshold_history", "cycling_activity_power_metrics"])(
-    "allows the approved %s publication model while retaining risky SQL checks",
-    (name) => {
-      const path = `analytics/models/read_models/${name}.sql`;
-      expect(lintMigrationPolicyFile(path, "SELECT 1")).toEqual([]);
-      expect(
-        lintMigrationPolicyFile(
-          path,
-          "SELECT 1; INSERT INTO analytics.target SELECT * FROM analytics.source;",
-        ),
-      ).toEqual([expect.objectContaining({ ruleName: "insert-select" })]);
-    },
-  );
+  it("allows the normalized-power projection model while retaining risky SQL checks", () => {
+    const path = "analytics/models/read_models/cycling_activity_power_metrics.sql";
+    expect(lintMigrationPolicyFile(path, "SELECT 1")).toEqual([]);
+    expect(
+      lintMigrationPolicyFile(
+        path,
+        "SELECT 1; INSERT INTO analytics.target SELECT * FROM analytics.source;",
+      ),
+    ).toEqual([expect.objectContaining({ ruleName: "insert-select" })]);
+  });
 
   it("keeps implicit view materialization disallowed for other publication models", () => {
     expect(
