@@ -654,9 +654,9 @@ describe("activity heart-rate sources", () => {
         },
         {
           id: "opaque-ble",
-          label: "WHOOP (Bluetooth)",
+          label: "WHOOP (Bluetooth) · strap-a",
           presentation: {
-            displayName: "WHOOP",
+            displayName: "strap-a",
             providerId: "whoop_ble",
             sourceName: "strap-a",
             attribution: { kind: "bluetooth", label: "Bluetooth" },
@@ -699,7 +699,10 @@ describe("activity heart-rate sources", () => {
         label: "Heart Rate",
         sources: [
           expect.objectContaining({ id: "whoop", label: "WHOOP (Cloud)" }),
-          expect.objectContaining({ id: whoopBluetoothSourceId, label: "WHOOP (Bluetooth)" }),
+          expect.objectContaining({
+            id: whoopBluetoothSourceId,
+            label: "WHOOP (Bluetooth) · strap-a",
+          }),
           expect.objectContaining({ id: garminSourceId, label: "Garmin · Edge 530" }),
         ],
         defaultSourceId: "whoop",

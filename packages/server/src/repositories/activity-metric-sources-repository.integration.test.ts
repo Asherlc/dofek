@@ -667,9 +667,9 @@ describe("activity metric source selection", () => {
     expect(heartRate?.sources).toEqual([
       {
         id: '["whoop_ble","strap-a"]',
-        label: expect.stringContaining("WHOOP"),
+        label: "WHOOP (Bluetooth) · strap-a",
         presentation: {
-          displayName: "WHOOP",
+          displayName: "strap-a",
           providerId: "whoop_ble",
           sourceName: "strap-a",
           attribution: { kind: "bluetooth", label: "Bluetooth" },

@@ -343,7 +343,7 @@ export const activityRouter = router({
 
   metricSources: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "source-inheritance-v5",
+    keyVersion: "source-inheritance-v6",
   })
     .input(
       z.object({ id: z.guid(), responseVersion: z.union([z.literal(1), z.literal(2)]).default(1) }),
