@@ -17,6 +17,11 @@ struct WhoopUploadOutcome {
     var acknowledgmentValidated: Bool
     var outboxState: String
 
+    var isValidatedHttp5xxRejection: Bool {
+        responseOriginValidated == true && stage == "http_status_rejected" &&
+            statusCode.map { (500..<600).contains($0) } == true
+    }
+
     var sentryData: [String: Any] {
         var data: [String: Any] = [
             "batchIdentity": batchIdentity,
@@ -338,12 +343,14 @@ final class WhoopBleBackgroundUploader: NSObject {
         guard !isSuperseded(identity, attempt: context.attempt) else { return }
         var nextPartial: Bool?
         defer {
+            submitted.removeValue(forKey: identity)
             transport.cancel(identity: identity)
             if let partial = nextPartial { schedule(partial: partial) }
         }
         active.remove(identity)
         pairedActive.remove(identity)
-        let usedEpoch = submitted.removeValue(forKey: identity)?.epoch
+        let response = WhoopUploadResponse(
+            status: status, data: data, responseURL: context.responseURL, error: error)
         var outcome: WhoopUploadOutcome?
         var bodyFileCleanupError: Error?
         do {
@@ -358,43 +365,9 @@ final class WhoopBleBackgroundUploader: NSObject {
                 batchIdentity: identity, stream: batch.stream.rawValue, route: batch.stream.route,
                 stage: error == nil ? "response_received" : "transport_error", statusCode: status,
                 responseOriginValidated: nil, acknowledgmentValidated: false, outboxState: "pending")
-            if let error { throw error }
-            guard let url = context.responseURL, try Self.validatedOrigin(url.originString) == batch.binding.serverURL else {
-                outcome?.stage = "response_origin_rejected"
-                outcome?.responseOriginValidated = false
-                blocked.insert(batch.stream)
-                throw WhoopUploadError(message: "WHOOP upload response changed origin")
-            }
-            outcome?.responseOriginValidated = true
-            guard status == 200 else {
-                outcome?.stage = "http_status_rejected"
-                if let status, (400..<500).contains(status), status != 408, status != 429 {
-                    if status == 401 || status == 403, token != nil, usedEpoch != tokenEpoch,
-                       authRetriedEpoch[identity] != tokenEpoch {
-                        authRetriedEpoch[identity] = tokenEpoch
-                        if let outcome { reportUploadOutcome(outcome) }
-                        record(WhoopUploadError(message: "WHOOP upload used an expired session token"))
-                        nextPartial = true
-                        return
-                    }
-                    blocked.insert(batch.stream)
-                }
-                throw WhoopUploadError(message: "WHOOP \(batch.stream.rawValue) upload returned HTTP \(status ?? 0)")
-            }
-            guard data.count <= 65_536,
-                  let response = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let result = response["result"] as? [String: Any],
-                  let value = result["data"] as? [String: Any],
-                  let inserted = value["inserted"] as? NSNumber,
-                  CFGetTypeID(inserted) != CFBooleanGetTypeID(),
-                  inserted.doubleValue.isFinite, inserted.doubleValue >= 0,
-                  inserted.doubleValue.rounded() == inserted.doubleValue else {
-                outcome?.stage = "acknowledgment_invalid"
-                blocked.insert(batch.stream)
-                throw WhoopUploadError(message: "WHOOP upload returned an invalid acknowledgment")
-            }
-            outcome?.stage = "acknowledgment_validated"
-            outcome?.acknowledgmentValidated = true
+            guard try validateResponse(
+                identity: identity, batch: batch, response: response,
+                outcome: &outcome, nextPartial: &nextPartial) else { return }
             let retired = try store.acknowledge(id: batch.id, generation: batch.generation)
             outcome?.stage = retired ? "outbox_retired" : "outbox_already_absent"
             outcome?.outboxState = retired ? "retired" : "absent"
@@ -410,20 +383,7 @@ final class WhoopBleBackgroundUploader: NSObject {
             // Continue full batches only; partial tails wait for capture/lifecycle triggers.
             nextPartial = false
         } catch {
-            var stateError: Error?
-            do {
-                let pendingBatch = try store.pendingBatches().first(where: { self.identity($0) == identity })
-                outcome?.outboxState = pendingBatch == nil ? "absent" : "pending"
-                if let batch = pendingBatch {
-                    retryAfter[batch.stream] = now().addingTimeInterval(30)
-                }
-            } catch {
-                outcome?.outboxState = "unknown"
-                stateError = error
-            }
-            if let outcome { reportUploadOutcome(outcome) }
-            if let stateError { record(stateError) }
-            record(error)
+            reportCompletionFailure(identity: identity, error: error, outcome: &outcome)
         }
         if let outcome, outcome.stage == "outbox_retired" || outcome.stage == "outbox_already_absent" {
             reportUploadOutcome(outcome)
@@ -457,10 +417,71 @@ final class WhoopBleBackgroundUploader: NSObject {
     }
 }
 
-private extension URL {
-    var originString: String {
-        guard var parts = URLComponents(url: self, resolvingAgainstBaseURL: false) else { return "" }
-        parts.path = ""; parts.query = nil; parts.fragment = nil
-        return parts.string ?? ""
+private extension WhoopBleBackgroundUploader {
+    func validateResponse(
+        identity: String,
+        batch: WhoopStoredBatch,
+        response: WhoopUploadResponse,
+        outcome: inout WhoopUploadOutcome?,
+        nextPartial: inout Bool?
+    ) throws -> Bool {
+        if let error = response.error { throw error }
+        guard let responseOrigin = response.originString,
+              try Self.validatedOrigin(responseOrigin) == batch.binding.serverURL else {
+            outcome?.stage = "response_origin_rejected"
+            outcome?.responseOriginValidated = false
+            blocked.insert(batch.stream)
+            throw WhoopUploadError(message: "WHOOP upload response changed origin")
+        }
+        outcome?.responseOriginValidated = true
+        guard response.status == 200 else {
+            outcome?.stage = "http_status_rejected"
+            if let status = response.status, (400..<500).contains(status), status != 408, status != 429 {
+                if status == 401 || status == 403, token != nil,
+                   submitted[identity]?.epoch != tokenEpoch,
+                   authRetriedEpoch[identity] != tokenEpoch {
+                    authRetriedEpoch[identity] = tokenEpoch
+                    if let outcome { reportUploadOutcome(outcome) }
+                    record(WhoopUploadError(message: "WHOOP upload used an expired session token"))
+                    nextPartial = true
+                    return false
+                }
+                blocked.insert(batch.stream)
+            }
+            throw WhoopUploadError(
+                message: "WHOOP \(batch.stream.rawValue) upload returned HTTP \(response.status ?? 0)")
+        }
+        guard response.data.count <= 65_536,
+              let json = try JSONSerialization.jsonObject(with: response.data) as? [String: Any],
+              let result = json["result"] as? [String: Any],
+              let value = result["data"] as? [String: Any],
+              let inserted = value["inserted"] as? NSNumber,
+              CFGetTypeID(inserted) != CFBooleanGetTypeID(),
+              inserted.doubleValue.isFinite, inserted.doubleValue >= 0,
+              inserted.doubleValue.rounded() == inserted.doubleValue else {
+            outcome?.stage = "acknowledgment_invalid"
+            blocked.insert(batch.stream)
+            throw WhoopUploadError(message: "WHOOP upload returned an invalid acknowledgment")
+        }
+        outcome?.stage = "acknowledgment_validated"
+        outcome?.acknowledgmentValidated = true
+        return true
+    }
+
+    func reportCompletionFailure(identity: String, error: Error, outcome: inout WhoopUploadOutcome?) {
+        var stateError: Error?
+        do {
+            let pendingBatch = try store.pendingBatches().first(where: { self.identity($0) == identity })
+            outcome?.outboxState = pendingBatch == nil ? "absent" : "pending"
+            if let batch = pendingBatch {
+                retryAfter[batch.stream] = now().addingTimeInterval(30)
+            }
+        } catch {
+            outcome?.outboxState = "unknown"
+            stateError = error
+        }
+        if let outcome { reportUploadOutcome(outcome) }
+        if let stateError { record(stateError) }
+        record(error)
     }
 }

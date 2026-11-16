@@ -38,7 +38,7 @@ enum WhoopBleUploadRuntime {
     }
 
     private static func reportNativeUploadOutcome(_ outcome: WhoopUploadOutcome) {
-        if let statusCode = outcome.statusCode, (500..<600).contains(statusCode) { return }
+        if outcome.isValidatedHttp5xxRejection { return }
         let breadcrumb = Breadcrumb(level: .info, category: "whoop.upload")
         breadcrumb.message = outcome.stage
         breadcrumb.data = outcome.sentryData

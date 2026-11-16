@@ -157,9 +157,10 @@ Upload completion adds a Sentry breadcrumb with the opaque durable batch identit
 stream, route, outcome stage, HTTP status when present, origin and acknowledgment
 validation, and whether the reservation remains pending or was retired. This lets
 statusless URLSession errors be correlated with their batch and later outcome.
-Breadcrumbs omit credentials, account identifiers, and sample bodies. HTTP 5xx
-outcomes remain in the existing operational counter and are not added as Sentry
-breadcrumbs.
+Breadcrumbs omit credentials, account identifiers, and sample bodies. Validated
+HTTP 5xx outcomes remain in the existing operational counter and are omitted
+from these breadcrumbs. Transport and origin-validation errors remain reportable
+even if the task exposes a raw 5xx status.
 
 Captured samples are committed to [SQLite](ios/WhoopBleSampleStore.swift) before
 scheduling delivery. All streams decoded from one BLE notification commit in one
