@@ -3,7 +3,15 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const dependencies = vi.hoisted(() => ({
-  useAuth: vi.fn(() => ({ user: { id: "user-a" }, accountSessionOwnerNonce: "session-a" })),
+  useAuth: vi.fn(
+    (): {
+      user: { id: string; name: string; email: null } | null;
+      accountSessionOwnerNonce: string | null;
+    } => ({
+      user: { id: "user-a", name: "Test User", email: null },
+      accountSessionOwnerNonce: "session-a",
+    }),
+  ),
   metricSources: vi.fn(),
   stream: vi.fn(),
   heartRateContext: vi.fn(),
@@ -51,7 +59,7 @@ describe("useActivityMetrics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     dependencies.useAuth.mockReturnValue({
-      user: { id: "user-a" },
+      user: { id: "user-a", name: "Test User", email: null },
       accountSessionOwnerNonce: "session-a",
     });
     dependencies.metricSources.mockReturnValue(query(metricSources));
@@ -69,6 +77,14 @@ describe("useActivityMetrics", () => {
   it("keeps picker selection immediate and preserves request gates, raw inputs and placeholder scope", () => {
     const { result } = renderHook(() =>
       useActivityMetrics("activity-a", { isCycling: true, isClimbing: true }),
+    );
+    expect(dependencies.metricSources).toHaveBeenLastCalledWith({
+      id: "activity-a",
+      responseVersion: 2,
+    });
+    expect(dependencies.heartRateContext).toHaveBeenLastCalledWith(
+      { id: "activity-a", maxPoints: 500, heartRateSourceId: "hr-a" },
+      expect.objectContaining({ enabled: true }),
     );
     expect(dependencies.stream).toHaveBeenLastCalledWith(
       {
@@ -99,6 +115,10 @@ describe("useActivityMetrics", () => {
 
     act(() => result.current.sourceControls[0]?.onChange("hr-b"));
     expect(result.current.sourceControls[0]?.selectedId).toBe("hr-b");
+    expect(dependencies.heartRateContext).toHaveBeenLastCalledWith(
+      { id: "activity-a", maxPoints: 500, heartRateSourceId: "hr-b" },
+      expect.objectContaining({ enabled: true }),
+    );
     expect(dependencies.stream.mock.calls.at(-1)?.[0]).toEqual({
       id: "activity-a",
       maxPoints: 500,
@@ -234,6 +254,180 @@ describe("useActivityMetrics", () => {
     );
   });
 
+  it("keeps public sources, readings, and hints absent when query data is unavailable", () => {
+    dependencies.metricSources.mockReturnValue(query(undefined));
+    dependencies.stream.mockReturnValue(query(undefined));
+    dependencies.heartRateContext.mockReturnValue(query(undefined));
+    dependencies.hrZones.mockReturnValue(query(undefined));
+    dependencies.powerZones.mockReturnValue(query(undefined));
+    dependencies.powerWork.mockReturnValue(query(undefined));
+
+    const { result, rerender } = renderHook(() =>
+      useActivityMetrics("activity-a", { isCycling: true, isClimbing: true }),
+    );
+
+    expect(result.current.sourceControls).toEqual([]);
+    expect(result.current.points).toEqual([]);
+    expect(result.current.hasPower).toBe(false);
+    expect(result.current.attributionHints).toEqual({
+      stream: {},
+      heartRateContext: undefined,
+      hrZones: undefined,
+      powerZones: undefined,
+      powerWork: undefined,
+    });
+
+    dependencies.metricSources.mockReturnValue(query(metricSources));
+    rerender();
+    expect(result.current.sourceControls).toHaveLength(metricSources.length);
+    expect(result.current.attributionHints).toEqual({
+      stream: {},
+      heartRateContext: undefined,
+      hrZones: undefined,
+      powerZones: undefined,
+      powerWork: undefined,
+    });
+  });
+
+  it("does not attribute placeholder readings without an authenticated owner", () => {
+    dependencies.stream.mockReturnValue(query([{ power: 180 }], { isPlaceholderData: true }));
+    dependencies.heartRateContext.mockReturnValue(
+      query(
+        { points: [], window: { startedAt: "2026-04-14T09:55:00Z", endedAt: null } },
+        { isPlaceholderData: true },
+      ),
+    );
+    dependencies.hrZones.mockReturnValue(query([], { isPlaceholderData: true }));
+    dependencies.powerZones.mockReturnValue(query(undefined, { isPlaceholderData: true }));
+    dependencies.powerWork.mockReturnValue(query(undefined, { isPlaceholderData: true }));
+    dependencies.useAuth.mockReturnValue({ user: null, accountSessionOwnerNonce: null });
+
+    const { result } = renderHook(() =>
+      useActivityMetrics("activity-a", { isCycling: true, isClimbing: true }),
+    );
+
+    expect(result.current.sources).toEqual({
+      heartRate: "hr-a",
+      power: "power-a",
+      altitude: "altitude-a",
+    });
+    expect(result.current.attributionHints).toEqual({
+      stream: {},
+      heartRateContext: undefined,
+      hrZones: undefined,
+      powerZones: undefined,
+      powerWork: undefined,
+    });
+  });
+
+  it("retains each completed family attribution until that family completes its source switch", () => {
+    const streamA = [{ heartRate: 140, power: 200 }];
+    const streamB = [{ heartRate: 150, power: 220 }];
+    const contextA = {
+      points: [{ recordedAt: "2026-03-31T08:01:00Z", value: 140 }],
+      window: { startedAt: "2026-03-31T08:00:00Z", endedAt: null },
+    };
+    const contextB = {
+      points: [{ recordedAt: "2026-03-31T08:01:00Z", value: 150 }],
+      window: { startedAt: "2026-03-31T08:00:00Z", endedAt: null },
+    };
+    const hrZonesA = [{ zone: 2, seconds: 240 }];
+    const hrZonesB = [{ zone: 3, seconds: 300 }];
+    const powerZonesA = { ftp: 240 };
+    const powerZonesB = { ftp: 250 };
+    const powerWorkA = { workKilojoules: 120, coverage: { coveragePct: 100 } };
+    const powerWorkB = { workKilojoules: 140, coverage: { coveragePct: 100 } };
+    let streamResponse = query(streamA);
+    let contextResponse = query(contextA);
+    let hrZonesResponse = query(hrZonesA);
+    let powerZonesResponse = query(powerZonesA);
+    let powerWorkResponse = query(powerWorkA);
+    dependencies.stream.mockImplementation(() => streamResponse);
+    dependencies.heartRateContext.mockImplementation(() => contextResponse);
+    dependencies.hrZones.mockImplementation(() => hrZonesResponse);
+    dependencies.powerZones.mockImplementation(() => powerZonesResponse);
+    dependencies.powerWork.mockImplementation(() => powerWorkResponse);
+
+    const { result, rerender } = renderHook(() =>
+      useActivityMetrics("activity-a", { isCycling: true, isClimbing: true }),
+    );
+    act(() => {
+      streamResponse = query(streamA, { isFetching: true, isPlaceholderData: true });
+      contextResponse = query(contextA, { isFetching: true, isPlaceholderData: true });
+      hrZonesResponse = query(hrZonesA, { isFetching: true, isPlaceholderData: true });
+      powerZonesResponse = query(powerZonesA, { isFetching: true, isPlaceholderData: true });
+      powerWorkResponse = query(powerWorkA, { isFetching: true, isPlaceholderData: true });
+      result.current.sourceControls.find((source) => source.key === "heartRate")?.onChange("hr-b");
+      result.current.sourceControls.find((source) => source.key === "power")?.onChange("power-b");
+    });
+
+    expect(result.current.sources).toMatchObject({ heartRate: "hr-b", power: "power-b" });
+    expect(result.current.attributionHints).toEqual({
+      stream: {
+        heartRate: "Showing previous readings from Heart rate A",
+        power: "Showing previous readings from Power A",
+      },
+      heartRateContext: "Showing previous readings from Heart rate A",
+      hrZones: "Showing previous readings from Heart rate A",
+      powerZones: "Showing previous power zone readings from Power A",
+      powerWork: "Showing previous readings from Power A",
+    });
+
+    act(() => {
+      streamResponse = query(streamB, { isFetching: true });
+      rerender();
+    });
+    expect(result.current.attributionHints).toEqual({
+      stream: {},
+      heartRateContext: "Showing previous readings from Heart rate A",
+      hrZones: "Showing previous readings from Heart rate A",
+      powerZones: "Showing previous power zone readings from Power A",
+      powerWork: "Showing previous readings from Power A",
+    });
+
+    act(() => {
+      contextResponse = query(contextB, { isFetching: true });
+      rerender();
+    });
+    expect(result.current.attributionHints.heartRateContext).toBeUndefined();
+    expect(result.current.attributionHints.hrZones).toBe(
+      "Showing previous readings from Heart rate A",
+    );
+    expect(result.current.attributionHints.powerZones).toBe(
+      "Showing previous power zone readings from Power A",
+    );
+    expect(result.current.attributionHints.powerWork).toBe(
+      "Showing previous readings from Power A",
+    );
+
+    act(() => {
+      hrZonesResponse = query(hrZonesB, { isFetching: true });
+      rerender();
+    });
+    expect(result.current.attributionHints.hrZones).toBeUndefined();
+    expect(result.current.attributionHints.powerZones).toBe(
+      "Showing previous power zone readings from Power A",
+    );
+    expect(result.current.attributionHints.powerWork).toBe(
+      "Showing previous readings from Power A",
+    );
+
+    act(() => {
+      powerZonesResponse = query(powerZonesB, { isFetching: true });
+      rerender();
+    });
+    expect(result.current.attributionHints.powerZones).toBeUndefined();
+    expect(result.current.attributionHints.powerWork).toBe(
+      "Showing previous readings from Power A",
+    );
+
+    act(() => {
+      powerWorkResponse = query(powerWorkB, { isFetching: true });
+      rerender();
+    });
+    expect(result.current.attributionHints.powerWork).toBeUndefined();
+  });
+
   it("does not carry requested picker state into another authenticated session", () => {
     const { result, rerender } = renderHook(() =>
       useActivityMetrics("activity-a", { isCycling: true, isClimbing: false }),
@@ -241,7 +435,7 @@ describe("useActivityMetrics", () => {
     act(() => result.current.sourceControls[0]?.onChange("hr-b"));
     expect(result.current.sourceControls[0]?.selectedId).toBe("hr-b");
     dependencies.useAuth.mockReturnValue({
-      user: { id: "user-b" },
+      user: { id: "user-b", name: "Test User", email: null },
       accountSessionOwnerNonce: "session-b",
     });
     rerender();
