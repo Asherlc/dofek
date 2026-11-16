@@ -205,13 +205,28 @@
   operational recovery acceptance passed, and the recovery-monitor heartbeat
   was removed. The earlier credential-exposure incident still requires its
   separate owner response; the Databasus administrator reset does not close it.
+- **Password reset privacy correction, 2026-11-16:** The authorized legacy
+  password reset kept its generated value out of chat, captured tool output
+  and shell history, but passed it in the `docker exec` command arguments.
+  Docker includes those arguments in exec events
+  ([implementation](https://github.com/moby/moby/blob/06db1734267bf7770914b417bff6556d835bf8cc/daemon/exec.go#L151-L154));
+  the reset process also receives them. The earlier privacy claim therefore
+  did not establish that privileged event or process records excluded the
+  password. These records have not been inspected, and retention or access by
+  another party is unverified. No additional password reset, log inspection or
+  cleanup was performed during the documentation correction. The runbook now
+  prefers the supported authenticated HTTPS password-change API, identifies
+  the conditional email-reset flow, and states the CLI's input limitations.
+  Any further credential rotation or event-retention investigation requires
+  separate authorization; the operational backup/deployment checks above do
+  not establish remediation of this credential exposure path.
 - **Retrospective:** Kernel/process correlation established the memory cause;
   a real encrypted backup and isolated restore established recovery beyond
   service liveness. Independent review and fresh target-lock/history checks
   prevented treating the original failed workflow as successful. The access
-  recovery procedure is now in the backup runbook, with the pinned supported
-  command and private secret-storage guidance. `512M` meets Databasus's
-  documented minimum; no retry, timeout, schedule or freshness threshold was
+  recovery procedure is now in the backup runbook, with pinned supported HTTP
+  paths, legacy CLI limitations and private secret-storage guidance. `512M`
+  meets Databasus's documented minimum; no retry, timeout, schedule or freshness threshold was
   changed to make the checks pass. The existing backup runbook and CI diagnosis
   workflow covered the recovery; no additional operational framework is needed.
 
