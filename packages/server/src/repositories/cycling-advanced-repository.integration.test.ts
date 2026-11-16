@@ -11,6 +11,7 @@ import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-s
 import { activity } from "../../../../src/db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
+import { buildAccountErasureFenceTableSql } from "../../../../src/metric-stream/clickhouse-table.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
 import { CyclingAdvancedRepository } from "./cycling-advanced-repository.ts";
 import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
@@ -18,11 +19,13 @@ import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 describe("cycling variability canonical windows and pagination", () => {
   const client = createClickHouseClientFromEnv();
   const database = `variability_${randomUUID().replaceAll("-", "")}`;
-  const rewrite = (query: string) => query.replaceAll("analytics.", `${database}.`);
+  const rewrite = (query: string) =>
+    query.replaceAll("analytics.", `${database}.`).replaceAll("ingest.", `${database}.`);
   let context: TestContext;
   beforeAll(async () => {
     context = await setupTestDatabase();
     await client.command({ query: `CREATE DATABASE ${database}` });
+    await client.command({ query: rewrite(buildAccountErasureFenceTableSql()) });
     for (const query of [
       buildActivitySummaryRowsTableSql(),
       ...cyclingPowerSchemaStatements(),
