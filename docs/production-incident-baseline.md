@@ -38685,26 +38685,27 @@ Local qualification and CI are separate from production throughput acceptance. T
   in their correct flow destinations. The retained relational fence is
   `74/A4D54000`. Pre-action CDC was normalized/synced through batch 9153, with
   no pending batch and a healthy analytics worker.
-- **Remaining risk / follow-up:** At 21:47:17 UTC analytics-worker,
-  processing-reconciliation, worker and all three ClickHouse sinks were observed
-  at zero desired/running replicas again. Stock deployment receipt `7837145010`
-  and the active stack job identify canonical
+- **Subsequent deployment / terminal acceptance:** At 21:47:17 UTC analytics,
+  reconciliation, worker and all three ClickHouse sinks were observed at zero.
+  Stock receipt `7837145010` and stack job `133632953772` identified canonical
   [release 43958871187](https://github.com/Asherlc/dofek/actions/runs/43958871187),
   source `4e413541ae4fab6f2f6e846d2b837540f363ee1f`, as the subsequent
-  deployment. Its admission and Terraform jobs passed; stack job `133632953772`
-  was running “Backfill and cut over provider connections” while the receipt
-  remained pending and consumer restoration had not run. A focused read at
-  21:51:22 UTC still found analytics and
-  reconciliation at zero with no tasks, now configured for digest
-  `sha256:21d3165bc6f3dd6d7b27b7b36ba317cd4b74dd4c891af967734455d43a841e4a`;
-  their service update timestamps were 21:49:24 and 21:49:19 UTC respectively.
-  These desired images do not establish a verified deployment or recovery.
-  Operation-specific terminal analytics/cache facts remain
-  unverified; SERVER-7H stays open until intended service availability returns
-  and the ordinary serialized worker records those facts. The stock reconciler
-  and analytics/cache refresh are global; the approved single-row trigger did
-  not create eligibility for other already-pending operations. No additional
-  production action or resilience tuning is authorized by this follow-up.
+  deployment. Its provider-connection cutover preceded consumer restoration.
+  The stack job passed in 28m21s and its receipt became successful at 22:09:47
+  UTC. At 22:10:37 UTC analytics and reconciliation were each running one task
+  on digest
+  `sha256:21d3165bc6f3dd6d7b27b7b36ba317cd4b74dd4c891af967734455d43a841e4a`.
+  The original operation then had all six analytics dataset aggregates and all
+  37 model facts successful, with serving run
+  `b469fc65-f3e7-4999-bf77-95ce8ac34327`. All six cache stages reached the
+  valid terminal state `skipped` at 22:10:39 UTC (no cached views required
+  refreshing), with serving run `0477f3fd-b547-4c1a-a66d-6e7dc8466d25`.
+  A 22:12:33 UTC snapshot confirmed all 22,675 outbox rows completed, no new
+  ingest fact after the original success, and worker readiness HTTP 200/status
+  `ok`, no failure, last successful cycle 22:10:39.252 UTC. SERVER-7H's exact
+  downstream acceptance is now verified. The stock analytics/cache worker
+  remains global; the one-row trigger did not create eligibility for unrelated
+  operations. No retry, timeout, threshold or other resilience knob was added.
 - **Retrospective:** Exact receipt comparison distinguished recovered transport
   from a stale ledger. Proposed processing-runbook clarification: after an
   approved incident recovery, check completed outbox state as well as destination
