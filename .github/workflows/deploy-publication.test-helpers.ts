@@ -25,6 +25,9 @@ gitFixtureCommand("config", "user.email", "release-fixture@example.test");
 writeFileSync(join(gitFixtureRoot, "release.txt"), "verified parent\n");
 gitFixtureCommand("add", "release.txt");
 gitFixtureCommand("commit", "-m", "verified parent");
+export const baseSha = gitFixtureCommand("rev-parse", "HEAD");
+writeFileSync(join(gitFixtureRoot, "release.txt"), "prior release\n");
+gitFixtureCommand("commit", "-am", "prior release");
 export const parentSha = gitFixtureCommand("rev-parse", "HEAD");
 writeFileSync(join(gitFixtureRoot, "release.txt"), "candidate\n");
 gitFixtureCommand("commit", "-am", "candidate");
@@ -80,18 +83,31 @@ if (args.includes('graphql')) {
   const variables = JSON.parse(input).variables;
   process.stdout.write(variables.after ? process.env.GH_HISTORY_NEXT || process.env.GH_HISTORY : process.env.GH_HISTORY);
 }
+else if (args.some((arg) => arg.includes('/actions/runs/') && arg.endsWith('/jobs?per_page=100'))) {
+  process.stdout.write(process.env.GH_ACTION_JOBS);
+}
+else if (args.some((arg) => arg.includes('/actions/runs/') && arg.includes('/attempts/'))) {
+  process.stdout.write(process.env.GH_ACTION_ATTEMPT);
+}
+else if (args.some((arg) => arg.includes('/actions/runs/'))) {
+  process.stdout.write(process.env.GH_ACTION_RUN);
+}
 else if (args.some((arg) => arg.endsWith('/statuses')) && args.includes('--method')) {
   const request = JSON.parse(input);
   if ((request.description || '').length > 140) { console.error('description exceeds 140 characters'); process.exit(1); }
+  const deploymentId = args.find((arg) => arg.endsWith('/statuses')).split('/').at(-2);
+  if (deploymentId === process.env.GH_STATUS_FAIL_FOR) process.exit(1);
   process.stdout.write(JSON.stringify({ state: request.state, description: request.description }));
 }
 else if (args.some((arg) => arg.endsWith('/deployments'))) {
   const request = JSON.parse(input);
   process.stdout.write(JSON.stringify({ id: 77, node_id: 'D_fixture', sha: request.ref, environment: request.environment, task: request.task, payload: request.payload }));
 } else if (args.some((arg) => arg.includes('/deployments/') && Number.isInteger(Number(arg.split('/').at(-1))))) {
-  process.stdout.write(process.env.GH_DEPLOYMENT);
+  const deploymentId = args.find((arg) => arg.includes('/deployments/')).split('/').at(-1);
+  process.stdout.write(process.env['GH_DEPLOYMENT_' + deploymentId] || process.env.GH_DEPLOYMENT);
 } else if (args.some((arg) => arg.endsWith('/statuses'))) {
-  process.stdout.write(process.env.GH_STATUSES);
+  const deploymentId = args.find((arg) => arg.endsWith('/statuses')).split('/').at(-2);
+  process.stdout.write(process.env['GH_STATUSES_' + deploymentId] || process.env.GH_STATUSES);
 } else {
   const request = JSON.parse(input);
   process.stdout.write(JSON.stringify({ state: request.state }));

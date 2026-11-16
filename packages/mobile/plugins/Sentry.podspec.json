@@ -1,13 +1,13 @@
 {
   "name": "Sentry",
-  "version": "9.30.0",
+  "version": "9.34.0",
   "summary": "Sentry Cocoa SDK static xcframework",
   "homepage": "https://github.com/getsentry/sentry-cocoa",
   "license": "MIT",
   "authors": "Sentry",
   "source": {
-    "http": "https://github.com/getsentry/sentry-cocoa/releases/download/9.30.0/Sentry.xcframework.zip",
-    "sha256": "46f659ad81a4a53db82f263d5ce5a3d704e6b7f6625518b175a4d1b630cd90a9"
+    "http": "https://github.com/getsentry/sentry-cocoa/releases/download/9.34.0/Sentry.xcframework.zip",
+    "sha256": "1ee80dfb1bd94295f419a7a026467ce35a68143fb8da9f5e672264546b8f7c0d"
   },
   "platforms": {
     "ios": "15.0"

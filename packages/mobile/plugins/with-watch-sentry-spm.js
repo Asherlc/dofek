@@ -21,7 +21,7 @@ const {
 } = requireAppleTargets("@bacons/xcode");
 
 const PACKAGE_URL = "https://github.com/getsentry/sentry-cocoa.git";
-const PACKAGE_VERSION = "9.30.0";
+const PACKAGE_VERSION = "9.34.0";
 const PRODUCT_NAME = "Sentry";
 const TARGET_NAME = "DofekWatch";
 

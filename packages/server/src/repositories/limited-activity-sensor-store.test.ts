@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import type {
-  ActivitySensorStore,
-  ActivitySensorWindow,
-  StreamPointRow,
-} from "./activity-repository.ts";
+import type { ActivitySensorStore, ActivitySensorWindow } from "./activity-repository.ts";
+import type { StreamPointRow } from "./activity-sensor-types.ts";
 
 const { mockLoggerInfo, mockSpan, mockStartActiveSpan } = vi.hoisted(() => {
   const span = {

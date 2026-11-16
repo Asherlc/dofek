@@ -1,15 +1,51 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { maps, resetMaps } from "../../../lib/maplibre-test-helpers.ts";
 import { ActivityClimbingPanel } from "./ActivityClimbingPanel.tsx";
-import { climbingMapLocations, climbingMapLogs } from "./climbing-log-map-test-helpers.ts";
+import {
+  climbingMapLocations,
+  climbingMapLogs,
+  mixedClimbingEntries,
+} from "./climbing-log-map-test-helpers.ts";
 
 vi.mock(
   "maplibre-gl",
   async () => (await import("../../../lib/maplibre-test-helpers.ts")).maplibreMock,
 );
 beforeEach(resetMaps);
+
+it("groups attached and two suggestions and attaches only the selected suggestion", () => {
+  const [first, second, third] = climbingMapLogs;
+  if (!first || !second || !third) throw new Error("Expected climbing fixtures");
+  const onAttach = vi.fn();
+  render(
+    <ActivityClimbingPanel
+      entries={[first]}
+      suggestions={[second, third]}
+      locations={{}}
+      onAttach={onAttach}
+    />,
+  );
+  expect(screen.getByRole("region", { name: "Attached climbing logs" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "Unattached climbing logs" })).toBeVisible();
+  const suggestion = screen.getByRole("region", { name: "Unattached climbing logs" });
+  expect(within(suggestion).getByRole("button", { name: /^Attach entry 2,/ })).toBeEnabled();
+  const secondSuggestionControl = within(suggestion).getByRole("button", {
+    name: /^Attach entry 3,/,
+  });
+  expect(within(suggestion).getAllByRole("button", { name: /Attach entry/ })).toHaveLength(2);
+  fireEvent.click(secondSuggestionControl);
+  expect(onAttach).toHaveBeenCalledExactlyOnceWith(third.id);
+});
+
+it("keeps mixed Kaya attempt counts, outcomes, wall angle and repeated area labels", () => {
+  render(<ActivityClimbingPanel entries={mixedClimbingEntries} locations={{}} />);
+  expect(screen.getByRole("button", { name: /Select entry 1, Blue Circuit/ })).toBeVisible();
+  expect(screen.getByRole("button", { name: /Select entry 2, Project/ })).toBeVisible();
+  expect(screen.getAllByRole("heading", { name: "Area: Touchstone Pacific Pipe" })).toHaveLength(3);
+  expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
+});
 
 it("lists explicitly linked Kaya and Kilter locations under one area heading", () => {
   const entry = climbingMapLogs[0];

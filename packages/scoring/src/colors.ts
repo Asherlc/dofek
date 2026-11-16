@@ -107,6 +107,7 @@ export const activityMetricColors = {
   power: "#d97706",
   speed: "#2563eb",
   cadence: "#5E35B1",
+  skinTemperature: "#ea580c",
 } as const;
 
 /** Chart chrome colors for ECharts tooltips, axes, and grid lines */

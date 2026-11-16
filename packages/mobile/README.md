@@ -148,7 +148,9 @@ viewer. Labels match web through [shared formatters](../format/src/climbing-log.
 See the
 [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
-Activity details compose attached climbs in [ActivityClimbingPanel](./components/ActivityClimbingPanel.tsx):
+Activity details load attached and suggested logs through the route-local
+[climbing hook](./components/activity/useActivityClimbing.ts) and compose them in
+[ActivityClimbingPanel](./components/ActivityClimbingPanel.tsx):
 one interactive map above a grouped list on narrow screens, including same-day
 attachment suggestions under Unattached. Selecting a row or
 map point highlights the same occurrence; Log details opens the existing
@@ -551,9 +553,9 @@ verify mobile Storybook development and static export, and run the native
 Release archive. The check exercises strict web bundling and native press
 behavior; it does not replace a native build or device validation.
 
-Sentry React Native 8.29.0 and the separate watch Swift package use Cocoa 9.30.0.
+Sentry React Native 8.35.0 and the separate watch Swift package use Cocoa 9.34.0.
 The [binary podspec](./plugins/Sentry.podspec.json) pins its release URL and
-SHA256 from Sentry's [Swift package manifest](https://github.com/getsentry/sentry-cocoa/blob/9.30.0/Package.swift).
+SHA256 from Sentry's [Swift package manifest](https://github.com/getsentry/sentry-cocoa/blob/9.34.0/Package.swift).
 The RNSentry package patch declares this CocoaPod dependency, and Expo's
 [extraPods configuration](https://docs.expo.dev/versions/latest/sdk/build-properties/#extraiospoddependency)
 registers the podspec. CocoaPods selects the platform slice and exports the
@@ -641,6 +643,14 @@ runtime properties. These boundaries are covered by the
 [telemetry regressions](./lib/telemetry.test.ts) and
 [transport regressions](./lib/trpc-fetch.test.ts).
 
+The login Terms and Privacy links emit `legal-document` logs with the document
+and browser result. A rejected `WebBrowser.openBrowserAsync` call remains a
+Sentry exception with its operation recorded. The full URL and page contents are
+not logged. Expo's [SDK 58 iOS implementation](https://github.com/expo/expo/blob/expo%4058.0.22/packages/expo-web-browser/ios/WebBrowserModule.swift)
+resolves with presentation or dismissal outcomes; these do not establish that
+the document loaded. Android's [`openBrowserAsync` implementation](https://github.com/expo/expo/blob/expo%4058.0.22/packages/expo-web-browser/android/src/main/java/expo/modules/webbrowser/WebBrowserModule.kt)
+returns `opened` after launching the browser.
+
 Native Sentry starts in the AppDelegate with the cleanup-log callback installed
 by [the Expo plugin](./plugins/with-whoop-cleanup-logging.ts). It removes user
 attributes only from WHOOP disable/cleanup logs after Cocoa enriches them;
@@ -665,6 +675,16 @@ context identifies the screen without copying record identifiers into telemetry.
 Production PostHog error autocapture is limited to uncaught exceptions and
 unhandled rejections; handled application failures go through the shared
 `captureException` path so they retain the same route and source context.
+
+The mobile Sentry SDK enables experimental iOS JavaScript-hang reporting and
+the experimental watchdog-termination V2 tracker. The latter improves watchdog
+reporting when a foreground app is hung; JavaScript-hang events can include the
+Hermes stack.
+These signals do not include event-level process memory or replace an Apple
+`.ips`/Jetsam diagnostic. See the
+[8.34.0 JavaScript-hang release notes](https://github.com/getsentry/sentry-react-native/releases/tag/8.34.0)
+and the
+[8.35.0 watchdog tracker release notes](https://github.com/getsentry/sentry-react-native/releases/tag/8.35.0).
 
 Release startup tracing samples the `Mobile Startup` lifecycle and Sentry's
 native `App Start` span. The lifecycle attributes time to the Expo
@@ -806,7 +826,7 @@ using React Native's [Pressable](https://reactnative.dev/docs/pressable) and
 ## Activity metric sources
 
 Activity views offer independent [source controls](components/activity/ActivityMetricSourcePicker.tsx)
-for heart rate, power, speed, cadence, and elevation. Provider logos, short device
+for heart rate, power, speed, cadence, elevation, and skin temperature. Provider logos, short device
 names where needed, and attribution icons keep the controls and chooser concise.
 Unknown sources retain identifying text; accessible names retain the complete
 source wording using React Native's [accessibility labels](https://reactnative.dev/docs/accessibility#accessibilitylabel).
@@ -832,6 +852,9 @@ position observations by elapsed time and evaluate continuity independently for
 each metric. Sparse observations retain markers; dense recordings show lines
 with markers on touch. Scrubbing selects the nearest measured observation by
 time and retains its original timeline index for the map.
+Skin-temperature chart points use their separately retained decoded measurement
+times and the selected temperature unit. Daily Recovery values remain available
+in the existing skin-temperature card.
 The [shared presentation policy](../training/src/activity-chart-series.ts) defines
 the cadence-based gap rule used by both clients. This follows the distinction
 between [differing reporting intervals and missing observations](https://www.datawrapper.de/academy/patchy-data).
