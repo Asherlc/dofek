@@ -28,11 +28,20 @@ enum WhoopBleUploadRuntime {
         return try WhoopBleBackgroundUploader(
             store: store,
             directory: base.appendingPathComponent("bodies", isDirectory: true),
-            transport: WhoopURLSessionTransport(), reportError: reportNativeError
+            transport: WhoopURLSessionTransport(), reportError: reportNativeError,
+            reportUploadOutcome: reportNativeUploadOutcome
         )
     }
 
     static func reportNativeError(_ error: Error) {
         SentrySDK.capture(error: error)
+    }
+
+    private static func reportNativeUploadOutcome(_ outcome: WhoopUploadOutcome) {
+        if let statusCode = outcome.statusCode, (500..<600).contains(statusCode) { return }
+        let breadcrumb = Breadcrumb(level: .info, category: "whoop.upload")
+        breadcrumb.message = outcome.stage
+        breadcrumb.data = outcome.sentryData
+        SentrySDK.addBreadcrumb(breadcrumb)
     }
 }

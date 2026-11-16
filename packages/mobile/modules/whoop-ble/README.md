@@ -153,6 +153,14 @@ recreation. Creation/checkpoint times describe the current native uploader and
 snapshot. Capture timestamps distinguish phone-observed notifications from the
 strap's latest valid reported heart rate; see the [bridge contract](index.ts).
 
+Upload completion adds a Sentry breadcrumb with the opaque durable batch identity,
+stream, route, outcome stage, HTTP status when present, origin and acknowledgment
+validation, and whether the reservation remains pending or was retired. This lets
+statusless URLSession errors be correlated with their batch and later outcome.
+Breadcrumbs omit credentials, account identifiers, and sample bodies. HTTP 5xx
+outcomes remain in the existing operational counter and are not added as Sentry
+breadcrumbs.
+
 Captured samples are committed to [SQLite](ios/WhoopBleSampleStore.swift) before
 scheduling delivery. All streams decoded from one BLE notification commit in one
 transaction; an invalid stream rolls back that notification's samples and counters
