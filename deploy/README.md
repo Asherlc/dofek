@@ -611,6 +611,41 @@ it does not repeat Terraform or stack mutation. If any existing stack
 verification failed, keep the intent unresolved until the target is reconciled
 and all required verification gates pass. Do not mark it inactive while either
 service may be running the candidate.
+
+For one explicitly selected failed live candidate, the canonical `Deploy`
+workflow also supports a guarded replacement through its `web-stack` target.
+Dispatch from `main` with the exact immutable `image_tag` for a verified strict
+descendant image and `recover_failed_deployment_id` set to the one pending
+`server-stack-publish` deployment ID. Admission requires that ID to be the sole
+unresolved server receipt; its immutable payload must link to a completed failed
+server-stack job on the recorded run attempt, the current run must be completed
+with failure, and every running web/worker task must match that receipt's source
+and image digest. The run's control SHA may differ from the selected image
+source when `image_tag` is used; admission checks that control SHA consistently
+across the run, attempt, and job, while the deployment payload binds the selected
+image source and digest. The replacement candidate must be a strict descendant
+of both the failed source and the latest verified success. The workflow then
+runs its ordinary Terraform, migration, CDC, API, health, and stack verification
+gates without skipping phases. It records the new receipt as pending and links
+the old deployment ID in its payload.
+
+Only after all stack gates pass and both live web and worker images match the
+new immutable candidate does the finalizer mark the new receipt successful and
+the replaced receipt inactive. The finalizer is safe to rerun if the new
+success write or old inactive write was only partially acknowledged: it
+verifies the live identity again, leaves an already successful new receipt
+unchanged, and completes the old inactive status only when it names that same
+verified replacement. If the recovery deployment itself fails, both receipts
+remain unresolved and later publication stays blocked. Retry only failed jobs
+in that same workflow run so the original admission outputs and receipt IDs are
+preserved. If that run cannot be safely retried, reconcile every receipt only
+after checking the current web and worker identities and the complete run
+history; do not clear a live candidate or start a second recovery dispatch.
+Admission reads GitHub's [workflow run attempt](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)
+and [attempt job history](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt)
+endpoints; finalization uses the existing
+[deployment status API](https://docs.github.com/en/rest/deployments/statuses#create-a-deployment-status).
+
 Bootstrap with no successful server receipt is fail-closed whenever a live
 web/worker target exists. Matching task labels and image digests establish only
 the observed live identity; they do not prove that the prior release passed
