@@ -35874,9 +35874,10 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
   and fd 0 was a pipe. Startup is still waiting for stdin to close, before any
   provider pass. A fresh public `/healthz` request returned HTTP 200 in 0.318
   seconds. No input was sent because supplying the startup payload would start
-  the full 17-provider history pass. The authorized operator must provide the
-  intended payload through the attached launcher and retain the resulting
-  provider and terminal events before operation acceptance. This current
+  the full 17-provider history pass. If the full-history pass is still
+  intended, the authorized operator must provide its intended payload through
+  the attached launcher and retain the resulting provider and terminal events
+  before operation acceptance. This current
   startup finding does not establish the missing response body or backend
   identity for the historical November 3 HTTP 503; keep that attribution
   unknown.
