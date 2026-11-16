@@ -159,6 +159,7 @@ vi.mock("../../lib/trpc.ts", () => {
       },
       sleep: {
         latestStages: recordQuery("sleep.latestStages"),
+        stagesByDate: recordQuery("sleep.stagesByDate", { date: "2026-07-07", stages: [] }),
         list: recordQuery("sleep.list"),
       },
       stress: {

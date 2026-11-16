@@ -128,3 +128,62 @@ describe("sleepRouter access window", () => {
     expect(queryParams).not.toHaveProperty("days");
   });
 });
+
+describe("sleepRouter stagesByDate", () => {
+  function createSleepCaller(query: ReturnType<typeof vi.fn>) {
+    return createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: {
+        query,
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+      },
+      accessWindow: {
+        kind: "limited",
+        paid: false,
+        reason: "free_recent_week",
+        startDate: "2026-04-10",
+        endDateExclusive: "2026-04-17",
+      },
+    });
+  }
+
+  it("returns exactly the requested date, including a missing date", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    const caller = createSleepCaller(query);
+
+    await expect(caller.stagesByDate({ date: "2026-04-12" })).resolves.toEqual({
+      date: "2026-04-12",
+      stages: [],
+    });
+    expect(query.mock.calls[0]?.[2]).toMatchObject({ days: 0, endDate: "2026-04-12" });
+  });
+
+  it("does not expose dates outside the caller's sleep access window", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    const caller = createSleepCaller(query);
+
+    await expect(caller.stagesByDate({ date: "2026-04-18" })).resolves.toEqual({
+      date: "2026-04-18",
+      stages: [],
+    });
+    expect(query.mock.calls[0]?.[1]).toContain("sleep.date >= toDate({accessStartDate:String})");
+    expect(query.mock.calls[0]?.[2]).toMatchObject({ days: 0, endDate: "2026-04-18" });
+  });
+
+  it("validates calendar dates and keeps omitted input valid", async () => {
+    const caller = createSleepCaller(vi.fn().mockResolvedValue([]));
+
+    await expect(caller.stagesByDate({})).resolves.toEqual({ date: null, stages: [] });
+    await expect(caller.stagesByDate({ date: "2026-02-30" })).rejects.toThrow();
+  });
+});

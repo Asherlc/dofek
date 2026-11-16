@@ -12,6 +12,9 @@ recorded sleep, and the [recovery router](src/routers/recovery.ts) retains
 baseline and descriptive workload analytics. Custom recovery, 0–21 strain,
 sleep-performance/need, and dependent daily recommendation APIs are retired;
 see the [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-scores-design.md).
+The [sleep.stagesByDate query](src/routers/sleep.ts) returns the latest recorded
+night by default or the stages for one exact sleep date, using the existing
+overlapping-session selection in the [sleep repository](src/repositories/sleep-repository.ts).
 
 The [climbing](src/routers/climbing.ts) and [strength](src/routers/strength.ts)
 weekly volume queries provide the charts with attempt counts, working sets,

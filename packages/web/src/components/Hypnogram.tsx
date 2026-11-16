@@ -66,7 +66,7 @@ export function Hypnogram({ data, loading }: HypnogramProps) {
       },
     }),
     xAxis: {
-      ...dofekAxis.time(),
+      ...dofekAxis.time({ show: true }),
       axisLabel: {
         color: chartThemeColors.axisLabel,
         fontSize: 11,
@@ -75,8 +75,8 @@ export function Hypnogram({ data, loading }: HypnogramProps) {
     },
     yAxis: {
       type: "value" as const,
-      min: 0.5,
-      max: 4.5,
+      min: 1,
+      max: 4,
       interval: 1,
       axisLabel: {
         color: chartThemeColors.axisLabel,
@@ -89,11 +89,12 @@ export function Hypnogram({ data, loading }: HypnogramProps) {
     visualMap: {
       show: false,
       dimension: 1,
+      // Ranges keep the line's color bands visible; exact values collapse to zero width.
       pieces: [
-        { value: 1, color: STAGE_COLOR.deep },
-        { value: 2, color: STAGE_COLOR.light },
-        { value: 3, color: STAGE_COLOR.rem },
-        { value: 4, color: STAGE_COLOR.awake },
+        { min: 0.5, max: 1.5, color: STAGE_COLOR.deep },
+        { min: 1.5, max: 2.5, color: STAGE_COLOR.light },
+        { min: 2.5, max: 3.5, color: STAGE_COLOR.rem },
+        { min: 3.5, max: 4.5, color: STAGE_COLOR.awake },
       ],
     },
     series: [
