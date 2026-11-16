@@ -329,10 +329,8 @@ final class WhoopBleBackgroundUploader: NSObject {
                     }
                     blocked.insert(batch.stream)
                 }
-                if let status, (500...599).contains(status) {
-                    http5xxResponseCount += 1
-                    isKnownHTTP5xx = true
-                }
+                isKnownHTTP5xx = (500...599).contains(status ?? 0)
+                http5xxResponseCount += isKnownHTTP5xx ? 1 : 0
                 throw WhoopUploadError(message: "WHOOP \(batch.stream.rawValue) upload returned HTTP \(status ?? 0)")
             }
             guard data.count <= 65_536,
