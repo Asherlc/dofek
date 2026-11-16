@@ -337,6 +337,44 @@ describe("ios telemetry", () => {
     });
   });
 
+  it("adds safe native Apple diagnostics as searchable Sentry tags", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+
+    const error = new Error("Apple sign-in failed");
+    mod.captureException(
+      error,
+      { source: "login-screen-handle-login", appleCode: "ERR_REQUEST_UNKNOWN" },
+      {
+        tags: {
+          appleCode: "ERR_REQUEST_UNKNOWN",
+          nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
+          nativeCode: "1000",
+          underlyingDomain: "AKAuthenticationError",
+          underlyingCode: "-7026",
+        },
+      },
+    );
+
+    expect(mocks.mockCaptureException).toHaveBeenCalledWith(error, {
+      tags: {
+        source: "login-screen-handle-login",
+        appleCode: "ERR_REQUEST_UNKNOWN",
+        nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
+        nativeCode: "1000",
+        underlyingDomain: "AKAuthenticationError",
+        underlyingCode: "-7026",
+      },
+      extra: {
+        ...runtimeContext,
+        source: "login-screen-handle-login",
+        appleCode: "ERR_REQUEST_UNKNOWN",
+      },
+    });
+  });
+
   it("correlates logs and errors with the native build, OTA and JavaScript runtime", async () => {
     process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
     process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";

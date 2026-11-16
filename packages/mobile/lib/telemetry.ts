@@ -255,6 +255,7 @@ function sanitizePostHogProperties(
 
 export type CaptureExceptionOptions = {
   reportToErrorTracking?: boolean;
+  tags?: Record<string, string>;
 };
 
 export function captureException(
@@ -288,13 +289,18 @@ export function captureException(
     if (retiredLifetime) {
       Sentry.captureException(error, (scope) => {
         scope.setUser(null);
+        for (const [key, value] of Object.entries(options.tags ?? {})) {
+          scope.setTag(key, value);
+        }
         if (source) scope.setTag("source", source);
         scope.setExtras(telemetryContext);
         return scope;
       });
     } else {
       Sentry.captureException(error, {
-        ...(source ? { tags: { source } } : {}),
+        ...(source || options.tags
+          ? { tags: { ...options.tags, ...(source ? { source } : {}) } }
+          : {}),
         extra: telemetryContext,
       });
       // PostHog's mobile captureException binds to its current distinct ID;

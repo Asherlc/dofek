@@ -683,14 +683,26 @@ describe("LoginScreen", () => {
       await screen.findByText("Apple could not complete sign-in. Please try again."),
     ).toBeTruthy();
     expect(screen.queryByText(/dofek\.apple-auth|private-token/)).toBeNull();
-    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
-      source: "login-screen-handle-login",
-      appleCode: "ERR_REQUEST_UNKNOWN",
-      nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
-      nativeCode: 1000,
-      underlyingDomain: "AKAuthenticationError",
-      underlyingCode: -7026,
-    });
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      {
+        source: "login-screen-handle-login",
+        appleCode: "ERR_REQUEST_UNKNOWN",
+        nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
+        nativeCode: 1000,
+        underlyingDomain: "AKAuthenticationError",
+        underlyingCode: -7026,
+      },
+      {
+        tags: {
+          appleCode: "ERR_REQUEST_UNKNOWN",
+          nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
+          nativeCode: "1000",
+          underlyingDomain: "AKAuthenticationError",
+          underlyingCode: "-7026",
+        },
+      },
+    );
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain("private-token");
     expect(screen.getByText("AppleAuthenticationButton")).toBeTruthy();
   });
