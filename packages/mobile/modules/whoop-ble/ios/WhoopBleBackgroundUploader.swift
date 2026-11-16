@@ -44,6 +44,7 @@ final class WhoopBleBackgroundUploader: NSObject {
     private var completionHandler: (() -> Void)?
     private var finishedEventsPending = false
     private var lastError: String?
+    private var http5xxResponseCount = 0
     private var tokenEpoch = 0
     private var submitted: [String: (epoch: Int, attempt: Int)] = [:]
     private var submissionSequence = 0
@@ -185,7 +186,8 @@ final class WhoopBleBackgroundUploader: NSObject {
                 "bufferCreatedAt": Self.iso(createdAt), "checkpointAt": Self.iso(now()),
                 "imu": try store.statistics(stream: .imu), "realtime": try store.statistics(stream: .realtime),
                 "sensorRecords": try store.statistics(stream: .sensorRecords),
-                "activeUploadCount": active.count, "blockedUploadStreams": blocked.map(\.rawValue)
+                "activeUploadCount": active.count, "blockedUploadStreams": blocked.map(\.rawValue),
+                "http5xxResponseCount": http5xxResponseCount
             ]
             result["lastUploadError"] = lastError.map { $0 as Any } ?? NSNull()
             return result
@@ -308,6 +310,7 @@ final class WhoopBleBackgroundUploader: NSObject {
         active.remove(identity)
         pairedActive.remove(identity)
         let usedEpoch = submitted.removeValue(forKey: identity)?.epoch
+        var isKnownHTTP5xx = false
         do {
             guard let batch = try store.pendingBatches().first(where: { self.identity($0) == identity }) else { return }
             if let error { throw error }
@@ -325,6 +328,10 @@ final class WhoopBleBackgroundUploader: NSObject {
                         return
                     }
                     blocked.insert(batch.stream)
+                }
+                if let status, (500...599).contains(status) {
+                    http5xxResponseCount += 1
+                    isKnownHTTP5xx = true
                 }
                 throw WhoopUploadError(message: "WHOOP \(batch.stream.rawValue) upload returned HTTP \(status ?? 0)")
             }
@@ -354,11 +361,14 @@ final class WhoopBleBackgroundUploader: NSObject {
                     retryAfter[batch.stream] = now().addingTimeInterval(30)
                 }
             } catch { record(error) }
-            record(error)
+            record(error, reportToSentry: !isKnownHTTP5xx)
         }
     }
 
-    private func record(_ error: Error) { lastError = error.localizedDescription; reportError(error) }
+    private func record(_ error: Error, reportToSentry: Bool = true) {
+        lastError = error.localizedDescription
+        if reportToSentry { reportError(error) }
+    }
     private func identity(_ batch: WhoopStoredBatch) -> String { batch.generation + "." + batch.id }
     private func removeBodies() throws {
         for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {

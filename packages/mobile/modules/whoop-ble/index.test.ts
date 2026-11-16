@@ -107,6 +107,7 @@ function makeDataPathStats() {
       activeUploadCount: 0,
       blockedUploadStreams: [],
       lastUploadError: null,
+      http5xxResponseCount: 0,
       ...makeBufferCheckpoint(),
     },
   };
@@ -126,6 +127,14 @@ describe("WhoopBle native bridge", () => {
     nativeModule.getDataPathStats.mockResolvedValue(stats);
 
     await expect(getDataPathStats()).resolves.toEqual(stats);
+  });
+
+  it("accepts queue diagnostics from native builds without the optional 5xx counter", async () => {
+    const stats = makeDataPathStats();
+    const { http5xxResponseCount: _http5xxResponseCount, ...legacyBuffers } = stats.buffers;
+    nativeModule.getDataPathStats.mockResolvedValue({ ...stats, buffers: legacyBuffers });
+
+    await expect(getDataPathStats()).resolves.toMatchObject({ buffers: legacyBuffers });
   });
 
   it("accepts unavailable device and capture dates as null", async () => {

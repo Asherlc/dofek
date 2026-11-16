@@ -301,6 +301,19 @@ unlimited count took 0.04–0.38 ms. These measurements are not device latency
 guarantees; see the [incident evidence](../../../../docs/production-incident-baseline.md#2026-10-30--whoop-recovery-and-queue-diagnostics-corrections).
 Both corrections require a new native iOS build.
 
+Validated HTTP 500–599 upload responses increment the uploader-lifetime
+`http5xxResponseCount` and remain visible in `lastUploadError`; they follow the
+existing retry and durable-queue behavior without creating Sentry exception
+events. The count is included in the existing `capture_snapshot` structured
+OpenTelemetry log through `getDataPathStats()`. It is cumulative for one native
+uploader lifetime, is not persisted, and appears on the next normal diagnostics
+snapshot; repeated snapshots report the same running total and must not be
+summed as separate failures. Older native builds may omit this optional field.
+Transport failures without a known HTTP 5xx response and unexpected validation,
+storage, authentication, or acknowledgment failures continue through Sentry.
+This field uses the standard log record attribute model described by
+OpenTelemetry's [Logs Data Model](https://opentelemetry.io/docs/specs/otel/logs/data-model/).
+
 Upload acknowledgments find their reserved sample rows through a partial index
 on non-null batch identities, rather than scanning the entire queued backlog.
 Unreserved rows are excluded from this index, following SQLite's
