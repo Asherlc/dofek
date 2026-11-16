@@ -38716,6 +38716,46 @@ Local qualification and CI are separate from production throughput acceptance. T
   “When ClickHouse queries are short, inspect PostgreSQL visibility and
   enrichment queries before adding analytics models.”
 
+## 2026-11-16 — PeerDB normalization stalled on retired `user_profile.ftp`
+
+- **Symptoms / impact:** Production normalization for
+  `dofek_fitness_raw_analytics` stopped at batch 8558 while sync advanced through
+  batch 8770. The health check reported `NORMALIZATION_CURSOR_STALLED` across the
+  mirror's tables. The Sentry issue had 3,288 occurrences and zero users
+  impacted. The issue's first-seen date predates this regression, and evidence
+  below establishes the November 16 occurrence only; other group events require
+  their own correlation.
+- **Evidence / root cause:** The Sentry event records the stalled normalization
+  cursor. Contemporaneous PeerDB flow-worker logs show ClickHouse error 16,
+  `No such column ftp in table postgres_fitness.user_profile`, during
+  normalization. The persisted PeerDB `table_schema_mapping` still includes
+  `ftp int16`, while the current Postgres source has dropped it. ClickHouse
+  migration `0108_computed_cycling_power` dropped the destination column.
+  PeerDB's [schema-change documentation](https://docs.peerdb.io/features/schema-changes)
+  says source-column drops are detected but not propagated and later rows carry
+  `NULL` for the dropped column.
+- **Direct fix:** Restore `ftp Nullable(Int16)` on the raw ClickHouse mirror with
+  registered forward migration 0115, and retain it in canonical raw-table DDL.
+  The curated `user_profile_current` view continues to omit FTP. No production
+  migration or data change has been run from this branch.
+- **Validation:** A runner regression first failed when 0115 was tagged
+  pre-CDC, then passed with ordinary ordered migration semantics. Real ClickHouse
+  integration tests applied the exact 0108 FTP drop followed by 0115, preserved
+  the existing row, accepted a PeerDB-shaped insert, and verified fresh raw
+  schema creation. All 28 focused unit tests and both ClickHouse integration
+  cases passed. `pnpm setup-db` applied 114 local ClickHouse migrations in order,
+  including 0108 before 0115; `pnpm migrate`, the 43-model analytics build,
+  repository lint, and recursive all-package typechecks passed. No production
+  DDL was run.
+- **Remaining risk / follow-up:** Production remains stalled until this change
+  is released through the normal deployment workflow. After deployment, verify
+  the mirror column exists, normalization advances beyond the oldest pending
+  batch, and CDC health reports healthy. Do not resync or alter production
+  PeerDB metadata for this schema mismatch.
+- **Retrospective:** Production catalog evidence connected the generic stalled
+  cursor to a destination schema mismatch; the official PeerDB schema-change
+  guide confirms the retained-column behavior. The CDC runbook now records the
+  mirror-column invariant. No additional guidance gap was identified.
 ## 2026-11-16 (UTC) — PR #3349 web activity-hook mutation checks below threshold
 
 - **Symptoms / impact:** Hosted run [43817087789](https://github.com/Asherlc/dofek/actions/runs/43817087789) on exact head `6ccb0c5933c614a1d420e0bf6f7f8bda58932d61` failed `Check Server / Stryker (0)` (job `133132303503`) and `Check Server / Stryker (1)` (job `133132303699`), both at step `Run Stryker` (step 7). This was a required test-quality gate; the run did not establish a production behavior defect. The two exact workflow commands were `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`, with `MUTATE_FILES` set respectively to `packages/web/src/pages/activity-detail/useActivityMetrics.ts:1-163` and `packages/web/src/pages/activity-detail/useActivityClimbing.ts:1-81`.
