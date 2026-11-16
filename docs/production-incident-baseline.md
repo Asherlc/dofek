@@ -14,6 +14,55 @@
 - **Direct fix / validation:** Update the API integration expectation, use the fixed six nullable channel projections and unconditional stream UNION with empty selection arrays, and add a `skin_temperature` selection predicate within the stream temperature branch. The predicate keeps HR-only activity streams from reading decoded health-sensor history; it does not change the shared health-sensor query or measured-time bounds. Four real-engine suites passed (59 tests), focused unit suites passed (85 tests), `pnpm lint` passed, and recursive all-package typecheck passed. After loading 1,000 decoded readings outside the activity measurement window, actual ClickHouse response summaries remained stable: no source `read_rows/read_bytes` `1/1` and HR-only `17/1535` before and after the history increase. The regenerated changed-line Stryker scope contains no executable mutants; the only ignored mutant is the SQL template literal under the existing `StringLiteral` exclusion, so no numeric mutation score is available. No threshold or exclusion changed.
 - **Retrospective / remaining risk:** Real-engine query summaries exposed the HR-only history scan that [`EXPLAIN ESTIMATE`](https://clickhouse.com/docs/reference/statements/explain#explain-estimate) did not establish; per-query physical counters are also available from [`system.query_log`](https://clickhouse.com/docs/reference/system-tables/query_log). For SQL changes, compare actual response summaries with and without off-window history, and preserve the generated changed-line ranges. The final refactor's SQL semantics are verified by the ClickHouse suites; the changed-line mutation score remains unavailable because the changed SQL is a string literal.
 
+## 2026-11-15 — Databasus backup process killed by memory-cgroup OOM
+
+- **Symptoms / impact:** The scheduled PostgreSQL backup
+  `6cae04a7-92f8-41b3-93dd-0c699bac810e`, created at
+  `2026-11-15 06:00:54 UTC`, failed after `59,764` ms with zero reported MB and
+  `Backup failed due to application restart`. The preceding completed record
+  `d786d1dc-dd10-4d89-ae12-6d872c093486` was created at
+  `2026-11-14 06:00:54 UTC`, with recorded `last_backup_time` at
+  `2026-11-14 06:04:29 UTC`; the
+  [Database Backup Freshness run 43749045666](https://github.com/Asherlc/dofek/actions/runs/43749045666),
+  job `132918679634`, failed at **Check newest database backup**. The service
+  was observed running `1/1` after restart; that does not establish backup
+  recovery.
+- **Evidence / root cause:** The kernel recorded a `CONSTRAINT_MEMCG` OOM at
+  `2026-11-15 06:04:06 UTC`, showed `pg_dump` in the Databasus cgroup, and
+  killed the Databasus `main` process. The checked-in service limit was
+  `209715200` bytes (`200M`); Databasus documents a 500 MB minimum RAM
+  requirement ([installation requirements](https://databasus.com/installation/)).
+  The scheduler remained enabled for `DAILY` at `06:00` with retries disabled
+  and `max_failed_tries_count=0`. The host data filesystem had 64 GB available.
+  Read-only evidence copies are in
+  `/tmp/opencode/ota-followup/backup-recovery-oom-only.log`,
+  `backup-recovery-failed-backup.log`, `backup-recovery-scheduler-state.log`,
+  and `backup-recovery-service-state.log`.
+- **Direct fix / validation:** Increase only the Databasus Swarm memory limit
+  to `512M` in `deploy/docker-compose.yml`, keeping image `v3.32.1`, backup
+  schedule, encryption, storage, and the existing 24-hour freshness gate. A
+  full `docker stack config` render of `deploy/docker-compose.yml` with
+  `deploy/stack.oracle.yml` passed using canonical validated deploy
+  environment files; rendered output was discarded. Locally, Databasus
+  `v3.32.1` completed encrypted synthetic backup
+  `82990a0f-ff13-413e-9178-f7cfd16d06e5` for 750,000 rows in 86,868 ms
+  (reported size 795.03 MB). Peak container memory was 536,563,712 bytes,
+  307,200 bytes below the 536,870,912-byte limit, with no OOM or restart.
+  This narrow margin does not establish production-sized backup headroom. The
+  supported Databasus
+  restore completed into isolated synthetic database `validation_restored`
+  (restore `35619777-fdd8-43d0-b0de-2d90f79020a1`); source and restored
+  aggregates matched across all 750,000 rows (`750000|281250375000|-5087423379273388987779`).
+  The container restart count was `0`. Evidence is retained as supplemental
+  local artifacts under `/tmp/opencode/ota-followup/`. The
+  recovery runbook explains the minimum RAM requirement and that fixture
+  success does not establish production recovery.
+- **Remaining risk / follow-up:** The change is not deployed. No fresh
+  production backup, production freshness check, or isolated restore of a
+  production backup has been verified. Complete these checks after the normal
+  reviewed deployment before declaring recovery. No production configuration
+  or backup operation was changed during diagnosis.
+
 ## 2026-11-15 — OTA publisher rejected a nested trusted checkout
 
 - **Symptoms / impact:** Production OTA run
@@ -38334,3 +38383,60 @@ Local qualification and CI are separate from production throughput acceptance. T
   was not performed during this task because it is outside the approved scope.
 - **Follow-up:** Rotate the affected production credentials through the
   established secret rotation workflow and verify consumers afterward.
+
+## 2026-11-15 — Activities list delayed by PostgreSQL activity expansion
+
+- **Symptoms / impact:** The production web Activities page waits for its
+  activity cards. Two uncached `calendar.weekListV2` requests took 12,316 ms
+  and 8,649 ms; the accompanying `calendar.activityOverview` requests took
+  10,822 ms and 5,867 ms.
+- **Evidence:** Axiom `dofek-logs`, 23:31–23:35 UTC, traces
+  `7553a2d760d85b8b26fdd78cb23f3997` and
+  `97b57b6d30045738a112662ef6d03f74`. PostgreSQL slow-statement logs show
+  `SELECT a.id::text AS id FROM fitness.v_activity a` taking 7,275 ms,
+  3,339 ms, 2,970 ms and 2,681 ms. Climbing-log hydration queries against
+  `fitness.v_climbing_log_entry`, joined to `fitness.v_activity`, took
+  3,770 ms and 3,640 ms during the second request. ClickHouse
+  `system.query_log` records the initial activity SELECT at 457 ms and
+  143 ms respectively. The second request's recorded application queue
+  waits were each below 1 ms.
+- **Root cause:** The request paths repeatedly expand the PostgreSQL
+  activity view, including provenance hydration before the local-date
+  filter. A read-only reproduction of the current-period visibility query
+  took 3,211 ms and returned 80 IDs, while its provenance input aggregate
+  ran 1,885 times. The overview performs two sequential visibility queries;
+  list map/session lookups expand the view again. This is request-time
+  PostgreSQL work, rather than an expensive initial ClickHouse activity
+  scan. Plan interpretation follows PostgreSQL's
+  [EXPLAIN documentation](https://www.postgresql.org/docs/18/using-explain.html).
+- **Direct fix:** Following approval, extract the existing canonical grouping
+  into `fitness.v_activity_group`; the full activity view adds its unchanged
+  provenance and title fields. Visibility and climbing log/session/location
+  queries use the group projection. Migration 0187 installs both definitions.
+  No cache, timeout, retry, analytics model or production configuration changes
+  were added.
+- **Validation:** Five real-PostgreSQL assertions first failed on unnecessary
+  resolver calls (three visibility checks and two climbing projections).
+  A read-only comparison on production data returned identical sets of 80
+  current-period IDs. Three before/after visibility-query plan samples took
+  2,266/82 ms, 2,153/75 ms and 2,214/84 ms. The candidate query embedded the new
+  group-view definition; no production DDL was executed for this measurement.
+  This verifies the query improvement, not a deployed page-load measurement.
+  All 203 focused database tests, repository lint, recursive package typechecks,
+  migration policy and migration SQL lint passed; migration 0187 applied locally.
+  Independent review found no actionable issues. The additional local analytics
+  build could not complete its fresh-ClickHouse prerequisite: bootstrap first
+  reported `Cannot reserve 1.00 MiB, not enough space`, then `errno: 28` writing
+  `v_activity.sql.tmp`. The shared Docker VM had zero available bytes. Approved
+  stopped-container/unused-image cleanup briefly recovered 883 MiB, but the
+  filesystem filled again. No database volumes or running services were removed.
+- **Remaining risk / follow-up:** Release the migration with the repository
+  changes through the normal deployment workflow, then measure uncached
+  `calendar.weekListV2` and `calendar.activityOverview` again. Production
+  remains on the previous implementation until that release. Complete the
+  additional local analytics check when shared Docker capacity is available.
+- **Retrospective:** Correlating Axiom procedure timings with both engines'
+  query logs located the bottleneck; the tRPC `db_duration_ms` label alone
+  did not identify the engine. Proposed loading-runbook addition for review:
+  “When ClickHouse queries are short, inspect PostgreSQL visibility and
+  enrichment queries before adding analytics models.”
