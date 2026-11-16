@@ -14,6 +14,8 @@ import {
 
 const selectedSessionId = "00000000-0000-4000-8000-000000001774";
 const overlappingSessionId = "00000000-0000-4000-8000-000000001775";
+const foreignUserId = "00000000-0000-4000-8000-000000001776";
+const foreignSessionId = "00000000-0000-4000-8000-000000001777";
 
 /**
  * Integration tests for sleep router endpoints.
@@ -305,6 +307,35 @@ describe("sleep router integration", () => {
             (${sessionId}::uuid, 'deep', ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '23:45:00', ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '00:45:00'),
             (${sessionId}::uuid, 'rem', ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '00:45:00', ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '01:45:00')`,
     );
+
+    // A different owner's denser overlapping stages must not win this user's timeline.
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email)
+          VALUES (${foreignUserId}::uuid, 'Other Sleep Owner', 'other-sleep-owner@example.test')`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('other_owner_provider', 'Other Owner', ${foreignUserId}::uuid)`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            id, provider_id, user_id, started_at, ended_at,
+            duration_minutes, sleep_type
+          ) VALUES (
+            ${foreignSessionId}::uuid, 'other_owner_provider', ${foreignUserId}::uuid,
+            ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '22:00:00',
+            ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '06:00:00',
+            480, 'sleep'
+          )`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_stage (session_id, stage, started_at, ended_at)
+          VALUES
+            (${foreignSessionId}::uuid, 'awake', ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '22:00:00', ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '22:15:00'),
+            (${foreignSessionId}::uuid, 'light', ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '22:15:00', ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '23:00:00'),
+            (${foreignSessionId}::uuid, 'deep', ${fixtureDate}::date - INTERVAL '2 days' + INTERVAL '23:00:00', ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '00:00:00'),
+            (${foreignSessionId}::uuid, 'rem', ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '00:00:00', ${fixtureDate}::date - INTERVAL '1 day' + INTERVAL '01:00:00')`,
+    );
     await syncClickHouseTestActivitySensorStore(testCtx);
 
     const stages =
@@ -312,6 +343,65 @@ describe("sleep router integration", () => {
 
     expect(stages.length).toBe(3);
     expect(stages.map((stage) => stage.stage)).toEqual(["light", "deep", "rem"]);
+
+    const expectedNightStartDate = new Date(`${fixtureDate}T00:00:00.000Z`);
+    expectedNightStartDate.setUTCDate(expectedNightStartDate.getUTCDate() - 2);
+    const expectedNightEndDate = new Date(`${fixtureDate}T00:00:00.000Z`);
+    expectedNightEndDate.setUTCDate(expectedNightEndDate.getUTCDate() - 1);
+    const expectedNightStart = `${expectedNightStartDate.toISOString().slice(0, 10)}T23:00:00Z`;
+    const expectedNightEnd = `${expectedNightEndDate.toISOString().slice(0, 10)}T05:00:00Z`;
+    // daily_sleep subtracts six hours from started_at; a 23:00 start stays on this sleep date.
+    const expectedSleepDate = expectedNightStart.slice(0, 10);
+    const nights = await query<
+      Array<{
+        date: string;
+        started_at: string;
+        ended_at: string | null;
+        selected_session_id: string | null;
+      }>
+    >("sleep.list", {
+      days: 30,
+      endDate: fixtureDate,
+    });
+    const latestNight = await query<{
+      date: string;
+      started_at: string;
+      ended_at: string | null;
+      selected_session_id: string | null;
+    } | null>("sleep.latest");
+    const selectedNight = nights.find(
+      (night) => night.started_at === expectedNightStart && night.ended_at === expectedNightEnd,
+    );
+    expect(selectedNight).toMatchObject({
+      date: expectedSleepDate,
+      selected_session_id: sessionId,
+    });
+    if (!selectedNight) throw new Error("Expected the staged sleep night to be listed");
+    expect(latestNight).toMatchObject({
+      date: expectedSleepDate,
+      started_at: expectedNightStart,
+      ended_at: expectedNightEnd,
+      selected_session_id: sessionId,
+    });
+
+    const datedStages = await query<{
+      date: string | null;
+      stages: Array<{ stage: string; started_at: string; ended_at: string }>;
+    }>("sleep.stagesByDate", { date: selectedNight.date });
+    expect(datedStages).toEqual({ date: selectedNight.date, stages });
+
+    const latestStages = await query<{ date: string | null; stages: typeof stages }>(
+      "sleep.stagesByDate",
+    );
+    expect(latestStages).toEqual({ date: selectedNight.date, stages });
+
+    const missingStages = await query<{ date: string | null; stages: unknown[] }>(
+      "sleep.stagesByDate",
+      { date: fixtureDate },
+    );
+    expect(selectedNight.date).toBe(expectedSleepDate);
+    expect(selectedNight.date < fixtureDate).toBe(true);
+    expect(missingStages).toEqual({ date: fixtureDate, stages: [] });
   });
 
   it("sleep.latestStages returns overlapping stages even when the staged session starts more than two hours earlier", async () => {

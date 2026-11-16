@@ -17,6 +17,7 @@ function queryResult<T>(data: T | undefined): QueryResult<T> {
 const mocks = vi.hoisted(() => ({
   sleepList: vi.fn(),
   latestStages: vi.fn(),
+  stagesByDate: vi.fn(),
   insights: vi.fn(),
   processing: vi.fn(),
 }));
@@ -26,6 +27,7 @@ vi.mock("../lib/trpc.ts", () => ({
     sleep: {
       list: { useQuery: mocks.sleepList },
       latestStages: { useQuery: mocks.latestStages },
+      stagesByDate: { useQuery: mocks.stagesByDate },
     },
     insights: { compute: { useQuery: mocks.insights } },
     processing: { status: { useQuery: mocks.processing } },
@@ -58,7 +60,10 @@ vi.mock("../components/PageLayout.tsx", () => ({
 }));
 vi.mock("../components/PageSection.tsx", () => ({
   PageSection: ({ title, children }: { title: string; children: React.ReactNode }) => (
-    <section aria-label={title}>{children}</section>
+    <section aria-label={title}>
+      <h2>{title}</h2>
+      {children}
+    </section>
   ),
 }));
 vi.mock("../components/QueryStatePanel.tsx", () => ({
@@ -108,6 +113,9 @@ describe("SleepPage", () => {
   beforeEach(() => {
     mocks.sleepList.mockReturnValue(queryResult([sleepRow]));
     mocks.latestStages.mockReturnValue(queryResult([]));
+    mocks.stagesByDate.mockImplementation((input?: { date?: string }) =>
+      queryResult({ date: input?.date ?? "2026-03-28", stages: [] }),
+    );
     mocks.insights.mockReturnValue(queryResult([]));
     mocks.processing.mockReturnValue(queryResult(undefined));
   });
@@ -147,6 +155,11 @@ describe("SleepPage", () => {
       error: new Error("Latest stages unavailable"),
       isError: true,
     });
+    mocks.stagesByDate.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error("Latest stages unavailable"),
+      isError: true,
+    });
     mocks.insights.mockReturnValue({
       ...queryResult(undefined),
       error: new Error("Sleep insights unavailable"),
@@ -176,6 +189,11 @@ describe("SleepPage", () => {
       error: new Error("Latest stages refresh failed"),
       isError: true,
     });
+    mocks.stagesByDate.mockReturnValue({
+      ...queryResult({ date: "2026-03-27", stages: [{ stage: "deep" }] }),
+      error: new Error("Latest stages refresh failed"),
+      isError: true,
+    });
     mocks.insights.mockReturnValue({
       ...queryResult([
         { id: "sleep-effect", metric: "sleep", confidence: "high", effectSize: 0.3 },
@@ -189,9 +207,45 @@ describe("SleepPage", () => {
 
     expect(screen.getByText("Sleep rows: 1")).toBeTruthy();
     expect(screen.getByText("Hypnogram")).toBeTruthy();
+    expect(screen.getByText("Refresh failed: Latest stages refresh failed")).toBeTruthy();
     expect(screen.getByText("Insight: sleep-effect")).toBeTruthy();
     expect(screen.queryByText("Sleep history refresh failed")).toBeNull();
     expect(screen.queryByText("Latest stages refresh failed")).toBeNull();
     expect(screen.queryByText("Sleep insights refresh failed")).toBeNull();
+  });
+
+  it("uses the latest response date independently of trend range and orders the timeline above sources", async () => {
+    mocks.stagesByDate.mockImplementation((input?: { date?: string }) =>
+      queryResult({ date: input?.date ?? "2026-03-28", stages: [] }),
+    );
+    const { SleepPage } = await import("./SleepPage.tsx");
+
+    render(<SleepPage />);
+
+    expect(mocks.stagesByDate).toHaveBeenCalledWith(undefined);
+    expect(screen.getByLabelText("Night date").getAttribute("value")).toBe("2026-03-28");
+    expect(screen.getByRole("heading", { name: "Night’s Stages" })).toBeTruthy();
+    const headings = screen.getAllByRole("heading").map((heading) => heading.textContent);
+    expect(headings.indexOf("Night’s Stages")).toBeLessThan(headings.indexOf("Data Sources"));
+  });
+
+  it("keeps navigation available for empty or failed selected dates and requests the chosen day", async () => {
+    mocks.stagesByDate.mockImplementation((input?: { date?: string }) =>
+      input?.date === "2026-03-27"
+        ? { ...queryResult(undefined), error: new Error("Stages unavailable"), isError: true }
+        : queryResult({ date: input?.date ?? "2026-03-31", stages: [] }),
+    );
+    const { SleepPage } = await import("./SleepPage.tsx");
+
+    render(<SleepPage />);
+    const dateInput = screen.getByLabelText("Night date");
+    expect(screen.getByRole("button", { name: "Previous day" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Next day" })).toBeDisabled();
+
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.change(dateInput, { target: { value: "2026-03-27" } });
+
+    expect(mocks.stagesByDate).toHaveBeenLastCalledWith({ date: "2026-03-27" });
+    expect(screen.getByRole("button", { name: "Previous day" })).toBeEnabled();
   });
 });

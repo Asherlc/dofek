@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { shiftDateYmd } from "@dofek/format/format";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockSleepData: Record<string, unknown> | undefined;
 let mockSleepError: Error | null;
+const sleepMocks = vi.hoisted(() => ({ stagesByDate: vi.fn() }));
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -23,15 +25,49 @@ vi.mock("../lib/trpc", () => ({
       },
     },
     sleep: {
-      latestStages: {
-        useQuery: () => ({ data: [], isLoading: false, isFetching: false }),
-      },
+      stagesByDate: { useQuery: sleepMocks.stagesByDate },
     },
   },
 }));
 
+vi.mock("@react-native-community/datetimepicker", () => ({
+  default: ({
+    maximumDate,
+    onChange,
+    value,
+  }: {
+    maximumDate: Date;
+    onChange: (event: { type: string }, date?: Date) => void;
+    value: Date;
+  }) => (
+    <input
+      type="date"
+      aria-label="Night date"
+      max={maximumDate.toISOString().slice(0, 10)}
+      value={value.toISOString().slice(0, 10)}
+      onChange={(event) =>
+        onChange({ type: "set" }, new Date(`${event.currentTarget.value}T12:00:00`))
+      }
+    />
+  ),
+}));
+
 vi.mock("../lib/useProcessingStatus", () => ({
   useProcessingStatus: () => ({ data: undefined, error: null, isLoading: false }),
+}));
+
+vi.mock("../lib/useTimeRangePreference", async () => {
+  const React = await import("react");
+  return {
+    useTimeRangePreference: () => {
+      const [days, setDays] = React.useState(30);
+      return { days, setDays };
+    },
+  };
+});
+
+vi.mock("../lib/useHaptic", () => ({
+  useHaptic: () => ({ selection: vi.fn() }),
 }));
 
 vi.mock("../lib/useRefresh", () => ({
@@ -63,6 +99,13 @@ describe("SleepScreen", () => {
   beforeEach(() => {
     mockSleepData = undefined;
     mockSleepError = null;
+    sleepMocks.stagesByDate.mockImplementation((input?: { date?: string }) => ({
+      data: { date: input?.date ?? "2026-07-20", stages: [] },
+      error: null,
+      isError: false,
+      isLoading: false,
+      isFetching: false,
+    }));
   });
 
   it("shows the server error instead of the empty state when loading fails", async () => {
@@ -327,5 +370,88 @@ describe("SleepScreen", () => {
     render(<SleepScreen />);
 
     expect(screen.getByText("1:00 AM – 9:00 AM")).toBeTruthy();
+  });
+
+  it("selects the server's latest date and keeps date navigation available without trend data", async () => {
+    const today = new Intl.DateTimeFormat("en-CA").format(new Date());
+    sleepMocks.stagesByDate.mockImplementation((input?: { date?: string }) => ({
+      data: { date: input?.date ?? today, stages: [] },
+      error: null,
+      isError: false,
+      isLoading: false,
+      isFetching: false,
+    }));
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    expect(sleepMocks.stagesByDate).toHaveBeenCalledWith(undefined);
+    expect(screen.getByText("Night’s Stages")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Previous day" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+    expect(screen.getByRole("button", { name: "Next day" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("requests the selected day and retains navigation for an empty or failed date", async () => {
+    const today = new Intl.DateTimeFormat("en-CA").format(new Date());
+    const previousDate = shiftDateYmd(today, -1);
+    sleepMocks.stagesByDate.mockImplementation((input?: { date?: string }) => ({
+      data: input?.date ? { date: input.date, stages: [] } : { date: today, stages: [] },
+      error: input?.date === previousDate ? new Error("Stages unavailable") : null,
+      isError: input?.date === previousDate,
+      isLoading: false,
+      isFetching: false,
+    }));
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+
+    expect(sleepMocks.stagesByDate).toHaveBeenLastCalledWith({ date: previousDate });
+    expect(screen.getByRole("button", { name: "Previous day" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+  });
+
+  it("keeps the selected sleep date when the trend range changes", async () => {
+    const today = new Intl.DateTimeFormat("en-CA").format(new Date());
+    const previousDate = shiftDateYmd(today, -1);
+    sleepMocks.stagesByDate.mockImplementation((input?: { date?: string }) => ({
+      data: { date: input?.date ?? today, stages: [] },
+      error: null,
+      isError: false,
+      isLoading: false,
+      isFetching: false,
+    }));
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    fireEvent.click(screen.getByRole("radio", { name: "7d" }));
+
+    expect(sleepMocks.stagesByDate).toHaveBeenLastCalledWith({ date: previousDate });
+  });
+
+  it("uses the native date picker selection as the requested sleep date", async () => {
+    const today = new Intl.DateTimeFormat("en-CA").format(new Date());
+    const selectedDate = shiftDateYmd(today, -2);
+    sleepMocks.stagesByDate.mockImplementation((input?: { date?: string }) => ({
+      data: { date: input?.date ?? today, stages: [] },
+      error: null,
+      isError: false,
+      isLoading: false,
+      isFetching: false,
+    }));
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+    fireEvent.change(screen.getByLabelText("Night date"), {
+      target: { value: selectedDate },
+    });
+
+    expect(sleepMocks.stagesByDate).toHaveBeenLastCalledWith({ date: selectedDate });
   });
 });

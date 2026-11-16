@@ -1,5 +1,34 @@
 # Production Incident Baseline
 
+## 2026-11-15 — Sleep stage timeline rendered empty despite recorded intervals
+
+- **Symptoms / user impact:** The web Sleep page's Last Night's Stages panel
+  showed gridlines without a visible stage timeline or axis labels. The
+  existing Firefox session at [the Sleep page](https://dofek.fit/sleep) reproduced
+  the report; its View chart data disclosure contained timestamped stage values,
+  establishing that the intervals reached the client.
+- **Evidence / root cause:** The real-ECharts regression in
+  [Hypnogram.test.tsx](../packages/web/src/components/Hypnogram.test.tsx) reproduced
+  the blank rendering. Exact-value visual-map pieces generated SVG gradients
+  with coincident color stops and transparent spans. The value axis used
+  half-integer ticks while its formatter only labeled integer stages; the time
+  axis also needed explicit visibility. These were presentation defects, not
+  evidence of failed WHOOP ingestion.
+- **Direct fix / validation:**
+  [Hypnogram](../packages/web/src/components/Hypnogram.tsx) uses bounded stage
+  color ranges, integer stage ticks, and a visible time axis. Real ECharts SVG
+  rendering and rasterized-pixel tests failed before the fix and pass afterward.
+  The existing [default Storybook fixture](../packages/web/src/components/Hypnogram.stories.tsx)
+  also displayed all four colored stages and clock labels in the user's existing
+  Firefox session after the fix.
+  The [ECharts visual-map contract](https://echarts.apache.org/en/option.html#visualMap-piecewise.pieces)
+  documents both value and interval pieces. No retries, waits, or resilience
+  settings were added.
+- **Remaining risk / follow-up:** The fix requires normal deployment; local
+  validation does not establish that production has updated. The existing
+  overlapping-source selection may use stages from a different provider than
+  the daily summary, so this diagnosis does not establish their WHOOP origin.
+
 ## 2026-11-15 — Manual FTP cutover CI validation gaps
 
 - **Symptoms / impact:** [PR #3351](https://github.com/Asherlc/dofek/pull/3351) could not merge after its first complete CI run. No production migration or deployment was performed. The local focused checks had not covered every affected integration fixture, the Cypress heading expectation, or the new migration's Squawk gate.
@@ -162,6 +191,57 @@
 - **Remaining risk / follow-up:** Stopped-container accumulation can fill the
   Docker VM again. Inspect actual disk and container usage before pruning; keep
   all running services and named database volumes intact.
+
+### Later recurrence during sleep timeline verification
+
+- **Symptoms / impact:** The sleep timeline branch's database integration suite
+  stopped at Compose readiness before Vitest ran. Analytics SQL lint also failed
+  when ClickHouse tried to write a temporary file. This blocked local validation;
+  no production impact was established.
+- **Evidence / root cause:** Postgres initialization failed at `CREATE DATABASE
+  "health"` with `could not create directory "base/16384": No space left on
+  device`; later health checks reported `database "health" does not exist`.
+  ClickHouse reported error 75 / errno 28, with 0 B available on its 78.44 GiB
+  filesystem. Builder-cache and unused-image pruning each reclaimed 0 B, and
+  there were no stopped containers to remove.
+- **Mitigation / unresolved status:** Read-only inspection identified an unused
+  `goofy-sloth_clickhouse_data` volume using 2,916,468 KiB, with no container
+  references. The user explicitly approved its deletion; it was rechecked as
+  unused and removed, consistent with the
+  [Docker recovery boundaries](testing.md#docker-disk-recovery). Docker still
+  reported 0 B available afterward, and creating the local `health` database
+  still failed with errno 28. The volume's absence was verified. The user then
+  explicitly approved a further list of 12 unused ClickHouse volumes. Each was
+  rechecked as unused and removed; disk availability reached 4.2 GiB, and the
+  local `health` database was created successfully. Before integration setup
+  could create its template database, the filesystem filled again. The first
+  failing statement was `CREATE DATABASE` in `createTemplateDatabase`, with
+  `could not create directory "base/31029": No space left on device`.
+  Analytics SQL lint again failed on ClickHouse errno 28. No volume outside
+  these approved lists was deleted.
+- **Continued investigation:** Six running ClickHouse containers from other
+  workspaces were repeatedly emitting current file-access/rotation failures
+  through Docker's `json-file` logger with no configured size/retention options.
+  A bounded two-second log read from `glorious-bobcat-clickhouse-1` returned
+  702,810 bytes. This is evidence of an ongoing log flood, but its exact share
+  of Docker disk usage was not measured. This workspace's ClickHouse data was
+  about 37 MiB and Postgres data about 92 MiB. The user separately approved
+  stopping/removing those six containers. They were stopped and removed
+  without deleting volumes; all six named ClickHouse database volumes were
+  verified to remain. Docker subsequently reported 125.7 GiB capacity and
+  47.7 GiB free; this task did not resize the VM. The workspace services were
+  restored through `pnpm compose:up` and passed their health checks. The exact
+  allocation of the original full disk remains unresolved; the log flood is
+  an observed contributor rather than a measured accounting of all usage.
+- **Validation / remaining risk:** Disk space and service health recovered;
+  analytics SQL lint and all seven sleep-router real-engine integration tests
+  passed. The new regression's lookup was corrected to match its independently
+  seeded overnight window: the chosen record is not necessarily present in
+  the separate overlapping-record list. No application behavior was changed
+  to satisfy that fixture correction. The
+  removed containers' workspaces must recreate their ClickHouse services when
+  needed. Unbounded container logs remain a separate local-environment
+  follow-up. No timeouts, retries, or ignored checks were added.
 
 ## 2026-11-15 — CI release refactor startup and fixture failures
 

@@ -29,6 +29,9 @@ see the [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-sco
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
 - **Nutrition history**: Read-only nutrition history, totals, source resolution, and analytics.
 
+The [Sleep route](app/sleep.tsx) lets users browse stages by sleep date independently
+of the trend range and starts on the latest date returned by the server.
+
 ## Manual HealthKit Sync
 
 The authenticated app root owns the manual HealthKit controller and its published
