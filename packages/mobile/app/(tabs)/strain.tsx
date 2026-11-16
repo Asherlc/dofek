@@ -335,11 +335,14 @@ export default function StrainScreen() {
       {strengthVolumeQuery.data ? (
         <TrainingVolumeChart sport="strength" data={strengthVolumeQuery.data} />
       ) : null}
-      {climbingStrengths.data && climbingStrengthsQuery.isFetching ? (
-        <Text accessibilityLiveRegion="polite" style={styles.emptyChartText}>
-          Updating climbing strengths…
-        </Text>
-      ) : null}
+      <Text
+        accessibilityLiveRegion="polite"
+        style={[styles.emptyChartText, { minHeight: 50, lineHeight: 18 }]}
+      >
+        {climbingStrengths.data && climbingStrengthsQuery.isFetching
+          ? "Updating climbing strengths…"
+          : null}
+      </Text>
       <ClimbingStrengths
         data={climbingStrengths.data}
         includeAreaMetadata={includeAreaMetadata}

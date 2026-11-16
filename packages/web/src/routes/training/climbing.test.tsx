@@ -80,6 +80,31 @@ async function importClimbingTab() {
 }
 
 describe("ClimbingTab", () => {
+  it("keeps the refresh status space and selected strengths view through polling cycles", async () => {
+    const queryState = {
+      data: { ...climbingStrengthsFixture, enrichmentPending: true },
+      isLoading: false,
+      isFetching: true,
+      error: null,
+    };
+    strengthsQuery.mockReturnValue(queryState);
+    const ClimbingTab = await importClimbingTab();
+    const { rerender } = render(<ClimbingTab />);
+    const status = screen.getByText("Updating climbing…");
+    fireEvent.click(screen.getByRole("button", { name: "Progress" }));
+
+    for (const isFetching of [false, true, false]) {
+      queryState.isFetching = isFetching;
+      rerender(<ClimbingTab />);
+      expect(status).toBeInTheDocument();
+      expect(status).toHaveClass("min-h-4");
+      expect(status.textContent).toBe(isFetching ? "Updating climbing…" : "");
+      expect(screen.getByRole("button", { name: "Progress" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    }
+  });
   it("requests area metadata initially, toggles its query and polls only pending enrichment", async () => {
     strengthsQuery.mockReturnValue({
       data: climbingStrengthsFixture,
