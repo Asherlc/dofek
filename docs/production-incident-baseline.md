@@ -1,5 +1,54 @@
 # Production Incident Baseline
 
+## 2026-11-15 — Databasus backup process killed by memory-cgroup OOM
+
+- **Symptoms / impact:** The scheduled PostgreSQL backup
+  `6cae04a7-92f8-41b3-93dd-0c699bac810e`, created at
+  `2026-11-15 06:00:54 UTC`, failed after `59,764` ms with zero reported MB and
+  `Backup failed due to application restart`. The preceding completed record
+  `d786d1dc-dd10-4d89-ae12-6d872c093486` was created at
+  `2026-11-14 06:00:54 UTC`, with recorded `last_backup_time` at
+  `2026-11-14 06:04:29 UTC`; the
+  [Database Backup Freshness run 43749045666](https://github.com/Asherlc/dofek/actions/runs/43749045666),
+  job `132918679634`, failed at **Check newest database backup**. The service
+  was observed running `1/1` after restart; that does not establish backup
+  recovery.
+- **Evidence / root cause:** The kernel recorded a `CONSTRAINT_MEMCG` OOM at
+  `2026-11-15 06:04:06 UTC`, showed `pg_dump` in the Databasus cgroup, and
+  killed the Databasus `main` process. The checked-in service limit was
+  `209715200` bytes (`200M`); Databasus documents a 500 MB minimum RAM
+  requirement ([installation requirements](https://databasus.com/installation/)).
+  The scheduler remained enabled for `DAILY` at `06:00` with retries disabled
+  and `max_failed_tries_count=0`. The host data filesystem had 64 GB available.
+  Read-only evidence copies are in
+  `/tmp/opencode/ota-followup/backup-recovery-oom-only.log`,
+  `backup-recovery-failed-backup.log`, `backup-recovery-scheduler-state.log`,
+  and `backup-recovery-service-state.log`.
+- **Direct fix / validation:** Increase only the Databasus Swarm memory limit
+  to `512M` in `deploy/docker-compose.yml`, keeping image `v3.32.1`, backup
+  schedule, encryption, storage, and the existing 24-hour freshness gate. A
+  full `docker stack config` render of `deploy/docker-compose.yml` with
+  `deploy/stack.oracle.yml` passed using canonical validated deploy
+  environment files; rendered output was discarded. Locally, Databasus
+  `v3.32.1` completed encrypted synthetic backup
+  `82990a0f-ff13-413e-9178-f7cfd16d06e5` for 750,000 rows in 86,868 ms
+  (reported size 795.03 MB). Peak container memory was 536,563,712 bytes,
+  307,200 bytes below the 536,870,912-byte limit, with no OOM or restart.
+  This narrow margin does not establish production-sized backup headroom. The
+  supported Databasus
+  restore completed into isolated synthetic database `validation_restored`
+  (restore `35619777-fdd8-43d0-b0de-2d90f79020a1`); source and restored
+  aggregates matched across all 750,000 rows (`750000|281250375000|-5087423379273388987779`).
+  The container restart count was `0`. Evidence is retained as supplemental
+  local artifacts under `/tmp/opencode/ota-followup/`. The
+  recovery runbook explains the minimum RAM requirement and that fixture
+  success does not establish production recovery.
+- **Remaining risk / follow-up:** The change is not deployed. No fresh
+  production backup, production freshness check, or isolated restore of a
+  production backup has been verified. Complete these checks after the normal
+  reviewed deployment before declaring recovery. No production configuration
+  or backup operation was changed during diagnosis.
+
 ## 2026-11-15 — OTA publisher rejected a nested trusted checkout
 
 - **Symptoms / impact:** Production OTA run
