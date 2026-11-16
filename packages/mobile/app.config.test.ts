@@ -1,7 +1,13 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { writeSentryOptions } from "@sentry/react-native/plugin/build/utils";
 import type { ConfigContext, ExpoConfig } from "expo/config";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import createConfig from "./app.config";
 import appJson from "./app.json";
+import sentryPodspec from "./plugins/Sentry.podspec.json";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -106,5 +112,49 @@ describe("mobile app config", () => {
       dsn: "https://key@o123.ingest.us.sentry.io/456",
       enableMetricKit: true,
     });
+  });
+
+  it("writes the watchdog experiment into native Sentry options", async () => {
+    const config = createConfig({
+      config: appJson.expo satisfies ExpoConfig,
+    } satisfies ConfigContext);
+    const sentryOptions = findSentryPluginOptions(config)?.options;
+    const options = isRecord(sentryOptions) ? sentryOptions : undefined;
+    expect(options).toBeDefined();
+
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "dofek-sentry-options-"));
+    try {
+      writeSentryOptions(projectRoot, options ?? {});
+      const generated: unknown = JSON.parse(
+        await readFile(path.join(projectRoot, "sentry.options.json"), "utf8"),
+      );
+      expect(generated).toMatchObject({
+        _experiments: { enableWatchdogTerminationsV2: true },
+        enableMetricKit: true,
+        enableMetricKitRawPayload: true,
+      });
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the binary CocoaPod and watch SPM on the RNSentry Cocoa version", async () => {
+    const require = createRequire(import.meta.url);
+    const sentryPackagePath = require.resolve("@sentry/react-native/package.json");
+    const nativePodspec = await readFile(
+      path.join(path.dirname(sentryPackagePath), "RNSentry.podspec"),
+      "utf8",
+    );
+    const watchPlugin = await readFile(
+      path.resolve("packages/mobile/plugins/with-watch-sentry-spm.js"),
+      "utf8",
+    );
+    const nativeVersion = nativePodspec.match(/sentry_cocoa_version = '([^']+)'/)?.[1];
+    const watchVersion = watchPlugin.match(/const PACKAGE_VERSION = "([^"]+)"/)?.[1];
+
+    expect(nativeVersion).toBeDefined();
+    expect(sentryPodspec.version).toBe(nativeVersion);
+    expect(sentryPodspec.source.http).toContain(`/${nativeVersion}/`);
+    expect(watchVersion).toBe(nativeVersion);
   });
 });

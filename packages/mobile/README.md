@@ -551,9 +551,9 @@ verify mobile Storybook development and static export, and run the native
 Release archive. The check exercises strict web bundling and native press
 behavior; it does not replace a native build or device validation.
 
-Sentry React Native 8.29.0 and the separate watch Swift package use Cocoa 9.30.0.
+Sentry React Native 8.35.0 and the separate watch Swift package use Cocoa 9.34.0.
 The [binary podspec](./plugins/Sentry.podspec.json) pins its release URL and
-SHA256 from Sentry's [Swift package manifest](https://github.com/getsentry/sentry-cocoa/blob/9.30.0/Package.swift).
+SHA256 from Sentry's [Swift package manifest](https://github.com/getsentry/sentry-cocoa/blob/9.34.0/Package.swift).
 The RNSentry package patch declares this CocoaPod dependency, and Expo's
 [extraPods configuration](https://docs.expo.dev/versions/latest/sdk/build-properties/#extraiospoddependency)
 registers the podspec. CocoaPods selects the platform slice and exports the
