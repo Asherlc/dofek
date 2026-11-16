@@ -218,6 +218,16 @@ processing the delivered data:
 
 ## Common Failure Modes
 
+- Authorization presentation requires an active app. The native request runs on
+  the main actor and returns `false` if presentation cannot start while active.
+  If the app actually enters background during that request, HealthKit can end
+  its permission sheet with `errorAuthorizationNotDetermined` (code 5). Only
+  that recorded interruption uses the existing `false` (not granted) result;
+  it never marks authorization complete. The provider refreshes authorization
+  state and permits another explicit Connect attempt. Inactive system UI alone
+  does not qualify, and code 5 without a background transition remains an error.
+  HealthKit's [authorization completion contract](https://developer.apple.com/documentation/healthkit/hkhealthstore/requestauthorization(toshare:read:completion:))
+  distinguishes a completed request from access actually granted by the user.
 - Entitlement missing: native authorization request throws with HealthKit entitlement text.
 - Running on unsupported device/environment: `isAvailable()` false and status `unavailable`.
 - Permission drift after adding new types: `getRequestStatus()` returns `shouldRequest`.

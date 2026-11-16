@@ -167,6 +167,31 @@ describe("AppleHealthAuthorizationState", () => {
 });
 
 describe("AppleHealthAuthorizationService", () => {
+  it("leaves interrupted initial authorization disconnected and permits an explicit retry", async () => {
+    const requestPermissions = vi.fn(async () => false);
+    const getRequestStatus = vi.fn<AppleHealthAuthorizationNative["getRequestStatus"]>(
+      async () => "shouldRequest",
+    );
+    const native = createNative({
+      hasEverAuthorized: vi.fn(() => false),
+      getRequestStatus,
+      requestPermissions,
+    });
+    const service = new AppleHealthAuthorizationService(native);
+
+    const interrupted = await service.requestPermissions();
+    expect(interrupted.granted).toBe(false);
+    expect(interrupted.state.isConnected()).toBe(false);
+    expect(interrupted.state.requestStatus).toBe("shouldRequest");
+
+    requestPermissions.mockResolvedValueOnce(true);
+    getRequestStatus.mockResolvedValueOnce("unnecessary");
+    const retry = await service.requestPermissions();
+    expect(native.requestPermissions).toHaveBeenCalledTimes(2);
+    expect(retry.granted).toBe(true);
+    expect(retry.state.isConnected()).toBe(true);
+  });
+
   it("resolves unavailable state without requesting HealthKit status", async () => {
     const native = createNative({ isAvailable: vi.fn(() => false) });
     const service = new AppleHealthAuthorizationService(native);

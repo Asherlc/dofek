@@ -2,6 +2,8 @@
 import ExpoModulesCore
 import HealthKit
 import RNSentry
+import UIKit
+import os
 
 private final class HealthKitModuleException: ExpoModulesCore.Exception {
     private let exceptionCode: String
@@ -246,7 +248,20 @@ public class HealthKitModule: Module {
                 promise.resolve(false)
                 return
             }
-            Task {
+            Task { @MainActor in
+                guard UIApplication.shared.applicationState == .active else {
+                    promise.resolve(false)
+                    return
+                }
+                let didEnterBackground = OSAllocatedUnfairLock(initialState: false)
+                let backgroundObserver = NotificationCenter.default.addObserver(
+                    forName: UIApplication.didEnterBackgroundNotification,
+                    object: nil,
+                    queue: .main
+                ) { _ in
+                    didEnterBackground.withLock { $0 = true }
+                }
+                defer { NotificationCenter.default.removeObserver(backgroundObserver) }
                 do {
                     try await self.healthStore.requestAuthorization(toShare: writeTypes, read: readTypes)
                     UserDefaults.standard.set(
@@ -255,7 +270,10 @@ public class HealthKitModule: Module {
                     )
                     promise.resolve(true)
                 } catch {
-                    if isUserCanceledHealthKitAuthorization(error) {
+                    if isCanceledHealthKitAuthorization(
+                        error,
+                        didEnterBackground: didEnterBackground.withLock { $0 }
+                    ) {
                         promise.resolve(false)
                         return
                     }
