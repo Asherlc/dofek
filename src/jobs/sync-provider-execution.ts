@@ -125,7 +125,9 @@ export async function executeSyncProvider(
               metricStreamPublisher: processingOperation.metricStreamPublisher,
             });
           } catch (error) {
-            if (!isKnownProviderHttp5xxError(error)) {
+            if (isKnownProviderHttp5xxError(error)) {
+              syncErrorsTotal.add(1, { provider: provider.id, data_type: "sync" });
+            } else {
               captureException(error, {
                 tags: { provider: provider.id, webhookPhase: "targeted-sync" },
               });

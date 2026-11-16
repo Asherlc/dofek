@@ -291,6 +291,10 @@ describe("sync-provider-execution", () => {
 
     expect(sync).toHaveBeenCalledOnce();
     expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "strava",
+      data_type: "sync",
+    });
   });
 
   it("invalidates user queries after a nonzero WHOOP sync", async () => {
