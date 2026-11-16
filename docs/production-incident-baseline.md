@@ -6,6 +6,7 @@
 - **Evidence / cause:** The first failed upload returned HTTP `429` with S3 error `ServiceUnavailable`. A controlled AWS CLI 2.40.0 protocol replay reproduced the transfer-client difference: CRT exited on that response, while `classic` retried it and succeeded on the next response using the default standard retry budget. The pinned [CRT status classifier](https://github.com/awslabs/aws-c-s3/blob/1e5889547f1bdfd1d950829971503091e2dc91fd/source/s3_meta_request.c#L1808-L1829) and [recoverable error map](https://github.com/awslabs/aws-c-s3/blob/1e5889547f1bdfd1d950829971503091e2dc91fd/source/s3_util.c#L908-L925) align with the replay; AWS CLI 2.40.0's [standard retry checker](https://github.com/aws/aws-cli/blob/2.40.0/awscli/botocore/retries/standard.py#L502-L527) treats an unmodeled HTTP 429 as a throttling response. A native AWS CLI 2.40.0 `classic` upload to R2 also succeeded. The original CI transfer-client selection is inferred from AWS CLI 2.40.0's default `auto` behavior because the original run has no client-selection trace. The reason R2 returned the initial 429 is unknown.
 - **Direct fix / validation:** The Storybook workflow now explicitly configures `default.s3.preferred_transfer_client` to `classic` after preview metadata is ready and before either upload. This uses the normal SDK classifier for the observed response; retry mode and attempt budget remain at their defaults. See AWS's [transfer-client configuration](https://docs.aws.amazon.com/cli/latest/topic/s3-config.html#preferred_transfer_client) and Cloudflare's [R2 S3 API compatibility](https://developers.cloudflare.com/r2/api/s3/api/). The controlled replay and native R2 upload passed. The preceding CI run's application checks and required checks passed; hosted validation of this workflow change remains pending.
 - **Remaining risk / follow-up:** R2 may issue future throttling responses; the existing bounded default retry behavior remains responsible for handling retryable responses. This change does not establish why the original request was throttled or increase the retry budget.
+- **Original R2 incident:** The already verified hosted success run 43775800677 at 5efffdc (unchanged workflow) remains separate from the current head CI, which is pending. The R2 throttle outcome does not claim production deployment.
 
 ## 2026-11-15 — PR 3349 activity stream checks fail
 
@@ -38334,7 +38335,8 @@ Local qualification and CI are separate from production throughput acceptance. T
   temperature; the activity source/stream contract omitted it. Missing ingestion
   was not established. The [Recovery route](../packages/web/src/routes/training/recovery.tsx)
   and [activity metric contract](../packages/server/src/contracts/activity-metric-sources.ts)
-  define these UI boundaries.
+  define these UI boundaries. Sanitized traceable evidence:
+  [whoop-skin-temperature-evidence.md](whoop-skin-temperature-evidence.md).
 - **Remediation:** the approved [design](superpowers/specs/2026-11-15-whoop-skin-temperature-design.md)
   reuses existing decoded samples, activity source controls, and daily metrics.
   Activity charts now expose a selectable skin-temperature channel with original
@@ -38363,6 +38365,19 @@ Local qualification and CI are separate from production throughput acceptance. T
   Initial Body snapshots preceded query completion. Proposed runbook wording:
   “Before treating an absent metric as ingestion loss, inspect the completed
   response and verify that the selected screen requests and renders it.”
+
+## 2026-11-15 — Shared source-tree CI fixture failure (Task 1 correction)
+
+- **Symptoms / impact:** [CI run 43784109260](https://github.com/Asherlc/dofek/actions/runs/43784109260), job `133028185594`, first fatal at 01:08 UTC Nov 16. Shared Stryker jobs failed in their initial test dry run from the same assertion; they had not reached mutation scoring. The failing shared unit job executed `pnpm test:unit:shared` (`HISTORICAL_CONTROL_SOURCE=false`) and the fatal assertion was `expected 'Apple Watch' to be 'WHOOP'` at `activity-source-tree.test.ts:26`. The failing shared unit test constructed every provider node with `sourceName: "Apple Watch"`. That does not match the canonical activity-source-tree producer for WHOOP BLE, which sets its source name to **null**. The Task 1 presentation correctly honors an explicit WHOOP BLE device name, so the synthetic Apple Watch string became the visible WHOOP BLE name and broke the generic-label assertion.
+- **Root cause:** The new explicit BLE identity behavior was introduced by `976e741c6f945e2ef4200adcdb64144c472646bb`; the CI fixture correction was made in `f80b99a3c`. The failing shared unit test constructed every provider node with `sourceName: "Apple Watch"`. The Task 1 presentation correctly honors an explicit WHOOP BLE device name, so the synthetic Apple Watch string became the visible WHOOP BLE name and broke the generic-label assertion.
+- **Minimum test correction:** In `packages/providers-meta/src/activity-source-tree.test.ts`, the table now supplies per-provider source names and asserts: generic WHOOP BLE with null source name stays "WHOOP" with Bluetooth attribution; WHOOP BLE with concrete strap UUID exposes that UUID and keeps Bluetooth attribution; Cloud WHOOP stays "WHOOP" even if a source name is supplied; the Apple Health presentation remains unchanged. Added meaningful assertions in `packages/providers-meta/src/activity-metric-source.test.ts` for Cloud WHOOP ignoring a nonempty source name and whitespace-only BLE names falling back to the generic WHOOP label.
+- **Exact Stryker scope (changed lines only):**
+  - `rtk proxy pnpm exec stryker run stryker.shared.config.cjs --mutate packages/providers-meta/src/providers.ts:19-19` — exit 0; 100%, 7 killed, 0 survived.
+  - `rtk proxy pnpm exec stryker run stryker.shared.config.cjs --mutate 'packages/providers-meta/src/activity-metric-source.ts:62-62,packages/providers-meta/src/activity-metric-source.ts:64-64'` — exit 0; 100%, 5 killed, 0 survived.
+- **Local validation:** full providers-meta suite (475 passed), web picker (9 passed), mobile picker (9 passed), repository lint, recursive all-package typecheck — all exit 0. Local correction validation separates local evidence from hosted status.
+- **Hosted validation:** pending. The independent CI run above is the only hosted failure record; no subsequent rerun was made, so hosted status is not claimed.
+- **No new retries/timeouts/gates.** Meaningful boundary assertions added under unchanged 75 threshold. No config/code/test/runtime changes beyond the two test files above.
+- **CI at f80:** The fixture at `f80b99a3c` was not independently hosted because the PR conflicted with newer main; that merge was resolved by `dec257a35ae3c9258a94b244db543f5f92c48b06`.
 
 # 2026-11-15 – Production environment values printed during release investigation
 

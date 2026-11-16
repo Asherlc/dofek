@@ -1,6 +1,6 @@
 # WHOOP Skin Temperature Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+Follow the tasks below in order and verify each acceptance criterion before continuing. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Show recorded skin temperature on activities and web Recovery while proving whether the reported missing data exists.
 
