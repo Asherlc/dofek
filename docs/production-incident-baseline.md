@@ -38687,8 +38687,14 @@ Local qualification and CI are separate from production throughput acceptance. T
   no pending batch and a healthy analytics worker.
 - **Remaining risk / follow-up:** At 21:47:17 UTC analytics-worker,
   processing-reconciliation, worker and all three ClickHouse sinks were observed
-  at zero desired/running replicas again. The cause of this new quiescence is
-  not yet established. A focused read at 21:51:22 UTC still found analytics and
+  at zero desired/running replicas again. Stock deployment receipt `7837145010`
+  and the active stack job identify canonical
+  [release 43958871187](https://github.com/Asherlc/dofek/actions/runs/43958871187),
+  source `4e413541ae4fab6f2f6e846d2b837540f363ee1f`, as the subsequent
+  deployment. Its admission and Terraform jobs passed; stack job `133632953772`
+  was running “Backfill and cut over provider connections” while the receipt
+  remained pending and consumer restoration had not run. A focused read at
+  21:51:22 UTC still found analytics and
   reconciliation at zero with no tasks, now configured for digest
   `sha256:21d3165bc6f3dd6d7b27b7b36ba317cd4b74dd4c891af967734455d43a841e4a`;
   their service update timestamps were 21:49:24 and 21:49:19 UTC respectively.
@@ -38703,4 +38709,6 @@ Local qualification and CI are separate from production throughput acceptance. T
   from a stale ledger. Proposed processing-runbook clarification: after an
   approved incident recovery, check completed outbox state as well as destination
   evidence before expecting an old operation to advance; document any new
-  trigger's global worker effects and preserve its exact row guard.
+  trigger's global worker effects and preserve its exact row guard. Inspect
+  stock publication receipts and job-level state when a run-level status says
+  queued: this release showed queued while its stack job was active.
