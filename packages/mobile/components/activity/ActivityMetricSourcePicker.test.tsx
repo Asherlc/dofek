@@ -241,6 +241,7 @@ describe("ActivityMetricSourcePicker", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Heart Rate source: WHOOP (via WHOOP Cloud)" }),
     );
+    expect(screen.queryByRole("radio", { name: "Auto" })).toBeNull();
     expect(
       screen.getByRole("radio", { name: "WHOOP (via WHOOP Cloud)", checked: true }),
     ).toBeTruthy();

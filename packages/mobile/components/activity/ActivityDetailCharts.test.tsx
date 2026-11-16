@@ -158,6 +158,52 @@ describe("ActivityDetailCharts", () => {
     expect(screen.getByText("Showing previous readings from Wahoo")).toBeDefined();
   });
 
+  it.each([
+    ["running", "85 steps/min"],
+    ["cycling", "85 rpm"],
+  ])("labels %s cadence values with its accessible unit", (_activityType, cadenceValue) => {
+    render(
+      <ActivityMetricsCharts
+        points={[
+          {
+            recordedAt: "2026-04-14T10:30:00.000Z",
+            heartRate: null,
+            power: null,
+            speed: null,
+            cadence: 85,
+            altitude: null,
+            skinTemperature: null,
+            skinTemperatureRecordedAt: null,
+            lat: null,
+            lng: null,
+          },
+        ]}
+        sourceControls={[]}
+        serverUrl=""
+        activityWindow={{
+          startedAt: "2026-04-14T10:00:00.000Z",
+          endedAt: "2026-04-14T11:00:00.000Z",
+        }}
+        cadenceLabel={cadenceValue.endsWith("rpm") ? "rpm" : "steps/min"}
+        isClimbingActivity={false}
+        highlightedClimbId={null}
+        onSelectClimb={vi.fn()}
+        hasHr={false}
+        hasPower={false}
+        hasAltitude={false}
+        units={new UnitConverter("metric")}
+        hasGps={false}
+        onHoverIndex={vi.fn()}
+        onHoverTime={vi.fn()}
+        onScrubStart={vi.fn()}
+        onScrubEnd={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "View Cadence data" }));
+    expect(screen.getByText(cadenceValue)).toBeDefined();
+  });
+
   it("retains climbs at activity boundaries outside the HR sample range", () => {
     const { container } = render(
       <LineChart

@@ -91,6 +91,33 @@ const metricSources: ActivityMetricSources = [
       },
     ],
   },
+  {
+    key: "altitude",
+    label: "Elevation",
+    defaultSourceId: "elevation-a",
+    sources: [
+      {
+        id: "elevation-a",
+        label: "Elevation A",
+        presentation: {
+          displayName: "A",
+          providerId: "garmin",
+          sourceName: null,
+          attribution: null,
+        },
+      },
+      {
+        id: "elevation-b",
+        label: "Elevation B",
+        presentation: {
+          displayName: "B",
+          providerId: "wahoo",
+          sourceName: null,
+          attribution: null,
+        },
+      },
+    ],
+  },
 ];
 
 function query(data: unknown, options: Record<string, unknown> = {}) {
@@ -124,6 +151,7 @@ describe("useActivityMetrics", () => {
   });
 
   it("keeps picker selection immediate and preserves mobile query gates and keys", () => {
+    dependencies.metricSources.mockReturnValue(query(metricSources.slice(0, 2)));
     const { result, rerender } = renderHook(
       ({ id }: { id: string | undefined }) =>
         useActivityMetrics(id, { isCycling: true, isClimbing: true }),
@@ -162,6 +190,78 @@ describe("useActivityMetrics", () => {
     rerender({ id: undefined });
     expect(dependencies.stream.mock.calls.at(-1)?.[1]).toMatchObject({ enabled: false });
     expect(dependencies.hrZones.mock.calls.at(-1)?.[1]).toMatchObject({ enabled: false });
+  });
+
+  it("forwards independent HR, power, and elevation selections to their query owners", () => {
+    const { result } = renderHook(() =>
+      useActivityMetrics("activity-a", { isCycling: true, isClimbing: false }),
+    );
+    const selectSource = (metric: "heartRate" | "power" | "altitude", sourceId: string) => {
+      const control = result.current.sourceControls.find((candidate) => candidate.key === metric);
+      if (!control) throw new Error(`Missing ${metric} source control`);
+      act(() => control.onChange(sourceId));
+    };
+
+    expect(dependencies.hrZones).toHaveBeenLastCalledWith(
+      { id: "activity-a", heartRateSourceId: "hr-a" },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(dependencies.powerWork).toHaveBeenLastCalledWith(
+      { id: "activity-a", powerSourceId: "power-a" },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(dependencies.powerZones).toHaveBeenLastCalledWith(
+      { id: "activity-a", powerSourceId: "power-a" },
+      expect.objectContaining({ enabled: true }),
+    );
+
+    selectSource("heartRate", "hr-b");
+    selectSource("power", "power-b");
+    selectSource("altitude", "elevation-b");
+
+    expect(dependencies.stream).toHaveBeenLastCalledWith(
+      {
+        id: "activity-a",
+        maxPoints: 200,
+        sources: { heartRate: "hr-b", power: "power-b", altitude: "elevation-b" },
+      },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(dependencies.hrZones).toHaveBeenLastCalledWith(
+      { id: "activity-a", heartRateSourceId: "hr-b" },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(dependencies.powerWork).toHaveBeenLastCalledWith(
+      { id: "activity-a", powerSourceId: "power-b" },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(dependencies.powerZones).toHaveBeenLastCalledWith(
+      { id: "activity-a", powerSourceId: "power-b" },
+      expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it("retains only same-activity stream, zone, and work data in placeholder callbacks", () => {
+    renderHook(() => useActivityMetrics("activity-a", { isCycling: true, isClimbing: false }));
+    const previousQuery = (family: string, input: Record<string, unknown>) => ({
+      queryKey: [["activity", family], { input }],
+    });
+    const previous = [{ retained: true }];
+    for (const [query, family, input] of [
+      [dependencies.stream, "stream", { id: "activity-a" }],
+      [dependencies.hrZones, "hrZones", { id: "activity-a", heartRateSourceId: "hr-a" }],
+      [dependencies.powerZones, "powerZones", { id: "activity-a", powerSourceId: "power-a" }],
+      [dependencies.powerWork, "powerWork", { id: "activity-a", powerSourceId: "power-a" }],
+    ] as const) {
+      const options = query.mock.calls.at(-1)?.[1];
+      const callback =
+        options && typeof options === "object" ? Reflect.get(options, "placeholderData") : null;
+      if (typeof callback !== "function") throw new Error(`Missing ${family} placeholder callback`);
+      expect(callback(previous, previousQuery(family, input))).toBe(previous);
+      expect(
+        callback(previous, previousQuery(family, { ...input, id: "activity-b" })),
+      ).toBeUndefined();
+    }
   });
 
   it("does not carry requested picker state into another authenticated session", () => {

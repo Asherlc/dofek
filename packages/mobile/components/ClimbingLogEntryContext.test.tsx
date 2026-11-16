@@ -39,3 +39,11 @@ it("renders a recorded zero-degree angle", () => {
   );
   expect(screen.getByText("Wall angle: 0°")).toBeTruthy();
 });
+it("renders a recorded positive wall angle with degree units", () => {
+  render(
+    <ClimbingLogEntryContext
+      entry={climbingLogEntryFixture({ wallAngle: { value: 35, unit: "degrees" } })}
+    />,
+  );
+  expect(screen.getByText("Wall angle: 35°")).toBeTruthy();
+});
