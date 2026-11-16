@@ -38849,3 +38849,76 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Direct fix / validation:** Both routes retain a minimum-height status element and update only its text, preserving space during background refreshes. Pending-only polling and cached-data/error handling remain unchanged. The affected route and climbing component suites passed 155/155 tests after the two regression tests first failed against the previous rendering behavior. Full lint and recursive workspace typechecks passed. Separate self-review confirmed the diff is confined to status layout and regression coverage.
 - **Expanded audit / fix:** The same conditional status insertion existed in [web weekly volume](../packages/web/src/components/SportVolumeChart.tsx), [mobile weekly volume](../packages/mobile/components/SportVolumeChart.tsx), both activity performance screens, [mobile route comparison](../packages/mobile/components/RouteComparisonCard.tsx), both cycling FTP estimate panels, and both climbing strengths metadata notices. These now retain status space too. Every changed component/route reproduced the removal regression before the fix; all 248 affected tests passed afterward, together with full lint and recursive workspace typechecks. Separate whole-change self-review found no material issues.
 - **Browser validation / remaining risk:** The embedded browser became available during the expanded fix. Paired Storybook checks confirmed identical following-content positions for mobile route comparison and weekly volume during idle/refreshing states, and for web climbing strengths during pending/completed metadata states. Mobile checks used React Native Web previews, not native iOS execution. Verify the deployed page while catalogue enrichment is pending. This branch has not been deployed; no retries, timeouts, or other resilience settings were changed.
+
+## 2026-11-16 — CDC publication recovery and Strava operation reconciliation (SERVER-7H)
+
+- **Symptoms / impact:** The completed Strava history continuation and absence
+  reconciliation still lacked downstream processing completion. The original
+  operation `8d744285-76ac-4466-9657-94fd462ee167` had 12 queued CDC path facts,
+  no analytics/cache facts, and 22,675 already-completed reconciliation outbox
+  rows. The fitness mirror normalization cursor had stopped at batch 8558
+  with pending batch 8559; analytics-worker had been quiesced at zero replicas.
+- **Cause / direct recovery:** The mirror's missing `user_profile.ftp` column
+  blocked normalization. [PR #3358](https://github.com/Asherlc/dofek/pull/3358)
+  supplied additive ClickHouse migration 0115. An unresolved server publication
+  receipt prevented normal publication; the reviewed recovery path in
+  [PR #3365](https://github.com/Asherlc/dofek/pull/3365) admitted only the exact
+  failed receipt and a verified immutable descendant image. Canonical
+  [Deploy run 43931142245, attempt 2](https://github.com/Asherlc/dofek/actions/runs/43931142245/attempts/2)
+  deployed source `11a58aaff99d73bf9c9efc63673128a34359637d`, digest
+  `sha256:2f7ce8d331d73905fa0feee2fc3339b5ddcfd219fec856ad26b73339ea59bec0`,
+  applied migration 0115 and passed CDC causal-marker verification. The first
+  attempt failed before mutation on a GitHub job-history HTTP 502; only its
+  failed preflight was retried in the same run, preserving all gates.
+- **Receipt / runtime proof:** The finalizer verified the desired image and
+  running images of both web tasks and the worker. New deployment receipt
+  `7833987708` became successful at 19:46:46 UTC; old receipt `7828786739`
+  became inactive at 19:46:47 UTC, after that verification. PeerDB normalized
+  and synced through batch 9069 with no pending batch. Analytics-worker was
+  restored to one running replica; `/readyz` returned HTTP 200/status `ok`
+  with no failure and last success at 19:46:16.144 UTC. Its build recorded
+  261 datasets with zero failures and completed cache warming.
+- **Approved bounded operation action:** Complete transport evidence did not
+  repair the old operation ledger because all its outbox rows were completed.
+  Following explicit user approval and independent review, at 21:40:32 UTC a
+  single transaction changed one exact existing operation/job row from
+  `completed` to `pending`. The guard required exactly one match or rolled back;
+  timestamps and all other rows were preserved. The already-running periodic
+  reconciler performed its normal global cycle; no manual dispatch, provider
+  import, history replay, service scaling or schema change was performed.
+- **Exact acceptance:** The 21:41 cycle recorded all 12 operation CDC paths as
+  successful, queued analytics for all six datasets, and returned all 22,675
+  outbox rows to completed. A fresh source-to-destination comparison at 21:42
+  found all 22,669 metric batch IDs, exactly 22,043,219 expected events, zero
+  missing/count-mismatched batches, and all seven exact relational marker tuples
+  in their correct flow destinations. The retained relational fence is
+  `74/A4D54000`. Pre-action CDC was normalized/synced through batch 9153, with
+  no pending batch and a healthy analytics worker.
+- **Subsequent deployment / terminal acceptance:** At 21:47:17 UTC analytics,
+  reconciliation, worker and all three ClickHouse sinks were observed at zero.
+  Stock receipt `7837145010` and stack job `133632953772` identified canonical
+  [release 43958871187](https://github.com/Asherlc/dofek/actions/runs/43958871187),
+  source `4e413541ae4fab6f2f6e846d2b837540f363ee1f`, as the subsequent
+  deployment. Its provider-connection cutover preceded consumer restoration.
+  The stack job passed in 28m21s and its receipt became successful at 22:09:47
+  UTC. At 22:10:37 UTC analytics and reconciliation were each running one task
+  on digest
+  `sha256:21d3165bc6f3dd6d7b27b7b36ba317cd4b74dd4c891af967734455d43a841e4a`.
+  The original operation then had all six analytics dataset aggregates and all
+  37 model facts successful, with serving run
+  `b469fc65-f3e7-4999-bf77-95ce8ac34327`. All six cache stages reached the
+  valid terminal state `skipped` at 22:10:39 UTC (no cached views required
+  refreshing), with serving run `0477f3fd-b547-4c1a-a66d-6e7dc8466d25`.
+  A 22:12:33 UTC snapshot confirmed all 22,675 outbox rows completed, no new
+  ingest fact after the original success, and worker readiness HTTP 200/status
+  `ok`, no failure, last successful cycle 22:10:39.252 UTC. SERVER-7H's exact
+  downstream acceptance is now verified. The stock analytics/cache worker
+  remains global; the one-row trigger did not create eligibility for unrelated
+  operations. No retry, timeout, threshold or other resilience knob was added.
+- **Retrospective:** Exact receipt comparison distinguished recovered transport
+  from a stale ledger. Proposed processing-runbook clarification: after an
+  approved incident recovery, check completed outbox state as well as destination
+  evidence before expecting an old operation to advance; document any new
+  trigger's global worker effects and preserve its exact row guard. Inspect
+  stock publication receipts and job-level state when a run-level status says
+  queued: this release showed queued while its stack job was active.
