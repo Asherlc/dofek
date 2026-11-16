@@ -53,6 +53,7 @@ final class WhoopBleBackgroundUploader: NSObject {
     private var reservationWalPagesWritten = 0
     private var reservationWalPagesSpilled = 0
     private var maxReservationWalPagesWritten = 0
+    private var reservationWriteMeasurementFailureCount = 0
     private let createdAt = Date()
 
     init(store: WhoopBleSampleStore, directory: URL, transport: WhoopUploadTransport,
@@ -197,6 +198,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                 "walPagesWritten": reservationWalPagesWritten,
                 "walPagesSpilled": reservationWalPagesSpilled,
                 "maxWalPagesWritten": maxReservationWalPagesWritten,
+                "measurementFailureCount": reservationWriteMeasurementFailureCount,
             ]
             result["lastUploadError"] = lastError.map { $0 as Any } ?? NSNull()
             return result
@@ -370,7 +372,11 @@ final class WhoopBleBackgroundUploader: NSObject {
     }
 
     private func record(_ error: Error) { lastError = error.localizedDescription; reportError(error) }
-    private func recordReservationWrites(_ measurement: WhoopSQLiteWriteMeasurement) {
+    private func recordReservationWrites(_ measurement: WhoopSQLiteWriteMeasurement?) {
+        guard let measurement else {
+            reservationWriteMeasurementFailureCount = Self.saturatingAdd(reservationWriteMeasurementFailureCount, 1)
+            return
+        }
         reservationWriteTransactionCount = Self.saturatingAdd(reservationWriteTransactionCount, 1)
         reservationWalPagesWritten = Self.saturatingAdd(reservationWalPagesWritten, measurement.walPagesWritten)
         reservationWalPagesSpilled = Self.saturatingAdd(reservationWalPagesSpilled, measurement.walPagesSpilled)

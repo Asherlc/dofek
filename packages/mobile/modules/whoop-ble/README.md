@@ -199,14 +199,15 @@ Transaction failures retain the existing rollback and error propagation,
 following SQLite's [transaction semantics](https://www.sqlite.org/lang_transaction.html).
 The existing `capture_snapshot` diagnostic includes a fixed-size reservation
 write summary: the number of successfully measured new reservations since this uploader instance started,
-total WAL pages written and spilled, and the maximum pages written by one
-reservation. The counters reset when the native uploader is recreated and are
-read at the existing snapshot cadence; they do not emit one event per
-reservation. SQLite's [connection status counters](https://www.sqlite.org/c3ref/c_dbstatus_options.html)
-measure cache pages written to WAL and spilled while the new-reservation
-transaction runs. These counts are not total disk bytes or MetricKit attribution,
-and exclude body-file writes and pending-purge recovery. Older native builds omit
-the optional summary and remain valid to the bridge.
+total WAL pages written and spilled, the maximum pages written by one
+reservation, and a bounded count of failed counter reads. The aggregate resets
+when the native uploader is recreated and is read at the existing snapshot
+cadence; it does not emit one event per reservation. SQLite's [connection status
+counters](https://www.sqlite.org/c3ref/c_dbstatus_options.html) are sampled before
+and after each new-reservation transaction to measure page deltas written to WAL
+and spilled from cache. These counts are not total disk bytes or MetricKit
+attribution, and exclude body-file writes and pending-purge recovery. Older
+native builds omit the optional summary and remain valid to the bridge.
 Each entry includes `isMainThread` and the current native `threadId`, captured at
 that boundary rather than inherited from the initial caller. Apple's
 [hang investigation guidance](https://developer.apple.com/documentation/xcode/understanding-hangs-in-your-app)

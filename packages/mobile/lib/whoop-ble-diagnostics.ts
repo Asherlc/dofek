@@ -111,6 +111,8 @@ export class WhoopBleDiagnostics {
             reservationWalPagesWritten: buffers.reservationWriteSummary.walPagesWritten,
             reservationWalPagesSpilled: buffers.reservationWriteSummary.walPagesSpilled,
             maxReservationWalPagesWritten: buffers.reservationWriteSummary.maxWalPagesWritten,
+            reservationWriteMeasurementFailureCount:
+              buffers.reservationWriteSummary.measurementFailureCount,
           }
         : {}),
     });

@@ -33,6 +33,15 @@ struct WhoopStoredBatch {
 struct WhoopSQLiteWriteMeasurement: Equatable {
     let walPagesWritten: Int
     let walPagesSpilled: Int
+
+    func delta(since previous: Self) -> Self? {
+        guard walPagesWritten >= previous.walPagesWritten,
+              walPagesSpilled >= previous.walPagesSpilled else { return nil }
+        return Self(
+            walPagesWritten: walPagesWritten - previous.walPagesWritten,
+            walPagesSpilled: walPagesSpilled - previous.walPagesSpilled
+        )
+    }
 }
 
 /// The database owns samples and reservations. Transport files are disposable projections.
@@ -167,10 +176,10 @@ final class WhoopBleSampleStore {
     func reserve(
         stream: WhoopUploadStream,
         limit: Int = 500,
-        reportWrites: ((WhoopSQLiteWriteMeasurement) -> Void)? = nil
+        reportWrites: ((WhoopSQLiteWriteMeasurement?) -> Void)? = nil
     ) throws -> WhoopStoredBatch? {
         var reserved = false
-        let measurementCallback: ((WhoopSQLiteWriteMeasurement) -> Void)?
+        let measurementCallback: ((WhoopSQLiteWriteMeasurement?) -> Void)?
         if let reportWrites {
             measurementCallback = { measurement in
                 if reserved { reportWrites(measurement) }
@@ -332,32 +341,26 @@ final class WhoopBleSampleStore {
     }
     private func transaction<T>(
         onStage: (String) -> Void = { _ in },
-        reportWrites: ((WhoopSQLiteWriteMeasurement) -> Void)? = nil,
+        reportWrites: ((WhoopSQLiteWriteMeasurement?) -> Void)? = nil,
         _ action: () throws -> T
     ) throws -> T {
         onStage("store_lock_wait")
         return try synchronized {
             try restoreSecureDeleteLocked()
             try finishPendingPurgeLocked()
-            let canMeasureWrites = reportWrites.map { _ in resetWriteCounters() } ?? false
+            let countersBefore = reportWrites == nil ? nil : writeCounters()
             let result = try transactionLocked(onStage: onStage, action)
-            if canMeasureWrites, let measurement = writeMeasurement() {
-                reportWrites?(measurement)
+            if let reportWrites {
+                let measurement = countersBefore.flatMap { before in
+                    writeCounters()?.delta(since: before)
+                }
+                reportWrites(measurement)
             }
             return result
         }
     }
 
-    private func resetWriteCounters() -> Bool {
-        guard let database else { return false }
-        var current: Int32 = 0
-        var highwater: Int32 = 0
-        let cacheWrites = sqlite3_db_status(database, SQLITE_DBSTATUS_CACHE_WRITE, &current, &highwater, 1)
-        let cacheSpills = sqlite3_db_status(database, SQLITE_DBSTATUS_CACHE_SPILL, &current, &highwater, 1)
-        return cacheWrites == SQLITE_OK && cacheSpills == SQLITE_OK
-    }
-
-    private func writeMeasurement() -> WhoopSQLiteWriteMeasurement? {
+    private func writeCounters() -> WhoopSQLiteWriteMeasurement? {
         guard let database else { return nil }
         var cacheWrites: Int32 = 0
         var cacheSpills: Int32 = 0
@@ -366,8 +369,7 @@ final class WhoopBleSampleStore {
               sqlite3_db_status(database, SQLITE_DBSTATUS_CACHE_SPILL, &cacheSpills, &highwater, 0) == SQLITE_OK else {
             return nil
         }
-        return WhoopSQLiteWriteMeasurement(
-            walPagesWritten: Int(cacheWrites), walPagesSpilled: Int(cacheSpills))
+        return WhoopSQLiteWriteMeasurement(walPagesWritten: Int(cacheWrites), walPagesSpilled: Int(cacheSpills))
     }
     func transactionLocked<T>(onStage: (String) -> Void = { _ in }, _ action: () throws -> T) throws -> T {
         onStage("store_begin")

@@ -135,6 +135,7 @@ describe("WhoopBle native bridge", () => {
       walPagesWritten: 96,
       walPagesSpilled: 3,
       maxWalPagesWritten: 16,
+      measurementFailureCount: 0,
     };
     nativeModule.getDataPathStats.mockResolvedValue({
       ...stats,

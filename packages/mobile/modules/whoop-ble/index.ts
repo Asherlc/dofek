@@ -142,6 +142,7 @@ const WhoopBufferCheckpointSchema = z.object({
       walPagesWritten: DiagnosticCountSchema,
       walPagesSpilled: DiagnosticCountSchema,
       maxWalPagesWritten: DiagnosticCountSchema,
+      measurementFailureCount: DiagnosticCountSchema,
     })
     .optional(),
 });

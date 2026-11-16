@@ -25,6 +25,7 @@ describe("WhoopBleDiagnostics", () => {
         walPagesWritten: 96,
         walPagesSpilled: 3,
         maxWalPagesWritten: 16,
+        measurementFailureCount: 0,
       },
     });
     new WhoopBleDiagnostics().snapshot(stats, "foreground", "active");
@@ -39,6 +40,7 @@ describe("WhoopBleDiagnostics", () => {
         reservationWalPagesWritten: 96,
         reservationWalPagesSpilled: 3,
         maxReservationWalPagesWritten: 16,
+        reservationWriteMeasurementFailureCount: 0,
       }),
     );
   });
