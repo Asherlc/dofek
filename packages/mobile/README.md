@@ -666,6 +666,16 @@ Production PostHog error autocapture is limited to uncaught exceptions and
 unhandled rejections; handled application failures go through the shared
 `captureException` path so they retain the same route and source context.
 
+The mobile Sentry SDK enables experimental iOS JavaScript-hang reporting and
+the experimental watchdog-termination V2 tracker. The latter improves watchdog
+reporting when a foreground app is hung; JavaScript-hang events can include the
+Hermes stack.
+These signals do not include event-level process memory or replace an Apple
+`.ips`/Jetsam diagnostic. See the
+[8.34.0 JavaScript-hang release notes](https://github.com/getsentry/sentry-react-native/releases/tag/8.34.0)
+and the
+[8.35.0 watchdog tracker release notes](https://github.com/getsentry/sentry-react-native/releases/tag/8.35.0).
+
 Release startup tracing samples the `Mobile Startup` lifecycle and Sentry's
 native `App Start` span. The lifecycle attributes time to the Expo
 Updates launch, JavaScript bootstrap, authentication restore, splash dismissal,

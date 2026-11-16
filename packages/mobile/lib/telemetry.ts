@@ -200,6 +200,10 @@ export function initTelemetry() {
     ...(SENTRY_RELEASE ? { release: SENTRY_RELEASE } : {}),
     ...(SENTRY_DIST ? { dist: SENTRY_DIST } : {}),
     debug: __DEV__,
+    enableJsHangTracking: true,
+    // The V2 tracker covers watchdog terminations during foreground hangs that
+    // the legacy tracker can report only as an app hang.
+    _experiments: { enableWatchdogTerminationsV2: true },
     tracesSampler: ({ name, inheritOrSampleWith }) =>
       name === "App Start" || name === "Mobile Startup" ? 1 : inheritOrSampleWith(0),
   });
