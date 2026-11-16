@@ -141,6 +141,16 @@ derive these bounds with conditional aggregates; see PostgreSQL's
 [aggregate expressions](https://www.postgresql.org/docs/current/sql-expressions.html#SYNTAX-AGGREGATES)
 and ClickHouse's [aggregate combinators](https://clickhouse.com/docs/reference/functions/aggregate-functions/combinators).
 
+The same source defines `fitness.v_activity_group`, the canonical grouping
+projection before recording-origin resolution. Activity visibility and climbing
+log/session/location lookups use this projection for IDs, member IDs and dates;
+the full `fitness.v_activity` view adds the existing origin and title fields.
+Both projections share the same lifecycle, revision, priority and local-time
+rules. Migration [0187](../../drizzle/0187_activity_group_visibility.sql) installs
+the shared view without copying stored data. These are ordinary PostgreSQL
+[views](https://www.postgresql.org/docs/18/sql-createview.html), with query plans
+verified through [EXPLAIN ANALYZE](https://www.postgresql.org/docs/18/using-explain.html).
+
 PostgreSQL migration 0152_activity_origin installs the function and updates the
 view. ClickHouse migration 0104_activity_origin adds the serving columns and the
 [origin projection](clickhouse-activity-origin.ts). Existing ClickHouse rows have
