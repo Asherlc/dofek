@@ -9,8 +9,8 @@ import {
   type RangeDays,
 } from "../lib/date-window.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
 import { activityListColumns, activityListRowSchema } from "./activity-repository-schemas.ts";
+import type { ActivitySensorReadStore } from "./activity-sensor-types.ts";
 import { withActivitySummaries } from "./activity-summary-enrichment.ts";
 
 export type ActivityListItem = Record<string, unknown> & {
@@ -41,14 +41,14 @@ export interface CountVisibleInWindowInput {
 }
 
 export class ActivityListRepository extends BaseRepository {
-  readonly #sensorStore?: ActivitySensorStore;
+  readonly #sensorStore?: ActivitySensorReadStore;
 
   constructor(
     db: Pick<import("dofek/db").Database, "execute">,
     userId: string,
     timezone: string,
     accessWindow: AccessWindow,
-    sensorStore?: ActivitySensorStore,
+    sensorStore?: ActivitySensorReadStore,
   ) {
     super(db, userId, timezone, accessWindow);
     this.#sensorStore = sensorStore;

@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
+
+import type { UseMutationOptions } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation as useTanstackMutation,
+} from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { climbingLogEntryFixture } from "../../../server/src/repositories/climbing-test-helpers.ts";
 
@@ -11,6 +19,10 @@ const mocks = vi.hoisted(() => ({
   successCallbacks: new Map<
     string,
     (result: unknown, input: { activityId: string; climbingLogEntryId: string }) => Promise<void>
+  >(),
+  errorCallbacks: new Map<
+    string,
+    (error: Error, input: { activityId: string; climbingLogEntryId: string }) => void
   >(),
   imagesInvalidate: vi.fn().mockResolvedValue(undefined),
   entriesInvalidate: vi.fn().mockResolvedValue(undefined),
@@ -54,14 +66,17 @@ import { useActivityClimbing } from "./useActivityClimbing";
 beforeEach(() => {
   mocks.entriesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mocks.suggestionsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
-  mocks.mutate.mockImplementation(
-    (_input: unknown, callbacks: { onError: (error: Error) => void }) => {
-      callbacks.onError(new Error("Attachment failed"));
-    },
-  );
+  mocks.mutate.mockImplementation(() => undefined);
   mocks.useMutation.mockImplementation(
-    (options: { onSuccess: (result: unknown, input: { activityId: string }) => Promise<void> }) => {
+    (options: {
+      onSuccess: (
+        result: unknown,
+        input: { activityId: string; climbingLogEntryId: string },
+      ) => Promise<void>;
+      onError: (error: Error, input: { activityId: string; climbingLogEntryId: string }) => void;
+    }) => {
       mocks.successCallbacks.set("attach", options.onSuccess);
+      mocks.errorCallbacks.set("attach", options.onError);
       return { mutate: mocks.mutate };
     },
   );
@@ -78,6 +93,7 @@ beforeEach(() => {
   ])
     invalidate.mockClear();
   mocks.successCallbacks.clear();
+  mocks.errorCallbacks.clear();
 });
 
 it("gates both entry queries until a canonical activity ID is present", () => {
@@ -114,6 +130,15 @@ it("queries canonical activity log families with response version five and decod
 it("keeps attachment errors per entry and preserves mobile invalidations", async () => {
   const { result } = renderHook(() => useActivityClimbing("activity-1", true));
   act(() => result.current.attachEntry("entry-1"));
+  expect(result.current.attachmentStates["entry-1"]).toEqual({ pending: true, error: null });
+  const onError = mocks.errorCallbacks.get("attach");
+  if (!onError) throw new Error("Expected hook-level mutation error callback");
+  act(() =>
+    onError(new Error("Attachment failed"), {
+      activityId: "activity-1",
+      climbingLogEntryId: "entry-1",
+    }),
+  );
   expect(result.current.attachmentStates["entry-1"]).toEqual({
     pending: false,
     error: "Attachment failed",
@@ -122,10 +147,6 @@ it("keeps attachment errors per entry and preserves mobile invalidations", async
   if (!success) throw new Error("Expected mutation success callback");
   await act(async () =>
     success(undefined, { activityId: "activity-1", climbingLogEntryId: "entry-1" }),
-  );
-  expect(mocks.mutate).toHaveBeenCalledWith(
-    { activityId: "activity-1", climbingLogEntryId: "entry-1" },
-    expect.objectContaining({ onError: expect.any(Function), onSuccess: expect.any(Function) }),
   );
   expect(mocks.imagesInvalidate).toHaveBeenCalledWith({ id: "activity-1" });
   expect(mocks.entriesInvalidate).toHaveBeenCalledWith({
@@ -142,4 +163,55 @@ it("keeps attachment errors per entry and preserves mobile invalidations", async
   expect(mocks.strengthsInvalidate).toHaveBeenCalledWith();
   expect(mocks.byIdInvalidate).not.toHaveBeenCalled();
   expect(mocks.streamInvalidate).not.toHaveBeenCalled();
+});
+
+it("tracks overlapping entry failure, retry, and independent completion through TanStack", async () => {
+  type AttachInput = { activityId: string; climbingLogEntryId: string };
+  type AttachOptions = UseMutationOptions<void, Error, AttachInput>;
+  const requests: Array<{
+    input: AttachInput;
+    resolve: () => void;
+    reject: (error: Error) => void;
+  }> = [];
+  const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  mocks.useMutation.mockImplementation((options: AttachOptions) =>
+    useTanstackMutation({
+      ...options,
+      mutationFn: (input: AttachInput) =>
+        new Promise<void>((resolve, reject) => requests.push({ input, resolve, reject })),
+    }),
+  );
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  const { result } = renderHook(() => useActivityClimbing("activity-1", true), { wrapper });
+
+  act(() => result.current.attachEntry("entry-a"));
+  act(() => result.current.attachEntry("entry-b"));
+  await act(async () => Promise.resolve());
+  expect(requests.map(({ input }) => input.climbingLogEntryId)).toEqual(["entry-a", "entry-b"]);
+  expect(result.current.attachmentStates).toMatchObject({
+    "entry-a": { pending: true, error: null },
+    "entry-b": { pending: true, error: null },
+  });
+
+  await act(async () => requests[0]?.reject(new Error("Entry A failed")));
+  expect(result.current.attachmentStates).toMatchObject({
+    "entry-a": { pending: false, error: "Entry A failed" },
+    "entry-b": { pending: true, error: null },
+  });
+
+  act(() => result.current.attachEntry("entry-a"));
+  expect(result.current.attachmentStates["entry-a"]).toEqual({ pending: true, error: null });
+  await act(async () => requests[1]?.resolve());
+  expect(result.current.attachmentStates).toMatchObject({
+    "entry-a": { pending: true, error: null },
+    "entry-b": { pending: false, error: null },
+  });
+  await act(async () => requests[2]?.resolve());
+  expect(result.current.attachmentStates).toMatchObject({
+    "entry-a": { pending: false, error: null },
+    "entry-b": { pending: false, error: null },
+  });
+  client.clear();
 });

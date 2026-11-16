@@ -1,4 +1,10 @@
 import type { z } from "zod";
+import type { ActivityMetricSourceSelection } from "../contracts/activity-metric-sources.ts";
+import type {
+  activitySummaryReadModelRowSchema,
+  hrZoneRowSchema,
+  powerZoneRowSchema,
+} from "./activity-repository-schemas.ts";
 
 export interface ActivitySensorWindow {
   activityId: string;
@@ -40,4 +46,21 @@ export interface ActivitySensorQueryStore {
     params?: Record<string, unknown>,
     options?: ActivitySensorQueryOptions,
   ): Promise<z.infer<TSchema>[]>;
+}
+
+export interface ActivitySensorReadStore extends ActivitySensorQueryStore {
+  getActivitySummaries(
+    activityIds: string[],
+  ): Promise<z.infer<typeof activitySummaryReadModelRowSchema>[]>;
+  getStream(
+    window: ActivitySensorWindow,
+    maxPoints: number,
+    sources?: ActivityMetricSourceSelection,
+  ): Promise<StreamPointRow[]>;
+  getHeartRateZoneSeconds(window: ActivitySensorWindow): Promise<z.infer<typeof hrZoneRowSchema>[]>;
+  getPowerZoneSeconds(
+    window: ActivitySensorWindow,
+    ftp: number,
+    powerSourceId?: string,
+  ): Promise<z.infer<typeof powerZoneRowSchema>[]>;
 }

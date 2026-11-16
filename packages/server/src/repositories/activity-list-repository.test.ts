@@ -278,6 +278,7 @@ describe("ActivityListRepository", () => {
         expect(sensorStore.getActivitySummaries).toHaveBeenCalledExactlyOnceWith([
           "stable-group-id",
         ]);
+        expect(item).toMatchObject({ max_speed: 13 });
         expect(item).toMatchObject({
           id: "stable-group-id",
           avg_hr: 145,

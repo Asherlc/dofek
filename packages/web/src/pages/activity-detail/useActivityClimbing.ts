@@ -45,25 +45,23 @@ export function useActivityClimbing(activityId: string, enabled: boolean) {
           responseVersion: 5,
         }),
       ]);
+      setAttachmentStates((current) => ({
+        ...current,
+        [input.climbingLogEntryId]: { pending: false, error: null },
+      }));
     },
+    onError: (error, input) =>
+      setAttachmentStates((current) => ({
+        ...current,
+        [input.climbingLogEntryId]: {
+          pending: false,
+          error: userFacingErrorMessage(error),
+        },
+      })),
   });
   const attachEntry = (entryId: string) => {
     setAttachmentStates((current) => ({ ...current, [entryId]: { pending: true, error: null } }));
-    attach.mutate(
-      { activityId, climbingLogEntryId: entryId },
-      {
-        onSuccess: () =>
-          setAttachmentStates((current) => ({
-            ...current,
-            [entryId]: { pending: false, error: null },
-          })),
-        onError: (error) =>
-          setAttachmentStates((current) => ({
-            ...current,
-            [entryId]: { pending: false, error: userFacingErrorMessage(error) },
-          })),
-      },
-    );
+    attach.mutate({ activityId, climbingLogEntryId: entryId });
   };
 
   return {

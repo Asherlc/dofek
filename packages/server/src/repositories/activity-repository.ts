@@ -22,17 +22,10 @@ import {
   activityDetailRowSchema,
   activityIdResolutionSchema,
   activitySensorWindowRowSchema,
-  type activitySummaryReadModelRowSchema,
-  type hrZoneRowSchema,
-  type powerZoneRowSchema,
 } from "./activity-repository-schemas.ts";
 import type { StreamPoint } from "./activity-sensor-repository.ts";
 import { ActivitySensorRepository } from "./activity-sensor-repository.ts";
-import type {
-  ActivitySensorQueryStore,
-  ActivitySensorWindow,
-  StreamPointRow,
-} from "./activity-sensor-types.ts";
+import type { ActivitySensorReadStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
 import { withActivitySummaries } from "./activity-summary-enrichment.ts";
 
 export type { ActivitySensorQueryOptions, ActivitySensorWindow } from "./activity-sensor-types.ts";
@@ -69,10 +62,7 @@ const vo2MaxEstimateSchema = z.object({
 // Domain models
 // ---------------------------------------------------------------------------
 
-export interface ActivitySensorStore extends ActivitySensorQueryStore {
-  getActivitySummaries(
-    activityIds: string[],
-  ): Promise<z.infer<typeof activitySummaryReadModelRowSchema>[]>;
+export interface ActivitySensorStore extends ActivitySensorReadStore {
   getPowerCurveSamples(
     days: number | null,
     userId: string,
@@ -101,17 +91,6 @@ export interface ActivitySensorStore extends ActivitySensorQueryStore {
     userId: string,
     timezone: string,
   ): Promise<Array<{ duration_seconds: number; best_pace: number; activity_date: string }>>;
-  getStream(
-    window: ActivitySensorWindow,
-    maxPoints: number,
-    sources?: ActivityMetricSourceSelection,
-  ): Promise<StreamPointRow[]>;
-  getHeartRateZoneSeconds(window: ActivitySensorWindow): Promise<z.infer<typeof hrZoneRowSchema>[]>;
-  getPowerZoneSeconds(
-    window: ActivitySensorWindow,
-    ftp: number,
-    powerSourceId?: string,
-  ): Promise<z.infer<typeof powerZoneRowSchema>[]>;
   refreshBodyMeasurements(): Promise<void>;
 }
 

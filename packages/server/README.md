@@ -752,7 +752,7 @@ reception day. Cloud daily summaries do not become activity stream points.
 For climbing detail charts, `activity.heartRateContext` returns a separate window
 with five minutes before the recorded activity start and after its recorded end,
 plus downsampled observations from the selected HR source. The
-[context repository](src/repositories/activity-metric-sources-repository.ts)
+[context repository](src/repositories/activity-heart-rate-context.ts)
 reuses the same user/member isolation and source selection. This display window
 does not change the activity, its summaries, or its zone calculations.
 The [source repository](src/repositories/activity-metric-sources-repository.ts) retains zero power, speed, and cadence samples

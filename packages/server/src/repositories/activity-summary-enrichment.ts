@@ -1,8 +1,8 @@
 import type { ActivityLocation } from "../contracts/activity-location.ts";
 import { routeMapPreview } from "../lib/map-preview.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
 import { activitySummaryReadModelRowSchema } from "./activity-repository-schemas.ts";
 import { getActivityMapReadiness, getActivityRoutePreviews } from "./activity-route-preview.ts";
+import type { ActivitySensorReadStore } from "./activity-sensor-types.ts";
 
 export async function withActivitySummaries<
   TRow extends {
@@ -12,7 +12,7 @@ export async function withActivitySummaries<
   },
 >(
   rows: TRow[],
-  sensorStore: ActivitySensorStore | undefined,
+  sensorStore: ActivitySensorReadStore | undefined,
   userId: string,
 ): Promise<Array<TRow & { location: ActivityLocation | null }>> {
   if (!sensorStore) return rows.map((row) => ({ ...row, location: null }));
@@ -60,6 +60,7 @@ export async function withActivitySummaries<
       avg_power: summary.avg_power,
       max_power: summary.max_power,
       avg_speed: summary.avg_speed,
+      max_speed: summary.max_speed,
       avg_cadence: summary.avg_cadence,
       total_distance: summary.total_distance,
       distance_meters: summary.total_distance,

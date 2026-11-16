@@ -8,9 +8,12 @@ import { ActivitySourceAttribution } from "../models/activity-source-attribution
 import { buildActivitySourceTree } from "../models/activity-source-tree.ts";
 import { listActivityHardware } from "./activity-hardware-repository.ts";
 import { getActivityMetricSources } from "./activity-metric-sources-repository.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
 import { activityDetailRowSchema, streamPointRowSchema } from "./activity-repository-schemas.ts";
-import type { ActivitySensorWindow, StreamPointRow } from "./activity-sensor-types.ts";
+import type {
+  ActivitySensorReadStore,
+  ActivitySensorWindow,
+  StreamPointRow,
+} from "./activity-sensor-types.ts";
 import { getActivitySourceHrZones } from "./activity-source-hr-zones.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 
@@ -47,7 +50,7 @@ function activityNotFoundError(): TRPCError {
 
 export class ActivitySensorRepository extends BaseRepository {
   async getStream(
-    store: ActivitySensorStore,
+    store: ActivitySensorReadStore,
     window: ActivitySensorWindow,
     maxPoints: number,
     sources?: ActivityMetricSourceSelection,
@@ -63,7 +66,7 @@ export class ActivitySensorRepository extends BaseRepository {
   }
 
   async getMetricSources(
-    store: ActivitySensorStore,
+    store: ActivitySensorReadStore,
     window: ActivitySensorWindow,
     hardware: Awaited<ReturnType<typeof listActivityHardware>>,
     responseVersion: 1 | 2,
@@ -104,7 +107,7 @@ export class ActivitySensorRepository extends BaseRepository {
   }
 
   async getHrZones(
-    store: ActivitySensorStore,
+    store: ActivitySensorReadStore,
     window: ActivitySensorWindow,
     heartRateSourceId?: string,
   ): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
@@ -114,7 +117,7 @@ export class ActivitySensorRepository extends BaseRepository {
   }
 
   async getPowerZones(
-    store: ActivitySensorStore,
+    store: ActivitySensorReadStore,
     window: ActivitySensorWindow,
     ftp: number,
     powerSourceId?: string,

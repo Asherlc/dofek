@@ -69,6 +69,7 @@ describe("withActivitySummaries", () => {
         avg_power: 220,
         max_power: 450,
         avg_speed: 8,
+        max_speed: 12,
         avg_cadence: 82,
         total_distance: 42_000,
         elevation_gain_m: 610,
@@ -90,6 +91,7 @@ describe("withActivitySummaries", () => {
       avg_power: 220,
       max_power: 450,
       avg_speed: 8,
+      max_speed: 12,
       avg_cadence: 82,
       total_distance: 42_000,
       distance_meters: 42_000,
@@ -99,6 +101,17 @@ describe("withActivitySummaries", () => {
       location: null,
     });
     expect(result).toHaveLength(2);
+  });
+
+  it.each([0, 12])("preserves recorded max speed %s", async (max_speed) => {
+    const store = makeSensorStore();
+    store.getActivitySummaries = vi
+      .fn()
+      .mockResolvedValue([makeSummary("activity-1", { max_speed })]);
+
+    const [row] = await withActivitySummaries([makeRow("activity-1")], store, "user-1");
+
+    expect(row?.max_speed).toBe(max_speed);
   });
 
   it("keeps populated fields invariant across representative metadata", async () => {
