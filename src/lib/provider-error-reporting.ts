@@ -1,6 +1,19 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { authFailureReasonFromError } from "../providers/auth-errors.ts";
 import { findProviderTransportError } from "./provider-transport-error.ts";
+
+/** Only a typed provider HTTP 5xx response is a known server-side outage. */
+export function isKnownProviderHttp5xxError(error: unknown): boolean {
+  const transportError = findProviderTransportError(error);
+  return (
+    transportError instanceof ProviderServiceUnavailableError &&
+    transportError.statusCode >= 500 &&
+    transportError.statusCode <= 599
+  );
+}
 
 /** Keep known operational outcomes in sync status, logs and persistence escalation. */
 export function shouldReportProviderError(error: unknown): boolean {

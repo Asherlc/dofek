@@ -1,3 +1,4 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
@@ -1503,5 +1504,83 @@ describe("KayaSyncProvider", () => {
       errors: [{ message }],
     });
     expect(mocks.captureException).toHaveBeenCalledWith(error);
+  });
+
+  it.each([500, 599])(
+    "normalizes Kaya HTTP %i into the shared operational outage cause without Sentry capture",
+    async (status) => {
+      mocks.loadTokens.mockResolvedValue({
+        accessToken: "access-token",
+        scopes: JSON.stringify({ kayaUserId: "42" }),
+      });
+      const responseError = new KayaApiError(`Kaya API request failed (${status})`, status);
+      mocks.listSessions.mockRejectedValue(responseError);
+      mocks.ascents.mockResolvedValue([]);
+
+      const result = await new KayaSyncProvider().sync(run(database()));
+      const cause = result.errors[0]?.cause;
+
+      expect(cause).toBeInstanceOf(ProviderServiceUnavailableError);
+      expect(cause).toMatchObject({
+        providerId: "kaya",
+        statusCode: status,
+        message: responseError.message,
+      });
+      expect(mocks.captureException).not.toHaveBeenCalled();
+    },
+  );
+
+  it("normalizes an HTTP 5xx from Kaya token refresh without Sentry capture", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "expired-access-token",
+      refreshToken: "refresh-token",
+      expiresAt: new Date(0),
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    const responseError = new KayaApiError("Kaya token refresh failed (503)", 503);
+    mocks.refreshAccessToken.mockRejectedValue(responseError);
+
+    const result = await new KayaSyncProvider().sync(run(database()));
+
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({
+      providerId: "kaya",
+      statusCode: 503,
+      message: responseError.message,
+    });
+    expect(mocks.captureException).not.toHaveBeenCalled();
+  });
+
+  it("continues reporting a non-5xx Kaya token refresh response", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "expired-access-token",
+      refreshToken: "refresh-token",
+      expiresAt: new Date(0),
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    const responseError = new KayaApiError("Kaya token refresh failed (400)", 400);
+    mocks.refreshAccessToken.mockRejectedValue(responseError);
+
+    const result = await new KayaSyncProvider().sync(run(database()));
+
+    expect(result.errors[0]?.message).toBe(responseError.message);
+    expect(result.errors[0]?.cause).toBeUndefined();
+    expect(mocks.captureException).toHaveBeenCalledWith(responseError);
+  });
+
+  it("continues reporting a non-5xx Kaya HTTP response", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    const responseError = new KayaApiError("Kaya API request failed (400)", 400);
+    mocks.listSessions.mockRejectedValue(responseError);
+    mocks.ascents.mockResolvedValue([]);
+
+    const result = await new KayaSyncProvider().sync(run(database()));
+    expect(result.errors[0]?.message).toBe(responseError.message);
+    expect(result.errors[0]?.cause).toBeUndefined();
+
+    expect(mocks.captureException).toHaveBeenCalledWith(responseError);
   });
 });

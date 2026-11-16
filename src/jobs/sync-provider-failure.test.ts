@@ -369,10 +369,11 @@ describe("sync-provider-failure", () => {
   });
 
   it("logs errors to sync log when provider.sync throws", async () => {
+    const error = new Error("API timeout");
     const provider = createMockProvider({
       id: "broken",
       name: "Broken",
-      sync: vi.fn().mockRejectedValue(new Error("API timeout")),
+      sync: vi.fn().mockRejectedValue(error),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
@@ -402,6 +403,7 @@ describe("sync-provider-failure", () => {
         dataType: "sync",
         status: "error",
         errorMessage: "API timeout",
+        errorCauses: [error],
         durationMs: expect.any(Number),
         userId: "user-1",
         origin: "unknown",
