@@ -19,7 +19,7 @@ import {
  * - duration-curves (paceCurve, HR curve model fitting)
  * - efficiency (aerobicDecoupling, polarizationTrend)
  * - cycling-advanced (pedalDynamics)
- * - power (powerCurve, eftpTrend)
+ * - power (powerCurve)
  * - trends (daily, weekly via ClickHouse read models)
  * - settings (get, set, getAll, slackStatus)
  * - sync (providers, providerStats, logs, syncStatus)
@@ -724,7 +724,7 @@ describe("Router data coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Power — power curve and eFTP trend
+  // Power — power curve
   // ══════════════════════════════════════════════════════════════
   describe("power", () => {
     it("powerCurve returns best power per duration with CP model", async () => {
@@ -755,29 +755,6 @@ describe("Router data coverage", () => {
         expect(result.model.cp).toBeGreaterThan(0);
         expect(result.model.wPrime).toBeGreaterThan(0);
         expect(result.model.r2).toBeGreaterThanOrEqual(0);
-      }
-    });
-
-    it("eftpTrend returns per-activity eFTP with current estimate", async () => {
-      const result = await query<{
-        trend: { date: string; eftp: number; activityName: string | null }[];
-        currentEftp: number | null;
-        model: { cp: number; wPrime: number; r2: number } | null;
-      }>("power.eftpTrend", { days: 365 });
-
-      expect(Array.isArray(result.trend)).toBe(true);
-
-      for (const point of result.trend) {
-        expect(point.date).toBeTruthy();
-        expect(point.eftp).toBeGreaterThan(0);
-      }
-
-      // currentEftp should be estimated from CP model or best NP
-      if (result.trend.length > 0) {
-        expect(result.currentEftp).not.toBeNull();
-        if (result.currentEftp != null) {
-          expect(result.currentEftp).toBeGreaterThan(50);
-        }
       }
     });
   });

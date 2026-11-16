@@ -91,7 +91,12 @@ Source fields are documented in the upstream [Tick schema](https://github.com/bo
 - Reproduce the two exact CI mutation targets locally, fix material findings,
   run relevant lint/typechecks/tests, commit and push, then monitor the new CI
   run to a passing conclusion. Record the incident and verification evidence.
-- Local verification complete: exact helper target 77.24%, exact repository
+- Local verification complete: exact helper target 78.05%, exact repository
   target 100%, full unit/mobile suite zero failures, lint and all-package
   typechecks passed. Independent review found no material issue. Remote CI
   verification is tracked on PR #3356; no gate or exclusion was changed.
+- The push could not start pull-request CI because concurrent incident-log
+  additions conflicted with `main`. Merged `main` into the existing branch,
+  preserving both sets of incident entries. After the merge, all 118 focused
+  tests, 20 BoardSesh database integration tests, full lint, and all-package
+  typechecks passed. The new remote CI run remains the final acceptance check.

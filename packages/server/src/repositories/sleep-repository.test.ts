@@ -186,6 +186,46 @@ describe("SleepRepository", () => {
     });
   });
 
+  describe("getStagesByDate", () => {
+    it("uses the latest recorded night when no date is supplied", async () => {
+      const { repo, sensorStore } = makeRepository({
+        clickHouseRows: [
+          {
+            date: "2026-03-27",
+            started_at: "2026-03-27T23:30:00Z",
+            ended_at: "2026-03-28T07:30:00Z",
+          },
+        ],
+        postgresRows: [
+          { stage: "deep", started_at: "2026-03-27T23:30:00Z", ended_at: "2026-03-28T00:15:00Z" },
+        ],
+      });
+
+      await expect(repo.getStagesByDate()).resolves.toEqual({
+        date: "2026-03-27",
+        stages: [
+          { stage: "deep", started_at: "2026-03-27T23:30:00Z", ended_at: "2026-03-28T00:15:00Z" },
+        ],
+      });
+      const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
+      expect(queryText).toContain("ORDER BY sleep.date DESC");
+    });
+
+    it("looks up only the requested sleep date and returns no prior night when missing", async () => {
+      const { repo, sensorStore, execute } = makeRepository();
+
+      await expect(repo.getStagesByDate("2026-03-26")).resolves.toEqual({
+        date: "2026-03-26",
+        stages: [],
+      });
+      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
+        days: 0,
+        endDate: "2026-03-26",
+      });
+      expect(execute).not.toHaveBeenCalled();
+    });
+  });
+
   describe("getLatest", () => {
     it("returns null when no data", async () => {
       const { repo } = makeRepository();

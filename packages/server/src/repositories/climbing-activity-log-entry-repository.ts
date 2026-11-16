@@ -328,7 +328,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         observation.provider_id AS "providerId",
         array_agg(observation.activity_id ORDER BY observation.recorded_at, point.external_id) AS "memberActivityIds",
         MIN(observation.recorded_at) AS "firstLoggedAt", MAX(observation.recorded_at) AS "lastLoggedAt"
-      FROM fitness.v_activity AS grouped
+      FROM fitness.v_activity_group AS grouped
       JOIN fitness.v_climbing_log_activity AS observation
         ON observation.user_id = grouped.user_id AND observation.activity_id = ANY(grouped.member_activity_ids)
       JOIN fitness.activity AS point ON point.id = observation.activity_id AND point.user_id = observation.user_id
@@ -356,7 +356,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
     const rows = await this.query(
       z.object({ activityId: z.string(), memberActivityIds: z.array(z.string()) }),
       sql`SELECT grouped.id AS "activityId", grouped.member_activity_ids AS "memberActivityIds"
-      FROM fitness.v_activity AS grouped
+      FROM fitness.v_activity_group AS grouped
       WHERE grouped.user_id=${this.userId}::uuid
         AND grouped.id IN (${sql.join(
           activityIds.map((id) => sql`${id}::uuid`),
@@ -414,7 +414,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
   }
   async getActivityLogEntries(activityId: string): Promise<ClimbingActivityLogEntry[]> {
     const logs = await this.#load(
-      sql`entry.activity_id IN (SELECT UNNEST(grouped.member_activity_ids) FROM fitness.v_activity AS grouped WHERE grouped.user_id=${this.userId}::uuid AND grouped.id=${activityId}::uuid)`,
+      sql`entry.activity_id IN (SELECT UNNEST(grouped.member_activity_ids) FROM fitness.v_activity_group AS grouped WHERE grouped.user_id=${this.userId}::uuid AND grouped.id=${activityId}::uuid)`,
     );
     const sortValue = (log: ClimbingLogEntryDetail) => {
       if (log.providerId === "boardsesh")
@@ -488,7 +488,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       LEFT JOIN fitness.area AS location ON location.id=COALESCE(entry.log_area_id,catalogue.area_id)
         AND location.user_id=entry.user_id
       LEFT JOIN fitness.activity AS attached ON attached.id=entry.activity_id AND attached.user_id=entry.user_id
-      LEFT JOIN fitness.v_activity AS grouped ON grouped.user_id=entry.user_id AND attached.id=ANY(grouped.member_activity_ids)
+      LEFT JOIN fitness.v_activity_group AS grouped ON grouped.user_id=entry.user_id AND attached.id=ANY(grouped.member_activity_ids)
       WHERE entry.user_id=${this.userId}::uuid AND ${predicate} ${eligibility}
         ${this.dateAccessPredicate(sql`CASE WHEN entry.activity_id IS NULL THEN entry.climbed_on ELSE ${postgresActivityCalendarDate(sql`grouped`, this.timezone)} END`)}
       ORDER BY entry.climbed_on DESC NULLS LAST,entry.id

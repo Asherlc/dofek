@@ -4,8 +4,7 @@ sources:
   - name: analytics
     schema: "{{ env_var('DBT_ANALYTICS_SOURCE_SCHEMA', 'analytics') }}"
     tables:
-      - name: cycling_activity_power_metrics
-      - name: cycling_power_history_rows
+      - name: activity_summary_rows
       - name: cycling_power_observation_rows
       - name: activity_location_member_change
       - name: body_measurement_sample
@@ -29,6 +28,7 @@ sources:
         identifier: metric_stream
         config:
           event_time: ingested_at
+      - name: account_erasure_fence
   - name: postgres_fitness
     schema: "{{ env_var('DBT_POSTGRES_FITNESS_SOURCE_SCHEMA', 'postgres_fitness') }}"
     tables:

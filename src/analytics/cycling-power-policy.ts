@@ -16,18 +16,15 @@ export const cyclingCriticalPowerPolicy = {
   maximumDurationSeconds: 600,
 };
 
-export const cyclingPowerPolicy: CyclingPowerPolicy = {
-  coveragePolicy: cyclingPowerCoveragePolicy,
+export const cyclingPowerSuggestionPolicy = {
   referenceCurves: referenceBank.percentiles,
   thresholdPolicy: {
     minimumDurationSeconds: 180,
     maximumDurationSeconds: 1800,
     targetDurationSeconds: 3600,
   },
-  historyPolicy: {
-    comparisonWindowDays: 14,
-    minimumHistoryDays: 28,
-    maximumDailyDecayFraction: 0.001,
-  },
-  modelVersion: "gc-cc0-2c4843dc2fb0-ongoing-v1",
+};
+
+export const cyclingPowerPolicy: CyclingPowerPolicy = {
+  coveragePolicy: cyclingPowerCoveragePolicy,
 };

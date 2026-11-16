@@ -25,6 +25,109 @@
   BoardSesh re-sync and verify the activity group's returned `displayGrade`
   values. There was no production write or deployment during diagnosis.
 
+## 2026-11-15 — Sleep stage timeline rendered empty despite recorded intervals
+
+- **Symptoms / user impact:** The web Sleep page's Last Night's Stages panel
+  showed gridlines without a visible stage timeline or axis labels. The
+  existing Firefox session at [the Sleep page](https://dofek.fit/sleep) reproduced
+  the report; its View chart data disclosure contained timestamped stage values,
+  establishing that the intervals reached the client.
+- **Evidence / root cause:** The real-ECharts regression in
+  [Hypnogram.test.tsx](../packages/web/src/components/Hypnogram.test.tsx) reproduced
+  the blank rendering. Exact-value visual-map pieces generated SVG gradients
+  with coincident color stops and transparent spans. The value axis used
+  half-integer ticks while its formatter only labeled integer stages; the time
+  axis also needed explicit visibility. These were presentation defects, not
+  evidence of failed WHOOP ingestion.
+- **Direct fix / validation:**
+  [Hypnogram](../packages/web/src/components/Hypnogram.tsx) uses bounded stage
+  color ranges, integer stage ticks, and a visible time axis. Real ECharts SVG
+  rendering and rasterized-pixel tests failed before the fix and pass afterward.
+  The existing [default Storybook fixture](../packages/web/src/components/Hypnogram.stories.tsx)
+  also displayed all four colored stages and clock labels in the user's existing
+  Firefox session after the fix.
+  The [ECharts visual-map contract](https://echarts.apache.org/en/option.html#visualMap-piecewise.pieces)
+  documents both value and interval pieces. No retries, waits, or resilience
+  settings were added.
+- **Remaining risk / follow-up:** The fix requires normal deployment; local
+  validation does not establish that production has updated. The existing
+  overlapping-source selection may use stages from a different provider than
+  the daily summary, so this diagnosis does not establish their WHOOP origin.
+
+## 2026-11-15 — Manual FTP cutover CI validation gaps
+
+- **Symptoms / impact:** [PR #3351](https://github.com/Asherlc/dofek/pull/3351) could not merge after its first complete CI run. No production migration or deployment was performed. The local focused checks had not covered every affected integration fixture, the Cypress heading expectation, or the new migration's Squawk gate.
+- **First fatal evidence / causes:** In [Migration Lint](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995653101), Squawk rejected migration 0187's 32-bit FTP column and immediately validated check, exiting 123. The new NP view also exposed fixture setup that omitted its summary/fence dependencies; [integration shard 1](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995828999), [shard 3](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995828985), and [shard 5](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995829017) failed. Shard 5 also retained an MCP tool count of 38 after two tools were intentionally removed. The [web E2E job](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995653044) still expected the retired ongoing eFTP heading. Mutation testing exposed surviving permanent behavior, including a 45.45 score against the unchanged 75 threshold in [threshold resolution](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995943097).
+- **Direct corrections / current validation:** The [migration correction](https://github.com/Asherlc/dofek/commit/f10b3f614) aligns bigint storage, Drizzle's number mapping and the upsert cast, and follows the existing `NOT VALID` then `VALIDATE CONSTRAINT` convention. Fresh isolated Postgres tests verify the type, validated positive check, large-value round trip and nullable clears. Both SQL linters pass. Drizzle runs these statements in one transaction, so this does not establish reduced lock duration. Upstream introduced migrations 0187 and 0188 while this PR was in validation; the unreleased FTP migration is now 0189 with unchanged SQL and ordered after those upstream entries. Fixture corrections use canonical summary/fence builders in each isolated schema and retain current NP publication, tombstone and erasure checks; six affected integration files pass locally. The final merged migration chain must pass hosted validation.
+- **Local E2E prerequisites:** The isolated test stack pulled its pinned Redis image, completed the server build, then failed before web startup with `No such image: mirror.gcr.io/redis:8.6.3-alpine`. Pulling that exact image restored the prerequisite; the removal actor remains unresolved. The next full-reset attempt failed during image build with `ERR_PNPM_ENOSPC`. Authorized build-cache, unused-image and stopped-container cleanup did not restore usable space. The owner then approved eight specifically listed, unreferenced volumes: seven were already absent when removal was attempted, and only `pulsar-foundation_kafka_data` was removed by this task. Fresh inventory confirmed all eight absent, but the Docker filesystem still reported zero available space. An existing workspace database container also failed to start with an overlay2 `no space left on device` error; it was not recreated or reset. The remaining allocation owner is unresolved. No additional volumes, running containers, image tags, timeout/retry policies or global Docker settings were changed.
+- **Additional CI evidence:** The next [CI run](https://github.com/Asherlc/dofek/actions/runs/43782664536) passed web E2E with the corrected heading expectation, all five integration shards, migration lint and SQLFluff. That run's Spell Check failed on the legitimate PostgreSQL catalog field `convalidated` in the new schema assertions. Adding that field to the existing spelling vocabulary made the exact full CSpell command pass locally, without excluding files or changing the query. The [test correction](https://github.com/Asherlc/dofek/commit/056b57a4518127a602ef18dde4d02b28473d1ebe) passes 123 focused unit tests and puts all ten affected files above the unchanged mutation threshold. Full workspace typechecks, lint and CSpell pass locally. Independent review approved the corrected fixtures and validation; hosted CI remains required on the final merged revision.
+- **Remaining risk / follow-up:** Do not treat passing assertions, a successful cleanup command or an image pull as a passing workflow. Local Cypress remains blocked before test execution. Require the complete hosted gates on the final revision before merging; retain the local validation limitation. Visual/native acceptance remains separately unverified. Proposed testing guidance: run both new-migration linters before the first push and make every current-view integration fixture create its own required source tables and erasure fence.
+
+## 2026-11-15 — Local ClickHouse memory guard blocks FTP integration tests
+
+- **Symptoms / impact:** Local `pnpm test:integration -- packages/server/src/repositories/cycling-threshold-repository.integration.test.ts` failed before assertions with ClickHouse code 241, `MEMORY_LIMIT_EXCEEDED`, at the existing 1.25 GiB server guard. Production was unaffected.
+- **Evidence / root cause:** No concurrent query workload or abandoned test databases was found. Local allocator metrics reported approximately 1.32 GB allocated and 1.70 GB resident; the container limit remained 1.5 GiB. The allocation owner is unresolved. The stock allocator purge operation also hit the guard. Diagnostic logs are retained locally under `/tmp/opencode/manual-ftp/local-clickhouse-*`.
+- **Mitigation / validation:** Restarted only this workspace's ClickHouse service once through `pnpm compose -- restart clickhouse`, then used Compose's health wait. A read query succeeded afterward, with approximately 892 MB allocated. Data, volumes and configuration were retained; no limits, retries or waits were added to application code. The integration test then reached its assertions and exposed a separate SQL alias defect.
+- **Remaining risk / retrospective:** This restored local test execution but does not establish a permanent memory fix. If the guard recurs, capture the allocating workload before further remediation. Separating service readiness from assertion failures prevented treating the resource failure as test-first evidence.
+
+## 2026-11-15 — Missing cycling power prevents stale eFTP from decaying
+
+- **Symptoms / user impact:** Current computed cycling eFTP can retain a supporting effort more than six years old with only a small modeled decrease. The same threshold feeds intensity factor and power training stress, so the stale estimate also affects those derived values.
+- **Evidence / root cause:** Read-only production queries of `analytics.cycling_threshold_history`, `analytics.activity_summary_rows`, `analytics.cycling_power_observation_rows`, and `analytics.activity_power_curve` supplied a local replay through the unchanged [threshold algorithms](../packages/cycling-power/src/threshold.ts), reproducing the stored current value exactly. The [projector](../src/analytics/cycling-power-projector.ts) includes cycling activities without power. An unavailable normalized-power value marks the day's power dose unknown; any unknown day in the preceding two comparison windows disables decay. Frequent rides without power or with incomplete power coverage therefore prevent decay indefinitely. New effort candidates only replace the ongoing estimate when higher, and supporting evidence has no age limit. This is an incorrect successful result; no fatal application error was observed.
+- **Additional difference:** The application's [reference bank and duration policy](../src/analytics/cycling-power-policy.ts) are independent of Intervals.icu. Their numerical estimates must not be presented as an exact reproduction of that service.
+- **Fix / mitigation:** Investigation only; no calculation, production data, or configuration changed. Treat the displayed value as a model estimate with stale evidence while correction policy is decided. Missing power must not silently become measured zero power.
+- **Validation / remaining risk:** Separate self-review independently checked the blocked-day calculation against exported observations. Both decay semantics and reference-curve calibration remain unresolved; changing only the minimum qualifying effort duration does not address indefinite retention. No new timeout, retry, or resilience setting was introduced.
+- **Follow-up / retrospective:** Direct observation/history queries and an exact numerical replay isolated the cause without changing production state. Add a regression covering repeated power-unavailable cycling activities, and define evidence freshness and missing-load behavior before implementing a correction. The existing systematic debugging workflow applies; no additional operational tool is needed.
+
+## 2026-11-15 — Databasus backup process killed by memory-cgroup OOM
+
+- **Symptoms / impact:** The scheduled PostgreSQL backup
+  `6cae04a7-92f8-41b3-93dd-0c699bac810e`, created at
+  `2026-11-15 06:00:54 UTC`, failed after `59,764` ms with zero reported MB and
+  `Backup failed due to application restart`. The preceding completed record
+  `d786d1dc-dd10-4d89-ae12-6d872c093486` was created at
+  `2026-11-14 06:00:54 UTC`, with recorded `last_backup_time` at
+  `2026-11-14 06:04:29 UTC`; the
+  [Database Backup Freshness run 43749045666](https://github.com/Asherlc/dofek/actions/runs/43749045666),
+  job `132918679634`, failed at **Check newest database backup**. The service
+  was observed running `1/1` after restart; that does not establish backup
+  recovery.
+- **Evidence / root cause:** The kernel recorded a `CONSTRAINT_MEMCG` OOM at
+  `2026-11-15 06:04:06 UTC`, showed `pg_dump` in the Databasus cgroup, and
+  killed the Databasus `main` process. The checked-in service limit was
+  `209715200` bytes (`200M`); Databasus documents a 500 MB minimum RAM
+  requirement ([installation requirements](https://databasus.com/installation/)).
+  The scheduler remained enabled for `DAILY` at `06:00` with retries disabled
+  and `max_failed_tries_count=0`. The host data filesystem had 64 GB available.
+  Read-only evidence copies are in
+  `/tmp/opencode/ota-followup/backup-recovery-oom-only.log`,
+  `backup-recovery-failed-backup.log`, `backup-recovery-scheduler-state.log`,
+  and `backup-recovery-service-state.log`.
+- **Direct fix / validation:** Increase only the Databasus Swarm memory limit
+  to `512M` in `deploy/docker-compose.yml`, keeping image `v3.32.1`, backup
+  schedule, encryption, storage, and the existing 24-hour freshness gate. A
+  full `docker stack config` render of `deploy/docker-compose.yml` with
+  `deploy/stack.oracle.yml` passed using canonical validated deploy
+  environment files; rendered output was discarded. Locally, Databasus
+  `v3.32.1` completed encrypted synthetic backup
+  `82990a0f-ff13-413e-9178-f7cfd16d06e5` for 750,000 rows in 86,868 ms
+  (reported size 795.03 MB). Peak container memory was 536,563,712 bytes,
+  307,200 bytes below the 536,870,912-byte limit, with no OOM or restart.
+  This narrow margin does not establish production-sized backup headroom. The
+  supported Databasus
+  restore completed into isolated synthetic database `validation_restored`
+  (restore `35619777-fdd8-43d0-b0de-2d90f79020a1`); source and restored
+  aggregates matched across all 750,000 rows (`750000|281250375000|-5087423379273388987779`).
+  The container restart count was `0`. Evidence is retained as supplemental
+  local artifacts under `/tmp/opencode/ota-followup/`. The
+  recovery runbook explains the minimum RAM requirement and that fixture
+  success does not establish production recovery.
+- **Remaining risk / follow-up:** The change is not deployed. No fresh
+  production backup, production freshness check, or isolated restore of a
+  production backup has been verified. Complete these checks after the normal
+  reviewed deployment before declaring recovery. No production configuration
+  or backup operation was changed during diagnosis.
+
 ## 2026-11-15 — OTA publisher rejected a nested trusted checkout
 
 - **Symptoms / impact:** Production OTA run
@@ -113,6 +216,57 @@
 - **Remaining risk / follow-up:** Stopped-container accumulation can fill the
   Docker VM again. Inspect actual disk and container usage before pruning; keep
   all running services and named database volumes intact.
+
+### Later recurrence during sleep timeline verification
+
+- **Symptoms / impact:** The sleep timeline branch's database integration suite
+  stopped at Compose readiness before Vitest ran. Analytics SQL lint also failed
+  when ClickHouse tried to write a temporary file. This blocked local validation;
+  no production impact was established.
+- **Evidence / root cause:** Postgres initialization failed at `CREATE DATABASE
+  "health"` with `could not create directory "base/16384": No space left on
+  device`; later health checks reported `database "health" does not exist`.
+  ClickHouse reported error 75 / errno 28, with 0 B available on its 78.44 GiB
+  filesystem. Builder-cache and unused-image pruning each reclaimed 0 B, and
+  there were no stopped containers to remove.
+- **Mitigation / unresolved status:** Read-only inspection identified an unused
+  `goofy-sloth_clickhouse_data` volume using 2,916,468 KiB, with no container
+  references. The user explicitly approved its deletion; it was rechecked as
+  unused and removed, consistent with the
+  [Docker recovery boundaries](testing.md#docker-disk-recovery). Docker still
+  reported 0 B available afterward, and creating the local `health` database
+  still failed with errno 28. The volume's absence was verified. The user then
+  explicitly approved a further list of 12 unused ClickHouse volumes. Each was
+  rechecked as unused and removed; disk availability reached 4.2 GiB, and the
+  local `health` database was created successfully. Before integration setup
+  could create its template database, the filesystem filled again. The first
+  failing statement was `CREATE DATABASE` in `createTemplateDatabase`, with
+  `could not create directory "base/31029": No space left on device`.
+  Analytics SQL lint again failed on ClickHouse errno 28. No volume outside
+  these approved lists was deleted.
+- **Continued investigation:** Six running ClickHouse containers from other
+  workspaces were repeatedly emitting current file-access/rotation failures
+  through Docker's `json-file` logger with no configured size/retention options.
+  A bounded two-second log read from `glorious-bobcat-clickhouse-1` returned
+  702,810 bytes. This is evidence of an ongoing log flood, but its exact share
+  of Docker disk usage was not measured. This workspace's ClickHouse data was
+  about 37 MiB and Postgres data about 92 MiB. The user separately approved
+  stopping/removing those six containers. They were stopped and removed
+  without deleting volumes; all six named ClickHouse database volumes were
+  verified to remain. Docker subsequently reported 125.7 GiB capacity and
+  47.7 GiB free; this task did not resize the VM. The workspace services were
+  restored through `pnpm compose:up` and passed their health checks. The exact
+  allocation of the original full disk remains unresolved; the log flood is
+  an observed contributor rather than a measured accounting of all usage.
+- **Validation / remaining risk:** Disk space and service health recovered;
+  analytics SQL lint and all seven sleep-router real-engine integration tests
+  passed. The new regression's lookup was corrected to match its independently
+  seeded overnight window: the chosen record is not necessarily present in
+  the separate overlapping-record list. No application behavior was changed
+  to satisfy that fixture correction. The
+  removed containers' workspaces must recreate their ClickHouse services when
+  needed. Unbounded container logs remain a separate local-environment
+  follow-up. No timeouts, retries, or ignored checks were added.
 
 ## 2026-11-15 — CI release refactor startup and fixture failures
 
@@ -38327,3 +38481,60 @@ Local qualification and CI are separate from production throughput acceptance. T
   passed; no MCP change or retry policy was introduced. Preserve the diagnostic
   if it recurs. No exclusions or thresholds were relaxed. Production rollout
   and the normal BoardSesh re-sync are still separate operational steps.
+
+## 2026-11-15 — Activities list delayed by PostgreSQL activity expansion
+
+- **Symptoms / impact:** The production web Activities page waits for its
+  activity cards. Two uncached `calendar.weekListV2` requests took 12,316 ms
+  and 8,649 ms; the accompanying `calendar.activityOverview` requests took
+  10,822 ms and 5,867 ms.
+- **Evidence:** Axiom `dofek-logs`, 23:31–23:35 UTC, traces
+  `7553a2d760d85b8b26fdd78cb23f3997` and
+  `97b57b6d30045738a112662ef6d03f74`. PostgreSQL slow-statement logs show
+  `SELECT a.id::text AS id FROM fitness.v_activity a` taking 7,275 ms,
+  3,339 ms, 2,970 ms and 2,681 ms. Climbing-log hydration queries against
+  `fitness.v_climbing_log_entry`, joined to `fitness.v_activity`, took
+  3,770 ms and 3,640 ms during the second request. ClickHouse
+  `system.query_log` records the initial activity SELECT at 457 ms and
+  143 ms respectively. The second request's recorded application queue
+  waits were each below 1 ms.
+- **Root cause:** The request paths repeatedly expand the PostgreSQL
+  activity view, including provenance hydration before the local-date
+  filter. A read-only reproduction of the current-period visibility query
+  took 3,211 ms and returned 80 IDs, while its provenance input aggregate
+  ran 1,885 times. The overview performs two sequential visibility queries;
+  list map/session lookups expand the view again. This is request-time
+  PostgreSQL work, rather than an expensive initial ClickHouse activity
+  scan. Plan interpretation follows PostgreSQL's
+  [EXPLAIN documentation](https://www.postgresql.org/docs/18/using-explain.html).
+- **Direct fix:** Following approval, extract the existing canonical grouping
+  into `fitness.v_activity_group`; the full activity view adds its unchanged
+  provenance and title fields. Visibility and climbing log/session/location
+  queries use the group projection. Migration 0187 installs both definitions.
+  No cache, timeout, retry, analytics model or production configuration changes
+  were added.
+- **Validation:** Five real-PostgreSQL assertions first failed on unnecessary
+  resolver calls (three visibility checks and two climbing projections).
+  A read-only comparison on production data returned identical sets of 80
+  current-period IDs. Three before/after visibility-query plan samples took
+  2,266/82 ms, 2,153/75 ms and 2,214/84 ms. The candidate query embedded the new
+  group-view definition; no production DDL was executed for this measurement.
+  This verifies the query improvement, not a deployed page-load measurement.
+  All 203 focused database tests, repository lint, recursive package typechecks,
+  migration policy and migration SQL lint passed; migration 0187 applied locally.
+  Independent review found no actionable issues. The additional local analytics
+  build could not complete its fresh-ClickHouse prerequisite: bootstrap first
+  reported `Cannot reserve 1.00 MiB, not enough space`, then `errno: 28` writing
+  `v_activity.sql.tmp`. The shared Docker VM had zero available bytes. Approved
+  stopped-container/unused-image cleanup briefly recovered 883 MiB, but the
+  filesystem filled again. No database volumes or running services were removed.
+- **Remaining risk / follow-up:** Release the migration with the repository
+  changes through the normal deployment workflow, then measure uncached
+  `calendar.weekListV2` and `calendar.activityOverview` again. Production
+  remains on the previous implementation until that release. Complete the
+  additional local analytics check when shared Docker capacity is available.
+- **Retrospective:** Correlating Axiom procedure timings with both engines'
+  query logs located the bottleneck; the tRPC `db_duration_ms` label alone
+  did not identify the engine. Proposed loading-runbook addition for review:
+  “When ClickHouse queries are short, inspect PostgreSQL visibility and
+  enrichment queries before adding analytics models.”

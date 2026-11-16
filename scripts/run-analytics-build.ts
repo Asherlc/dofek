@@ -35,8 +35,6 @@ interface RunAnalyticsBuildInput {
   readArtifact(name: "manifest.json" | "run_results.json"): Promise<unknown>;
   projectCyclingPower(asOf: Date): Promise<{
     pendingActivities: number;
-    pendingUsers: number;
-    projectedUsers: number;
   }>;
   recordRun(input: {
     runId: string;
@@ -142,11 +140,11 @@ export async function runAnalyticsBuild({
     let previousPending = Number.POSITIVE_INFINITY;
     while (true) {
       const projection = await projectCyclingPower(asOf);
-      const pending = projection.pendingActivities + projection.pendingUsers;
+      const pending = projection.pendingActivities;
       if (pending === 0) break;
       if (pending >= previousPending) {
         throw new Error(
-          `Cycling power projection made no progress: ${projection.pendingActivities} activities and ${projection.pendingUsers} users remain`,
+          `Cycling power projection made no progress: ${projection.pendingActivities} activities remain`,
         );
       }
       previousPending = pending;

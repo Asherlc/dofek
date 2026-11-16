@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+const cachedQueryOptions = vi.hoisted(
+  (): Array<{
+    maxAge: number;
+    expiresAt?: string;
+    keyVersion?: string;
+  }> => [],
+);
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -15,7 +21,11 @@ vi.mock("../trpc.ts", async () => {
     .create();
   return {
     router: trpc.router,
-    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+    cachedProtectedQuery: (options: {
+      maxAge: number;
+      expiresAt?: string;
+      keyVersion?: string;
+    }) => {
       cachedQueryOptions.push(options);
       return trpc.procedure;
     },
@@ -23,7 +33,6 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-import { cyclingThresholdUncertainty } from "../contracts/cycling-threshold.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
 import { cyclingRouter } from "./cycling.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
@@ -45,7 +54,8 @@ describe("cyclingRouter", () => {
   it("versions the performance cache contract", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 3_600_000,
-      keyVersion: "cycling-performance-power-stress-v4",
+      expiresAt: "localDayBoundary",
+      keyVersion: "manual-ftp-power-stress-v6",
     });
   });
 
@@ -89,24 +99,6 @@ describe("cyclingRouter", () => {
           data: [],
           model: { ftp: null },
         },
-        eftpTrend: {
-          trend: [],
-          currentEftp: null,
-          currentEvidence: {
-            value: null,
-            unit: "watt",
-            method: "computed_eftp",
-            event_at: null,
-            evidence_activity_id: null,
-            evidence_at: null,
-            evidence_duration_seconds: null,
-            evidence_power: null,
-            model_version: null,
-            unavailable_reason: "No qualifying power effort is available.",
-            uncertainty: cyclingThresholdUncertainty,
-          },
-          model: null,
-        },
         availability: {
           powerCurve: {
             status: "insufficient_data",
@@ -121,13 +113,6 @@ describe("cyclingRouter", () => {
             observedCount: 0,
             minimumCount: 1,
             message: "No training-load data is available.",
-          },
-          eftpTrend: {
-            status: "insufficient_data",
-            sourceLabel: "Cycling activity power summaries",
-            observedCount: 0,
-            minimumCount: 1,
-            message: "No threshold power data is available.",
           },
         },
         estimateEvidence: {
@@ -166,14 +151,6 @@ describe("cyclingRouter", () => {
               sourceWorkouts: [],
               pacingGuidance: "Do not use this estimate for pacing.",
             },
-          },
-          eftp: {
-            method: "Maintained reference-curve estimate",
-            confidence: "not_available",
-            confidenceLabel: "Not available",
-            confidenceDetail: "No qualifying power effort is available.",
-            sourceWorkouts: [],
-            pacingGuidance: "Do not use this estimate for pacing.",
           },
         },
       });

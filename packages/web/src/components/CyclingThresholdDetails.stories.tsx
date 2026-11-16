@@ -8,19 +8,9 @@ const meta = {
     evidence: {
       value: 250,
       unit: "watt",
-      method: "computed_eftp",
-      event_at: "2026-03-05T12:00:00Z",
-      evidence_activity_id: "00000000-0000-4000-8000-000000000101",
-      evidence_at: "2026-03-01T12:00:00Z",
-      evidence_duration_seconds: 1200,
-      evidence_power: 265,
-      model_version: "v1",
-      uncertainty: {
-        kind: "not_quantifiable" as const,
-        watts: null,
-        reason:
-          "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
-      },
+      method: "configured",
+      effective_from: "2026-06-01",
+      source_record_id: "00000000-0000-4000-8000-000000000101",
       unavailable_reason: null,
     },
   },
@@ -33,7 +23,7 @@ export const InsufficientEvidence: Story = {
     evidence: {
       ...meta.args.evidence,
       value: null,
-      unavailable_reason: "No supported sustained cycling power effort is available.",
+      unavailable_reason: "No FTP setting applies to this activity.",
     },
   },
 };

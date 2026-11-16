@@ -2,13 +2,13 @@ import { z } from "zod";
 import { buildActivitySummaryViewSql } from "../clickhouse-activity-summary.ts";
 import { buildDailyCyclingTableSql, dailyCyclingActivitiesType } from "../clickhouse-cycling.ts";
 import { buildUserProfileCurrentViewSql } from "../clickhouse-raw-tables.ts";
-import { cyclingPowerSchemaStatements } from "../cycling-power-schema.ts";
 import { hasClickHouseColumn } from "./column-introspection.ts";
+import { cyclingPowerSchemaStatementsBefore0114 } from "./cycling-power-schema-before-0114.ts";
 import type { ClickHouseMigration } from "./types.ts";
 
 export function createMigration(): ClickHouseMigration {
   const statements = [
-    ...cyclingPowerSchemaStatements(),
+    ...cyclingPowerSchemaStatementsBefore0114(),
     buildActivitySummaryViewSql(),
     buildUserProfileCurrentViewSql(),
     "ALTER TABLE postgres_fitness.user_profile DROP COLUMN IF EXISTS ftp",
