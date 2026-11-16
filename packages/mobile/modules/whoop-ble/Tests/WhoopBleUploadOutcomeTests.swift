@@ -92,8 +92,56 @@ extension WhoopBleBackgroundUploaderTests {
 
         XCTAssertTrue(try store.pendingBatches().isEmpty)
         XCTAssertTrue(errors.isEmpty)
-        XCTAssertEqual(outcomes.last?.stage, "batch_not_found")
-        XCTAssertEqual(outcomes.last?.outboxState, "absent")
+        XCTAssertTrue(outcomes.isEmpty)
+    }
+
+    func testAccountAndServerBindingRotationClearLastUploadOutcome() throws {
+        let (uploader, _, transport) = try setup()
+        try uploader.append(deviceId: "a", samplesByStream: [.imu: rows])
+        try uploader.flush(); try settle(uploader)
+        transport.complete(0)
+        try settle(uploader)
+        XCTAssertNotNil(try uploader.diagnostics()["lastUploadOutcome"] as? [String: Any])
+
+        try uploader.configure(userId: "bob", serverURL: "https://example.com", token: "token", headers: [:])
+        try settle(uploader)
+        XCTAssertTrue(try uploader.diagnostics()["lastUploadOutcome"] is NSNull)
+
+        try uploader.append(deviceId: "b", samplesByStream: [.imu: rows])
+        try uploader.flush(); try settle(uploader)
+        transport.complete(1)
+        try settle(uploader)
+        XCTAssertNotNil(try uploader.diagnostics()["lastUploadOutcome"] as? [String: Any])
+
+        try uploader.configure(userId: "bob", serverURL: "https://other.example", token: "token", headers: [:])
+        try settle(uploader)
+        XCTAssertTrue(try uploader.diagnostics()["lastUploadOutcome"] is NSNull)
+    }
+
+    func testDisableClearsLastUploadOutcome() throws {
+        let (uploader, _, transport) = try setup()
+        try uploader.append(deviceId: "a", samplesByStream: [.imu: rows])
+        try uploader.flush(); try settle(uploader)
+        transport.complete(0)
+        try settle(uploader)
+        XCTAssertNotNil(try uploader.diagnostics()["lastUploadOutcome"] as? [String: Any])
+
+        try uploader.disable(cutoff: Date(timeIntervalSince1970: 1_800_000_000))
+        XCTAssertTrue(try uploader.diagnostics()["lastUploadOutcome"] is NSNull)
+    }
+
+    func testOldCompletionAfterPurgeDoesNotRestorePreviousGenerationOutcome() throws {
+        let (uploader, _, transport) = try setup()
+        try uploader.append(deviceId: "a", samplesByStream: [.imu: rows])
+        try uploader.flush(); try settle(uploader)
+        let oldIdentity = try XCTUnwrap(transport.requests.first?.2)
+
+        try uploader.purge(cutoff: Date(timeIntervalSince1970: 1_800_000_000))
+        transport.complete(0)
+        try settle(uploader)
+
+        let latest = try XCTUnwrap(uploader.diagnostics()["lastUploadOutcome"])
+        XCTAssertTrue(latest is NSNull, "Late completion for \(oldIdentity) must not repopulate telemetry after purge")
     }
 
     func testBodyFileCleanupFailureReportsRetiredOutcomeBeforeErrorOnce() throws {
