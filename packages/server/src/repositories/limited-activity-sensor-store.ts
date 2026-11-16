@@ -8,8 +8,8 @@ import type {
   ActivitySensorQueryOptions,
   ActivitySensorStore,
   ActivitySensorWindow,
-  StreamPointRow,
 } from "./activity-repository.ts";
+import type { StreamPointRow } from "./activity-sensor-types.ts";
 
 const WEB_CLICKHOUSE_CONCURRENCY = 2;
 const DASHBOARD_CLICKHOUSE_CONCURRENCY = 2;

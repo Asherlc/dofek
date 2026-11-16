@@ -1,77 +1,15 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
-import { describe, expect, it, vi } from "vitest";
-import { z } from "zod";
+import { describe, expect, it } from "vitest";
 import { normalizeActivityHardware } from "../models/activity-hardware.ts";
 import { buildActivitySourceTree } from "../models/activity-source-tree.ts";
 import {
+  storeWithRows,
+  activityMetricWindow as window,
+} from "./activity-metric-source-test-helpers.ts";
+import {
   activityMetricParams,
-  getActivityHeartRateContext,
   getActivityMetricSources,
-  getActivityPowerWork,
-  getActivitySourceHrZones,
 } from "./activity-metric-sources-repository.ts";
-
-const window = {
-  providerType: null,
-  activityId: "22222222-2222-2222-2222-222222222222",
-  userId: "11111111-1111-1111-1111-111111111111",
-  startedAt: "2026-10-20T12:00:00.000Z",
-  endedAt: "2026-10-20T13:00:00.000Z",
-  memberActivityIds: ["22222222-2222-2222-2222-222222222222"],
-};
-
-describe("activity heart-rate context", () => {
-  it("requests five minutes around the activity using the selected HR source", async () => {
-    const getStream = vi.fn().mockResolvedValue([
-      { recorded_at: "2026-10-20T11:55:00.000Z", heart_rate: 90 },
-      { recorded_at: "2026-10-20T13:05:00.000Z", heart_rate: 100 },
-    ]);
-    const result = await getActivityHeartRateContext({ getStream }, window, 500, "whoop");
-    expect(result).toEqual({
-      window: { startedAt: "2026-10-20T11:55:00.000Z", endedAt: "2026-10-20T13:05:00.000Z" },
-      points: [
-        { recordedAt: "2026-10-20T11:55:00.000Z", value: 90 },
-        { recordedAt: "2026-10-20T13:05:00.000Z", value: 100 },
-      ],
-    });
-    expect(getStream).toHaveBeenCalledWith({ ...window, ...result.window }, 500, {
-      heartRate: "whoop",
-    });
-    expect(window.startedAt).toBe("2026-10-20T12:00:00.000Z");
-    expect(window.endedAt).toBe("2026-10-20T13:00:00.000Z");
-  });
-
-  it("does not invent an end for an open session or HR when no source exists", async () => {
-    const getStream = vi.fn();
-    const result = await getActivityHeartRateContext(
-      { getStream },
-      { ...window, endedAt: null },
-      500,
-      undefined,
-    );
-    expect(result.window).toEqual({ startedAt: "2026-10-20T11:55:00.000Z", endedAt: null });
-    expect(result.points).toEqual([]);
-    expect(getStream).not.toHaveBeenCalled();
-  });
-});
-function storeWithRows(rows: unknown[]) {
-  return {
-    query: vi.fn(
-      async <T extends z.ZodType>(
-        schema: T,
-        _sql: string,
-        _params?: Record<string, unknown>,
-      ): Promise<z.infer<T>[]> =>
-        rows.map((row) =>
-          schema.parse({
-            activity_ids: window.memberActivityIds,
-            sample_count: 1,
-            ...z.record(z.string(), z.unknown()).parse(row),
-          }),
-        ),
-    ),
-  };
-}
 
 describe("canonical metric source inheritance", () => {
   it.each(["recorder", "creator"] as const)(
@@ -394,85 +332,6 @@ describe("heart-rate default ranking", () => {
   );
 });
 
-describe("activity power work", () => {
-  it("integrates fully covered power seconds while preserving zero and recording gaps", async () => {
-    const result = await getActivityPowerWork(
-      storeWithRows([
-        { elapsed_seconds: 0, power: 200 },
-        { elapsed_seconds: 1, power: 0 },
-        { elapsed_seconds: 2, power: 300 },
-        { elapsed_seconds: 10, power: 100 },
-        { elapsed_seconds: 11, power: 100 },
-      ]),
-      { ...window, endedAt: "2026-10-20T12:00:12.000Z" },
-      "wahoo",
-    );
-
-    expect(result).toEqual({
-      workKilojoules: 0.7,
-      coverage: { coveredSeconds: 5, coveragePct: 41.7 },
-    });
-  });
-
-  it("returns recorded zero work for all-zero power", async () => {
-    expect(
-      await getActivityPowerWork(storeWithRows([{ elapsed_seconds: 0, power: 0 }]), {
-        ...window,
-        endedAt: "2026-10-20T12:00:01.000Z",
-      }),
-    ).toEqual({ workKilojoules: 0, coverage: { coveredSeconds: 1, coveragePct: 100 } });
-  });
-
-  it("returns unavailable work when no valid power was recorded", async () => {
-    expect(await getActivityPowerWork(storeWithRows([]), window)).toEqual({
-      workKilojoules: null,
-      coverage: { coveredSeconds: 0, coveragePct: 0 },
-    });
-  });
-
-  it("returns missing power across a huge empty recorded window", async () => {
-    expect(
-      await getActivityPowerWork(storeWithRows([]), {
-        ...window,
-        endedAt: "2400-10-20T12:00:00.000Z",
-      }),
-    ).toEqual({ workKilojoules: null, coverage: { coveredSeconds: 0, coveragePct: 0 } });
-  });
-
-  it("keeps sparse measured work in a huge recorded window", async () => {
-    expect(
-      await getActivityPowerWork(
-        storeWithRows([
-          { elapsed_seconds: 0, power: 200 },
-          { elapsed_seconds: 1, power: 0 },
-        ]),
-        { ...window, endedAt: "2400-10-20T12:00:00.000Z" },
-      ),
-    ).toEqual({ workKilojoules: 0.2, coverage: { coveredSeconds: 2, coveragePct: 0 } });
-  });
-
-  it("keeps native sparse coverage for a multi-day ride", async () => {
-    expect(
-      await getActivityPowerWork(
-        storeWithRows([
-          { elapsed_seconds: 0, power: 200 },
-          { elapsed_seconds: 86_400, power: 300 },
-        ]),
-        { ...window, endedAt: "2026-10-23T12:00:00.000Z" },
-      ),
-    ).toEqual({ workKilojoules: 5, coverage: { coveredSeconds: 20, coveragePct: 0 } });
-  });
-
-  it("returns unavailable work when the activity has no recorded end", async () => {
-    expect(
-      await getActivityPowerWork(storeWithRows([{ elapsed_seconds: 0, power: 200 }]), {
-        ...window,
-        endedAt: null,
-      }),
-    ).toEqual({ workKilojoules: null, coverage: { coveredSeconds: 0, coveragePct: 0 } });
-  });
-});
-
 describe("activity heart-rate sources", () => {
   it("keeps Peloton and Strava provenance while supplying only the reported device name", async () => {
     const hardware: ActivityHardware = {
@@ -717,109 +576,8 @@ describe("activity heart-rate sources", () => {
       "2026-10-21T00:00:00.000Z",
     );
   });
-  it("maps source-specific zone counts into the same zone contract as default HR", async () => {
-    const zones = await getActivitySourceHrZones(
-      storeWithRows([{ zone0: 0, zone1: 10, zone2: 30, zone3: 0, zone4: 0, zone5: 0 }]),
-      window,
-      "garmin",
-    );
-    expect(zones.find((zone) => zone.zone === 2)).toMatchObject({ seconds: 30, percent: 75 });
-  });
-  it("uses the interpolated median for an even number of resting-HR baselines", async () => {
-    const store = storeWithRows([]);
-    await getActivitySourceHrZones(store, window, "garmin");
-    expect(store.query.mock.calls[0]?.[1]).toContain("quantileExactInclusive(0.5)");
-  });
 });
 
-it("enriches recorder labels without changing identities, order, defaults, or attributing sensors", async () => {
-  const hardware: ActivityHardware = {
-    items: [
-      {
-        id: "recorder",
-        activityId: window.activityId,
-        providerId: "strava",
-        sourceName: null,
-        role: "recorder",
-        label: "Edge 530",
-        model: null,
-        manufacturer: null,
-        evidence: "Reported",
-        details: [],
-      },
-      {
-        id: "sensor",
-        activityId: window.activityId,
-        providerId: "strava",
-        sourceName: null,
-        role: "sensor",
-        label: "HRM-Pro",
-        model: null,
-        manufacturer: null,
-        evidence: "Observed",
-        details: [],
-      },
-    ],
-    power: [],
-  };
-  const rows = [
-    { channel: "heart_rate", provider_id: "strava", device_id: null, source_id: "strava" },
-    { channel: "heart_rate", provider_id: "garmin", device_id: null, source_id: "garmin" },
-  ];
-  const before = await getActivityMetricSources(storeWithRows(rows), window);
-  const after = await getActivityMetricSources(storeWithRows(rows), window, hardware);
-  expect(after[0]?.sources[0]).toEqual({
-    id: "strava",
-    label: "Strava · recorded by Edge 530",
-    presentation: {
-      displayName: "Edge 530",
-      providerId: "strava",
-      sourceName: null,
-      attribution: null,
-    },
-  });
-  expect(
-    after.map((metric) => ({ ...metric, sources: metric.sources.map(({ id }) => id) })),
-  ).toEqual(before.map((metric) => ({ ...metric, sources: metric.sources.map(({ id }) => id) })));
-});
-it("qualifies creator-only FIT provenance and prefers separately reported recorder evidence without selection changes", async () => {
-  for (const providerId of ["fit-file", "garmin"]) {
-    const hardware = normalizeActivityHardware([
-      {
-        activityId: window.activityId,
-        providerId,
-        sourceName: null,
-        raw: providerId === "garmin" ? { deviceName: "Edge 530" } : null,
-        observations: [
-          { sequence: 0, messageType: "file_id", raw: { product_name: "Export platform" } },
-        ],
-      },
-    ]);
-    const rows = [
-      { channel: "power", provider_id: providerId, device_id: null, source_id: providerId },
-    ];
-    const before = await getActivityMetricSources(storeWithRows(rows), window);
-    const after = await getActivityMetricSources(storeWithRows(rows), window, hardware);
-    expect(after[0]?.sources[0]?.label).toBe(
-      providerId === "garmin"
-        ? "Garmin · recorded by Edge 530"
-        : "FIT File · file created by Export platform",
-    );
-    expect(
-      after.map((metric) => [
-        metric.key,
-        metric.defaultSourceId,
-        metric.sources.map((source) => source.id),
-      ]),
-    ).toEqual(
-      before.map((metric) => [
-        metric.key,
-        metric.defaultSourceId,
-        metric.sources.map((source) => source.id),
-      ]),
-    );
-  }
-});
 it("keeps coarse equipment, app, and import provenance out of recorder labels", async () => {
   for (const [providerId, raw] of [
     ["ride-with-gps", { source: "garmin_connect" }],
@@ -967,6 +725,42 @@ it("lists each metric independently without discarding recorded zeros or negativ
   expect(query).toContain("channel != 'heart_rate' OR scalar > 0");
 });
 
+it("keeps discovery order, default, and source identities while adding hardware labels", async () => {
+  const rows = [
+    { channel: "power", provider_id: "strava", device_id: null, source_id: "strava" },
+    { channel: "power", provider_id: "garmin", device_id: null, source_id: "garmin" },
+  ];
+  const before = await getActivityMetricSources(storeWithRows(rows), window);
+  const hardware: ActivityHardware = {
+    items: [
+      {
+        id: "recorder",
+        activityId: window.activityId,
+        providerId: "strava",
+        sourceName: null,
+        role: "recorder",
+        label: "Edge 530",
+        model: null,
+        manufacturer: null,
+        evidence: "Reported",
+        details: [],
+      },
+    ],
+    power: [],
+  };
+  const after = await getActivityMetricSources(storeWithRows(rows), window, hardware);
+  expect(after[0]?.sources[0]?.label).toBe("Strava · recorded by Edge 530");
+  expect(
+    after.map((metric) => [metric.key, metric.defaultSourceId, metric.sources.map(({ id }) => id)]),
+  ).toEqual(
+    before.map((metric) => [
+      metric.key,
+      metric.defaultSourceId,
+      metric.sources.map(({ id }) => id),
+    ]),
+  );
+});
+
 it("keeps different devices imported through the same provider as separate sources", async () => {
   const watchId = '["apple_health","Apple Watch"]';
   const zeppId = '["apple_health","Zepp"]';
@@ -987,108 +781,6 @@ it("keeps different devices imported through the same provider as separate sourc
     expect.objectContaining({ id: zeppId, label: "Zepp (via Apple Health)" }),
     expect.objectContaining({ id: watchId, label: "Apple Watch (via Apple Health)" }),
   ]);
-});
-
-describe("hardware label evidence boundaries", () => {
-  const otherActivityId = "33333333-3333-3333-3333-333333333333";
-  function item(
-    overrides: Partial<ActivityHardware["items"][number]> = {},
-  ): ActivityHardware["items"][number] {
-    return {
-      id: "recorder",
-      activityId: window.activityId,
-      providerId: "garmin",
-      sourceName: "Recording app",
-      role: "recorder",
-      label: "Edge 530",
-      model: null,
-      manufacturer: null,
-      evidence: "Reported",
-      details: [],
-      ...overrides,
-    };
-  }
-  async function source(items: ActivityHardware["items"], overrides: Record<string, unknown> = {}) {
-    const result = await getActivityMetricSources(
-      storeWithRows([
-        {
-          channel: "power",
-          provider_id: "garmin",
-          device_id: null,
-          source_id: "unchanged-source",
-          ...overrides,
-        },
-      ]),
-      window,
-      { items, power: [] },
-    );
-    expect(result[0]?.defaultSourceId).toBe("unchanged-source");
-    expect(result[0]?.sources.map((value) => value.id)).toEqual(["unchanged-source"]);
-    return result[0]?.sources[0]?.label;
-  }
-  it("does not use a different provider's recorder for the same member activity", async () => {
-    expect(await source([item({ providerId: "strava" })])).toBe("Garmin");
-  });
-  it("matches null device IDs independently of a known source app", async () => {
-    expect(await source([item()])).toBe("Garmin · recorded by Edge 530");
-  });
-  it("matches a device ID to the source app while retaining the distinct recorder name", async () => {
-    expect(await source([item()], { device_id: "Recording app" })).toBe(
-      "Garmin · Recording app · recorded by Edge 530",
-    );
-  });
-  it("qualifies a creator matched by its own name even when the source app differs", async () => {
-    expect(await source([item({ role: "creator" })], { device_id: "Edge 530" })).toBe(
-      "Garmin · file created by Edge 530",
-    );
-  });
-  it("keeps the existing label when the stream device matches neither the app nor the hardware", async () => {
-    expect(await source([item()], { device_id: "Unrelated watch" })).toBe(
-      "Garmin · Unrelated watch",
-    );
-  });
-  it("retains an already descriptive recorder label without duplicating it", async () => {
-    expect(await source([item()], { device_id: "Edge 530" })).toBe("Garmin · Edge 530");
-  });
-  it.each(["Asher’s Apple\u00a0Watch", "Asher’s Apple\u202fWatch", "Asher’s APPLE WATCH"])(
-    "recognizes the recorder already named in %s",
-    async (deviceName) => {
-      expect(
-        await source(
-          [item({ providerId: "apple_health", sourceName: deviceName, label: "Apple Watch" })],
-          { provider_id: "apple_health", device_id: deviceName },
-        ),
-      ).toBe(`${deviceName} (via Apple Health)`);
-    },
-  );
-  it("retains the stream's distinct app label when qualifying its file creator", async () => {
-    expect(await source([item({ role: "creator" })], { device_id: "Recording app" })).toBe(
-      "Garmin · Recording app · file created by Edge 530",
-    );
-  });
-  it("does not choose between conflicting recorder names", async () => {
-    expect(await source([item(), item({ id: "other", label: "Edge 1050" })])).toBe("Garmin");
-  });
-  it.each([otherActivityId, ""])(
-    "requires recorder evidence for every contributor, including %j",
-    async (missing) => {
-      expect(await source([item()], { activity_ids: [window.activityId, missing] })).toBe("Garmin");
-    },
-  );
-  it("uses a shared recorder label only when every member has matching evidence", async () => {
-    expect(
-      await source([item(), item({ id: "other", activityId: otherActivityId })], {
-        activity_ids: [window.activityId, otherActivityId],
-      }),
-    ).toBe("Garmin · recorded by Edge 530");
-  });
-  it("does not treat one member's creator as another member's recorder", async () => {
-    expect(
-      await source([item(), item({ id: "other", activityId: otherActivityId, role: "creator" })], {
-        activity_ids: [window.activityId, otherActivityId],
-      }),
-    ).toBe("Garmin");
-  });
 });
 
 describe("BLE peripheral label lookup", () => {

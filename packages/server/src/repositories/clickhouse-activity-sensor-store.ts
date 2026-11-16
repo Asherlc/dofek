@@ -22,8 +22,8 @@ import type {
   ActivitySensorQueryOptions,
   ActivitySensorStore,
   ActivitySensorWindow,
-  StreamPointRow,
 } from "./activity-repository.ts";
+import type { StreamPointRow } from "./activity-sensor-types.ts";
 import {
   getClickHouseNormalizedPowerSamples,
   getClickHousePowerCurveSamples,

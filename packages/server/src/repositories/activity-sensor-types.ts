@@ -9,6 +9,19 @@ export interface ActivitySensorWindow {
   memberActivityIds: string[];
 }
 
+export interface StreamPointRow {
+  recorded_at: string;
+  heart_rate: number | null;
+  power: number | null;
+  speed: number | null;
+  cadence: number | null;
+  altitude: number | null;
+  lat: number | null;
+  lng: number | null;
+  skin_temperature?: number | null;
+  skin_temperature_recorded_at?: string | null;
+}
+
 export interface ActivitySensorQueryOptions {
   priority?: "dashboard";
   abortSignal?: AbortSignal | undefined;

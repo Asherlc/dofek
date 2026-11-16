@@ -12,12 +12,10 @@ import {
   buildTestAnalyticsTableStatement,
   rewriteClickHouseDatabaseNames,
 } from "../routers/clickhouse-integration-test-models.ts";
-import {
-  getActivityHeartRateContext,
-  getActivityMetricSources,
-  getActivityPowerWork,
-  getActivitySourceHrZones,
-} from "./activity-metric-sources-repository.ts";
+import { getActivityHeartRateContext } from "./activity-heart-rate-context.ts";
+import { getActivityMetricSources } from "./activity-metric-sources-repository.ts";
+import { getActivityPowerWork } from "./activity-power-work.ts";
+import { getActivitySourceHrZones } from "./activity-source-hr-zones.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
 import { refreshDailyHealthSensor } from "./daily-health-sensor-test-helpers.ts";
 
