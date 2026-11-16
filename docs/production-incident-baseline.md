@@ -1,5 +1,34 @@
 # Production Incident Baseline
 
+## 2026-11-16 — HealthKit permission request interrupted by backgrounding
+
+- **Symptoms / impact:** DOFEK-MOBILE-2P recorded one failed Apple Health Connect
+  request on an iPad running iPadOS 27.2.1. The app entered background about
+  two seconds before the `requestPermissions` code-5 error was captured.
+- **Evidence / cause:** A stock LLDB request in the unchanged Debug app on an
+  iOS 26.5 iPad Simulator displayed the HealthKit authorization sheet. After
+  opening Settings, HealthKit logged `Privacy host controller finished with
+  error` and completed that pending request with `com.apple.healthkit` code 5.
+  This demonstrates the interruption mechanism; the original event lacks an
+  authorization trace, so its attribution remains inferred. The exact 27.2.1
+  Simulator runtime was unavailable from Xcode's platform downloader.
+- **Direct fix:** Run authorization presentation on the main actor, require
+  an active app before starting, and observe actual background entry only for
+  the pending request. Code 5 following that transition returns the existing
+  not-granted result, allowing explicit retry without marking authorization
+  complete. Code 5 without that transition and all unrelated errors still fail.
+  See the [authorization behavior and Apple contract](../packages/mobile/modules/health-kit/README.md#common-failure-modes).
+- **Validation / remaining risk:** Native regression tests cover cancellation,
+  background interruption and unrelated failures; the JavaScript authorization
+  regression checks disconnected state and explicit retry. A new native build
+  is required; an OTA cannot change the affected embedded runtime 1.11 binary.
+  Installed-device recovery on iPadOS 27.2.1 remains unverified.
+- **Retrospective / proposed guidance:** A visible Connect tap without a native
+  request trace did not establish a control. For future permission audits,
+  verify the OS authorization request and callback before interpreting a
+  missing sheet or a background transition as a test result.
+
+
 ## 2026-11-15 — Storybook preview upload stopped on an R2 throttle response
 
 - **Symptoms / impact:** [PR 3349 CI run 43772080646](https://github.com/Asherlc/dofek/actions/runs/43772080646), job `132990573367` (`Storybook Preview / Deploy Storybook Preview`), failed while uploading a preview object. Production was unaffected.
