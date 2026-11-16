@@ -38640,3 +38640,62 @@ Local qualification and CI are separate from production throughput acceptance. T
   did not identify the engine. Proposed loading-runbook addition for review:
   “When ClickHouse queries are short, inspect PostgreSQL visibility and
   enrichment queries before adding analytics models.”
+
+## 2026-11-16 — CDC publication recovery and Strava operation reconciliation (SERVER-7H)
+
+- **Symptoms / impact:** The completed Strava history continuation and absence
+  reconciliation still lacked downstream processing completion. The original
+  operation `8d744285-76ac-4466-9657-94fd462ee167` had 12 queued CDC path facts,
+  no analytics/cache facts, and 22,675 already-completed reconciliation outbox
+  rows. The fitness mirror normalization cursor had stopped at batch 8558
+  with pending batch 8559; analytics-worker had been quiesced at zero replicas.
+- **Cause / direct recovery:** The mirror's missing `user_profile.ftp` column
+  blocked normalization. [PR #3358](https://github.com/Asherlc/dofek/pull/3358)
+  supplied additive ClickHouse migration 0115. An unresolved server publication
+  receipt prevented normal publication; the reviewed recovery path in
+  [PR #3365](https://github.com/Asherlc/dofek/pull/3365) admitted only the exact
+  failed receipt and a verified immutable descendant image. Canonical
+  [Deploy run 43931142245, attempt 2](https://github.com/Asherlc/dofek/actions/runs/43931142245/attempts/2)
+  deployed source `11a58aaff99d73bf9c9efc63673128a34359637d`, digest
+  `sha256:2f7ce8d331d73905fa0feee2fc3339b5ddcfd219fec856ad26b73339ea59bec0`,
+  applied migration 0115 and passed CDC causal-marker verification. The first
+  attempt failed before mutation on a GitHub job-history HTTP 502; only its
+  failed preflight was retried in the same run, preserving all gates.
+- **Receipt / runtime proof:** The finalizer verified the desired image and
+  running images of both web tasks and the worker. New deployment receipt
+  `7833987708` became successful at 19:46:46 UTC; old receipt `7828786739`
+  became inactive at 19:46:47 UTC, after that verification. PeerDB normalized
+  and synced through batch 9069 with no pending batch. Analytics-worker was
+  restored to one running replica; `/readyz` returned HTTP 200/status `ok`
+  with no failure and last success at 19:46:16.144 UTC. Its build recorded
+  261 datasets with zero failures and completed cache warming.
+- **Approved bounded operation action:** Complete transport evidence did not
+  repair the old operation ledger because all its outbox rows were completed.
+  Following explicit user approval and independent review, at 21:40:32 UTC a
+  single transaction changed one exact existing operation/job row from
+  `completed` to `pending`. The guard required exactly one match or rolled back;
+  timestamps and all other rows were preserved. The already-running periodic
+  reconciler performed its normal global cycle; no manual dispatch, provider
+  import, history replay, service scaling or schema change was performed.
+- **Exact acceptance:** The 21:41 cycle recorded all 12 operation CDC paths as
+  successful, queued analytics for all six datasets, and returned all 22,675
+  outbox rows to completed. A fresh source-to-destination comparison at 21:42
+  found all 22,669 metric batch IDs, exactly 22,043,219 expected events, zero
+  missing/count-mismatched batches, and all seven exact relational marker tuples
+  in their correct flow destinations. The retained relational fence is
+  `74/A4D54000`. Pre-action CDC was normalized/synced through batch 9153, with
+  no pending batch and a healthy analytics worker.
+- **Remaining risk / follow-up:** At 21:47:17 UTC analytics-worker,
+  processing-reconciliation, worker and all three ClickHouse sinks were observed
+  at zero desired/running replicas again. The cause of this new quiescence is
+  not yet established. Operation-specific terminal analytics/cache facts remain
+  unverified; SERVER-7H stays open until intended service availability returns
+  and the ordinary serialized worker records those facts. The stock reconciler
+  and analytics/cache refresh are global; the approved single-row trigger did
+  not create eligibility for other already-pending operations. No additional
+  production action or resilience tuning is authorized by this follow-up.
+- **Retrospective:** Exact receipt comparison distinguished recovered transport
+  from a stale ledger. Proposed processing-runbook clarification: after an
+  approved incident recovery, check completed outbox state as well as destination
+  evidence before expecting an old operation to advance; document any new
+  trigger's global worker effects and preserve its exact row guard.
