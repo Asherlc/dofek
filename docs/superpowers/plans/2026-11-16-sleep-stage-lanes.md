@@ -36,7 +36,7 @@
 - [x] Implement the additive server duration projection and replace filled charts with interval blocks. Use existing accessibility controls; retain geometric timestamp calculations only in clients.
 - [x] Update stories and fixtures, including sparse and short intervals, and package documentation with the ECharts reference.
 - [x] Run focused tests, lint, all-package typechecks, and full unit/mobile suites. Inspect actual SVG rendering at wide/narrow sizes; interactive Storybook inspection remains blocked as recorded below.
-- [ ] Review the complete diff, resolve material findings, then commit and push on the existing branch.
+- [x] Review the complete diff, resolve material findings, then commit and push on the existing branch.
 
 ## Working notes
 
