@@ -8,6 +8,23 @@ import {
   climbingLogEntryFixture,
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
+import { mixedClimbingEntries } from "./climbing-log-map-test-helpers.ts";
+
+it("preserves mixed Kaya recorded counts and outcomes", () => {
+  render(
+    <ul>
+      {mixedClimbingEntries.map((entry) => (
+        <ClimbingLogEntryCard key={entry.id} entry={entry} hideMap />
+      ))}
+    </ul>,
+  );
+  expect(screen.getByText("Blue Circuit")).toBeInTheDocument();
+  expect(screen.getByText("Attempts: 7")).toBeInTheDocument();
+  expect(screen.getByText("Sent")).toBeInTheDocument();
+  expect(screen.getByText("Project")).toBeInTheDocument();
+  expect(screen.getByText("Attempted")).toBeInTheDocument();
+  expect(screen.getAllByText("Attempts: 1")).toHaveLength(2);
+});
 
 it("keeps a named location without GPS distinct from an unrecorded location", () => {
   const climb = climbingClimbFixture();

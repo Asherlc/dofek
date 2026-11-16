@@ -5,7 +5,12 @@ import {
   climbingClimbFixture,
 } from "../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
-import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
+import {
+  climbingLogFixture,
+  exactClimbingLocation,
+  mountainProjectAscentEntry,
+  recordedCountEntries,
+} from "./climbing-log-entry-fixtures";
 
 describe("ClimbingLogEntryCard", () => {
   it("keeps a named location without GPS distinct from an unrecorded location", () => {
@@ -103,6 +108,36 @@ describe("ClimbingLogEntryCard", () => {
     expect(screen.getByText("Havarti Cheese")).toBeTruthy();
     expect(screen.getByText("Top rope")).toBeTruthy();
     expect(screen.queryByText(/Attempts:/)).toBeNull();
+    expect(screen.queryByText("Result unknown")).toBeNull();
+  });
+
+  it.each(["Onsight", "Flash", "Redpoint"] as const)(
+    "maps a Mountain Project %s without inventing whole-climb counts",
+    (ascentType) => {
+      render(
+        <ClimbingLogEntryCard
+          entry={mountainProjectAscentEntry("mountain-project-entry", "Attached Arete", ascentType)}
+        />,
+      );
+      expect(screen.getByText(ascentType === "Redpoint" ? "Sent" : ascentType)).toBeTruthy();
+      expect(screen.queryByText("Completed")).toBeNull();
+      expect(screen.queryByText(/Attempts:/)).toBeNull();
+    },
+  );
+
+  it.each([
+    {
+      entry: recordedCountEntries.completed,
+      result: "Sent",
+      angle: "Wall angle: −20 (units unknown)",
+    },
+    { entry: recordedCountEntries.project, result: "Attempted", angle: "Wall angle: 35°" },
+  ])("keeps the recorded count and outcome for $entry.title", ({ entry, result, angle }) => {
+    render(<ClimbingLogEntryCard entry={entry} />);
+    expect(screen.getByText(entry.title ?? "")).toBeTruthy();
+    expect(screen.getByText(`Attempts: ${entry.recordedClimbAttemptCount}`)).toBeTruthy();
+    expect(screen.getByText(result)).toBeTruthy();
+    expect(screen.getByText(angle)).toBeTruthy();
   });
 
   it("exposes a pending attachment as busy and disabled to assistive technology", () => {

@@ -108,6 +108,8 @@ export const streamPointRowSchema = z.object({
   altitude: z.number().nullable(),
   lat: z.number().nullable(),
   lng: z.number().nullable(),
+  skin_temperature: z.number().nullable().optional().default(null),
+  skin_temperature_recorded_at: timestampStringSchema.nullable().optional().default(null),
 });
 
 export const hrZoneRowSchema = z.object({

@@ -16,13 +16,14 @@ import {
   activityMetricParams,
   activityMetricSamplesSql,
   activityMetricSourceIdSql,
+  activitySkinTemperatureSamplesSql,
 } from "./activity-metric-sources-repository.ts";
 import type {
   ActivitySensorQueryOptions,
   ActivitySensorStore,
   ActivitySensorWindow,
-  StreamPointRow,
 } from "./activity-repository.ts";
+import type { StreamPointRow } from "./activity-sensor-types.ts";
 import {
   getClickHouseNormalizedPowerSamples,
   getClickHousePowerCurveSamples,
@@ -97,6 +98,8 @@ const streamPointRowSchema = z.object({
   altitude: z.coerce.number().nullable(),
   lat: z.coerce.number().nullable(),
   lng: z.coerce.number().nullable(),
+  skin_temperature: z.coerce.number().nullable().optional().default(null),
+  skin_temperature_recorded_at: z.string().nullable().optional().default(null),
 });
 
 const heartRateZoneSecondRowSchema = z.object({
@@ -385,10 +388,37 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
       selected.some((metric) => metric.key === key)
         ? "CAST(NULL, 'Nullable(Float64)')"
         : `point.${index}`;
-    const selectedPoints = ACTIVITY_CHART_METRICS.map(
-      (metric) =>
-        `if(countIf(channel = '${metric.channel}') = 0, NULL, anyIf(scalar, channel = '${metric.channel}')) AS ${metric.channel}`,
-    ).join(",\n            ");
+    const selectedSamples = `SELECT recorded_at,
+          anyIf(toNullable(scalar), channel = 'heart_rate') AS heart_rate,
+          anyIf(toNullable(scalar), channel = 'power') AS power,
+          anyIf(toNullable(scalar), channel = 'speed') AS speed,
+          anyIf(toNullable(scalar), channel = 'cadence') AS cadence,
+          anyIf(toNullable(scalar), channel = 'altitude') AS altitude,
+          anyIf(toNullable(scalar), channel = 'skin_temperature') AS skin_temperature,
+          maxIf(recorded_at, channel = 'skin_temperature') AS skin_temperature_recorded_at,
+          NULL AS lat, NULL AS lng
+        FROM (
+          SELECT recorded_at, channel,
+            argMin(scalar, (provider_priority, provider_id,
+              channel = 'heart_rate' AND measurement_kind = 'estimated', id)) AS scalar
+          FROM (
+            SELECT id, recorded_at, channel, provider_id, device_id, scalar,
+              provider_priority, measurement_kind
+            FROM (${activityMetricSamplesSql})
+            WHERE channel IN {selectedChannels:Array(String)} AND channel != 'skin_temperature'
+            UNION ALL
+            SELECT id, recorded_at, channel, provider_id, device_id, scalar,
+              provider_priority, measurement_kind
+            FROM (${activitySkinTemperatureSamplesSql})
+            WHERE has({selectedChannels:Array(String)}, 'skin_temperature')
+          ) AS candidates
+          WHERE channel IN {selectedChannels:Array(String)}
+            AND ${activityMetricSourceIdSql} = arrayElement(
+              {selectedSources:Array(String)}, indexOf({selectedChannels:Array(String)}, channel)
+            )
+          GROUP BY recorded_at, channel
+        ) AS source_samples
+        GROUP BY recorded_at`;
     const result = await this.#client.query<Record<string, unknown>>({
       query: `
         WITH expanded_points AS (
@@ -399,6 +429,8 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             ${pointExpression("speed", 4)} AS speed,
             ${pointExpression("cadence", 5)} AS cadence,
             ${pointExpression("altitude", 6)} AS altitude,
+            CAST(NULL, 'Nullable(Float64)') AS skin_temperature,
+            CAST(NULL AS Nullable(DateTime64(6, 'UTC'))) AS skin_temperature_recorded_at,
             point.7 AS lat,
             point.8 AS lng
           FROM analytics.activity_stream_points FINAL
@@ -408,26 +440,13 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND is_deleted = 0
             AND point.1 >= parseDateTime64BestEffort({windowStartedAt:String})
             AND point.1 <= parseDateTime64BestEffort({windowEndedAt:String})
-          ${
-            selected.length > 0
-              ? `UNION ALL
-          SELECT recorded_at, ${selectedPoints}, NULL AS lat, NULL AS lng
-          FROM (
-            SELECT recorded_at, channel,
-              argMin(scalar, (provider_priority, provider_id, channel = 'heart_rate' AND measurement_kind = 'estimated', id)) AS scalar
-            FROM (${activityMetricSamplesSql})
-            WHERE channel IN {selectedChannels:Array(String)}
-              AND ${activityMetricSourceIdSql} = arrayElement({selectedSources:Array(String)}, indexOf({selectedChannels:Array(String)}, channel))
-            GROUP BY recorded_at, channel
-          )
-          GROUP BY recorded_at`
-              : ""
-          }
+          UNION ALL ${selectedSamples}
         ),
         grouped_point_tuples AS (
           SELECT
             recorded_at,
-            ${selected.length > 0 ? "tuple(any(heart_rate), any(power), any(speed), any(cadence), any(altitude), any(lat), any(lng))" : "any(tuple(heart_rate, power, speed, cadence, altitude, lat, lng))"} AS point_values
+            tuple(any(heart_rate), any(power), any(speed), any(cadence), any(altitude),
+              any(skin_temperature), any(skin_temperature_recorded_at), any(lat), any(lng)) AS point_values
           FROM expanded_points
           GROUP BY recorded_at
         ),
@@ -439,8 +458,10 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             point_values.3 AS speed,
             point_values.4 AS cadence,
             point_values.5 AS altitude,
-            point_values.6 AS lat,
-            point_values.7 AS lng
+            point_values.6 AS skin_temperature,
+            point_values.7 AS skin_temperature_recorded_at,
+            point_values.8 AS lat,
+            point_values.9 AS lng
           FROM grouped_point_tuples
         ),
         ranked_points AS (
@@ -451,6 +472,8 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             speed,
             cadence,
             altitude,
+            skin_temperature,
+            skin_temperature_recorded_at,
             lat,
             lng,
             row_number() OVER (ORDER BY recorded_at) AS point_index,
@@ -465,6 +488,8 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             speed,
             cadence,
             altitude,
+            skin_temperature,
+            skin_temperature_recorded_at,
             lat AS sample_lat,
             lng AS sample_lng,
             if(
@@ -506,6 +531,16 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
               NULL,
               argMinIf(altitude, sample_recorded_at, altitude IS NOT NULL)
             ) AS altitude,
+            argMinIf(
+              source_point.skin_temperature,
+              source_point.skin_temperature_recorded_at,
+              source_point.skin_temperature IS NOT NULL
+            ) AS skin_temperature,
+            minIf(
+              source_point.skin_temperature_recorded_at,
+              source_point.skin_temperature IS NOT NULL
+            )
+              AS skin_temperature_recorded_at,
             if(
               countIf(sample_lat IS NOT NULL AND sample_lng IS NOT NULL) = 0,
               NULL,
@@ -524,8 +559,8 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
                 sample_lat IS NOT NULL AND sample_lng IS NOT NULL
               )
             ) AS lng
-          FROM selected_points
-          GROUP BY sample_bucket
+          FROM selected_points AS source_point
+          GROUP BY source_point.sample_bucket
         )
         SELECT
           toString(recorded_at) AS recorded_at,
@@ -534,6 +569,8 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           speed,
           cadence,
           altitude,
+          skin_temperature,
+          skin_temperature_recorded_at,
           lat,
           lng
         FROM downsampled_points
@@ -542,13 +579,9 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
       format: "JSONEachRow",
       query_params: queryParams(window, {
         maxPoints,
-        ...(selected.length > 0
-          ? {
-              ...activityMetricParams(window),
-              selectedChannels: selected.map((metric) => metric.channel),
-              selectedSources: selected.map((metric) => metric.provider),
-            }
-          : {}),
+        ...activityMetricParams(window),
+        selectedChannels: selected.map((metric) => metric.channel),
+        selectedSources: selected.map((metric) => metric.provider),
       }),
     });
     const rows = await result.json();
@@ -557,6 +590,9 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
       return {
         ...parsedRow,
         recorded_at: normalizeClickHouseTimestamp(parsedRow.recorded_at),
+        skin_temperature_recorded_at: parsedRow.skin_temperature_recorded_at
+          ? normalizeClickHouseTimestamp(parsedRow.skin_temperature_recorded_at)
+          : null,
       };
     });
   }

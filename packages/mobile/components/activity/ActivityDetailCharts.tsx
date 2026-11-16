@@ -1,4 +1,5 @@
 import { formatDateTime, formatNumber, formatTimeOnly } from "@dofek/format/format";
+import type { UnitConverter } from "@dofek/format/units";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import {
   type ActivityChartSeries,
@@ -22,8 +23,15 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from "react-native-svg";
+import type {
+  ActivityHeartRateContext,
+  ActivityMetric,
+  ActivityMetricSources,
+} from "../../../server/src/contracts/activity-metric-sources.ts";
+import type { StreamPoint } from "../../../server/src/routers/activity.ts";
 import { colors } from "../../theme";
 import { AccessibleChart } from "../AccessibleChart";
+import { ActivityMetricSourcePicker } from "./ActivityMetricSourcePicker";
 import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
 import { useChartScrub } from "./useChartScrub";
 
@@ -37,6 +45,7 @@ export const CHART_COLORS = {
   power: activityMetricColors.power,
   speed: activityMetricColors.speed,
   cadence: activityMetricColors.cadence,
+  skinTemperature: activityMetricColors.skinTemperature,
   altitude: "#6b7280",
 };
 
@@ -56,6 +65,213 @@ export const chartStyles = StyleSheet.create({
   },
 });
 
+type ActivityMetricControl = ActivityMetricSources[number] & {
+  selectedId: string;
+  onChange: (sourceId: string) => void;
+};
+
+export function ActivityMetricsCharts({
+  points,
+  sourceControls,
+  sourceAttribution = {},
+  serverUrl,
+  activityWindow,
+  cadenceLabel,
+  isClimbingActivity,
+  heartRateContext,
+  climbingAnnotations,
+  highlightedClimbId,
+  onSelectClimb,
+  hasHr,
+  hasPower,
+  hasAltitude,
+  units,
+  hasGps,
+  onHoverIndex,
+  onHoverTime,
+  onScrubStart,
+  onScrubEnd,
+}: {
+  points: StreamPoint[];
+  sourceControls: ActivityMetricControl[];
+  sourceAttribution?: Partial<Record<ActivityMetric, string>>;
+  serverUrl: string;
+  activityWindow: ActivityChartWindow;
+  cadenceLabel: string;
+  isClimbingActivity: boolean;
+  heartRateContext?: ActivityHeartRateContext;
+  climbingAnnotations?: readonly ClimbingChartAnnotation[];
+  highlightedClimbId: string | null;
+  onSelectClimb: (entryId: string | null) => void;
+  hasHr: boolean;
+  hasPower: boolean;
+  hasAltitude: boolean;
+  units: UnitConverter;
+  hasGps: boolean;
+  onHoverIndex: (index: number | null) => void;
+  onHoverTime: (timestamp: number | null) => void;
+  onScrubStart: () => void;
+  onScrubEnd: () => void;
+}) {
+  const sourcePicker = (metric: ActivityMetricControl, showLabel: boolean, hasData: boolean) => (
+    <View key={metric.key}>
+      <ActivityMetricSourcePicker
+        label={metric.label}
+        showLabel={showLabel}
+        serverUrl={serverUrl}
+        sources={metric.sources}
+        selectedId={metric.selectedId}
+        onChange={metric.onChange}
+      />
+      {hasData && sourceAttribution[metric.key] && (
+        <Text
+          accessibilityLiveRegion="polite"
+          style={{ color: colors.textSecondary, fontSize: 12 }}
+        >
+          {sourceAttribution[metric.key]}
+        </Text>
+      )}
+    </View>
+  );
+  const scrub = hasGps ? { onScrubStart, onScrubEnd } : {};
+  return (
+    <>
+      {sourceControls
+        .filter((metric) => metric.key === "heartRate")
+        .map((metric) => sourcePicker(metric, true, hasHr))}
+      {hasHr && (
+        <>
+          <LineChart
+            highlightedClimbId={highlightedClimbId}
+            onSelectClimb={onSelectClimb}
+            activityWindow={
+              isClimbingActivity ? (heartRateContext?.window ?? activityWindow) : activityWindow
+            }
+            climbAnnotations={isClimbingActivity ? climbingAnnotations : undefined}
+            data={
+              isClimbingActivity && heartRateContext
+                ? heartRateContext.points
+                : points.map((point) => ({ recordedAt: point.recordedAt, value: point.heartRate }))
+            }
+            color={CHART_COLORS.heartRate}
+            label="Heart Rate"
+            unit="bpm"
+            onHoverTime={hasGps ? onHoverTime : undefined}
+            {...scrub}
+          />
+          {isClimbingActivity && heartRateContext && (
+            <Text style={{ color: colors.textTertiary, fontSize: 13 }}>
+              {heartRateContext.window.endedAt
+                ? "HR chart spans 5 minutes before and after the activity."
+                : "HR chart starts 5 minutes before the activity."}
+            </Text>
+          )}
+        </>
+      )}
+      {sourceControls
+        .filter((metric) => metric.key === "power")
+        .map((metric) => sourcePicker(metric, true, hasPower))}
+      {hasPower && (
+        <LineChart
+          data={points.map((point) => ({ recordedAt: point.recordedAt, value: point.power }))}
+          color={CHART_COLORS.power}
+          label="Power"
+          unit="W"
+          onHoverIndex={hasGps ? onHoverIndex : undefined}
+          {...scrub}
+        />
+      )}
+      {sourceControls
+        .filter((metric) => metric.key === "speed")
+        .map((metric) =>
+          sourcePicker(
+            metric,
+            true,
+            points.some((point) => point.speed != null),
+          ),
+        )}
+      {points.some((point) => point.speed != null) && (
+        <LineChart
+          data={points.map((point) => ({
+            recordedAt: point.recordedAt,
+            value: point.speed != null ? units.convertSpeed(point.speed * 3.6) : null,
+          }))}
+          color={CHART_COLORS.speed}
+          label="Speed"
+          unit={units.speedLabel}
+          onHoverIndex={hasGps ? onHoverIndex : undefined}
+          {...scrub}
+        />
+      )}
+      {sourceControls
+        .filter((metric) => metric.key === "cadence")
+        .map((metric) =>
+          sourcePicker(
+            metric,
+            true,
+            points.some((point) => point.cadence != null),
+          ),
+        )}
+      {points.some((point) => point.cadence != null) && (
+        <LineChart
+          data={points.map((point) => ({ recordedAt: point.recordedAt, value: point.cadence }))}
+          color={CHART_COLORS.cadence}
+          label="Cadence"
+          unit={cadenceLabel}
+          onHoverIndex={hasGps ? onHoverIndex : undefined}
+          {...scrub}
+        />
+      )}
+      {sourceControls
+        .filter((metric) => metric.key === "skinTemperature")
+        .map((metric) =>
+          sourcePicker(
+            metric,
+            true,
+            points.some((point) => point.skinTemperature != null),
+          ),
+        )}
+      {points.some((point) => point.skinTemperature != null) && (
+        <LineChart
+          data={points.flatMap((point) =>
+            point.skinTemperature != null && point.skinTemperatureRecordedAt != null
+              ? [
+                  {
+                    recordedAt: point.skinTemperatureRecordedAt,
+                    value: units.convertTemperature(point.skinTemperature),
+                  },
+                ]
+              : [],
+          )}
+          activityWindow={activityWindow}
+          color={CHART_COLORS.skinTemperature}
+          label="Skin Temperature"
+          unit={units.temperatureLabel}
+          precision={1}
+          onHoverTime={hasGps ? onHoverTime : undefined}
+          {...scrub}
+        />
+      )}
+      {sourceControls
+        .filter((metric) => metric.key === "altitude")
+        .map((metric) => sourcePicker(metric, false, hasAltitude))}
+      {hasAltitude && (
+        <AreaChart
+          data={points.map((point) => ({
+            recordedAt: point.recordedAt,
+            value: point.altitude != null ? units.convertElevation(point.altitude) : null,
+          }))}
+          color={CHART_COLORS.altitude}
+          label="Elevation Profile"
+          unit={units.elevationLabel}
+          onHoverIndex={hasGps ? onHoverIndex : undefined}
+          {...scrub}
+        />
+      )}
+    </>
+  );
+}
+
 interface ChartProps {
   activityWindow?: ActivityChartWindow;
   climbAnnotations?: readonly ClimbingChartAnnotation[];
@@ -65,16 +281,17 @@ interface ChartProps {
   color: string;
   label: string;
   unit: string;
+  precision?: number;
   onHoverIndex?: (index: number | null) => void;
   onHoverTime?: (timestamp: number | null) => void;
   onScrubStart?: () => void;
   onScrubEnd?: () => void;
 }
 
-function accessibleRows(series: ActivityChartSeries, unit: string) {
+function accessibleRows(series: ActivityChartSeries, unit: string, precision: number) {
   return series.samples.map((sample) => ({
     label: `Sample ${sample.index + 1} · ${formatDateTime(new Date(sample.timestamp))}`,
-    value: `${formatNumber(sample.value, 0)} ${unit}`,
+    value: `${formatNumber(sample.value, precision)} ${unit}`,
   }));
 }
 
@@ -107,6 +324,7 @@ export function LineChart({
   color,
   label,
   unit,
+  precision = 0,
   onHoverIndex,
   onHoverTime,
   onScrubStart,
@@ -201,7 +419,7 @@ export function LineChart({
       title={label}
       summary={`${label} over activity time. Dots mark recorded samples; gaps indicate unobserved time.`}
       rows={[
-        ...accessibleRows(series, unit),
+        ...accessibleRows(series, unit, precision),
         ...climbs.map(({ annotation }) => ({
           label: annotation.label,
           value: climbTimeLabel(annotation),
@@ -261,7 +479,7 @@ export function LineChart({
                 fontSize={10}
                 textAnchor="end"
               >
-                {Math.round(tick.value)}
+                {formatNumber(tick.value, precision)}
               </SvgText>
             ))}
             <SvgText
@@ -336,6 +554,7 @@ export function AreaChart({
   color,
   label,
   unit,
+  precision = 0,
   onHoverIndex,
   onScrubStart,
   onScrubEnd,
@@ -393,7 +612,7 @@ export function AreaChart({
     <AccessibleChart
       title={label}
       summary={`${label} over activity time. Dots mark recorded samples; gaps indicate unobserved time.`}
-      rows={accessibleRows(series, unit)}
+      rows={accessibleRows(series, unit, precision)}
     >
       <View style={chartStyles.container}>
         <Text style={chartStyles.title}>{label}</Text>
@@ -425,7 +644,7 @@ export function AreaChart({
                 fontSize={10}
                 textAnchor="end"
               >
-                {Math.round(tick.value)}
+                {formatNumber(tick.value, precision)}
               </SvgText>
             ))}
             <SvgText
