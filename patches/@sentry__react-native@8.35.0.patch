@@ -1,8 +1,9 @@
-diff --git a/RNSentry.podspec b/RNSentry.podspec
-index b2ebedccbc01ae86f3546e4df31d32a8e1c9929a..e76d1e3d302632b7ebbd55a483350854e1777216 100644
 --- a/RNSentry.podspec
 +++ b/RNSentry.podspec
-@@ -73,155 +73,9 @@ Pod::Spec.new do |s|
+@@ -70,162 +70,16 @@
+ 
+   sentry_cocoa_version = '9.34.0'
+ 
 -  # Consume sentry-cocoa as a prebuilt `Sentry.xcframework` by default.
 -  #
 -  # The xcframework is downloaded from sentry-cocoa's GitHub Release,
@@ -36,10 +37,18 @@ index b2ebedccbc01ae86f3546e4df31d32a8e1c9929a..e76d1e3d302632b7ebbd55a483350854
 -                    when '0' then false
 -                    else true
 -                    end
--
++  # Declare the binary CocoaPod so CocoaPods exports its selected xcframework
++  # slice to RNSentry and every pod consuming RNSentry's public headers.
++  s.dependency 'Sentry', "= #{sentry_cocoa_version}"
+ 
 -  if use_xcframework
 -    sentry_xcframework_dir = ensure_sentry_xcframework(sentry_cocoa_version, 'Sentry')
--
++  # Retain ObjC categories and Swift metadata while CocoaPods links the selected
++  # framework once. An additional force_load would ingest the same archive twice.
++  s.user_target_xcconfig = {
++    'OTHER_LDFLAGS' => '$(inherited) -ObjC'
++  }
+ 
 -    # We deliberately do NOT set `s.vendored_frameworks` even though the
 -    # xcframework is downloaded and referenced below. CocoaPods doesn't
 -    # stage vendored xcframeworks for `path:` (development) pods anyway
@@ -158,12 +167,7 @@ index b2ebedccbc01ae86f3546e4df31d32a8e1c9929a..e76d1e3d302632b7ebbd55a483350854
 -      SENTRY_XCFRAMEWORK_CACHE_DIR.
 -    MSG
 -  end
-+  # Declare the binary CocoaPod so CocoaPods exports its selected xcframework
-+  # slice to RNSentry and every pod consuming RNSentry's public headers.
-+  s.dependency 'Sentry', "= #{sentry_cocoa_version}"
-+
-+  # Retain ObjC categories and Swift metadata while CocoaPods links the selected
-+  # framework once. An additional force_load would ingest the same archive twice.
-+  s.user_target_xcconfig = {
-+    'OTHER_LDFLAGS' => '$(inherited) -ObjC'
-+  }
+-
+   # Assign before `install_modules_dependencies` so it can merge its
+   # RN-specific settings on top. Assigning after would clobber those and
+   # break header resolution across the pod.

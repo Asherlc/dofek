@@ -263,6 +263,8 @@ describe("ios telemetry", () => {
       autoInitializeNativeSdk: false,
       dsn: "https://key@sentry.example/789",
       debug: true,
+      enableJsHangTracking: true,
+      _experiments: { enableWatchdogTerminationsV2: true },
       tracesSampler: expect.any(Function),
     });
     const options = mocks.mockInit.mock.calls[0]?.[0];
