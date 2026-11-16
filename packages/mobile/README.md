@@ -643,6 +643,14 @@ runtime properties. These boundaries are covered by the
 [telemetry regressions](./lib/telemetry.test.ts) and
 [transport regressions](./lib/trpc-fetch.test.ts).
 
+The login Terms and Privacy links emit `legal-document` logs with the document
+and browser result. A rejected `WebBrowser.openBrowserAsync` call remains a
+Sentry exception with its operation recorded. The full URL and page contents are
+not logged. Expo's [SDK 58 iOS implementation](https://github.com/expo/expo/blob/expo%4058.0.22/packages/expo-web-browser/ios/WebBrowserModule.swift)
+resolves with presentation or dismissal outcomes; these do not establish that
+the document loaded. Android's [`openBrowserAsync` implementation](https://github.com/expo/expo/blob/expo%4058.0.22/packages/expo-web-browser/android/src/main/java/expo/modules/webbrowser/WebBrowserModule.kt)
+returns `opened` after launching the browser.
+
 Native Sentry starts in the AppDelegate with the cleanup-log callback installed
 by [the Expo plugin](./plugins/with-whoop-cleanup-logging.ts). It removes user
 attributes only from WHOOP disable/cleanup logs after Cocoa enriches them;

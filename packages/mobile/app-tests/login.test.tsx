@@ -3,8 +3,9 @@ import * as WebBrowser from "expo-web-browser";
 import { useWindowDimensions } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockCaptureException } = vi.hoisted(() => ({
+const { mockCaptureException, mockLoggerInfo } = vi.hoisted(() => ({
   mockCaptureException: vi.fn(),
+  mockLoggerInfo: vi.fn(),
 }));
 
 // Mock auth module before importing LoginScreen
@@ -58,6 +59,7 @@ vi.mock("../components/ProviderLogo", () => ({
 
 vi.mock("../lib/telemetry", () => ({
   captureException: mockCaptureException,
+  logger: { info: mockLoggerInfo },
 }));
 
 const { default: LoginScreen } = await import("../app/login");
@@ -190,6 +192,37 @@ describe("LoginScreen", () => {
     );
   });
 
+  it("records the legal browser request and its native outcome", async () => {
+    mockOpenBrowser.mockResolvedValueOnce({ type: WebBrowser.WebBrowserResultType.CANCEL });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    fireEvent.click(screen.getByRole("link", { name: "Terms of Service" }));
+
+    await waitFor(() => expect(mockLoggerInfo).toHaveBeenCalledTimes(2));
+    expect(mockLoggerInfo).toHaveBeenNthCalledWith(1, "legal-document", "Browser request started", {
+      source: "login-screen-open-legal-document",
+      document: "terms",
+      outcome: "requested",
+    });
+    expect(mockLoggerInfo).toHaveBeenNthCalledWith(
+      2,
+      "legal-document",
+      "Browser request resolved",
+      {
+        source: "login-screen-open-legal-document",
+        document: "terms",
+        outcome: WebBrowser.WebBrowserResultType.CANCEL,
+      },
+    );
+  });
+
   it("reports a legal-document launch failure and explains it to the user", async () => {
     const openError = new Error("Browser unavailable");
     mockOpenBrowser.mockRejectedValueOnce(openError);
@@ -210,6 +243,7 @@ describe("LoginScreen", () => {
     expect(mockCaptureException).toHaveBeenCalledWith(openError, {
       source: "login-screen-open-legal-document",
       document: "privacy",
+      operation: "WebBrowser.openBrowserAsync",
     });
 
     fireEvent.click(screen.getByRole("link", { name: "Terms of Service" }));
