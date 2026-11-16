@@ -1530,6 +1530,44 @@ describe("KayaSyncProvider", () => {
     },
   );
 
+  it("normalizes an HTTP 5xx from Kaya token refresh without Sentry capture", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "expired-access-token",
+      refreshToken: "refresh-token",
+      expiresAt: new Date(0),
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    const responseError = new KayaApiError("Kaya token refresh failed (503)", 503);
+    mocks.refreshAccessToken.mockRejectedValue(responseError);
+
+    const result = await new KayaSyncProvider().sync(run(database()));
+
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({
+      providerId: "kaya",
+      statusCode: 503,
+      message: responseError.message,
+    });
+    expect(mocks.captureException).not.toHaveBeenCalled();
+  });
+
+  it("continues reporting a non-5xx Kaya token refresh response", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "expired-access-token",
+      refreshToken: "refresh-token",
+      expiresAt: new Date(0),
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    const responseError = new KayaApiError("Kaya token refresh failed (400)", 400);
+    mocks.refreshAccessToken.mockRejectedValue(responseError);
+
+    const result = await new KayaSyncProvider().sync(run(database()));
+
+    expect(result.errors[0]?.message).toBe(responseError.message);
+    expect(result.errors[0]?.cause).toBeUndefined();
+    expect(mocks.captureException).toHaveBeenCalledWith(responseError);
+  });
+
   it("continues reporting a non-5xx Kaya HTTP response", async () => {
     mocks.loadTokens.mockResolvedValue({
       accessToken: "access-token",
@@ -1539,9 +1577,9 @@ describe("KayaSyncProvider", () => {
     mocks.listSessions.mockRejectedValue(responseError);
     mocks.ascents.mockResolvedValue([]);
 
-    await expect(new KayaSyncProvider().sync(run(database()))).resolves.toMatchObject({
-      errors: [{ message: responseError.message }],
-    });
+    const result = await new KayaSyncProvider().sync(run(database()));
+    expect(result.errors[0]?.message).toBe(responseError.message);
+    expect(result.errors[0]?.cause).toBeUndefined();
 
     expect(mocks.captureException).toHaveBeenCalledWith(responseError);
   });
