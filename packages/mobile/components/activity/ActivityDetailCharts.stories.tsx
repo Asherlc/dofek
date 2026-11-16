@@ -43,6 +43,7 @@ const meta = {
 } satisfies Meta<typeof LineChart>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+const logoServer = Platform.OS === "web" ? "" : "https://dofek.fit";
 export const Default: Story = {};
 export const TimedClimbs: Story = {
   args: {
@@ -85,6 +86,7 @@ export const SkinTemperatureReadings: Story = {
     color: CHART_COLORS.skinTemperature,
     label: "Skin Temperature",
     unit: "°C",
+    precision: 1,
   },
 };
 export const SparseSkinTemperatureReadings: Story = {
@@ -320,6 +322,7 @@ function MetricSourcePreview() {
               color={color}
               label={metric.label}
               unit={metric.unit}
+              precision={metric.key === "skinTemperature" ? 1 : undefined}
             />
           );
         })}
