@@ -108,9 +108,9 @@ production credential is stored in Infisical's `prod` environment as
 `DATABASUS_ADMIN_PASSWORD`, with account name `DATABASUS_ADMIN_EMAIL`. These
 are operator credentials, not application-service environment inputs. Keep
 the password and API tokens out of chat, command history and logs; verify
-storage by private readback and verify access with sign-in plus an
-authenticated read. Resetting the account updates its password hash and
-creation timestamp, without replacing backup keys, schedules or stored backups
+storage by retrieving it privately and verify access with sign-in plus an
+authenticated read. Resetting the password updates its hash and the time at which
+it was set, without replacing backup keys, schedules or stored backups
 ([pinned password update](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/repositories/user_repository.go#L55-L61)).
 
 ## Prove the Backup Can Restore

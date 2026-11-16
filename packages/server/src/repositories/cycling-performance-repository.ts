@@ -1,5 +1,7 @@
+import type { Database } from "dofek/db";
 import { z } from "zod";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 
 const rideRowSchema = z.object({
   activity_id: z.string(),
@@ -8,9 +10,6 @@ const rideRowSchema = z.object({
   modality: z.string().nullable(),
   elapsed_seconds: z.coerce.number(),
   average_power: z.coerce.number().nullable(),
-  normalized_power: z.coerce.number().nullable(),
-  eftp: z.coerce.number().nullable(),
-  intensity_factor: z.coerce.number().nullable(),
   elevation_gain_meters: z.coerce.number().nullable(),
 });
 
@@ -69,13 +68,8 @@ SELECT
   ride.modality AS modality,
   ride.elapsed_seconds AS elapsed_seconds,
   ride.average_power AS average_power,
-  metrics.normalized_power AS normalized_power,
-  metrics.eftp AS eftp,
-  metrics.intensity_factor AS intensity_factor,
   ride.elevation_gain_meters AS elevation_gain_meters
 FROM analytics.cycling_activity AS ride FINAL
-LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
-  ON metrics.user_id = ride.user_id AND metrics.activity_id = ride.activity_id
 WHERE ride.user_id = {userId:UUID}
   AND ride.is_deleted = 0
   AND toDate(toTimeZone(ride.started_at, {timezone:String})) BETWEEN
@@ -103,7 +97,8 @@ WITH
     ride.modality IN ('outdoor', 'road', 'mountain', 'gravel', 'electric', 'cyclocross', 'track', 'bmx'), 'outdoor',
     'unknown'
   ) AS power_modality,
-  (ride.power_samples > 0 OR ride.average_power IS NOT NULL OR metrics.normalized_power IS NOT NULL OR ride.best_twenty_minute_power IS NOT NULL) AS has_power
+  (ride.power_samples > 0 OR ride.average_power IS NOT NULL OR ride.best_twenty_minute_power IS NOT NULL
+    OR metrics.normalized_power IS NOT NULL) AS has_power
 SELECT
   power_modality AS modality,
   nullIf(toString(minIf(toDate(toTimeZone(ride.started_at, {timezone:String})), has_power)), '1970-01-01') AS first_observed,
@@ -141,11 +136,18 @@ function emptyPowerAvailability(): {
 
 /** Exact-range cycling analytics derived from deduped ClickHouse read models. */
 export class CyclingPerformanceRepository {
+  readonly #db: Pick<Database, "execute">;
   readonly #store: Pick<ActivitySensorStore, "query">;
   readonly #userId: string;
   readonly #timezone: string;
 
-  constructor(store: Pick<ActivitySensorStore, "query">, userId: string, timezone: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    store: Pick<ActivitySensorStore, "query">,
+    userId: string,
+    timezone: string,
+  ) {
+    this.#db = db;
     this.#store = store;
     this.#userId = userId;
     this.#timezone = timezone;
@@ -165,6 +167,12 @@ export class CyclingPerformanceRepository {
       this.#store.query(effortRowSchema, effortsQuery, params),
       this.#store.query(powerAvailabilityRowSchema, powerAvailabilityQuery, params),
     ]);
+    const manualMetrics = await new CyclingThresholdRepository(
+      this.#db,
+      this.#store,
+      this.#userId,
+      this.#timezone,
+    ).getForActivities(rideRows.map((ride) => ride.activity_id));
 
     const effortsByActivity = new Map<string, Record<EffortLabel, number | null>>();
     for (const effort of effortRows) {
@@ -179,7 +187,7 @@ export class CyclingPerformanceRepository {
       (ride) => ride.activity_date >= startDate && ride.activity_date <= endDate,
     );
     const activities = requestedRides.map((ride) => {
-      const estimatedFtp = ride.eftp;
+      const power = manualMetrics.get(ride.activity_id);
       return {
         activity_id: ride.activity_id,
         date: ride.activity_date,
@@ -187,10 +195,10 @@ export class CyclingPerformanceRepository {
         modality: ride.modality,
         duration_minutes: round(ride.elapsed_seconds / 60, 1),
         average_power_watts: ride.average_power,
-        normalized_power_watts: ride.normalized_power,
-        estimated_ftp_watts: estimatedFtp,
-        estimated_ftp_source: estimatedFtp === null ? null : "computed_eftp",
-        intensity_factor: ride.intensity_factor,
+        normalized_power_watts: power?.normalized_power ?? null,
+        ftp_watts: power?.ftp ?? null,
+        ftp_source: power?.threshold ?? null,
+        intensity_factor: power?.intensity_factor == null ? null : round(power.intensity_factor, 3),
         elevation_gain_m: ride.elevation_gain_meters,
         best_efforts_watts: effortsByActivity.get(ride.activity_id) ?? emptyEfforts(),
       };

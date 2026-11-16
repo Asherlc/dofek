@@ -34,7 +34,7 @@ describe("PmcChartCalculator", () => {
     });
     const activity = makeActivityRow();
     const result = calculator.buildChart({
-      currentEftp: null,
+      currentFtp: null,
       activityRows: [activity],
       normalizedPowerRows: [{ activity_id: activity.id, power_tss: 100 }],
       queryDays: 4,
@@ -51,7 +51,7 @@ describe("PmcChartCalculator", () => {
   it("returns an empty chart and threshold metadata when no activities are present", () => {
     expect(
       makeCalculator().buildChart({
-        currentEftp: 265,
+        currentFtp: 265,
         activityRows: [],
         normalizedPowerRows: [],
         queryDays: 407,
@@ -66,7 +66,7 @@ describe("PmcChartCalculator", () => {
 
   it("treats a canonical null stress row as unknown and reports multiple unsupported activities", () => {
     const result = makeCalculator().buildChart({
-      currentEftp: 190,
+      currentFtp: 190,
       activityRows: [makeActivityRow({ id: "one" }), makeActivityRow({ id: "two" })],
       normalizedPowerRows: [
         { activity_id: "one", power_tss: null },
@@ -84,7 +84,7 @@ describe("PmcChartCalculator", () => {
   it("keeps measured zero canonical stress available without heart-rate evidence", () => {
     const activity = makeActivityRow();
     const result = makeCalculator().buildChart({
-      currentEftp: null,
+      currentFtp: null,
       activityRows: [activity],
       normalizedPowerRows: [{ activity_id: activity.id, power_tss: 0 }],
       queryDays: 407,
@@ -95,7 +95,7 @@ describe("PmcChartCalculator", () => {
   });
   it("withholds a chart when any activity has unknown load", () => {
     const result = makeCalculator().buildChart({
-      currentEftp: 190,
+      currentFtp: 190,
       activityRows: [makeActivityRow({ id: "known" }), makeActivityRow({ id: "unknown" })],
       normalizedPowerRows: [{ activity_id: "known", power_tss: 100 }],
       queryDays: 407,
@@ -109,7 +109,7 @@ describe("PmcChartCalculator", () => {
     const calculator = makeCalculator();
 
     const result = calculator.buildChart({
-      currentEftp: 190,
+      currentFtp: 190,
       activityRows: [makeActivityRow()],
       normalizedPowerRows: [],
       queryDays: 407,
@@ -128,7 +128,7 @@ describe("PmcChartCalculator", () => {
     const calculator = makeCalculator();
 
     const result = calculator.buildChart({
-      currentEftp: 190,
+      currentFtp: 190,
       activityRows: [
         makeActivityRow({
           id: "power-activity",

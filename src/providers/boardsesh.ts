@@ -52,9 +52,14 @@ const ascentMetadataSchema = z.object({
   climbUuid: identifier,
   boardType: identifier,
   isMirror: z.boolean(),
+  angle: z.number().int(),
   climbName: z.string(),
   boardId: z.number().int().nullable(),
   boardDisplayName: z.string().nullable(),
+  consensusDifficulty: z.number().nullable(),
+  consensusDifficultyName: z.string().nullable(),
+  boardseshDifficulty: z.number().nullable(),
+  boardseshConfidence: z.string().nullable(),
 });
 const boardIdentitySchema = z.object({ uuid: identifier, name: identifier, boardType: identifier });
 const boardMetadataSchema = boardIdentitySchema.extend({
@@ -323,7 +328,9 @@ class BoardSeshClient implements ClimbingBoardClient {
             kind: "boulder",
             setting: "indoor",
           },
-          raw: z.record(z.string(), z.json()).parse(raw),
+          raw: z
+            .json()
+            .parse({ ...z.record(z.string(), z.json()).parse(raw), metadata: { grades } }),
         });
       }
     }
@@ -334,7 +341,7 @@ class BoardSeshClient implements ClimbingBoardClient {
       let offset = 0;
       while (true) {
         const data = await request(
-          "query BoardSeshMetadata($userId: ID!, $input: AscentFeedInput!) { authenticatedUserId userAscentsFeed(userId: $userId, input: $input) { items { uuid climbUuid boardType isMirror climbName boardId boardDisplayName } hasMore } }",
+          "query BoardSeshMetadata($userId: ID!, $input: AscentFeedInput!) { authenticatedUserId userAscentsFeed(userId: $userId, input: $input) { items { uuid climbUuid boardType isMirror angle climbName boardId boardDisplayName consensusDifficulty consensusDifficultyName boardseshDifficulty boardseshConfidence } hasMore } }",
           { userId: current.providerAccountId, input: { limit: 50, offset, statusMode: "both" } },
         );
         const page = z
@@ -349,7 +356,11 @@ class BoardSeshClient implements ClimbingBoardClient {
           if (!entry?.climb) continue;
           if (
             entry.climb.externalId !==
-            `${metadata.boardType}:${metadata.climbUuid}:${metadata.isMirror ? "mirror" : "normal"}`
+              `${metadata.boardType}:${metadata.climbUuid}:${metadata.isMirror ? "mirror" : "normal"}` ||
+            !entry.wallAngle ||
+            !("value" in entry.wallAngle) ||
+            entry.wallAngle.unit !== "degrees" ||
+            entry.wallAngle.value !== metadata.angle
           )
             throw new Error(
               "BoardSesh metadata did not match its tick; no logbook records were reconciled.",
@@ -405,7 +416,13 @@ class BoardSeshClient implements ClimbingBoardClient {
               : [];
           entry.raw = z.json().parse({
             ...z.record(z.string(), z.json()).parse(entry.raw),
-            metadata: { ascent: metadata, board: board ?? null },
+            metadata: {
+              ...z
+                .record(z.string(), z.json())
+                .parse(z.record(z.string(), z.json()).parse(entry.raw).metadata ?? {}),
+              ascent: metadata,
+              board: board ?? null,
+            },
           });
         }
         if (!page.hasMore) break;

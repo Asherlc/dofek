@@ -6,6 +6,7 @@ import { SyncWindow } from "./sync-window.ts";
 import {
   boardSeshAscentFixture,
   boardSeshBoardFixture,
+  boardSeshGradeAscentFixture,
   boardSeshMetadataCases,
   createBoardSeshMetadataFetch,
   createMockDatabase,
@@ -479,15 +480,27 @@ describe("BoardSeshProvider", () => {
 
     it("pages exact tick metadata, reuses a recorded board, and retains source facts", async () => {
       const fetchFn = createBoardSeshMetadataFetch({
-        ticks: [makeTick(), makeTick({ uuid: "tick-2", isMirror: true })],
+        ticks: [makeTick(), makeTick({ uuid: "tick-2", angle: 45 })],
+        grades: [
+          { difficultyId: 19, name: "6b+/V4" },
+          { difficultyId: 20, name: "6c/V5" },
+        ],
         pages: {
           0: {
-            items: [boardSeshAscentFixture({ uuid: "unrelated" }), boardSeshAscentFixture()],
+            items: [boardSeshAscentFixture({ uuid: "unrelated" }), boardSeshGradeAscentFixture()],
             hasMore: true,
           },
           2: {
             items: [
-              boardSeshAscentFixture({ uuid: "tick-2", isMirror: true, climbName: "Mirror name" }),
+              boardSeshGradeAscentFixture({
+                uuid: "tick-2",
+                angle: 45,
+                climbName: "Mirror name",
+                consensusDifficulty: 20,
+                consensusDifficultyName: "6c/V5",
+                boardseshDifficulty: 20,
+                boardseshConfidence: "confirmed",
+              }),
             ],
             hasMore: false,
           },
@@ -516,16 +529,30 @@ describe("BoardSeshProvider", () => {
             uuid: "tick-1",
             climbedAt: "2026-11-01 10:00:00",
             metadata: {
-              ascent: { uuid: "tick-1", climbName: "  Moon Dust  " },
+              ascent: {
+                uuid: "tick-1",
+                climbName: "  Moon Dust  ",
+                angle: 40,
+                consensusDifficulty: 19,
+                consensusDifficultyName: "6b+/V4",
+                boardseshDifficulty: 18.672,
+                boardseshConfidence: "provisional",
+              },
               board: { uuid: "board-42", locationName: " Movement Sunnyvale " },
+              grades: [
+                { difficultyId: 19, name: "6b+/V4" },
+                { difficultyId: 20, name: "6c/V5" },
+              ],
             },
           },
         },
         {
           externalId: "boardsesh:tick:tick-2",
-          climb: { name: "Mirror name", externalId: "kilter:climb-1:mirror" },
+          climb: { name: "Mirror name", externalId: "kilter:climb-1:normal" },
           board: { name: "Training Kilter", externalId: "board-42" },
           areas: [{ name: "Movement Sunnyvale" }],
+          wallAngle: { value: 45, unit: "degrees" },
+          raw: { metadata: { ascent: { angle: 45, boardseshDifficulty: 20 } } },
         },
       ]);
       const requests = fetchFn.mock.calls.map(([, init]) =>
@@ -609,6 +636,13 @@ describe("BoardSeshProvider", () => {
       [
         "different mirror",
         { items: [boardSeshAscentFixture({ isMirror: true })], hasMore: false },
+        {},
+        {},
+        /metadata did not match/,
+      ],
+      [
+        "different angle",
+        { items: [boardSeshAscentFixture({ angle: 45 })], hasMore: false },
         {},
         {},
         /metadata did not match/,

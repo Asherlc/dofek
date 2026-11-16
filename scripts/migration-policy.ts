@@ -468,7 +468,6 @@ export function lintMigrationPolicyFile(
   );
 
   const isCyclingPowerPublicationView =
-    filePath === "analytics/models/read_models/cycling_threshold_history.sql" ||
     filePath === "analytics/models/read_models/cycling_activity_power_metrics.sql";
   if (filePath.startsWith("analytics/models/") && !isCyclingPowerPublicationView) {
     const isCoverageView =

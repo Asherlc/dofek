@@ -19,6 +19,8 @@ describe("query cache invalidation", () => {
     await Promise.all([
       queryCache.set("user-1:activity.list", "entries", TTL_MS),
       queryCache.set("user-1:calendar.events", "calendar", TTL_MS),
+      queryCache.set("user-1:cycling.performance", "cycling", TTL_MS),
+      queryCache.set("user-1:cyclingAdvanced.activityVariability", "variability", TTL_MS),
       queryCache.set("user-1:personalization.preferences", "preferences", TTL_MS),
       queryCache.set("user-1:mobileDashboard.summary", "dashboard", TTL_MS),
       queryCache.set("user-1:recovery.score", "recovery", TTL_MS),
@@ -32,6 +34,10 @@ describe("query cache invalidation", () => {
 
     await expect(queryCache.get("user-1:activity.list")).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:calendar.events")).resolves.toBeUndefined();
+    await expect(queryCache.get("user-1:cycling.performance")).resolves.toBeUndefined();
+    await expect(
+      queryCache.get("user-1:cyclingAdvanced.activityVariability"),
+    ).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:personalization.preferences")).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:mobileDashboard.summary")).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:recovery.score")).resolves.toBeUndefined();

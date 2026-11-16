@@ -3,8 +3,10 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
+import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { cyclingEffortMetricsSchema } from "../mcp/performance-comparison-output.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { loadCyclingEffortMetrics } from "./cycling-effort-metrics.ts";
@@ -34,15 +36,35 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
 
   beforeAll(async () => {
     postgres = await setupTestDatabase();
+    await ensureProvider(
+      postgres.db,
+      "cycling-training-metrics-fixture",
+      "Cycling training metrics fixture",
+      undefined,
+      TEST_USER_ID,
+    );
+    await postgres.db.execute(sql`INSERT INTO fitness.provider (id,name,user_id)
+      VALUES ('wahoo','Wahoo',${TEST_USER_ID}::uuid) ON CONFLICT (id) DO NOTHING`);
+    await postgres.db.insert(activity).values({
+      id: activityId,
+      groupId: activityId,
+      userId: TEST_USER_ID,
+      providerId: "cycling-training-metrics-fixture",
+      externalId: activityId,
+      canonicalType: "cycling",
+      providerType: "cycling",
+      startedAt: new Date("2026-06-15T15:00:00Z"),
+      endedAt: new Date("2026-06-15T15:10:00Z"),
+    });
     await postgres.db.execute(sql`
       DELETE FROM fitness.sport_settings
       WHERE user_id = ${TEST_USER_ID} AND sport = 'cycling'
     `);
     await postgres.db.execute(sql`
       INSERT INTO fitness.sport_settings (
-        user_id, sport, threshold_hr, power_zone_pcts, hr_zone_pcts, effective_from
+        user_id, sport, ftp, threshold_hr, power_zone_pcts, hr_zone_pcts, effective_from
       ) VALUES (
-        ${TEST_USER_ID}, 'cycling', 175,
+        ${TEST_USER_ID}, 'cycling', 250, 175,
         '[0.55,0.75,0.9,1.05,1.2,1.5]'::jsonb,
         '[0.6,0.7,0.8,0.9]'::jsonb,
         '2026-01-01'
@@ -52,15 +74,13 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
     await clickhouse.command({ query: `CREATE DATABASE ${analyticsDatabase}` });
     await clickhouse.command({
       query: `CREATE TABLE ${analyticsDatabase}.cycling_activity_power_metrics (
-      user_id UUID, activity_id UUID, started_at DateTime64(6, 'UTC'), normalized_power Nullable(Float64),
-      eftp Nullable(Float64), power_tss Nullable(Float64), intensity_factor Nullable(Float64),
-      evidence_activity_id Nullable(UUID), evidence_at Nullable(DateTime64(6, 'UTC')),
-      evidence_duration_seconds Nullable(UInt32), evidence_power Nullable(Float64), model_version String
+      user_id UUID, activity_id UUID, started_at DateTime64(6, 'UTC'), ended_at DateTime64(6, 'UTC'),
+      canonical_type String, power_sample_count UInt64, normalized_power Nullable(Float64)
     ) ENGINE = Memory`,
     });
     await clickhouse.command({
       query: `INSERT INTO ${analyticsDatabase}.cycling_activity_power_metrics VALUES
-      ('${TEST_USER_ID}','${activityId}','2026-06-15 15:00:00',150,250,6,0.6,'${activityId}','2026-06-15 15:00:00',600,150,'integration-model')`,
+      ('${TEST_USER_ID}','${activityId}','2026-06-15 15:00:00','2026-06-15 15:10:00','cycling',600,150)`,
     });
     await clickhouse.command({
       query: `CREATE TABLE ${analyticsDatabase}.activity_summary_rows (
@@ -407,8 +427,6 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
     await postgres.db.execute(
       sql`INSERT INTO fitness.provider (id,name) VALUES ('wahoo','Wahoo') ON CONFLICT (id) DO NOTHING`,
     );
-    await postgres.db.execute(sql`INSERT INTO fitness.activity (id,user_id,provider_id,external_id,canonical_type,provider_type,started_at,ended_at)
-      VALUES (${activityId},${TEST_USER_ID},'wahoo',${activityId},'cycling','cycling','2026-06-15T15:00:00Z','2026-06-15T15:10:00Z')`);
     await postgres.db.execute(sql`INSERT INTO fitness.activity_interval (activity_id,interval_index,interval_type,started_at,ended_at,source_kind,source_provider)
       VALUES (${activityId},1,'work','2026-06-15T15:00:00Z','2026-06-15T15:10:00Z','provider_recorded','wahoo')`);
     await clickhouse.insert({
@@ -446,7 +464,7 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
     });
     await clickhouse.command({
       query: `INSERT INTO ${analyticsDatabase}.cycling_activity_power_metrics VALUES
-      ('${TEST_USER_ID}','${activityId}','2026-06-15 15:00:00',NULL,250,NULL,NULL,'${activityId}','2026-06-15 15:00:00',600,150,'integration-model')`,
+      ('${TEST_USER_ID}','${activityId}','2026-06-15 15:00:00','2026-06-15 15:10:00','cycling',600,NULL)`,
     });
     const [effort] = await loadCyclingEffortMetrics(
       postgres.db,

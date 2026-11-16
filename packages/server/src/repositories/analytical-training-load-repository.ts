@@ -9,6 +9,7 @@ import {
   postgresActivityLocalDate,
 } from "./activity-local-date.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 import { SportSettingsRepository, type SportSettingsRow } from "./sport-settings-repository.ts";
 
 const cyclingActivitySchema = z.object({
@@ -546,12 +547,10 @@ export class AnalyticalTrainingLoadRepository {
           SELECT
             cycling.activity_id AS activity_id,
             ${clickHouseLocalDate} AS date,
-            metrics.power_tss AS power_tss,
+            NULL AS power_tss,
             activity.source_providers AS source_providers,
             ${clickHouseDateIsAuthoritative} AS date_was_authoritative
           FROM analytics.cycling_activity AS cycling FINAL
-          LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
-            ON metrics.activity_id = cycling.activity_id AND metrics.user_id = cycling.user_id
           INNER JOIN analytics.deduped_activities AS activity FINAL
             ON activity.activity_id = cycling.activity_id AND activity.user_id = cycling.user_id
           WHERE cycling.user_id = {userId:UUID}
@@ -805,7 +804,23 @@ export class AnalyticalTrainingLoadRepository {
       ),
     ]);
 
-    const realCyclingRows = cyclingRows.filter(
+    const initialCyclingRows = cyclingRows.filter(
+      (row): row is typeof row & { activity_id: string; date: string } =>
+        row.activity_id != null && row.date != null,
+    );
+    const cyclingPowerMetrics = await new CyclingThresholdRepository(
+      this.#db,
+      this.#store,
+      this.#userId,
+      this.#timezone,
+    ).getForActivities(initialCyclingRows.map((row) => row.activity_id));
+    const resolvedCyclingRows = cyclingRows.map((row) => ({
+      ...row,
+      power_tss: row.activity_id
+        ? (cyclingPowerMetrics.get(row.activity_id)?.power_tss ?? null)
+        : null,
+    }));
+    const realCyclingRows = resolvedCyclingRows.filter(
       (row): row is typeof row & { activity_id: string; date: string } =>
         row.activity_id != null && row.date != null,
     );
@@ -846,7 +861,7 @@ export class AnalyticalTrainingLoadRepository {
         date,
         dateCycling.length > 0 && supportedCycling.length === 0
           ? unavailableChannel(
-              `Computed eFTP or normalized power is unavailable for ${dateCycling.length} cycling ${dateCycling.length === 1 ? "activity" : "activities"}.`,
+              `Configured FTP or normalized power is unavailable for ${dateCycling.length} cycling ${dateCycling.length === 1 ? "activity" : "activities"}.`,
               {
                 sourceActivityIds: dateCycling.map((row) => row.activity_id),
                 sourceProviders: mergeUnique(...dateCycling.map((row) => row.source_providers)),
@@ -875,7 +890,7 @@ export class AnalyticalTrainingLoadRepository {
                 reason:
                   supportedCycling.length === dateCycling.length
                     ? null
-                    : `${dateCycling.length - supportedCycling.length} cycling activities lacked computed eFTP or normalized power.`,
+                    : `${dateCycling.length - supportedCycling.length} cycling activities lacked configured FTP or normalized power.`,
                 contributingRecords: dateCycling.length,
               }
             : emptyChannel(date, cyclingFirstObserved),

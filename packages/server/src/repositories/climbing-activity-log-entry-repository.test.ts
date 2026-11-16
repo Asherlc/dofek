@@ -6,7 +6,9 @@ import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entr
 import {
   climbingActivitySessionFixtures,
   climbingAttemptFixture,
+  climbingBoardSeshGradeSortFixtures,
   climbingClimbFixture,
+  climbingGradeSortFixtures,
   climbingLogDatabaseFixture,
   climbingLogEntryFixture,
   climbingKayaHistoryFixture as kayaHistory,
@@ -976,25 +978,19 @@ describe("ClimbingActivityLogEntryRepository", () => {
     ).toHaveLength(2);
   });
   it("orders known rock grades before ungraded observations with stable ties", async () => {
-    const base = named("openbeta");
-    const lower = named("openbeta", "20000000-0000-4000-8000-000000000006");
-    const higher = named("openbeta", "20000000-0000-4000-8000-000000000007");
-    const ungraded = named("openbeta", "20000000-0000-4000-8000-000000000008");
-    if (!lower.climb || !higher.climb || !ungraded.climb)
-      throw new Error("Expected catalogue fixtures");
-    for (const [index, log] of [lower, higher, ungraded].entries()) {
-      if (!log.climb) throw new Error("Expected catalogue fixture");
-      log.climb.id = `20000000-0000-4000-8000-00000000001${index}`;
-      log.climb.externalId = `distinct-climb-${index}`;
-      log.climbId = log.climb.id;
-    }
-    lower.climb.publishedGrades = [{ value: "5.9", system: "yds" }];
-    higher.climb.publishedGrades = [{ value: "5.11a", system: "yds" }];
-    ungraded.climb.publishedGrades = [];
-    expect(
-      (await repository([ungraded, lower, base, higher]).getActivityLogEntries("activity")).map(
-        (row) => row.toDetail().id,
-      ),
-    ).toEqual([higher.id, base.id, lower.id, ungraded.id]);
+    const { sortRows, sortedRows } = climbingGradeSortFixtures();
+    const sorted = await repository(sortRows).getActivityLogEntries("activity");
+    expect(sorted.map((row) => row.toDetail().id)).toEqual(sortedRows.map((row) => row.id));
+    const { other, historical, boardRows, sortedBoardRows } = climbingBoardSeshGradeSortFixtures();
+    const sortedBoard = await repository(boardRows).getActivityLogEntries("activity");
+    expect(sortedBoard.map((row) => row.toDetail().id)).toEqual(
+      sortedBoardRows.map((row) => row.id),
+    );
+    expect(sortedBoard[1]?.toDetail().displayGrade).toBe("V4+");
+    expect(sortedBoard.find((row) => row.toDetail().id === other.id)?.toDetail().displayGrade).toBe(
+      "V1",
+    );
+    const [old] = await repository([historical]).getActivityLogEntries("activity");
+    expect(old?.toDetail().displayGrade).toBe("V2");
   });
 });

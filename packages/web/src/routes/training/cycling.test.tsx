@@ -65,9 +65,6 @@ vi.mock("../../components/AerobicEfficiencyChart.tsx", () => ({
 vi.mock("../../components/ChartDescriptionTooltip.tsx", () => ({
   ChartDescriptionTooltip: () => null,
 }));
-vi.mock("../../components/EftpTrendChart.tsx", () => ({
-  EftpTrendChart: () => <div data-testid="eftp-trend" />,
-}));
 vi.mock("../../components/PmcChart.tsx", () => ({
   PmcChart: () => <div data-testid="pmc-chart" />,
 }));
@@ -142,29 +139,6 @@ vi.mock("../../lib/trpc.ts", () => ({
                     data: [],
                     model: { ftp: null },
                   },
-                  eftpTrend: {
-                    trend: [],
-                    currentEftp: null,
-                    model: null,
-                    currentEvidence: {
-                      value: null,
-                      unit: "watt",
-                      method: "computed_eftp",
-                      event_at: null,
-                      evidence_activity_id: null,
-                      evidence_at: null,
-                      evidence_duration_seconds: null,
-                      evidence_power: null,
-                      model_version: null,
-                      uncertainty: {
-                        kind: "not_quantifiable" as const,
-                        watts: null,
-                        reason:
-                          "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
-                      },
-                      unavailable_reason: "No qualifying sustained power effort is available.",
-                    },
-                  },
                   estimateEvidence: state.estimateEvidenceAvailable
                     ? {
                         recent: {
@@ -217,18 +191,6 @@ vi.mock("../../lib/trpc.ts", () => ({
                             sourceWorkouts: [],
                             pacingGuidance: "Do not use this estimate to set workout pacing.",
                           },
-                        },
-                        eftp: {
-                          method:
-                            "Critical Power model for the current value; trend points use normalized power × 0.95",
-                          confidence: "limited",
-                          confidenceLabel: "Training estimate",
-                          confidenceDetail: "Based on source cycling workouts.",
-                          sourceWorkouts: [
-                            { id: "ride-1", name: "Threshold Intervals", date: "2026-03-15" },
-                          ],
-                          pacingGuidance:
-                            "Do not use this estimate to set pacing when the source ride is not representative.",
                         },
                       }
                     : null,
@@ -324,7 +286,7 @@ describe("CyclingTab", () => {
     expect(screen.getByText("61")).toBeTruthy();
     expect(screen.getByText("High fit quality")).toBeTruthy();
     expect(screen.getAllByText("Indirect estimate")).toHaveLength(2);
-    expect(screen.getAllByText(/Threshold Intervals/)).toHaveLength(3);
+    expect(screen.getAllByText(/Threshold Intervals/)).toHaveLength(2);
   });
 
   it("renders unavailable time-to-exhaustion values from the server", async () => {

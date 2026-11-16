@@ -1,5 +1,84 @@
 # Production Incident Baseline
 
+## 2026-11-15 — BoardSesh activity group lacks displayed grades
+
+- **Symptoms / impact:** Activity group
+  `324ed832-9b72-4bac-b6dc-5eaa0972c1d6` has seven BoardSesh logs with no
+  displayed grade. Read-only production inspection found each tick's raw
+  `difficulty` null, no personal reported grade, and no shared published grade.
+- **Evidence / root cause:** The importer used the personal tick difficulty and
+  the board's difficulty catalogue, but did not retain consensus/model
+  grades from `userAscentsFeed`. The server therefore had no crowd grade to
+  display for these ungraded personal ticks. A read-only live feed confirmed
+  angle-specific model and consensus grades are available for the source ticks;
+  no production records were changed. See the [BoardSesh mapping and pinned
+  upstream sources](boardsesh.md#implemented-in-dofek).
+- **Direct fix / validation:** The importer now retains the board grade
+  catalogue and exact tick, climb, mirror, and angle-matched ascent fields under
+  `raw.metadata`. The server uses a trusted rounded model grade or the source
+  consensus fallback for display and sorting, while personal grades remain
+  first. Focused provider and repository tests passed 166/166; the real-engine
+  BoardSesh provider integration suite passed 20/20, and `pnpm lint` passed.
+- **Remaining risk / follow-up:** The code is not deployed and the seven
+  existing records have not been re-synced, so their stored raw metadata and
+  displayed grades remain unchanged. After a normal deployment, run a normal
+  BoardSesh re-sync and verify the activity group's returned `displayGrade`
+  values. There was no production write or deployment during diagnosis.
+
+## 2026-11-15 — Sleep stage timeline rendered empty despite recorded intervals
+
+- **Symptoms / user impact:** The web Sleep page's Last Night's Stages panel
+  showed gridlines without a visible stage timeline or axis labels. The
+  existing Firefox session at [the Sleep page](https://dofek.fit/sleep) reproduced
+  the report; its View chart data disclosure contained timestamped stage values,
+  establishing that the intervals reached the client.
+- **Evidence / root cause:** The real-ECharts regression in
+  [Hypnogram.test.tsx](../packages/web/src/components/Hypnogram.test.tsx) reproduced
+  the blank rendering. Exact-value visual-map pieces generated SVG gradients
+  with coincident color stops and transparent spans. The value axis used
+  half-integer ticks while its formatter only labeled integer stages; the time
+  axis also needed explicit visibility. These were presentation defects, not
+  evidence of failed WHOOP ingestion.
+- **Direct fix / validation:**
+  [Hypnogram](../packages/web/src/components/Hypnogram.tsx) uses bounded stage
+  color ranges, integer stage ticks, and a visible time axis. Real ECharts SVG
+  rendering and rasterized-pixel tests failed before the fix and pass afterward.
+  The existing [default Storybook fixture](../packages/web/src/components/Hypnogram.stories.tsx)
+  also displayed all four colored stages and clock labels in the user's existing
+  Firefox session after the fix.
+  The [ECharts visual-map contract](https://echarts.apache.org/en/option.html#visualMap-piecewise.pieces)
+  documents both value and interval pieces. No retries, waits, or resilience
+  settings were added.
+- **Remaining risk / follow-up:** The fix requires normal deployment; local
+  validation does not establish that production has updated. The existing
+  overlapping-source selection may use stages from a different provider than
+  the daily summary, so this diagnosis does not establish their WHOOP origin.
+
+## 2026-11-15 — Manual FTP cutover CI validation gaps
+
+- **Symptoms / impact:** [PR #3351](https://github.com/Asherlc/dofek/pull/3351) could not merge after its first complete CI run. No production migration or deployment was performed. The local focused checks had not covered every affected integration fixture, the Cypress heading expectation, or the new migration's Squawk gate.
+- **First fatal evidence / causes:** In [Migration Lint](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995653101), Squawk rejected migration 0187's 32-bit FTP column and immediately validated check, exiting 123. The new NP view also exposed fixture setup that omitted its summary/fence dependencies; [integration shard 1](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995828999), [shard 3](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995828985), and [shard 5](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995829017) failed. Shard 5 also retained an MCP tool count of 38 after two tools were intentionally removed. The [web E2E job](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995653044) still expected the retired ongoing eFTP heading. Mutation testing exposed surviving permanent behavior, including a 45.45 score against the unchanged 75 threshold in [threshold resolution](https://github.com/Asherlc/dofek/actions/runs/43773784762/job/132995943097).
+- **Direct corrections / current validation:** The [migration correction](https://github.com/Asherlc/dofek/commit/f10b3f614) aligns bigint storage, Drizzle's number mapping and the upsert cast, and follows the existing `NOT VALID` then `VALIDATE CONSTRAINT` convention. Fresh isolated Postgres tests verify the type, validated positive check, large-value round trip and nullable clears. Both SQL linters pass. Drizzle runs these statements in one transaction, so this does not establish reduced lock duration. Upstream introduced migrations 0187 and 0188 while this PR was in validation; the unreleased FTP migration is now 0189 with unchanged SQL and ordered after those upstream entries. Fixture corrections use canonical summary/fence builders in each isolated schema and retain current NP publication, tombstone and erasure checks; six affected integration files pass locally. The final merged migration chain must pass hosted validation.
+- **Local E2E prerequisites:** The isolated test stack pulled its pinned Redis image, completed the server build, then failed before web startup with `No such image: mirror.gcr.io/redis:8.6.3-alpine`. Pulling that exact image restored the prerequisite; the removal actor remains unresolved. The next full-reset attempt failed during image build with `ERR_PNPM_ENOSPC`. Authorized build-cache, unused-image and stopped-container cleanup did not restore usable space. The owner then approved eight specifically listed, unreferenced volumes: seven were already absent when removal was attempted, and only `pulsar-foundation_kafka_data` was removed by this task. Fresh inventory confirmed all eight absent, but the Docker filesystem still reported zero available space. An existing workspace database container also failed to start with an overlay2 `no space left on device` error; it was not recreated or reset. The remaining allocation owner is unresolved. No additional volumes, running containers, image tags, timeout/retry policies or global Docker settings were changed.
+- **Additional CI evidence:** The next [CI run](https://github.com/Asherlc/dofek/actions/runs/43782664536) passed web E2E with the corrected heading expectation, all five integration shards, migration lint and SQLFluff. That run's Spell Check failed on the legitimate PostgreSQL catalog field `convalidated` in the new schema assertions. Adding that field to the existing spelling vocabulary made the exact full CSpell command pass locally, without excluding files or changing the query. The [test correction](https://github.com/Asherlc/dofek/commit/056b57a4518127a602ef18dde4d02b28473d1ebe) passes 123 focused unit tests and puts all ten affected files above the unchanged mutation threshold. Full workspace typechecks, lint and CSpell pass locally. Independent review approved the corrected fixtures and validation; hosted CI remains required on the final merged revision.
+- **Remaining risk / follow-up:** Do not treat passing assertions, a successful cleanup command or an image pull as a passing workflow. Local Cypress remains blocked before test execution. Require the complete hosted gates on the final revision before merging; retain the local validation limitation. Visual/native acceptance remains separately unverified. Proposed testing guidance: run both new-migration linters before the first push and make every current-view integration fixture create its own required source tables and erasure fence.
+
+## 2026-11-15 — Local ClickHouse memory guard blocks FTP integration tests
+
+- **Symptoms / impact:** Local `pnpm test:integration -- packages/server/src/repositories/cycling-threshold-repository.integration.test.ts` failed before assertions with ClickHouse code 241, `MEMORY_LIMIT_EXCEEDED`, at the existing 1.25 GiB server guard. Production was unaffected.
+- **Evidence / root cause:** No concurrent query workload or abandoned test databases was found. Local allocator metrics reported approximately 1.32 GB allocated and 1.70 GB resident; the container limit remained 1.5 GiB. The allocation owner is unresolved. The stock allocator purge operation also hit the guard. Diagnostic logs are retained locally under `/tmp/opencode/manual-ftp/local-clickhouse-*`.
+- **Mitigation / validation:** Restarted only this workspace's ClickHouse service once through `pnpm compose -- restart clickhouse`, then used Compose's health wait. A read query succeeded afterward, with approximately 892 MB allocated. Data, volumes and configuration were retained; no limits, retries or waits were added to application code. The integration test then reached its assertions and exposed a separate SQL alias defect.
+- **Remaining risk / retrospective:** This restored local test execution but does not establish a permanent memory fix. If the guard recurs, capture the allocating workload before further remediation. Separating service readiness from assertion failures prevented treating the resource failure as test-first evidence.
+
+## 2026-11-15 — Missing cycling power prevents stale eFTP from decaying
+
+- **Symptoms / user impact:** Current computed cycling eFTP can retain a supporting effort more than six years old with only a small modeled decrease. The same threshold feeds intensity factor and power training stress, so the stale estimate also affects those derived values.
+- **Evidence / root cause:** Read-only production queries of `analytics.cycling_threshold_history`, `analytics.activity_summary_rows`, `analytics.cycling_power_observation_rows`, and `analytics.activity_power_curve` supplied a local replay through the unchanged [threshold algorithms](../packages/cycling-power/src/threshold.ts), reproducing the stored current value exactly. The [projector](../src/analytics/cycling-power-projector.ts) includes cycling activities without power. An unavailable normalized-power value marks the day's power dose unknown; any unknown day in the preceding two comparison windows disables decay. Frequent rides without power or with incomplete power coverage therefore prevent decay indefinitely. New effort candidates only replace the ongoing estimate when higher, and supporting evidence has no age limit. This is an incorrect successful result; no fatal application error was observed.
+- **Additional difference:** The application's [reference bank and duration policy](../src/analytics/cycling-power-policy.ts) are independent of Intervals.icu. Their numerical estimates must not be presented as an exact reproduction of that service.
+- **Fix / mitigation:** Investigation only; no calculation, production data, or configuration changed. Treat the displayed value as a model estimate with stale evidence while correction policy is decided. Missing power must not silently become measured zero power.
+- **Validation / remaining risk:** Separate self-review independently checked the blocked-day calculation against exported observations. Both decay semantics and reference-curve calibration remain unresolved; changing only the minimum qualifying effort duration does not address indefinite retention. No new timeout, retry, or resilience setting was introduced.
+- **Follow-up / retrospective:** Direct observation/history queries and an exact numerical replay isolated the cause without changing production state. Add a regression covering repeated power-unavailable cycling activities, and define evidence freshness and missing-load behavior before implementing a correction. The existing systematic debugging workflow applies; no additional operational tool is needed.
+
 ## 2026-11-15 — Databasus backup process killed by memory-cgroup OOM
 
 - **Symptoms / impact:** The scheduled PostgreSQL backup
@@ -79,9 +158,9 @@
   This is snapshot-aware validation, not a claim of equality to a later live
   database. The scratch database had an internal-only network and no published
   ports. It and its volume were removed, and the decrypted download deleted.
-  Supplemental command and aggregate evidence is in
-  `/tmp/opencode/ota-followup/backup-recovery-*.json` and adjacent logs.
-- **Other gates / remaining follow-up:** Both live web replicas passed their
+  Local command and aggregate artifacts supplement the durable run, job and
+  receipt links below.
+- **Other recovery gates:** Both live web replicas passed their
   internal readiness checks for Postgres, ClickHouse and queues; the CDC
   health-state probe and public authentication-provider API also passed. A
   request to the public `/readyz` URL returned 404 and is not counted as an
@@ -89,14 +168,52 @@
   [exact-source Sentry release](https://east-bay-software.sentry.io/releases/3afa94e70e71bc0b0802d1a509c1e5d8b2b00c02/)
   already included both `dofek-web` and `dofek-server`; its missing production
   deployment record `181173543` was added at `2026-11-16 04:56:37 UTC`, labeled
-  as operator recovery. Independent review and fresh live/history checks
-  remain prerequisites for a success status on the existing server receipt;
-  its [status history](https://api.github.com/repos/Asherlc/dofek/deployments/7811978352/statuses)
-  remains authoritative. Preserve the failed original run. Cancel the
-  dedicated lock holder and revert its unmerged workflow after receipt
-  reconciliation. Normal server publication and the next scheduled freshness
-  run remain to be verified. The earlier credential-exposure incident still
-  requires its separate owner response.
+  as operator recovery. Independent evidence review passed, followed by
+  immediate checks of the exact running lock, two web replicas and worker,
+  Databasus, full target history, and the original pending record. Exactly one
+  operator success status, `22286656379`, was added to that
+  [existing receipt's status history](https://api.github.com/repos/Asherlc/dofek/deployments/7811978352/statuses)
+  at `05:08:32 UTC`. Its source, image, payload and original pending status
+  were preserved; GitHub updated the record's `updated_at` timestamp. The
+  original failed workflow remains failed. The dedicated lock-holder run was
+  then cancelled and its temporary workflow reverted and pushed; no
+  maintenance workflow remains in the intended steady state.
+- **Normal deployment verification:** The resumed
+  [normal CI run, attempt 2](https://github.com/Asherlc/dofek/actions/runs/43803081599/attempts/2)
+  completed successfully at `2026-11-16 05:42:52 UTC`. Its
+  [server stack job](https://github.com/Asherlc/dofek/actions/runs/43803081599/job/133105445356)
+  passed migrations, causal CDC verification, Kafka/topic-policy checks,
+  backup freshness and Sentry. The workflow finalized
+  [new server receipt 7816103842](https://api.github.com/repos/Asherlc/dofek/deployments/7816103842)
+  with [success status 22288158993](https://api.github.com/repos/Asherlc/dofek/deployments/7816103842/statuses)
+  at `05:42:36 UTC`; this receipt required no manual status write. All nine
+  named quality contexts passed on source
+  `4af084fd1f2077174a41c4b674ac54a915ee2362`. A check after deployment found two
+  healthy web replicas and one healthy worker on that exact source and digest
+  `sha256:59be4ad26ca837fe7742a76921d1fd035a2745c050d1bd839c9346a8961cf0d3`.
+- **Scheduled validation / completion:** The next automatic daily backup,
+  `a993b099-96cc-46dd-abd0-1869d37edab8`, started at
+  `2026-11-16 06:00:41 UTC` and completed encrypted in `145,899` ms. Its R2
+  object and matching encryption sidecar identify the same backup and were
+  written at `06:03:07` and `06:03:08 UTC`. Databasus remained `1/1` with the
+  committed `512M` limit. The subsequent
+  [scheduled freshness run](https://github.com/Asherlc/dofek/actions/runs/43816981128)
+  started at `06:28:28 UTC` and passed at `06:29:30 UTC`; the
+  [checker job](https://github.com/Asherlc/dofek/actions/runs/43816981128/job/133131159701)
+  named that automatic backup's sidecar and reported an age of `0.44` hours.
+  No manual workflow dispatch substituted for this scheduled check. All
+  operational recovery acceptance passed, and the recovery-monitor heartbeat
+  was removed. The earlier credential-exposure incident still requires its
+  separate owner response; the Databasus administrator reset does not close it.
+- **Retrospective:** Kernel/process correlation established the memory cause;
+  a real encrypted backup and isolated restore established recovery beyond
+  service liveness. Independent review and fresh target-lock/history checks
+  prevented treating the original failed workflow as successful. The access
+  recovery procedure is now in the backup runbook, with the pinned supported
+  command and private secret-storage guidance. `512M` meets Databasus's
+  documented minimum; no retry, timeout, schedule or freshness threshold was
+  changed to make the checks pass. The existing backup runbook and CI diagnosis
+  workflow covered the recovery; no additional operational framework is needed.
 
 ## 2026-11-15 — OTA publisher rejected a nested trusted checkout
 
@@ -186,6 +303,57 @@
 - **Remaining risk / follow-up:** Stopped-container accumulation can fill the
   Docker VM again. Inspect actual disk and container usage before pruning; keep
   all running services and named database volumes intact.
+
+### Later recurrence during sleep timeline verification
+
+- **Symptoms / impact:** The sleep timeline branch's database integration suite
+  stopped at Compose readiness before Vitest ran. Analytics SQL lint also failed
+  when ClickHouse tried to write a temporary file. This blocked local validation;
+  no production impact was established.
+- **Evidence / root cause:** Postgres initialization failed at `CREATE DATABASE
+  "health"` with `could not create directory "base/16384": No space left on
+  device`; later health checks reported `database "health" does not exist`.
+  ClickHouse reported error 75 / errno 28, with 0 B available on its 78.44 GiB
+  filesystem. Builder-cache and unused-image pruning each reclaimed 0 B, and
+  there were no stopped containers to remove.
+- **Mitigation / unresolved status:** Read-only inspection identified an unused
+  `goofy-sloth_clickhouse_data` volume using 2,916,468 KiB, with no container
+  references. The user explicitly approved its deletion; it was rechecked as
+  unused and removed, consistent with the
+  [Docker recovery boundaries](testing.md#docker-disk-recovery). Docker still
+  reported 0 B available afterward, and creating the local `health` database
+  still failed with errno 28. The volume's absence was verified. The user then
+  explicitly approved a further list of 12 unused ClickHouse volumes. Each was
+  rechecked as unused and removed; disk availability reached 4.2 GiB, and the
+  local `health` database was created successfully. Before integration setup
+  could create its template database, the filesystem filled again. The first
+  failing statement was `CREATE DATABASE` in `createTemplateDatabase`, with
+  `could not create directory "base/31029": No space left on device`.
+  Analytics SQL lint again failed on ClickHouse errno 28. No volume outside
+  these approved lists was deleted.
+- **Continued investigation:** Six running ClickHouse containers from other
+  workspaces were repeatedly emitting current file-access/rotation failures
+  through Docker's `json-file` logger with no configured size/retention options.
+  A bounded two-second log read from `glorious-bobcat-clickhouse-1` returned
+  702,810 bytes. This is evidence of an ongoing log flood, but its exact share
+  of Docker disk usage was not measured. This workspace's ClickHouse data was
+  about 37 MiB and Postgres data about 92 MiB. The user separately approved
+  stopping/removing those six containers. They were stopped and removed
+  without deleting volumes; all six named ClickHouse database volumes were
+  verified to remain. Docker subsequently reported 125.7 GiB capacity and
+  47.7 GiB free; this task did not resize the VM. The workspace services were
+  restored through `pnpm compose:up` and passed their health checks. The exact
+  allocation of the original full disk remains unresolved; the log flood is
+  an observed contributor rather than a measured accounting of all usage.
+- **Validation / remaining risk:** Disk space and service health recovered;
+  analytics SQL lint and all seven sleep-router real-engine integration tests
+  passed. The new regression's lookup was corrected to match its independently
+  seeded overnight window: the chosen record is not necessarily present in
+  the separate overlapping-record list. No application behavior was changed
+  to satisfy that fixture correction. The
+  removed containers' workspaces must recreate their ClickHouse services when
+  needed. Unbounded container logs remain a separate local-environment
+  follow-up. No timeouts, retries, or ignored checks were added.
 
 ## 2026-11-15 — CI release refactor startup and fixture failures
 
@@ -38372,3 +38540,88 @@ Local qualification and CI are separate from production throughput acceptance. T
   was not performed during this task because it is outside the approved scope.
 - **Follow-up:** Rotate the affected production credentials through the
   established secret rotation workflow and verify consumers afterward.
+
+## 2026-11-16 (UTC) — BoardSesh PR mutation jobs fail required CI gates
+
+- **Symptoms / impact:** PR #3356's CI run `43784341173` failed its two server
+  mutation jobs; aggregate server and compatibility gates consequently failed.
+  Production was unaffected because this branch had not deployed.
+- **Evidence / root cause:** `Check Server / Stryker (0)` and `(1)`, step
+  `Run Stryker`, reported `Final mutation score 65.38 under breaking threshold
+  75` and `Final mutation score 64.71 under breaking threshold 75`. Downloaded
+  mutation reports identified missing tests for source-catalogue personal
+  grades, malformed/partial metadata, and unknown-grade/provider sorting paths.
+  The non-provider isolation fixture used incompatible route grades, so forcing
+  the BoardSesh branch did not alter its result. See the
+  [failed run](https://github.com/Asherlc/dofek/actions/runs/43784341173).
+- **Fix / validation:** Added observable boundary, personal-catalogue, fallback,
+  ungraded-sort, and compatible-provider isolation assertions. The repository
+  regression also asserts positive BoardSesh API grades. Simplified source
+  formatting to boulders and normalized both label formats to uppercase,
+  matching the source app. Exact local mutation targets scored 77.24% for the
+  helper and 100% for the repository under the unchanged 75% gate. The full
+  unit/mobile suite, lint, and all-package typechecks passed. Remote validation
+  is recorded in [PR #3356's checks](https://github.com/Asherlc/dofek/pull/3356/checks).
+- **Remaining risk / follow-up:** A local mutation dry run once failed a
+  separate MCP transport test with a non-JSON-RPC response; its cause remains
+  unclassified. The standalone MCP file and subsequent exact mutation run
+  passed; no MCP change or retry policy was introduced. Preserve the diagnostic
+  if it recurs. No exclusions or thresholds were relaxed. Production rollout
+  and the normal BoardSesh re-sync are still separate operational steps.
+
+## 2026-11-15 — Activities list delayed by PostgreSQL activity expansion
+
+- **Symptoms / impact:** The production web Activities page waits for its
+  activity cards. Two uncached `calendar.weekListV2` requests took 12,316 ms
+  and 8,649 ms; the accompanying `calendar.activityOverview` requests took
+  10,822 ms and 5,867 ms.
+- **Evidence:** Axiom `dofek-logs`, 23:31–23:35 UTC, traces
+  `7553a2d760d85b8b26fdd78cb23f3997` and
+  `97b57b6d30045738a112662ef6d03f74`. PostgreSQL slow-statement logs show
+  `SELECT a.id::text AS id FROM fitness.v_activity a` taking 7,275 ms,
+  3,339 ms, 2,970 ms and 2,681 ms. Climbing-log hydration queries against
+  `fitness.v_climbing_log_entry`, joined to `fitness.v_activity`, took
+  3,770 ms and 3,640 ms during the second request. ClickHouse
+  `system.query_log` records the initial activity SELECT at 457 ms and
+  143 ms respectively. The second request's recorded application queue
+  waits were each below 1 ms.
+- **Root cause:** The request paths repeatedly expand the PostgreSQL
+  activity view, including provenance hydration before the local-date
+  filter. A read-only reproduction of the current-period visibility query
+  took 3,211 ms and returned 80 IDs, while its provenance input aggregate
+  ran 1,885 times. The overview performs two sequential visibility queries;
+  list map/session lookups expand the view again. This is request-time
+  PostgreSQL work, rather than an expensive initial ClickHouse activity
+  scan. Plan interpretation follows PostgreSQL's
+  [EXPLAIN documentation](https://www.postgresql.org/docs/18/using-explain.html).
+- **Direct fix:** Following approval, extract the existing canonical grouping
+  into `fitness.v_activity_group`; the full activity view adds its unchanged
+  provenance and title fields. Visibility and climbing log/session/location
+  queries use the group projection. Migration 0187 installs both definitions.
+  No cache, timeout, retry, analytics model or production configuration changes
+  were added.
+- **Validation:** Five real-PostgreSQL assertions first failed on unnecessary
+  resolver calls (three visibility checks and two climbing projections).
+  A read-only comparison on production data returned identical sets of 80
+  current-period IDs. Three before/after visibility-query plan samples took
+  2,266/82 ms, 2,153/75 ms and 2,214/84 ms. The candidate query embedded the new
+  group-view definition; no production DDL was executed for this measurement.
+  This verifies the query improvement, not a deployed page-load measurement.
+  All 203 focused database tests, repository lint, recursive package typechecks,
+  migration policy and migration SQL lint passed; migration 0187 applied locally.
+  Independent review found no actionable issues. The additional local analytics
+  build could not complete its fresh-ClickHouse prerequisite: bootstrap first
+  reported `Cannot reserve 1.00 MiB, not enough space`, then `errno: 28` writing
+  `v_activity.sql.tmp`. The shared Docker VM had zero available bytes. Approved
+  stopped-container/unused-image cleanup briefly recovered 883 MiB, but the
+  filesystem filled again. No database volumes or running services were removed.
+- **Remaining risk / follow-up:** Release the migration with the repository
+  changes through the normal deployment workflow, then measure uncached
+  `calendar.weekListV2` and `calendar.activityOverview` again. Production
+  remains on the previous implementation until that release. Complete the
+  additional local analytics check when shared Docker capacity is available.
+- **Retrospective:** Correlating Axiom procedure timings with both engines'
+  query logs located the bottleneck; the tRPC `db_duration_ms` label alone
+  did not identify the engine. Proposed loading-runbook addition for review:
+  “When ClickHouse queries are short, inspect PostgreSQL visibility and
+  enrichment queries before adding analytics models.”

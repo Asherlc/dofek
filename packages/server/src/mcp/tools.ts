@@ -30,7 +30,6 @@ import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { registerCyclingPerformanceTool } from "./cycling-performance-tool.ts";
 import { registerCyclingPowerCurveTool } from "./cycling-power-curve-tool.ts";
-import { registerCyclingThresholdEstimateTool } from "./cycling-threshold-estimate-tool.ts";
 import { registerCyclingTrainingMetricsTool } from "./cycling-training-metrics-tool.ts";
 import { registerEffortTrendTool } from "./effort-trend-tool.ts";
 import { registerFingerLoadingProgressionTool } from "./finger-loading-progression-tool.ts";
@@ -46,7 +45,6 @@ import { registerRecoveryTrainingSeriesTool } from "./recovery-training-series-t
 import { registerRepeatedEffortsTool } from "./repeated-efforts-tool.ts";
 import { registerStrengthProgressionTool } from "./strength-progression-tool.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
-import { registerThresholdHistoryTool } from "./threshold-history-tool.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { aggregateNumbers, isoWeek } from "./tool-aggregation.ts";
 import { mcpOutputSchemas } from "./tool-output.ts";
@@ -273,8 +271,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   registerCyclingPerformanceTool(server, context);
   registerCyclingPowerCurveTool(server, context);
   registerCyclingTrainingMetricsTool(server, context);
-  registerCyclingThresholdEstimateTool(server, context);
-  registerThresholdHistoryTool(server, context);
   registerActivityStreamsTool(server, context);
   registerActivityTimeseriesTool(server, context);
   registerActivityDetailsTool(server, context);

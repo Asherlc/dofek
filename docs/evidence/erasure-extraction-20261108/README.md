@@ -17,9 +17,12 @@ scan was performed. Source reference: `ed26f38b8`; base: `2752451fb4`.
 The [effort model](../../../analytics/models/read_models/activity_effort_identity.sql)
 derives persisted `canonical_activity_id` from activity membership. The
 [route model](../../../analytics/models/read_models/activity_route_identity.sql)
-also persists it. The [cycling history](../../../analytics/models/read_models/cycling_threshold_history.sql)
-and [activity metrics](../../../analytics/models/read_models/cycling_activity_power_metrics.sql)
-persist `evidence_activity_id` through `toUUIDOrNull`.
+also persists it. At that revision, the
+[cycling history](../../../src/db/clickhouse-migrations/legacy/0108_cycling_threshold_history.sql)
+and [activity metrics](../../../src/db/clickhouse-migrations/legacy/0108_cycling_activity_power_metrics.sql)
+persisted `evidence_activity_id` through `toUUIDOrNull`. These historical schemas
+are retained for migration reproducibility; the [manual FTP cutover](../../cycling-power-cutover.md)
+removes their computed-threshold history from current serving.
 These two UUID relations now use the existing activity identity family in
 [the typed catalog](../../../src/account-erasure/clickhouse-erasure-coverage.ts).
 No table exemption, harmless-identifier allowance or scope/budget increase is added.

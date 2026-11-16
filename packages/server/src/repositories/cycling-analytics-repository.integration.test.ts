@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import {
@@ -6,13 +7,16 @@ import {
   buildActivitySummaryViewSql,
 } from "../../../../src/db/clickhouse-activity-summary.ts";
 import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-schema.ts";
+import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import { buildTestAnalyticsTableStatement } from "../routers/clickhouse-integration-test-models.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
 import { CyclingAnalyticsRepository } from "./cycling-analytics-repository.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 
 const ACTIVITY_ID = "11111111-1111-4111-8111-111111111111";
 const ZERO_EFFICIENCY_ACTIVITY_ID = "44444444-4444-4444-8444-444444444444";
@@ -24,6 +28,29 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
 
   beforeAll(async () => {
     testContext = await setupTestDatabase();
+    await ensureProvider(
+      testContext.db,
+      "cycling-analytics-fixture",
+      "Cycling analytics fixture",
+      undefined,
+      TEST_USER_ID,
+    );
+    await testContext.db.insert(activity).values({
+      id: ACTIVITY_ID,
+      groupId: ACTIVITY_ID,
+      userId: TEST_USER_ID,
+      providerId: "cycling-analytics-fixture",
+      externalId: ACTIVITY_ID,
+      canonicalType: "cycling",
+      providerType: "cycling",
+      startedAt: new Date(Date.now() - 2 * 86_400_000),
+      endedAt: new Date(Date.now() - 2 * 86_400_000 + 3_600_000),
+    });
+    await testContext.db.execute(sql`DELETE FROM fitness.sport_settings
+      WHERE user_id = ${TEST_USER_ID}::uuid AND sport = 'cycling'`);
+    await testContext.db.execute(sql`INSERT INTO fitness.sport_settings
+      (user_id, sport, ftp, effective_from) VALUES
+      (${TEST_USER_ID}::uuid, 'cycling', 250, CURRENT_DATE - 10)`);
     const client = createClickHouseClientFromEnv();
     const database = `cycling_analytics_test_${randomUUID().replaceAll("-", "")}`;
     const rewrite = (query: string) => query.replace(/\b(analytics|postgres_fitness)\b/g, database);
@@ -82,6 +109,17 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
       )`,
     );
     await executeCommand(
+      `INSERT INTO analytics.activity_summary_rows (
+        activity_id,user_id,canonical_type,name,started_at,ended_at,power_sample_count,
+        refresh_version,is_deleted,refreshed_at
+      ) VALUES (
+        toUUID('${ACTIVITY_ID}'),toUUID('${TEST_USER_ID}'),'cycling','Threshold Intervals',
+        now64(6, 'UTC') - INTERVAL 2 DAY,
+        now64(6, 'UTC') - INTERVAL 2 DAY + INTERVAL 1 HOUR,
+        3600,1,0,now64(9, 'UTC')
+      )`,
+    );
+    await executeCommand(
       `INSERT INTO analytics.cycling_activity VALUES (
         toUUID('${ZERO_EFFICIENCY_ACTIVITY_ID}'), toUUID('${TEST_USER_ID}'), 'wahoo', ['wahoo'],
         'cycling', 'cycling', NULL, 'Ride Without Zone Two Data', now64(6, 'UTC') - INTERVAL 4 DAY,
@@ -118,10 +156,6 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
         ('${TEST_USER_ID}','${ACTIVITY_ID}',280.0,1,'test-np',0,2,now64(6))`,
     );
     await executeCommand(
-      `INSERT INTO analytics.cycling_power_history_rows VALUES
-        ('${TEST_USER_ID}',1,today(),'reference-v1',[(toFloat64(toUnixTimestamp64Micro(now64(6)-INTERVAL 2 DAY))/1000000,'${ACTIVITY_ID}',250.0,1.12,125.44,'${ACTIVITY_ID}',toFloat64(toUnixTimestamp64Micro(now64(6)-INTERVAL 2 DAY))/1000000,1200.0,300.0)],3,now64(6))`,
-    );
-    await executeCommand(
       `INSERT INTO analytics.activity_power_curve (
         activity_id, user_id, started_at, activity_date, duration_seconds, best_power,
         is_deleted, refresh_version, refreshed_at
@@ -135,7 +169,7 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
     await testContext?.cleanup();
   });
 
-  it("serves cycling metrics and canonical threshold evidence in five ClickHouse statements", async () => {
+  it("serves cycling metrics and dated configured FTP in five ClickHouse statements", async () => {
     const querySpy = vi.spyOn(sensorStore, "query");
     const repository = new CyclingAnalyticsRepository(
       testContext.db,
@@ -143,6 +177,20 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
       "UTC",
       sensorStore,
     );
+
+    const thresholdMetrics = await new CyclingThresholdRepository(
+      testContext.db,
+      sensorStore,
+      TEST_USER_ID,
+      "UTC",
+    ).getForActivities([ACTIVITY_ID]);
+    const thresholdMetric = thresholdMetrics.get(ACTIVITY_ID);
+    expect(thresholdMetric, JSON.stringify(thresholdMetric)).toMatchObject({
+      ftp: 250,
+      normalized_power: 280,
+      intensity_factor: 1.12,
+    });
+    querySpy.mockClear();
 
     const performance = await repository.getPerformance(ChartRange.fromDays(90));
     const activities = await repository.getActivities(ChartRange.fromDays(90), {
@@ -156,7 +204,7 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
     expect(performance.powerCurve.recent.points).toEqual(
       expect.arrayContaining([expect.objectContaining({ durationSeconds: 300, bestPower: 400 })]),
     );
-    expect(performance.eftpTrend.currentEftp).toBeGreaterThan(0);
+    expect(performance.pmc.model.ftp).toBe(250);
     expect(activities.activities.items[0]?.name).toBe("Threshold Intervals");
     expect(activities.variability.rows[0]?.variabilityIndex).toBe(1.12);
     expect(activities.verticalAscent[0]?.verticalAscentRate).toBe(500);

@@ -25,6 +25,7 @@ const settings: SportSettingsRow = {
   sport: "cycling",
   thresholdHr: 175,
   thresholdPacePerKm: null,
+  ftp: 280,
   powerZonePcts: [0.55, 0.75, 0.9, 1.05, 1.2, 1.5],
   hrZonePcts: [0.6, 0.7, 0.8, 0.9],
   paceZonePcts: null,
@@ -49,15 +50,21 @@ const context = {
   activityPowerMetrics: {
     activity_id: "00000000-0000-4000-8000-000000000001",
     started_at: "2026-06-15T00:00:00Z",
+    ended_at: "2026-06-15T00:30:00Z",
+    activity_date: "2026-06-15",
+    canonical_type: "cycling",
     normalized_power: 210,
-    model_version: "test-cycling-model",
-    eftp: 250,
+    power_sample_count: 1800,
+    ftp: 250,
     power_tss: 35.28,
     intensity_factor: 0.84,
-    evidence_activity_id: "00000000-0000-4000-8000-000000000002",
-    evidence_at: "2026-06-14T00:00:00Z",
-    evidence_duration_seconds: 600,
-    evidence_power: 300,
+    threshold: {
+      value: 250,
+      unit: "watt" as const,
+      effective_from: "2026-06-01",
+      source_record_id: "00000000-0000-4000-8000-000000000004",
+      kind: "configured" as const,
+    },
   },
   intervals: [],
   weightObservations: [
@@ -189,11 +196,11 @@ describe("calculateCyclingEffortMetrics", () => {
     expect(result.thresholds).toMatchObject({
       ftp: {
         value: 250,
-        method: "computed_eftp",
-        evidenceActivityId: context.activityPowerMetrics.evidence_activity_id,
+        kind: "configured",
+        effective_from: "2026-06-01",
       },
-      ageDays: 1,
-      freshness: "computed",
+      ageDays: null,
+      freshness: "configured",
     });
     expect(
       result.unavailableReasons.filter((row) =>
@@ -204,13 +211,14 @@ describe("calculateCyclingEffortMetrics", () => {
     ).toEqual([]);
   });
   it.each([0, -1, Number.NaN, Infinity])(
-    "keeps inadmissible canonical threshold %s unavailable",
-    (eftp) => {
+    "keeps unavailable configured threshold %s unavailable",
+    (ftp) => {
       const result = calculateCyclingEffortMetrics(samples, {
         ...context,
         activityPowerMetrics: {
           ...context.activityPowerMetrics,
-          eftp,
+          ftp,
+          threshold: null,
           intensity_factor: null,
           power_tss: null,
         },
@@ -218,7 +226,7 @@ describe("calculateCyclingEffortMetrics", () => {
       expect(result.thresholds).toMatchObject({ ftp: null, freshness: "unavailable" });
       expect(result.unavailableReasons).toContainEqual({
         metric: "power_zones",
-        reason: "No qualifying computed cycling threshold evidence is available for this activity.",
+        reason: "No configured cycling FTP is effective for this activity date.",
       });
     },
   );
@@ -243,14 +251,15 @@ describe("calculateCyclingEffortMetrics", () => {
       ...context,
       activityPowerMetrics: {
         ...context.activityPowerMetrics,
-        eftp: null,
+        ftp: null,
+        threshold: null,
         intensity_factor: null,
         power_tss: null,
       },
     });
     expect(missingThreshold.workout.unavailableReasons).toContainEqual({
       metric: "intensity_factor",
-      reason: "No qualifying computed cycling threshold evidence is available for this activity.",
+      reason: "No configured cycling FTP is effective for this activity date.",
     });
     const unsupported = calculateCyclingEffortMetrics(samples, {
       ...context,
@@ -260,7 +269,7 @@ describe("calculateCyclingEffortMetrics", () => {
       expect(unsupported.workout.unavailableReasons).toContainEqual({
         metric,
         reason:
-          "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+          "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
       });
     }
   });
@@ -347,15 +356,21 @@ describe("calculateCyclingEffortMetrics", () => {
       activityPowerMetrics: {
         activity_id: activityA,
         started_at: "2026-06-15T00:00:00Z",
+        ended_at: "2026-06-15T01:00:00Z",
+        activity_date: "2026-06-15",
+        canonical_type: "cycling",
         normalized_power: 257,
-        model_version: "test-cycling-model",
-        eftp: 300,
+        power_sample_count: 3600,
+        ftp: 300,
         power_tss: 36.694,
         intensity_factor: 0.856667,
-        evidence_activity_id: activityB,
-        evidence_at: "2026-06-14T00:00:00Z",
-        evidence_duration_seconds: 600,
-        evidence_power: 350,
+        threshold: {
+          value: 300,
+          unit: "watt",
+          effective_from: "2026-06-01",
+          source_record_id: "00000000-0000-4000-8000-000000000004",
+          kind: "configured",
+        },
       },
       intervals: [{ index: 4, type: "work", startOffsetSeconds: 10, endOffsetSeconds: 60 }],
     });
@@ -377,11 +392,49 @@ describe("calculateCyclingEffortMetrics", () => {
     expect(result.intervals[0]?.normalizedPowerWatts).toBe(281);
     expect(result.thresholds.ftp).toMatchObject({
       value: 300,
-      kind: "computed",
-      evidenceActivityId: activityB,
-      modelVersion: "test-cycling-model",
-      uncertainty: { kind: "not_quantifiable", watts: null, reason: expect.any(String) },
+      kind: "configured",
+      effective_from: "2026-06-01",
     });
+  });
+
+  it("treats a cleared FTP snapshot as unavailable while retaining its provenance", () => {
+    const clear = {
+      value: null,
+      unit: "watt" as const,
+      effective_from: "2026-06-10",
+      source_record_id: "00000000-0000-4000-8000-000000000004",
+      kind: "configured" as const,
+    };
+    const clearedContext: CyclingEffortContext = {
+      ...context,
+      settingsHistory: [{ ...settings, ftp: null, effectiveFrom: "2026-06-10" }],
+      activityPowerMetrics: {
+        ...context.activityPowerMetrics,
+        ftp: null,
+        intensity_factor: null,
+        power_tss: null,
+        threshold: clear,
+      },
+    };
+
+    const result = calculateCyclingEffortMetrics(samples, clearedContext);
+
+    expect(result.thresholds.ftp).toEqual(clear);
+    expect(result.thresholds.freshness).toBe("unavailable");
+    expect(result.thresholds.freshnessReason).toContain("cleared");
+    expect(result.workout.unavailableReasons).toContainEqual({
+      metric: "intensity_factor",
+      reason: expect.stringContaining("cleared"),
+    });
+    expect(result.workout.unavailableReasons).toContainEqual({
+      metric: "training_stress_score",
+      reason: expect.stringContaining("cleared"),
+    });
+    expect(result.unavailableReasons).toContainEqual({
+      metric: "power_zones",
+      reason: expect.stringContaining("cleared"),
+    });
+    expect(() => cyclingEffortMetricsSchema.parse(result)).not.toThrow();
   });
 
   it("retains raw effort observations when the canonical activity projection is not available", () => {
@@ -398,25 +451,13 @@ describe("calculateCyclingEffortMetrics", () => {
     expect(result.unavailableReasons).toContainEqual({
       metric: "normalized_power",
       reason:
-        "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+        "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
     });
     expect(result.workout.unavailableReasons).toContainEqual({
       metric: "normalized_power",
       reason:
-        "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+        "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
     });
-  });
-
-  it("measures computed threshold evidence age against the activity timestamp", () => {
-    const result = calculateCyclingEffortMetrics(samples, {
-      ...context,
-      activityPowerMetrics: {
-        ...context.activityPowerMetrics,
-        started_at: "2026-06-15T16:00:00Z",
-        evidence_at: "2026-06-15T14:00:00Z",
-      },
-    });
-    expect(result.thresholds.ageDays).toBe(0);
   });
 
   it("treats sequential 2Hz samples as observations and integrates their native durations", () => {
@@ -1520,6 +1561,7 @@ describe("cycling effort metric loading", () => {
       sport: "cycling",
       threshold_hr: 175,
       threshold_pace_per_km: null,
+      ftp: null,
       power_zone_pcts: [0.55, 0.75, 0.9, 1.05, 1.2, 1.5],
       hr_zone_pcts: [0.6, 0.7, 0.8, 0.9],
       pace_zone_pcts: null,

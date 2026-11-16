@@ -1,5 +1,4 @@
 import { type CriticalPowerModel, fitCriticalPower } from "@dofek/cycling-power/critical-power";
-import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { DURATION_LABELS, STANDARD_DURATIONS } from "@dofek/training/power-analysis";
@@ -18,8 +17,8 @@ import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { ActivityVariabilityModel, VerticalAscentModel } from "./cycling-advanced-models.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 import { buildPmcChartFromRows, loadPmcChartParameters } from "./pmc-repository.ts";
-import { PowerRepository } from "./power-repository.ts";
 
 const powerComparisonRowSchema = z.object({
   duration_seconds: z.coerce.number(),
@@ -42,8 +41,6 @@ const performanceActivityRowSchema = z.object({
   avg_power: z.coerce.number().nullable(),
   power_samples: z.coerce.number(),
   hr_samples: z.coerce.number(),
-  normalized_power: z.coerce.number().nullable(),
-  power_tss: z.coerce.number().nullable(),
   activity_name: z.string().nullable(),
   latest_weight_kg: z.coerce.number().nullable(),
 });
@@ -63,9 +60,9 @@ const cyclingActivityRowSchema = z.object({
   source_providers: z.array(z.string()),
   distance_meters: z.coerce.number().nullable(),
   date: dateStringSchema,
-  normalized_power: z.coerce.number().nullable(),
+  normalized_power: z.coerce.number().nullable().optional(),
   average_power: z.coerce.number().nullable(),
-  intensity_factor: z.coerce.number().nullable(),
+  intensity_factor: z.coerce.number().nullable().optional(),
   elevation_gain_meters: z.coerce.number().nullable(),
   elapsed_seconds: z.coerce.number(),
   max_hr: z.coerce.number().nullable(),
@@ -370,8 +367,6 @@ export class CyclingAnalyticsRepository {
         activity.6 AS avg_power,
         activity.7 AS power_samples,
         activity.8 AS hr_samples,
-        metrics.normalized_power AS normalized_power,
-        metrics.power_tss AS power_tss,
         activity.9 AS activity_name,
         latest_weight.weight_kg AS latest_weight_kg
       FROM (
@@ -380,8 +375,6 @@ export class CyclingAnalyticsRepository {
         WHERE user_id = {userId:UUID} AND is_deleted = 0
       ) AS daily
       CROSS JOIN latest_weight
-      LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
-        ON metrics.user_id = daily.user_id AND metrics.activity_id = activity.1
       WHERE daily.user_id = {userId:UUID}
         ${historyRange.clickHouseDateAfterToday("daily.date")}
         ${this.#accessWindowPredicate("activity.2")}
@@ -398,18 +391,27 @@ export class CyclingAnalyticsRepository {
     const recent = buildPowerCurve(comparisonRows, "recent");
     const season = buildPowerCurve(comparisonRows, "season");
     const weightKg = activityRows[0]?.latest_weight_kg ?? null;
-    const normalizedPowerRows = activityRows.map((row) => ({
-      activity_id: row.id,
-      power_tss: row.power_tss ?? null,
-    }));
-    const eftpTrend = await new PowerRepository(
+    const activityPowerMetrics = await new CyclingThresholdRepository(
+      this.#db,
+      this.#sensorStore,
       this.#userId,
       this.#timezone,
+      this.#accessWindow,
+    ).getForActivities(activityRows.map((row) => row.id));
+    const normalizedPowerRows = activityRows.map((row) => ({
+      activity_id: row.id,
+      power_tss: activityPowerMetrics.get(row.id)?.power_tss ?? null,
+    }));
+    const currentThreshold = await new CyclingThresholdRepository(
+      this.#db,
       this.#sensorStore,
-    ).getEftpTrend(range, this.#accessWindow);
-    const { trend, currentEftp, currentEvidence } = eftpTrend;
+      this.#userId,
+      this.#timezone,
+      this.#accessWindow,
+    ).getCurrent();
+    const currentFtp = currentThreshold.value;
     const pmc = await buildPmcChartFromRows({
-      currentEftp,
+      currentFtp,
       db: this.#db,
       userId: this.#userId,
       range,
@@ -428,7 +430,6 @@ export class CyclingAnalyticsRepository {
         season: powerSummaryPeriod(season, weightKg),
       },
       pmc,
-      eftpTrend,
       availability: {
         powerCurve: cyclingAvailability(
           "cycling power-curve data",
@@ -447,12 +448,6 @@ export class CyclingAnalyticsRepository {
             ? { status: "insufficient_data" as const, message: pmc.unavailableReason }
             : {}),
         },
-        eftpTrend: cyclingAvailability(
-          "threshold power data",
-          "Cycling activity power summaries",
-          "power data",
-          trend.length,
-        ),
       },
       estimateEvidence: {
         recent: {
@@ -462,26 +457,6 @@ export class CyclingAnalyticsRepository {
         season: {
           threshold: seasonThresholdEvidence,
           vo2Max: buildVo2MaxEvidence(season, weightKg),
-        },
-        eftp: {
-          method: "Canonical ongoing reference-curve eFTP with modeled decay",
-          confidence: currentEftp == null ? ("not_available" as const) : ("limited" as const),
-          confidenceLabel: currentEftp == null ? "Not available" : "Training estimate",
-          confidenceDetail:
-            currentEvidence.unavailable_reason ??
-            "The ongoing estimate carries supported effort evidence forward and applies modeled decay independently of the displayed range.",
-          sourceWorkouts:
-            currentEvidence.evidence_activity_id && currentEvidence.evidence_at
-              ? [
-                  {
-                    id: currentEvidence.evidence_activity_id,
-                    name: null,
-                    date: formatDateYmdInTimeZone(currentEvidence.evidence_at, this.#timezone),
-                  },
-                ]
-              : [],
-          pacingGuidance:
-            "This is a training estimate with unquantified physiological uncertainty; use representative sustained efforts when assessing pacing.",
         },
       },
     };
@@ -502,9 +477,7 @@ export class CyclingAnalyticsRepository {
         cycling.source_providers AS source_providers,
         cycling.distance_meters AS distance_meters,
         toString(toDate(toTimeZone(cycling.started_at, {timezone:String}))) AS date,
-        metrics.normalized_power AS normalized_power,
         cycling.average_power AS average_power,
-        metrics.intensity_factor AS intensity_factor,
         cycling.elevation_gain_meters AS elevation_gain_meters,
         cycling.elapsed_seconds AS elapsed_seconds,
         cycling.efficiency_max_heart_rate AS max_hr,
@@ -513,8 +486,6 @@ export class CyclingAnalyticsRepository {
         cycling.efficiency_factor AS efficiency_factor,
         cycling.zone_two_samples AS z2_samples
       FROM analytics.cycling_activity AS cycling FINAL
-      LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
-        ON metrics.user_id = cycling.user_id AND metrics.activity_id = cycling.activity_id
       WHERE cycling.user_id = {userId:UUID}
         AND cycling.is_deleted = 0
         ${range.clickHouseTimestampAfter("cycling.started_at")}
@@ -529,7 +500,19 @@ export class CyclingAnalyticsRepository {
       { priority: "dashboard" },
     );
 
-    const powerCandidates = rows.filter(
+    const manualPowerMetrics = await new CyclingThresholdRepository(
+      this.#db,
+      this.#sensorStore,
+      this.#userId,
+      this.#timezone,
+      this.#accessWindow,
+    ).getForActivities(rows.map((row) => row.id));
+    const rowsWithPower = rows.map((row) => ({
+      ...row,
+      normalized_power: manualPowerMetrics.get(row.id)?.normalized_power ?? null,
+      intensity_factor: manualPowerMetrics.get(row.id)?.intensity_factor ?? null,
+    }));
+    const powerCandidates = rowsWithPower.filter(
       (
         row,
       ): row is typeof row & {
@@ -560,7 +543,7 @@ export class CyclingAnalyticsRepository {
           row.intensity_factor,
         ).toDetail(),
       );
-    const verticalAscent = rows
+    const verticalAscent = rowsWithPower
       .filter(
         (row) =>
           !isIndoorCyclingModality(row.modality) &&
@@ -632,7 +615,7 @@ export class CyclingAnalyticsRepository {
             : powerCandidates.length === 0
               ? ("no_normalized_power" as const)
               : variabilityCandidates.length === 0
-                ? ("no_ftp_estimate" as const)
+                ? ("no_configured_ftp" as const)
                 : null,
       },
       verticalAscent,

@@ -280,7 +280,11 @@ merged AS (
             minOrNullIf(ranked.started_at, ranked.activity_id IS NOT null AND coalesce(ranked.provider_type, '') != 'climbing_log'),
             minIf(ranked.started_at, ranked.activity_id IS NOT null)
         ) AS started_at,
-        maxOrNullIf(ranked.ended_at, ranked.activity_id IS NOT null AND coalesce(ranked.provider_type, '') != 'climbing_log') AS ended_at,
+        if(
+            countIf(ranked.activity_id IS NOT null AND coalesce(ranked.provider_type, '') != 'climbing_log') = 0,
+            maxOrNullIf(ranked.started_at, ranked.activity_id IS NOT null),
+            maxOrNullIf(ranked.ended_at, ranked.activity_id IS NOT null AND coalesce(ranked.provider_type, '') != 'climbing_log')
+        ) AS ended_at,
         any(best.source_name) AS source_name,
         argMinIf(
             ranked.name,

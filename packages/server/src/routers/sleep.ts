@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
-import { SleepRepository } from "../repositories/sleep-repository.ts";
+import { SleepRepository, sleepStageRowSchema } from "../repositories/sleep-repository.ts";
 
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -43,6 +43,20 @@ export const sleepRouter = router({
     );
     return repo.getLatestStages();
   }),
+
+  stagesByDate: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+    .input(z.object({ date: z.iso.date().optional() }).optional())
+    .output(z.object({ date: z.iso.date().nullable(), stages: z.array(sleepStageRowSchema) }))
+    .query(({ ctx, input }) => {
+      const repo = new SleepRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
+      return repo.getStagesByDate(input?.date);
+    }),
 
   latest: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
     const repo = new SleepRepository(

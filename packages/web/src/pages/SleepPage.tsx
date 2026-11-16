@@ -1,6 +1,6 @@
-import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import { formatDateYmdInTimeZone, shiftDateYmd } from "@dofek/format/format";
 import { localTimeSourceSchema } from "@dofek/format/record-local-time";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { z } from "zod";
 import {
   CorrelationCard,
@@ -69,9 +69,12 @@ function isSleepInsight(metric: string): boolean {
 export function SleepPage() {
   const { days, setDays } = useTimeRangePreference("sleep");
   const endDate = useTodayQueryDate();
+  const [selectedDate, setSelectedDate] = useState<string>();
 
   const sleepData = trpc.sleep.list.useQuery({ ...selectedRangeQueryInput(days), endDate });
-  const latestStages = trpc.sleep.latestStages.useQuery();
+  const stagesByDate = trpc.sleep.stagesByDate.useQuery(
+    selectedDate ? { date: selectedDate } : undefined,
+  );
   const insightsQuery = trpc.insights.compute.useQuery({
     ...minimumSelectedRangeQueryInput(days, 90),
     endDate,
@@ -86,6 +89,11 @@ export function SleepPage() {
   }, [insightsQuery.data]);
 
   const sleepRows = assertRows(sleepData.data, sleepRowSchema);
+  const displayDate = selectedDate ?? stagesByDate.data?.date ?? endDate;
+  const selectedStages =
+    selectedDate === undefined || stagesByDate.data?.date === selectedDate
+      ? stagesByDate.data?.stages
+      : undefined;
   const sourceRows = useMemo(
     () =>
       sleepRows.map((row) => ({
@@ -143,6 +151,63 @@ export function SleepPage() {
           <SleepChart data={sleepRows} loading={sleepData.isLoading} />
         </PageSection>
 
+        <PageSection title="Night’s Stages">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              aria-label="Previous day"
+              className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground hover:bg-surface-secondary"
+              onClick={() => {
+                const previousDate = shiftDateYmd(displayDate, -1);
+                if (previousDate <= endDate) setSelectedDate(previousDate);
+              }}
+            >
+              Previous
+            </button>
+            <label className="flex items-center gap-2 text-sm">
+              Night date
+              <input
+                aria-label="Night date"
+                type="date"
+                value={displayDate}
+                max={endDate}
+                onChange={(event) => {
+                  const date = event.currentTarget.value;
+                  if (date && date <= endDate) setSelectedDate(date);
+                }}
+                className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground"
+              />
+            </label>
+            <button
+              type="button"
+              aria-label="Next day"
+              className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={displayDate >= endDate}
+              onClick={() => {
+                const nextDate = shiftDateYmd(displayDate, 1);
+                if (nextDate <= endDate) setSelectedDate(nextDate);
+              }}
+            >
+              Next
+            </button>
+          </div>
+          {stagesByDate.isError && !selectedStages && (
+            <QueryStatePanel error={stagesByDate.error} height={72} />
+          )}
+          {stagesByDate.isError && selectedStages && (
+            <p role="status" className="mb-2 text-sm text-warning">
+              Refresh failed: {stagesByDate.error.message}
+            </p>
+          )}
+          {selectedStages ? (
+            <Hypnogram data={selectedStages} loading={false} />
+          ) : stagesByDate.isLoading ? (
+            <p role="status" className="py-4 text-sm text-muted">
+              Loading sleep stages...
+            </p>
+          ) : null}
+        </PageSection>
+
         {/* Data Sources */}
         <PageSection
           id="sleep-data-sources"
@@ -154,14 +219,6 @@ export function SleepPage() {
             rows={sourceRows}
             loading={sleepData.isLoading}
           />
-        </PageSection>
-
-        {/* Last Night Hypnogram */}
-        <PageSection title="Last Night's Stages">
-          {latestStages.isError && !latestStages.data && (
-            <QueryStatePanel error={latestStages.error} height={72} />
-          )}
-          <Hypnogram data={latestStages.data ?? []} loading={latestStages.isLoading} />
         </PageSection>
 
         {/* Sleep Insights */}

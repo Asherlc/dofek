@@ -1,8 +1,40 @@
 import { describe, expect, it, vi } from "vitest";
 import { CyclingPerformanceRepository } from "./cycling-performance-repository.ts";
+import type { CyclingActivityPowerMetrics } from "./cycling-threshold-repository.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
+
+function powerMetrics(
+  activityId: string,
+  ftp: number | null,
+  np: number | null,
+): CyclingActivityPowerMetrics {
+  return {
+    activity_id: activityId,
+    started_at: "2026-08-30T10:00:00.000Z",
+    ended_at: "2026-08-30T11:00:00.000Z",
+    activity_date: "2026-08-30",
+    canonical_type: "cycling",
+    normalized_power: np,
+    power_sample_count: np === null ? 0 : 3600,
+    ftp,
+    intensity_factor: ftp === null || np === null ? null : np / ftp,
+    power_tss: null,
+    threshold:
+      ftp === null
+        ? null
+        : {
+            value: ftp,
+            unit: "watt",
+            effective_from: "2026-01-01",
+            source_record_id: "00000000-0000-4000-8000-000000000001",
+            kind: "configured",
+          },
+  };
+}
 
 describe("CyclingPerformanceRepository", () => {
-  it("withholds threshold attribution for a ride with power but no supported eFTP", async () => {
+  it("withholds configured FTP attribution for a ride with power but no dated setting", async () => {
+    vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockResolvedValue(new Map());
     const query = vi
       .fn()
       .mockResolvedValueOnce([
@@ -13,26 +45,34 @@ describe("CyclingPerformanceRepository", () => {
           modality: "indoor",
           elapsed_seconds: 3600,
           average_power: 200,
-          normalized_power: 220,
-          eftp: null,
-          intensity_factor: null,
           elevation_gain_meters: null,
         },
       ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
-    const result = await new CyclingPerformanceRepository({ query }, "user", "UTC").listRange(
-      "2026-08-01",
-      "2026-09-01",
-    );
+    const result = await new CyclingPerformanceRepository(
+      { execute: vi.fn() },
+      { query },
+      "user",
+      "UTC",
+    ).listRange("2026-08-01", "2026-09-01");
     expect(result.activities[0]).toMatchObject({
-      normalized_power_watts: 220,
-      estimated_ftp_watts: null,
-      estimated_ftp_source: null,
+      normalized_power_watts: null,
+      ftp_watts: null,
+      ftp_source: null,
       intensity_factor: null,
     });
   });
   it("returns per-ride and rolling-90-day load-normalized power without look-ahead", async () => {
+    const getForActivities = vi
+      .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
+      .mockResolvedValue(
+        new Map([
+          ["older-ride", powerMetrics("older-ride", 210, 190)],
+          ["outdoor-ride", powerMetrics("outdoor-ride", 245, 220)],
+          ["ride-without-power", powerMetrics("ride-without-power", 245, null)],
+        ]),
+      );
     const query = vi
       .fn()
       .mockResolvedValueOnce([
@@ -43,9 +83,6 @@ describe("CyclingPerformanceRepository", () => {
           modality: "outdoor",
           elapsed_seconds: 3600,
           average_power: 160,
-          normalized_power: 190,
-          eftp: 210,
-          intensity_factor: 0.905,
           elevation_gain_meters: 100,
         },
         {
@@ -55,9 +92,6 @@ describe("CyclingPerformanceRepository", () => {
           modality: "outdoor",
           elapsed_seconds: 3720,
           average_power: 180,
-          normalized_power: 220,
-          eftp: 245,
-          intensity_factor: 0.898,
           elevation_gain_meters: 736,
         },
         {
@@ -67,9 +101,6 @@ describe("CyclingPerformanceRepository", () => {
           modality: "outdoor",
           elapsed_seconds: 1800,
           average_power: null,
-          normalized_power: null,
-          eftp: 245,
-          intensity_factor: null,
           elevation_gain_meters: 310.4,
         },
       ])
@@ -124,12 +155,19 @@ describe("CyclingPerformanceRepository", () => {
         },
       ]);
     const repository = new CyclingPerformanceRepository(
+      { execute: vi.fn() },
       { query },
       "00000000-0000-4000-8000-000000000001",
       "America/Los_Angeles",
     );
 
-    await expect(repository.listRange("2026-08-29", "2026-09-01")).resolves.toEqual({
+    const actual = await repository.listRange("2026-08-29", "2026-09-01");
+    expect(getForActivities).toHaveBeenCalledWith([
+      "older-ride",
+      "outdoor-ride",
+      "ride-without-power",
+    ]);
+    expect(actual, JSON.stringify(actual)).toEqual({
       activities: [
         {
           activity_id: "outdoor-ride",
@@ -139,8 +177,8 @@ describe("CyclingPerformanceRepository", () => {
           duration_minutes: 62,
           average_power_watts: 180,
           normalized_power_watts: 220,
-          estimated_ftp_watts: 245,
-          estimated_ftp_source: "computed_eftp",
+          ftp_watts: 245,
+          ftp_source: expect.objectContaining({ value: 245, kind: "configured" }),
           intensity_factor: 0.898,
           elevation_gain_m: 736,
           best_efforts_watts: { "5s": 900, "1m": 500, "5m": 300, "20m": 250 },
@@ -153,8 +191,8 @@ describe("CyclingPerformanceRepository", () => {
           duration_minutes: 30,
           average_power_watts: null,
           normalized_power_watts: null,
-          estimated_ftp_watts: 245,
-          estimated_ftp_source: "computed_eftp",
+          ftp_watts: 245,
+          ftp_source: expect.objectContaining({ value: 245, kind: "configured" }),
           intensity_factor: null,
           elevation_gain_m: 310.4,
           best_efforts_watts: { "5s": null, "1m": null, "5m": null, "20m": null },
