@@ -669,14 +669,13 @@ describe("LoginScreen", () => {
       data: [],
       nativeApple: true,
     });
-    mockStartNativeAppleSignIn.mockRejectedValue(
-      Object.assign(
-        new Error(
-          "private-token [dofek.apple-auth domain=com.apple.AuthenticationServices.AuthorizationError code=1000 underlyingDomain=AKAuthenticationError underlyingCode=-7026]",
-        ),
-        { code: "ERR_REQUEST_UNKNOWN" },
+    const nativeError = Object.assign(
+      new Error(
+        "private-token [dofek.apple-auth domain=com.apple.AuthenticationServices.AuthorizationError code=1000 underlyingDomain=AKAuthenticationError underlyingCode=-7026]",
       ),
+      { code: "ERR_REQUEST_UNKNOWN" },
     );
+    mockStartNativeAppleSignIn.mockRejectedValue(nativeError);
     render(<LoginScreen />);
     fireEvent.click(await screen.findByText("AppleAuthenticationButton"));
     expect(
@@ -703,6 +702,11 @@ describe("LoginScreen", () => {
         },
       },
     );
+    const capturedError = mockCaptureException.mock.calls[0]?.[0];
+    expect(capturedError).not.toBe(nativeError);
+    expect(capturedError).toMatchObject({
+      message: "Apple could not complete sign-in. Please try again.",
+    });
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain("private-token");
     expect(screen.getByText("AppleAuthenticationButton")).toBeTruthy();
   });
