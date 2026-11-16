@@ -3,8 +3,10 @@ import { createClient } from "@clickhouse/client";
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { z } from "zod";
+import { buildPostgresFitnessRawTableStatements } from "../../../../src/db/clickhouse-raw-tables.ts";
 import { buildIngestMetricStreamCreateTableSql } from "../../../../src/metric-stream/clickhouse-table.ts";
 import { normalizeActivityHardware } from "../models/activity-hardware.ts";
+import { buildTestAnalyticsTableStatement } from "../routers/clickhouse-integration-test-models.ts";
 import { getActivityMetricSources } from "./activity-metric-sources-repository.ts";
 
 describe("activity hardware source labels in ClickHouse", () => {
@@ -21,7 +23,10 @@ describe("activity hardware source labels in ClickHouse", () => {
   };
   let client: ReturnType<typeof createClient>;
   const scope = (query: string) =>
-    query.replaceAll("analytics.", `${database}.`).replaceAll("ingest.", `${database}.`);
+    query
+      .replaceAll("analytics.", `${database}.`)
+      .replaceAll("ingest.", `${database}.`)
+      .replaceAll("postgres_fitness.", `${database}.`);
   const store = {
     async query<T extends z.ZodType>(
       schema: T,
@@ -41,6 +46,17 @@ describe("activity hardware source labels in ClickHouse", () => {
     client = createClient({ url: process.env.CLICKHOUSE_URL });
     await client.command({ query: `CREATE DATABASE ${database}` });
     await client.command({ query: scope(buildIngestMetricStreamCreateTableSql()) });
+    for (const query of buildPostgresFitnessRawTableStatements().filter((statement) =>
+      [
+        "CREATE TABLE IF NOT EXISTS postgres_fitness.sensor_provider_priority (",
+        "CREATE TABLE IF NOT EXISTS postgres_fitness.sensor_device_priority (",
+      ].some((prefix) => statement.startsWith(prefix)),
+    )) {
+      await client.command({ query: scope(query) });
+    }
+    await client.command({
+      query: scope(buildTestAnalyticsTableStatement("analytics.daily_health_sensor")),
+    });
     await client.command({
       query: `CREATE TABLE ${database}.sensor_scalar_sample (
       id UUID, activity_id Nullable(UUID), user_id UUID, recorded_at DateTime64(6, 'UTC'), recorded_date Date,

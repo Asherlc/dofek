@@ -148,7 +148,9 @@ viewer. Labels match web through [shared formatters](../format/src/climbing-log.
 See the
 [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
-Activity details compose attached climbs in [ActivityClimbingPanel](./components/ActivityClimbingPanel.tsx):
+Activity details load attached and suggested logs through the route-local
+[climbing hook](./components/activity/useActivityClimbing.ts) and compose them in
+[ActivityClimbingPanel](./components/ActivityClimbingPanel.tsx):
 one interactive map above a grouped list on narrow screens, including same-day
 attachment suggestions under Unattached. Selecting a row or
 map point highlights the same occurrence; Log details opens the existing
@@ -806,7 +808,7 @@ using React Native's [Pressable](https://reactnative.dev/docs/pressable) and
 ## Activity metric sources
 
 Activity views offer independent [source controls](components/activity/ActivityMetricSourcePicker.tsx)
-for heart rate, power, speed, cadence, and elevation. Provider logos, short device
+for heart rate, power, speed, cadence, elevation, and skin temperature. Provider logos, short device
 names where needed, and attribution icons keep the controls and chooser concise.
 Unknown sources retain identifying text; accessible names retain the complete
 source wording using React Native's [accessibility labels](https://reactnative.dev/docs/accessibility#accessibilitylabel).
@@ -832,6 +834,9 @@ position observations by elapsed time and evaluate continuity independently for
 each metric. Sparse observations retain markers; dense recordings show lines
 with markers on touch. Scrubbing selects the nearest measured observation by
 time and retains its original timeline index for the map.
+Skin-temperature chart points use their separately retained decoded measurement
+times and the selected temperature unit. Daily Recovery values remain available
+in the existing skin-temperature card.
 The [shared presentation policy](../training/src/activity-chart-series.ts) defines
 the cadence-based gap rule used by both clients. This follows the distinction
 between [differing reporting intervals and missing observations](https://www.datawrapper.de/academy/patchy-data).

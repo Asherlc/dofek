@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { useImperativeHandle } from "react";
 import * as Native from "react-native";
 import { expect, it, vi } from "vitest";
+import { climbingLogEntryFixture } from "../../server/src/repositories/climbing-test-helpers.ts";
 
 vi.mock(
   "@maplibre/maplibre-react-native",
@@ -10,7 +11,12 @@ vi.mock(
 );
 
 import { ActivityClimbingPanel } from "./ActivityClimbingPanel";
-import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
+import {
+  climbingLogFixture,
+  exactClimbingLocation,
+  mountainProjectAscentEntry,
+  recordedCountEntries,
+} from "./climbing-log-entry-fixtures";
 
 it("lists explicitly linked Kaya and Kilter locations under one area heading", () => {
   const climb = climbingLogFixture.climb;
@@ -246,3 +252,70 @@ it("maps unattached suggestions and retains their independent Attach state", () 
   );
   expect(onAttach).toHaveBeenCalledWith(climbingLogFixture.id);
 });
+
+it("keeps two suggested entries independently selectable and attaches the second choice", () => {
+  const first = climbingLogEntryFixture({ id: "suggestion-1", title: "First suggestion" });
+  const second = climbingLogEntryFixture({ id: "suggestion-2", title: "Second suggestion" });
+  const onAttach = vi.fn();
+  render(
+    <ActivityClimbingPanel
+      entries={[climbingLogEntryFixture({ id: "attached" })]}
+      suggestions={[first, second]}
+      locations={{}}
+      onAttach={onAttach}
+    />,
+  );
+
+  expect(
+    screen.getByRole("button", { name: "Attach entry 2, First suggestion to this activity" }),
+  ).toBeTruthy();
+  const secondAction = screen.getByRole("button", {
+    name: "Attach entry 3, Second suggestion to this activity",
+  });
+  fireEvent.click(secondAction);
+  expect(onAttach).toHaveBeenCalledWith("suggestion-2");
+});
+
+it("keeps mixed attached and suggested records under the shared area heading", () => {
+  const entries = [
+    recordedCountEntries.completed,
+    recordedCountEntries.project,
+    recordedCountEntries.unknown,
+  ];
+  render(
+    <ActivityClimbingPanel
+      entries={entries.slice(0, 2)}
+      suggestions={entries.slice(2)}
+      locations={{}}
+    />,
+  );
+  expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
+  expect(screen.getByText("Attempts: 7")).toBeTruthy();
+  expect(screen.getByText("Sent")).toBeTruthy();
+  expect(screen.getByText("Project")).toBeTruthy();
+  expect(screen.getByText("Attempted")).toBeTruthy();
+  expect(screen.getAllByText("Attempts: 1")).toHaveLength(2);
+  expect(screen.getByRole("button", { name: "Select entry 3, Unsent" })).toBeTruthy();
+});
+
+it.each(["Onsight", "Flash", "Redpoint"] as const)(
+  "keeps Mountain Project %s labels on attached and suggested climbs",
+  (ascentType) => {
+    const attached = mountainProjectAscentEntry("attached-ascent", "Attached Arete", ascentType);
+    const suggested = {
+      ...mountainProjectAscentEntry("suggested-ascent", "Left Arete", ascentType),
+      attempts: attached.attempts.map((attempt) => ({
+        ...attempt,
+        climbingLogEntryId: "suggested-ascent",
+      })),
+    };
+    render(<ActivityClimbingPanel entries={[attached]} suggestions={[suggested]} locations={{}} />);
+
+    expect(screen.getByText("Attached Arete")).toBeTruthy();
+    expect(screen.getByText("Left Arete")).toBeTruthy();
+    expect(screen.getAllByText(ascentType === "Redpoint" ? "Sent" : ascentType)).toHaveLength(2);
+    expect(screen.getAllByText("5.4", { exact: true })).toHaveLength(2);
+    expect(screen.queryByText("Completed")).toBeNull();
+    expect(screen.queryByText(/Attempts:/)).toBeNull();
+  },
+);
