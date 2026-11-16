@@ -43,11 +43,60 @@
   local artifacts under `/tmp/opencode/ota-followup/`. The
   recovery runbook explains the minimum RAM requirement and that fixture
   success does not establish production recovery.
-- **Remaining risk / follow-up:** The change is not deployed. No fresh
-  production backup, production freshness check, or isolated restore of a
-  production backup has been verified. Complete these checks after the normal
-  reviewed deployment before declaring recovery. No production configuration
-  or backup operation was changed during diagnosis.
+- **Production recovery, 2026-11-16 UTC:** The reviewed memory fix merged in
+  [PR #3354](https://github.com/Asherlc/dofek/pull/3354), but normal admission
+  correctly stopped on unresolved
+  [server deployment 7811978352](https://api.github.com/repos/Asherlc/dofek/deployments/7811978352).
+  Its original [stack job](https://github.com/Asherlc/dofek/actions/runs/43775025714/job/133004641705)
+  had already deployed source `3afa94e70e71bc0b0802d1a509c1e5d8b2b00c02`
+  before failing backup freshness and skipping the Sentry deployment record.
+  The user approved a one-time operator exception: acquire the existing server
+  concurrency group, apply the committed `512M` limit with the stock
+  `docker service update --limit-memory 512M --detach=false dofek_databasus`,
+  and verify the missing gates before reconciling that same receipt. The
+  [temporary lock-holder job](https://github.com/Asherlc/dofek/actions/runs/43805725717/job/133095945326)
+  serializes this window; it runs no deployment or backup commands and is not
+  evidence that the original failed workflow succeeded. The operator update
+  converged at 536,870,912 bytes. Allowlisted pre/post inspection preserved the
+  immutable Databasus image, mounts, placement, networks and other operational
+  fields, with only Docker's empty-reservations normalization in addition to
+  memory. Web and worker specifications remained unchanged.
+- **Production backup / restore evidence:** Backup
+  `605089cc-9d8d-4eba-bd6e-59374213c479`, created at
+  `2026-11-16 04:46:12 UTC`, completed with encryption enabled. Its R2 object
+  `Health-20261116-044612-605089cc-9d8d-4eba-bd6e-59374213c479`
+  and matching `.metadata` object were written at `04:48:16` and `04:48:17`
+  UTC; the sidecar identifies the same backup and encrypted format. The
+  unchanged 24-hour freshness checker passed. The authenticated Databasus
+  download decrypted that exact backup; a full sequential `pg_restore`
+  exited zero against an isolated local PostgreSQL 18.3 / TimescaleDB 2.26.4
+  target, with ownership and ACL restoration excluded for the scratch target.
+  Migration count/hash, 104 fitness tables, 24 fitness views, extension
+  versions, and representative counts matched. There were no invalid fitness
+  indexes or unvalidated fitness constraints. The restored activity count was
+  4,985; the later live count was 4,986, with exactly one live activity created
+  after the backup began and none in that time range in the restored snapshot.
+  This is snapshot-aware validation, not a claim of equality to a later live
+  database. The scratch database had an internal-only network and no published
+  ports. It and its volume were removed, and the decrypted download deleted.
+  Supplemental command and aggregate evidence is in
+  `/tmp/opencode/ota-followup/backup-recovery-*.json` and adjacent logs.
+- **Other gates / remaining follow-up:** Both live web replicas passed their
+  internal readiness checks for Postgres, ClickHouse and queues; the CDC
+  health-state probe and public authentication-provider API also passed. A
+  request to the public `/readyz` URL returned 404 and is not counted as an
+  external readiness pass. The finalized
+  [exact-source Sentry release](https://east-bay-software.sentry.io/releases/3afa94e70e71bc0b0802d1a509c1e5d8b2b00c02/)
+  already included both `dofek-web` and `dofek-server`; its missing production
+  deployment record `181173543` was added at `2026-11-16 04:56:37 UTC`, labeled
+  as operator recovery. Independent review and fresh live/history checks
+  remain prerequisites for a success status on the existing server receipt;
+  its [status history](https://api.github.com/repos/Asherlc/dofek/deployments/7811978352/statuses)
+  remains authoritative. Preserve the failed original run. Cancel the
+  dedicated lock holder and revert its unmerged workflow after receipt
+  reconciliation. Normal server publication and the next scheduled freshness
+  run remain to be verified. The earlier credential-exposure incident still
+  requires its separate owner response.
 
 ## 2026-11-15 — OTA publisher rejected a nested trusted checkout
 

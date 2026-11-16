@@ -91,6 +91,28 @@ or increase the 24-hour threshold.
 Never inspect or print a Swarm service's environment. Use the authorized
 Infisical workflow to verify credential presence.
 
+## Recover Databasus Administrator Access
+
+Databasus manages its users in its own persistent database; the service's
+presence in infrastructure code does not provision its administrator password.
+For this instance the existing account is `admin`. With the owner's explicit
+approval, the supported server-side password-reset command can recover access
+without knowing the previous password. The pinned `v3.32.1` binary accepts
+`./main --new-password=... --email=admin`; use the running Databasus container,
+not a replacement data directory. See the
+[official password-recovery procedure](https://databasus.com/password/) and
+[version-pinned reset implementation](https://github.com/databasus/databasus/blob/v3.32.1/backend/cmd/main.go#L135-L169).
+
+Generate and save a new password privately before applying it. The recovered
+production credential is stored in Infisical's `prod` environment as
+`DATABASUS_ADMIN_PASSWORD`, with account name `DATABASUS_ADMIN_EMAIL`. These
+are operator credentials, not application-service environment inputs. Keep
+the password and API tokens out of chat, command history and logs; verify
+storage by private readback and verify access with sign-in plus an
+authenticated read. Resetting the account updates its password hash and
+creation timestamp, without replacing backup keys, schedules or stored backups
+([pinned password update](https://github.com/databasus/databasus/blob/v3.32.1/backend/internal/features/users/repositories/user_repository.go#L55-L61)).
+
 ## Prove the Backup Can Restore
 
 Never test a restore against production.
