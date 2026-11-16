@@ -11,13 +11,13 @@ import RNSentry
 /// sample buffer, orientation processor, and data watchdog, and exposes
 /// them as Expo functions/events to the JS layer.
 public class WhoopBleModule: Module {
-    private static let deviceErasureCutoffKey = "dofek_device_erasure_cutoff_v1"
+    static let deviceErasureCutoffKey = "dofek_device_erasure_cutoff_v1"
 
     private let moduleQueue = DispatchQueue(label: "com.dofek.whoop-ble.module")
     internal let connectionManager = WhoopBleConnectionManager()
     internal var captureFailure: String?
     internal var captureSuspended = true
-    private var cleanupFailure: String?
+    var cleanupFailure: String?
     internal var uploader: WhoopBleBackgroundUploader {
         get throws { try WhoopBleUploadRuntime.shared() }
     }
@@ -254,58 +254,7 @@ public class WhoopBleModule: Module {
         }.runOnQueue(self.moduleQueue)
 
         AsyncFunction("disableUploads") {
-            let operationId = UUID().uuidString
-            let startedAt = ProcessInfo.processInfo.systemUptime
-            var stage = "ble_suspend"
-            var currentSqliteCacheWritePages: (() -> Int?)?
-            var sqliteCacheWritePageBaseline: Int?
-            func recordStage(_ nextStage: String, cacheWritePages: Int? = nil) {
-                stage = nextStage
-                var attributes: [String: Any] = [
-                    "operation": "disableUploads", "operationId": operationId, "stage": stage,
-                    "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
-                    "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
-                ]
-                if let cacheWritePages, let sqliteCacheWritePageBaseline {
-                    attributes["sqliteCacheWritePages"] = max(0, cacheWritePages - sqliteCacheWritePageBaseline)
-                }
-                SentrySDK.logger.info("WHOOP cleanup stage", attributes: attributes)
-            }
-
-            recordStage("ble_suspend")
-            self.connectionManager.syncOnBleQueue {
-                self.captureSuspended = true
-                self.watchdog.stop()
-            }
-            recordStage("disconnect")
-            self.connectionManager.disconnect()
-            do {
-                recordStage("uploader_bootstrap")
-                let uploader = try self.uploader
-                currentSqliteCacheWritePages = { uploader.sqliteCacheWritePages }
-                sqliteCacheWritePageBaseline = uploader.sqliteCacheWritePages
-                recordStage("uploader_disable", cacheWritePages: sqliteCacheWritePageBaseline)
-                let cutoff = UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date
-                try uploader.disable(cutoff: cutoff) { nextStage in
-                    recordStage(nextStage, cacheWritePages: uploader.sqliteCacheWritePages)
-                }
-                recordStage("completed", cacheWritePages: uploader.sqliteCacheWritePages)
-                self.cleanupFailure = nil
-            } catch {
-                self.cleanupFailure = error.localizedDescription
-                var attributes: [String: Any] = [
-                    "operation": "disableUploads", "operationId": operationId,
-                    "stage": "failed", "failedStage": stage,
-                    "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
-                    "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
-                ]
-                if let pages = currentSqliteCacheWritePages?(), let sqliteCacheWritePageBaseline {
-                    attributes["sqliteCacheWritePages"] = max(0, pages - sqliteCacheWritePageBaseline)
-                }
-                SentrySDK.logger.error("WHOOP cleanup failed", attributes: attributes)
-                SentrySDK.capture(error: error) { scope in scope.setUser(nil) }
-                throw error
-            }
+            try self.disableUploads()
         }.runOnQueue(self.moduleQueue)
 
         // MARK: - Background reconnection

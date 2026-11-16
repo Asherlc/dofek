@@ -182,11 +182,12 @@ before `BEGIN IMMEDIATE`, and `store_reset_stats`, `store_delete_samples`,
 precede the corresponding writes. `store_commit` precedes `COMMIT`;
 `store_completed` establishes that commit returned successfully. `store_vacuum`
 precedes `VACUUM` and a truncating WAL checkpoint after that commit. The purge
-stage logs include `sqliteCacheWritePages`, the cumulative number of SQLite
-WAL/database pages written during this cleanup operation, measured from the
-`uploader_disable` entry through each stage. Compare adjacent stage values to
-attribute writes to a bounded cleanup interval; this counter is page writes,
-not physical device bytes. The count uses SQLite's
+stage logs include `sqliteCacheWritePages`, the cumulative number of dirty
+SQLite cache pages written to the WAL during this cleanup operation. Its
+baseline is captured at `uploader_cancel_tasks`, after the uploader queue is
+acquired; compare adjacent stage values to measure writes between stages. This
+counter does not measure the later checkpoint's main-database writes or
+physical device bytes. It uses SQLite's
 [`SQLITE_DBSTATUS_CACHE_WRITE`](https://www.sqlite.org/c3ref/c_dbstatus_options.html).
 The purge
 deletes rows with [`secure_delete`](https://www.sqlite.org/pragma.html#pragma_secure_delete)
