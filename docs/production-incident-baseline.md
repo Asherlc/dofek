@@ -38841,3 +38841,76 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Evidence / root cause:** Original run [43896633737](https://github.com/Asherlc/dofek/actions/runs/43896633737) failed job `Deploy Server Production / Deploy Web Stack / Deploy Web Stack` at `Verify PeerDB CDC causal markers`, with first fatal `PeerDB deployment canary did not arrive: dofek_fitness_raw_analytics`. The release image predated forward migration 0115 and therefore did not restore the nullable `user_profile.ftp` mirror field required by PeerDB's retained source projection. Automatic release [43909276044](https://github.com/Asherlc/dofek/actions/runs/43909276044) then failed its admission guard with `unresolved server publication 7828786739 (PENDING)` before Terraform or stack mutation. The existing guard rejects unresolved receipts before reading live task identity; it has no recovery path for a verified descendant replacing the exact failed live candidate.
 - **Direct mitigation / validation:** No production receipt, schema, or service state was changed manually. The canonical `Deploy` workflow now supports a bounded recovery path that requires the exact sole pending receipt, a completed failed originating run and target job, matching live web/worker source and immutable digest, a strict descendant image, and the latest verified success as ancestry baseline. It preserves every normal deployment gate, finalizes the replacement as successful only after full live verification, and marks the old receipt inactive only after the old image is no longer live. Focused workflow tests passed 25/25, including selected-attempt and ordered receipt-finalization/retry cases; full `pnpm lint`, recursive typecheck, and actionlint passed locally. Hosted checks for the recovery PR remain pending.
 - **Remaining risk / follow-up:** Production remains on the older app image, the FTP mirror fix is not deployed, and processing consumers remain quiesced. After this recovery change passes review and CI, run the canonical `Deploy` workflow with the exact immutable fixed image and receipt ID `7828786739`. Verify migration 0115, nullable mirror column and retained row, CDC cursor/backlog progress beyond batch 8558/8559, analytics-worker readiness, and full service convergence. Keep Sentry open until the production behavior is verified. If the recovery deploy fails, preserve unresolved receipts and retry only failed jobs in that same run; do not mark a live receipt inactive.
+
+## 2026-11-16 — CDC publication recovery and Strava operation reconciliation (SERVER-7H)
+
+- **Symptoms / impact:** The completed Strava history continuation and absence
+  reconciliation still lacked downstream processing completion. The original
+  operation `8d744285-76ac-4466-9657-94fd462ee167` had 12 queued CDC path facts,
+  no analytics/cache facts, and 22,675 already-completed reconciliation outbox
+  rows. The fitness mirror normalization cursor had stopped at batch 8558
+  with pending batch 8559; analytics-worker had been quiesced at zero replicas.
+- **Cause / direct recovery:** The mirror's missing `user_profile.ftp` column
+  blocked normalization. [PR #3358](https://github.com/Asherlc/dofek/pull/3358)
+  supplied additive ClickHouse migration 0115. An unresolved server publication
+  receipt prevented normal publication; the reviewed recovery path in
+  [PR #3365](https://github.com/Asherlc/dofek/pull/3365) admitted only the exact
+  failed receipt and a verified immutable descendant image. Canonical
+  [Deploy run 43931142245, attempt 2](https://github.com/Asherlc/dofek/actions/runs/43931142245/attempts/2)
+  deployed source `11a58aaff99d73bf9c9efc63673128a34359637d`, digest
+  `sha256:2f7ce8d331d73905fa0feee2fc3339b5ddcfd219fec856ad26b73339ea59bec0`,
+  applied migration 0115 and passed CDC causal-marker verification. The first
+  attempt failed before mutation on a GitHub job-history HTTP 502; only its
+  failed preflight was retried in the same run, preserving all gates.
+- **Receipt / runtime proof:** The finalizer verified the desired image and
+  running images of both web tasks and the worker. New deployment receipt
+  `7833987708` became successful at 19:46:46 UTC; old receipt `7828786739`
+  became inactive at 19:46:47 UTC, after that verification. PeerDB normalized
+  and synced through batch 9069 with no pending batch. Analytics-worker was
+  restored to one running replica; `/readyz` returned HTTP 200/status `ok`
+  with no failure and last success at 19:46:16.144 UTC. Its build recorded
+  261 datasets with zero failures and completed cache warming.
+- **Approved bounded operation action:** Complete transport evidence did not
+  repair the old operation ledger because all its outbox rows were completed.
+  Following explicit user approval and independent review, at 21:40:32 UTC a
+  single transaction changed one exact existing operation/job row from
+  `completed` to `pending`. The guard required exactly one match or rolled back;
+  timestamps and all other rows were preserved. The already-running periodic
+  reconciler performed its normal global cycle; no manual dispatch, provider
+  import, history replay, service scaling or schema change was performed.
+- **Exact acceptance:** The 21:41 cycle recorded all 12 operation CDC paths as
+  successful, queued analytics for all six datasets, and returned all 22,675
+  outbox rows to completed. A fresh source-to-destination comparison at 21:42
+  found all 22,669 metric batch IDs, exactly 22,043,219 expected events, zero
+  missing/count-mismatched batches, and all seven exact relational marker tuples
+  in their correct flow destinations. The retained relational fence is
+  `74/A4D54000`. Pre-action CDC was normalized/synced through batch 9153, with
+  no pending batch and a healthy analytics worker.
+- **Subsequent deployment / terminal acceptance:** At 21:47:17 UTC analytics,
+  reconciliation, worker and all three ClickHouse sinks were observed at zero.
+  Stock receipt `7837145010` and stack job `133632953772` identified canonical
+  [release 43958871187](https://github.com/Asherlc/dofek/actions/runs/43958871187),
+  source `4e413541ae4fab6f2f6e846d2b837540f363ee1f`, as the subsequent
+  deployment. Its provider-connection cutover preceded consumer restoration.
+  The stack job passed in 28m21s and its receipt became successful at 22:09:47
+  UTC. At 22:10:37 UTC analytics and reconciliation were each running one task
+  on digest
+  `sha256:21d3165bc6f3dd6d7b27b7b36ba317cd4b74dd4c891af967734455d43a841e4a`.
+  The original operation then had all six analytics dataset aggregates and all
+  37 model facts successful, with serving run
+  `b469fc65-f3e7-4999-bf77-95ce8ac34327`. All six cache stages reached the
+  valid terminal state `skipped` at 22:10:39 UTC (no cached views required
+  refreshing), with serving run `0477f3fd-b547-4c1a-a66d-6e7dc8466d25`.
+  A 22:12:33 UTC snapshot confirmed all 22,675 outbox rows completed, no new
+  ingest fact after the original success, and worker readiness HTTP 200/status
+  `ok`, no failure, last successful cycle 22:10:39.252 UTC. SERVER-7H's exact
+  downstream acceptance is now verified. The stock analytics/cache worker
+  remains global; the one-row trigger did not create eligibility for unrelated
+  operations. No retry, timeout, threshold or other resilience knob was added.
+- **Retrospective:** Exact receipt comparison distinguished recovered transport
+  from a stale ledger. Proposed processing-runbook clarification: after an
+  approved incident recovery, check completed outbox state as well as destination
+  evidence before expecting an old operation to advance; document any new
+  trigger's global worker effects and preserve its exact row guard. Inspect
+  stock publication receipts and job-level state when a run-level status says
+  queued: this release showed queued while its stack job was active.
