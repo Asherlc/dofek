@@ -128,6 +128,24 @@ describe("WhoopBle native bridge", () => {
     await expect(getDataPathStats()).resolves.toEqual(stats);
   });
 
+  it("preserves the optional reservation write summary", async () => {
+    const stats = makeDataPathStats();
+    const summary = {
+      measuredReservationCount: 12,
+      walPagesWritten: 96,
+      walPagesSpilled: 3,
+      maxWalPagesWritten: 16,
+    };
+    nativeModule.getDataPathStats.mockResolvedValue({
+      ...stats,
+      buffers: { ...stats.buffers, reservationWriteSummary: summary },
+    });
+
+    await expect(getDataPathStats()).resolves.toMatchObject({
+      buffers: { reservationWriteSummary: summary },
+    });
+  });
+
   it("accepts unavailable device and capture dates as null", async () => {
     const stats = {
       ...makeDataPathStats(),

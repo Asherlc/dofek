@@ -49,10 +49,15 @@ final class WhoopBleBackgroundUploader: NSObject {
     private var submissionSequence = 0
     private var authRetriedEpoch: [String: Int] = [:]
     private var lastCaptureSchedule: Date?
+    private var reservationWriteTransactionCount = 0
+    private var reservationWalPagesWritten = 0
+    private var reservationWalPagesSpilled = 0
+    private var maxReservationWalPagesWritten = 0
     private let createdAt = Date()
 
     init(store: WhoopBleSampleStore, directory: URL, transport: WhoopUploadTransport,
-         reportError: @escaping (Error) -> Void, now: @escaping () -> Date = Date.init) throws {
+         reportError: @escaping (Error) -> Void,
+         now: @escaping () -> Date = Date.init) throws {
         self.store = store; self.directory = directory; self.transport = transport; self.reportError = reportError
         self.now = now
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -187,6 +192,12 @@ final class WhoopBleBackgroundUploader: NSObject {
                 "sensorRecords": try store.statistics(stream: .sensorRecords),
                 "activeUploadCount": active.count, "blockedUploadStreams": blocked.map(\.rawValue)
             ]
+            result["reservationWriteSummary"] = [
+                "measuredReservationCount": reservationWriteTransactionCount,
+                "walPagesWritten": reservationWalPagesWritten,
+                "walPagesSpilled": reservationWalPagesSpilled,
+                "maxWalPagesWritten": maxReservationWalPagesWritten,
+            ]
             result["lastUploadError"] = lastError.map { $0 as Any } ?? NSNull()
             return result
         }
@@ -260,7 +271,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                 let count = try store.queuedCount(stream: stream, limit: stream.batchLimit)
                 let since = lastSubmission[stream] ?? firstArrival[stream] ?? now()
                 guard count >= stream.batchLimit || partial || now().timeIntervalSince(since) >= 30 else { continue }
-                guard let batch = try store.reserve(stream: stream) else { continue }
+                guard let batch = try store.reserve(stream: stream, reportWrites: recordReservationWrites) else { continue }
                 let identity = identity(batch)
                 guard !pairedActive.contains(identity) || refreshActive else { continue }
                 let file = directory.appendingPathComponent(identity + ".json")
@@ -359,6 +370,16 @@ final class WhoopBleBackgroundUploader: NSObject {
     }
 
     private func record(_ error: Error) { lastError = error.localizedDescription; reportError(error) }
+    private func recordReservationWrites(_ measurement: WhoopSQLiteWriteMeasurement) {
+        reservationWriteTransactionCount = Self.saturatingAdd(reservationWriteTransactionCount, 1)
+        reservationWalPagesWritten = Self.saturatingAdd(reservationWalPagesWritten, measurement.walPagesWritten)
+        reservationWalPagesSpilled = Self.saturatingAdd(reservationWalPagesSpilled, measurement.walPagesSpilled)
+        maxReservationWalPagesWritten = max(maxReservationWalPagesWritten, measurement.walPagesWritten)
+    }
+    private static func saturatingAdd(_ lhs: Int, _ rhs: Int) -> Int {
+        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+        return overflow ? Int.max : sum
+    }
     private func identity(_ batch: WhoopStoredBatch) -> String { batch.generation + "." + batch.id }
     private func removeBodies() throws {
         for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {

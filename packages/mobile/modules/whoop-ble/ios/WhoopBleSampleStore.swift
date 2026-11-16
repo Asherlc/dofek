@@ -30,6 +30,11 @@ struct WhoopStoredBatch {
     let sampleCount: Int
 }
 
+struct WhoopSQLiteWriteMeasurement: Equatable {
+    let walPagesWritten: Int
+    let walPagesSpilled: Int
+}
+
 /// The database owns samples and reservations. Transport files are disposable projections.
 final class WhoopBleSampleStore {
     private var database: OpaquePointer?
@@ -159,8 +164,21 @@ final class WhoopBleSampleStore {
         try execute("UPDATE stats SET erased = erased + ? WHERE stream = ?", [erased, stream.rawValue])
     }
 
-    func reserve(stream: WhoopUploadStream, limit: Int = 500) throws -> WhoopStoredBatch? {
-        try transaction {
+    func reserve(
+        stream: WhoopUploadStream,
+        limit: Int = 500,
+        reportWrites: ((WhoopSQLiteWriteMeasurement) -> Void)? = nil
+    ) throws -> WhoopStoredBatch? {
+        var reserved = false
+        let measurementCallback: ((WhoopSQLiteWriteMeasurement) -> Void)?
+        if let reportWrites {
+            measurementCallback = { measurement in
+                if reserved { reportWrites(measurement) }
+            }
+        } else {
+            measurementCallback = nil
+        }
+        return try transaction(reportWrites: measurementCallback) {
             if let existing = try readBatches().first(where: { $0.stream == stream }) { return existing }
             guard limit > 0, let binding = try readBinding() else { return nil }
             let head = try rows("SELECT device FROM samples WHERE stream = ? ORDER BY id LIMIT 1", [stream.rawValue])
@@ -194,6 +212,7 @@ final class WhoopBleSampleStore {
                 let rowId: Int = try field("id", in: row)
                 try execute("UPDATE samples SET batch = ? WHERE id = ?", [id, rowId])
             }
+            reserved = true
             return WhoopStoredBatch(
                 id: id, generation: generation, binding: binding, stream: stream,
                 deviceId: device, body: body, sampleCount: selected.count
@@ -311,13 +330,44 @@ final class WhoopBleSampleStore {
         lock.lock(); defer { lock.unlock() }
         return try action()
     }
-    private func transaction<T>(onStage: (String) -> Void = { _ in }, _ action: () throws -> T) throws -> T {
+    private func transaction<T>(
+        onStage: (String) -> Void = { _ in },
+        reportWrites: ((WhoopSQLiteWriteMeasurement) -> Void)? = nil,
+        _ action: () throws -> T
+    ) throws -> T {
         onStage("store_lock_wait")
         return try synchronized {
             try restoreSecureDeleteLocked()
             try finishPendingPurgeLocked()
-            return try transactionLocked(onStage: onStage, action)
+            let canMeasureWrites = reportWrites.map { _ in resetWriteCounters() } ?? false
+            let result = try transactionLocked(onStage: onStage, action)
+            if canMeasureWrites, let measurement = writeMeasurement() {
+                reportWrites?(measurement)
+            }
+            return result
         }
+    }
+
+    private func resetWriteCounters() -> Bool {
+        guard let database else { return false }
+        var current: Int32 = 0
+        var highwater: Int32 = 0
+        let cacheWrites = sqlite3_db_status(database, SQLITE_DBSTATUS_CACHE_WRITE, &current, &highwater, 1)
+        let cacheSpills = sqlite3_db_status(database, SQLITE_DBSTATUS_CACHE_SPILL, &current, &highwater, 1)
+        return cacheWrites == SQLITE_OK && cacheSpills == SQLITE_OK
+    }
+
+    private func writeMeasurement() -> WhoopSQLiteWriteMeasurement? {
+        guard let database else { return nil }
+        var cacheWrites: Int32 = 0
+        var cacheSpills: Int32 = 0
+        var highwater: Int32 = 0
+        guard sqlite3_db_status(database, SQLITE_DBSTATUS_CACHE_WRITE, &cacheWrites, &highwater, 0) == SQLITE_OK,
+              sqlite3_db_status(database, SQLITE_DBSTATUS_CACHE_SPILL, &cacheSpills, &highwater, 0) == SQLITE_OK else {
+            return nil
+        }
+        return WhoopSQLiteWriteMeasurement(
+            walPagesWritten: Int(cacheWrites), walPagesSpilled: Int(cacheSpills))
     }
     func transactionLocked<T>(onStage: (String) -> Void = { _ in }, _ action: () throws -> T) throws -> T {
         onStage("store_begin")

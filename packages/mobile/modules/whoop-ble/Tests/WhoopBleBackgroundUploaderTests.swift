@@ -84,6 +84,21 @@ extension WhoopBleBackgroundUploaderTests {
 }
 
 extension WhoopBleBackgroundUploaderTests {
+    func testSubmitAvailableAccumulatesReservationWriteSummary() throws {
+        let (uploader, _, transport) = try setup()
+
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
+        try uploader.flush()
+        try settle(uploader)
+
+        let summary = try XCTUnwrap(try uploader.diagnostics()["reservationWriteSummary"] as? [String: Int])
+        XCTAssertEqual(summary["measuredReservationCount"], 1)
+        XCTAssertGreaterThan(try XCTUnwrap(summary["walPagesWritten"]), 0)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(summary["walPagesSpilled"]), 0)
+        XCTAssertGreaterThan(try XCTUnwrap(summary["maxWalPagesWritten"]), 0)
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+
     func testSensorUploadUsesOwnRouteAndAcknowledgesWhileRealtimeFails() throws {
         let (uploader, store, transport) = try setup()
         try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])

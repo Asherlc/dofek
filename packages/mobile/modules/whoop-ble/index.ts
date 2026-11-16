@@ -136,6 +136,14 @@ const WhoopBufferCheckpointSchema = z.object({
   imu: WhoopBufferStreamDiagnosticsSchema,
   realtime: WhoopBufferStreamDiagnosticsSchema,
   sensorRecords: WhoopBufferStreamDiagnosticsSchema,
+  reservationWriteSummary: z
+    .object({
+      measuredReservationCount: DiagnosticCountSchema,
+      walPagesWritten: DiagnosticCountSchema,
+      walPagesSpilled: DiagnosticCountSchema,
+      maxWalPagesWritten: DiagnosticCountSchema,
+    })
+    .optional(),
 });
 
 const WhoopConnectionEventSchema = z.object({

@@ -20,6 +20,12 @@ describe("WhoopBleDiagnostics", () => {
       activeUploadCount: 2,
       blockedUploadStreams: ["imu"],
       lastUploadError: "HTTP 401",
+      reservationWriteSummary: {
+        measuredReservationCount: 12,
+        walPagesWritten: 96,
+        walPagesSpilled: 3,
+        maxWalPagesWritten: 16,
+      },
     });
     new WhoopBleDiagnostics().snapshot(stats, "foreground", "active");
     expect(logger.info).toHaveBeenCalledWith(
@@ -29,6 +35,10 @@ describe("WhoopBleDiagnostics", () => {
         activeUploadCount: 2,
         blockedUploadStreams: "imu",
         lastUploadError: "HTTP 401",
+        reservationWriteMeasurementCount: 12,
+        reservationWalPagesWritten: 96,
+        reservationWalPagesSpilled: 3,
+        maxReservationWalPagesWritten: 16,
       }),
     );
   });

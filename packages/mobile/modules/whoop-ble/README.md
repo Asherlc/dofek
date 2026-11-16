@@ -197,6 +197,16 @@ success and failure, including the `FAST` literal for mode 2. An unsuccessful
 restoration blocks later writes until that original mode is restored.
 Transaction failures retain the existing rollback and error propagation,
 following SQLite's [transaction semantics](https://www.sqlite.org/lang_transaction.html).
+The existing `capture_snapshot` diagnostic includes a fixed-size reservation
+write summary: the number of successfully measured new reservations since this uploader instance started,
+total WAL pages written and spilled, and the maximum pages written by one
+reservation. The counters reset when the native uploader is recreated and are
+read at the existing snapshot cadence; they do not emit one event per
+reservation. SQLite's [connection status counters](https://www.sqlite.org/c3ref/c_dbstatus_options.html)
+measure cache pages written to WAL and spilled while the new-reservation
+transaction runs. These counts are not total disk bytes or MetricKit attribution,
+and exclude body-file writes and pending-purge recovery. Older native builds omit
+the optional summary and remain valid to the bridge.
 Each entry includes `isMainThread` and the current native `threadId`, captured at
 that boundary rather than inherited from the initial caller. Apple's
 [hang investigation guidance](https://developer.apple.com/documentation/xcode/understanding-hangs-in-your-app)
