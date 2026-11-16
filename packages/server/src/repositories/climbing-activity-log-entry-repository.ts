@@ -29,6 +29,7 @@ import {
   resolveClimbingLocations,
 } from "../services/climbing-location-resolution.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
+import { boardseshGradeDisplay } from "./boardsesh-grade-display.ts";
 import { displayGradeComponents, selectRockClimbingGrade } from "./climbing-grade-display.ts";
 import { climbingSourceLinks } from "./climbing-source-links.ts";
 
@@ -415,14 +416,24 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
     const logs = await this.#load(
       sql`entry.activity_id IN (SELECT UNNEST(grouped.member_activity_ids) FROM fitness.v_activity AS grouped WHERE grouped.user_id=${this.userId}::uuid AND grouped.id=${activityId}::uuid)`,
     );
-    const sortValue = (log: ClimbingLogEntryDetail) =>
-      log.discipline === "rock_climbing"
+    const sortValue = (log: ClimbingLogEntryDetail) => {
+      if (log.providerId === "boardsesh")
+        return (
+          boardseshGradeDisplay(
+            log.raw,
+            log.reportedGrades,
+            log.climb?.kind ?? null,
+            this.#gradePreference,
+          )?.gradeSortValue ?? -Infinity
+        );
+      return log.discipline === "rock_climbing"
         ? (selectRockClimbingGrade(
             this.#gradePreference,
             log.climb?.kind ?? null,
             log.climb?.publishedGrades.length ? log.climb.publishedGrades : log.reportedGrades,
           )?.gradeSortValue ?? -Infinity)
         : -Infinity;
+    };
     return consolidate(logs)
       .sort((left, right) => sortValue(right) - sortValue(left) || left.id.localeCompare(right.id))
       .map((log) => new ClimbingActivityLogEntry(log));
@@ -530,11 +541,20 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         recordedClimbOutcome: recordedOutcome(whole),
         freeSend: row.freeSend,
         pitchResults,
-        displayGrade: displayGradeComponents(
-          this.#gradePreference,
-          row.climb?.kind ?? null,
-          row.climb?.publishedGrades.length ? row.climb.publishedGrades : row.log.reportedGrades,
-        ),
+        displayGrade:
+          (row.log.providerId === "boardsesh"
+            ? boardseshGradeDisplay(
+                row.log.raw,
+                row.log.reportedGrades,
+                row.climb?.kind ?? null,
+                this.#gradePreference,
+              )?.displayGrade
+            : null) ??
+          displayGradeComponents(
+            this.#gradePreference,
+            row.climb?.kind ?? null,
+            row.climb?.publishedGrades.length ? row.climb.publishedGrades : row.log.reportedGrades,
+          ),
         sourceLinks: climbingSourceLinks(row.log.providerId, row.log.raw),
       });
       return {

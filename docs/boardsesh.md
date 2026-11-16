@@ -160,6 +160,28 @@ reconciles only after all responses validate. It keeps each source tick and maps
 only the returned personal grade label. After reading the authoritative ticks,
 it pages `userAscentsFeed` with both sends and attempts to enrich exact tick/climb
 identities with names. The feed does not control deletion or completeness.
+It also supplies consensus difficulty, the BoardSesh model difficulty and
+confidence tier, and the tick angle. Dofek retains that response and the
+board's grade catalogue under each tick's `raw.metadata`; the catalogue is kept
+even when the feed page has no matching tick. Enrichment is accepted only when
+tick UUID, climb UUID, board type, mirror state, and angle all match. A grade at
+one angle is never copied to another angle or to the shared climb definition.
+
+The server keeps the tick's personal `difficulty` in `reportedGrades` and gives
+it display precedence. For a tick without a personal grade, it rounds a
+BoardSesh model grade unless confidence is `setter_only`,
+`cross_angle_estimate`, `moonboard_angle_estimate`, or
+`moonboard_wide_angle_estimate`; those tiers use the consensus grade. The
+selected difficulty ID resolves through that board's retained catalogue, so
+MoonBoard's own labels and the upstream V-grade `+` formatting are preserved
+without converting between grading scales. Both clients display the server's
+`displayGrade`. This follows the pinned upstream
+[logbook grade selection](https://github.com/boardsesh/boardsesh/blob/db98d3f3902b96f1df0d8be96410c27d1de860e3/packages/shared/logbook/src/grade-display.ts),
+[grade formatting](https://github.com/boardsesh/boardsesh/blob/db98d3f3902b96f1df0d8be96410c27d1de860e3/packages/shared/play-view/src/grade-display.ts),
+and [tick schema](https://github.com/boardsesh/boardsesh/blob/db98d3f3902b96f1df0d8be96410c27d1de860e3/packages/shared-schema/src/schema/ticks.ts).
+Existing rows need a normal BoardSesh re-sync after deployment to acquire the
+retained grade metadata and display grades.
+
 For a recorded board ID, `tickBoardOptions.currentBoard` resolves its accessible
 UUID, and `board(boardUuid)` supplies the physical board and available location.
 Locations belong to the log entry, since the same problem can be climbed on

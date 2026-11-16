@@ -1,5 +1,30 @@
 # Production Incident Baseline
 
+## 2026-11-15 — BoardSesh activity group lacks displayed grades
+
+- **Symptoms / impact:** Activity group
+  `324ed832-9b72-4bac-b6dc-5eaa0972c1d6` has seven BoardSesh logs with no
+  displayed grade. Read-only production inspection found each tick's raw
+  `difficulty` null, no personal reported grade, and no shared published grade.
+- **Evidence / root cause:** The importer used the personal tick difficulty and
+  the board's difficulty catalogue, but did not retain consensus/model
+  grades from `userAscentsFeed`. The server therefore had no crowd grade to
+  display for these ungraded personal ticks. A read-only live feed confirmed
+  angle-specific model and consensus grades are available for the source ticks;
+  no production records were changed. See the [BoardSesh mapping and pinned
+  upstream sources](boardsesh.md#implemented-in-dofek).
+- **Direct fix / validation:** The importer now retains the board grade
+  catalogue and exact tick, climb, mirror, and angle-matched ascent fields under
+  `raw.metadata`. The server uses a trusted rounded model grade or the source
+  consensus fallback for display and sorting, while personal grades remain
+  first. Focused provider and repository tests passed 166/166; the real-engine
+  BoardSesh provider integration suite passed 20/20, and `pnpm lint` passed.
+- **Remaining risk / follow-up:** The code is not deployed and the seven
+  existing records have not been re-synced, so their stored raw metadata and
+  displayed grades remain unchanged. After a normal deployment, run a normal
+  BoardSesh re-sync and verify the activity group's returned `displayGrade`
+  values. There was no production write or deployment during diagnosis.
+
 ## 2026-11-15 — OTA publisher rejected a nested trusted checkout
 
 - **Symptoms / impact:** Production OTA run

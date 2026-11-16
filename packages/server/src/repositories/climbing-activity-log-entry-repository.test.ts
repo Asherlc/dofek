@@ -6,7 +6,9 @@ import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entr
 import {
   climbingActivitySessionFixtures,
   climbingAttemptFixture,
+  climbingBoardSeshGradeSortFixtures,
   climbingClimbFixture,
+  climbingGradeSortFixtures,
   climbingLogDatabaseFixture,
   climbingLogEntryFixture,
   climbingKayaHistoryFixture as kayaHistory,
@@ -976,25 +978,23 @@ describe("ClimbingActivityLogEntryRepository", () => {
     ).toHaveLength(2);
   });
   it("orders known rock grades before ungraded observations with stable ties", async () => {
-    const base = named("openbeta");
-    const lower = named("openbeta", "20000000-0000-4000-8000-000000000006");
-    const higher = named("openbeta", "20000000-0000-4000-8000-000000000007");
-    const ungraded = named("openbeta", "20000000-0000-4000-8000-000000000008");
-    if (!lower.climb || !higher.climb || !ungraded.climb)
-      throw new Error("Expected catalogue fixtures");
-    for (const [index, log] of [lower, higher, ungraded].entries()) {
-      if (!log.climb) throw new Error("Expected catalogue fixture");
-      log.climb.id = `20000000-0000-4000-8000-00000000001${index}`;
-      log.climb.externalId = `distinct-climb-${index}`;
-      log.climbId = log.climb.id;
-    }
-    lower.climb.publishedGrades = [{ value: "5.9", system: "yds" }];
-    higher.climb.publishedGrades = [{ value: "5.11a", system: "yds" }];
-    ungraded.climb.publishedGrades = [];
-    expect(
-      (await repository([ungraded, lower, base, higher]).getActivityLogEntries("activity")).map(
-        (row) => row.toDetail().id,
-      ),
-    ).toEqual([higher.id, base.id, lower.id, ungraded.id]);
+    const { base, lower, higher, ungraded } = climbingGradeSortFixtures();
+    const sorted = await repository([ungraded, lower, base, higher]).getActivityLogEntries(
+      "activity",
+    );
+    expect(sorted.map((row) => row.toDetail().id)).toEqual([
+      higher.id,
+      base.id,
+      lower.id,
+      ungraded.id,
+    ]);
+    const { easier, plus, harder, other, historical } = climbingBoardSeshGradeSortFixtures();
+    const boardRows = await repository([plus, harder, easier]).getActivityLogEntries("activity");
+    expect(boardRows.map((row) => row.toDetail().id)).toEqual([harder.id, plus.id, easier.id]);
+    expect(boardRows.map((row) => row.toDetail().displayGrade)).toEqual(["V5", "V4+", "V4"]);
+    const [isolated] = await repository([other]).getActivityLogEntries("activity");
+    expect(isolated?.toDetail().displayGrade).toBe("5.10a");
+    const [old] = await repository([historical]).getActivityLogEntries("activity");
+    expect(old?.toDetail().displayGrade).toBe("V2");
   });
 });
