@@ -7,7 +7,10 @@ import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { captureException } from "../lib/error-reporting.ts";
-import { shouldReportProviderError } from "../lib/provider-error-reporting.ts";
+import {
+  isKnownProviderHttp5xxError,
+  shouldReportProviderError,
+} from "../lib/provider-error-reporting.ts";
 import { logger } from "../logger.ts";
 import { isPushProvider, isWebhookProvider, type SyncProvider } from "../providers/types.ts";
 import {
@@ -122,9 +125,11 @@ export async function executeSyncProvider(
               metricStreamPublisher: processingOperation.metricStreamPublisher,
             });
           } catch (error) {
-            captureException(error, {
-              tags: { provider: provider.id, webhookPhase: "targeted-sync" },
-            });
+            if (!isKnownProviderHttp5xxError(error)) {
+              captureException(error, {
+                tags: { provider: provider.id, webhookPhase: "targeted-sync" },
+              });
+            }
             logger.warn(
               `[worker] ${provider.name} targeted webhook sync failed; running full sync: ${error}`,
             );
@@ -204,6 +209,9 @@ export async function executeSyncProvider(
       status: hasErrors ? "error" : "success",
       recordCount: result.recordsSynced,
       errorMessage: hasErrors ? result.errors.map((e) => e.message).join("; ") : undefined,
+      errorCauses: hasErrors
+        ? result.errors.map((error) => error.cause ?? new Error(error.message))
+        : undefined,
       authFailureReason,
       durationMs,
       userId: job.data.userId,

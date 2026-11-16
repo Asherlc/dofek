@@ -1,3 +1,4 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
@@ -1503,5 +1504,45 @@ describe("KayaSyncProvider", () => {
       errors: [{ message }],
     });
     expect(mocks.captureException).toHaveBeenCalledWith(error);
+  });
+
+  it.each([500, 599])(
+    "normalizes Kaya HTTP %i into the shared operational outage cause without Sentry capture",
+    async (status) => {
+      mocks.loadTokens.mockResolvedValue({
+        accessToken: "access-token",
+        scopes: JSON.stringify({ kayaUserId: "42" }),
+      });
+      const responseError = new KayaApiError(`Kaya API request failed (${status})`, status);
+      mocks.listSessions.mockRejectedValue(responseError);
+      mocks.ascents.mockResolvedValue([]);
+
+      const result = await new KayaSyncProvider().sync(run(database()));
+      const cause = result.errors[0]?.cause;
+
+      expect(cause).toBeInstanceOf(ProviderServiceUnavailableError);
+      expect(cause).toMatchObject({
+        providerId: "kaya",
+        statusCode: status,
+        message: responseError.message,
+      });
+      expect(mocks.captureException).not.toHaveBeenCalled();
+    },
+  );
+
+  it("continues reporting a non-5xx Kaya HTTP response", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    const responseError = new KayaApiError("Kaya API request failed (400)", 400);
+    mocks.listSessions.mockRejectedValue(responseError);
+    mocks.ascents.mockResolvedValue([]);
+
+    await expect(new KayaSyncProvider().sync(run(database()))).resolves.toMatchObject({
+      errors: [{ message: responseError.message }],
+    });
+
+    expect(mocks.captureException).toHaveBeenCalledWith(responseError);
   });
 });

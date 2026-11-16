@@ -8,6 +8,7 @@ import { climbingLogEntry } from "../../db/schema/climbing.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { captureException } from "../../lib/error-reporting.ts";
+import { isKnownProviderHttp5xxError } from "../../lib/provider-error-reporting.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { findProviderTransportError } from "../../lib/provider-transport-error.ts";
 import { ProviderAuthError } from "../auth-errors.ts";
@@ -63,7 +64,9 @@ export class EightAProvider implements SyncProvider {
       );
     } catch (error) {
       run.options.signal?.throwIfAborted();
-      captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
+      if (!isKnownProviderHttp5xxError(error)) {
+        captureException(error, { tags: { provider: this.id, phase: "climbing_activity" } });
+      }
       if (findProviderTransportError(error)) throw error;
       result.errors.push({
         message: error instanceof Error ? error.message : String(error),
