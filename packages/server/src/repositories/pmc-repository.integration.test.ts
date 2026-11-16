@@ -32,6 +32,8 @@ describe("PmcRepository canonical activity stress", () => {
         VALUES (${id}::uuid, ${id}::uuid, ${userId}::uuid, ${providerId}, ${id}, 'cycling', 'cycling',
           ${`${day}T10:00:00Z`}::timestamptz, ${`${day}T11:00:00Z`}::timestamptz)`);
     }
+    await context.db.execute(sql`INSERT INTO fitness.sport_settings
+      (user_id, sport, ftp, effective_from) VALUES (${userId}::uuid, 'cycling', 275, ${day}::date)`);
     await client.command({ query: `CREATE DATABASE ${database}` });
     await client.command({
       query: `CREATE TABLE ${database}.activity_summary
@@ -50,13 +52,8 @@ describe("PmcRepository canonical activity stress", () => {
     });
     await client.command({
       query: `CREATE TABLE ${database}.cycling_activity_power_metrics
-      (user_id UUID, activity_id UUID, started_at DateTime64(6, 'UTC'), power_tss Nullable(Float64), eftp Nullable(Float64)) ENGINE=Memory`,
-    });
-    await client.command({
-      query: `CREATE TABLE ${database}.cycling_threshold_history
-      (user_id UUID, event_at DateTime64(6, 'UTC'), activity_id Nullable(UUID), eftp Nullable(Float64),
-      evidence_activity_id Nullable(UUID), evidence_at Nullable(DateTime64(6, 'UTC')),
-      evidence_duration_seconds Nullable(UInt32), evidence_power Nullable(Float64), model_version String) ENGINE=Memory`,
+      (user_id UUID, activity_id UUID, started_at DateTime64(6, 'UTC'), ended_at DateTime64(6, 'UTC'),
+      canonical_type String, power_sample_count UInt64, normalized_power Nullable(Float64)) ENGINE=Memory`,
     });
     await client.insert({
       table: `${database}.user_profile_current`,
@@ -85,26 +82,11 @@ describe("PmcRepository canonical activity stress", () => {
         activity_id: id,
         user_id: userId,
         started_at: `${day} 10:00:00`,
-        power_tss: index === 0 ? 80 : 125,
-        eftp: index === 0 ? 200 : 250,
+        ended_at: `${day} 11:00:00`,
+        canonical_type: "cycling",
+        power_sample_count: 3600,
+        normalized_power: index === 0 ? 220 : 250,
       })),
-      format: "JSONEachRow",
-    });
-    await client.insert({
-      table: `${database}.cycling_threshold_history`,
-      values: [
-        {
-          user_id: userId,
-          event_at: `${day} 12:00:00`,
-          activity_id: null,
-          eftp: 275,
-          evidence_activity_id: activityIds[1],
-          evidence_at: `${day} 10:00:00`,
-          evidence_duration_seconds: 1200,
-          evidence_power: 300,
-          model_version: "integration-cycling-model",
-        },
-      ],
       format: "JSONEachRow",
     });
     repository = new PmcRepository(
@@ -127,7 +109,7 @@ describe("PmcRepository canonical activity stress", () => {
   it("uses each canonical ride's stress without HR and withholds unknown history", async () => {
     const result = await repository.getChart(ChartRange.fromDays(7));
     expect(result.model.ftp).toBe(275);
-    expect(result.data.find((point) => point.date === day)?.load).toBe(205);
+    expect(result.data.find((point) => point.date === day)?.load).toBeCloseTo(146.6, 1);
     expect(result.unavailableReason).toBeNull();
     await client.command({ query: `TRUNCATE TABLE ${database}.cycling_activity_power_metrics` });
     const missing = await repository.getChart(ChartRange.fromDays(7));

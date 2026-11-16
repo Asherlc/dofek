@@ -14,6 +14,8 @@ type SettingsSearch = {
     | "medications"
     | "billing"
     | "advanced";
+  section?: "cycling-ftp";
+  date?: string;
 };
 
 type SettingsNavigation = {
@@ -77,6 +79,17 @@ vi.mock("../components/PageSection.tsx", () => ({
 
 vi.mock("../components/DataSourcesPanel.tsx", () => ({
   DataSourcesPanel: () => <div>DataSourcesPanel</div>,
+}));
+vi.mock("../components/CyclingFtpSettings.tsx", () => ({
+  CyclingFtpSettings: ({
+    sectionDate,
+    focusSection,
+  }: {
+    sectionDate?: string;
+    focusSection?: boolean;
+  }) => (
+    <div data-testid="cycling-ftp" data-date={sectionDate} data-focused={String(focusSection)} />
+  ),
 }));
 vi.mock("../components/ExportPanel.tsx", () => ({
   ExportPanel: () => <div>ExportPanel</div>,
@@ -213,6 +226,16 @@ describe("SettingsPage categories", () => {
       { id: "settings-tab-billing", label: "Billing" },
       { id: "settings-tab-advanced", label: "Advanced" },
     ]);
+  });
+
+  it("opens the FTP section and passes its activity date to the form", async () => {
+    mockSearch = { tab: "models-units", section: "cycling-ftp", date: "2026-03-18" };
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+
+    render(<SettingsPage />);
+
+    expect(screen.getByTestId("cycling-ftp")).toHaveAttribute("data-date", "2026-03-18");
+    expect(screen.getByTestId("cycling-ftp")).toHaveAttribute("data-focused", "true");
   });
 
   it("shows searchable categories with Account selected by default", async () => {

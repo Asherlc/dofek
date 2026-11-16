@@ -153,12 +153,17 @@ export function selectedChartRangeQuery<TResult>(
   options: {
     min?: number;
     max?: number;
+    expiresAt?: "localDayBoundary";
     outputSchema?: z.ZodType<TResult>;
     keyVersion?: string;
   } = {},
 ) {
   assertSelectedChartInputKind(endpoint, "days");
-  return cachedProtectedQuery({ maxAge: ttlMs, keyVersion: options.keyVersion })
+  return cachedProtectedQuery({
+    maxAge: ttlMs,
+    expiresAt: options.expiresAt,
+    keyVersion: options.keyVersion,
+  })
     .input(selectedChartRangeInput(endpoint, options))
     .output(options.outputSchema ?? z.custom<TResult>())
     .query(({ ctx, input }) =>
@@ -212,12 +217,17 @@ export function selectedChartDateRangeQuery<TResult>(
   options: {
     min?: number;
     max?: number;
+    expiresAt?: "localDayBoundary";
     outputSchema?: z.ZodType<TResult>;
     keyVersion?: string;
   } = {},
 ) {
   assertSelectedChartInputKind(endpoint, "dateRange");
-  return cachedProtectedQuery({ maxAge: ttlMs, keyVersion: options.keyVersion })
+  return cachedProtectedQuery({
+    maxAge: ttlMs,
+    expiresAt: options.expiresAt,
+    keyVersion: options.keyVersion,
+  })
     .input(selectedChartDateRangeInput(endpoint, options))
     .output(options.outputSchema ?? z.custom<TResult>())
     .query(({ ctx, input }) =>

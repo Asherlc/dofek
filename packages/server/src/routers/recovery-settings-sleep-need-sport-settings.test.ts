@@ -555,6 +555,7 @@ describe("sportSettingsRouter", () => {
     sport: "cycling",
     threshold_hr: 175,
     threshold_pace_per_km: null,
+    ftp: null,
     power_zone_pcts: [0.55, 0.75, 0.9, 1.05, 1.2, 1.5],
     hr_zone_pcts: [0.6, 0.7, 0.8, 0.9],
     pace_zone_pcts: null,
@@ -569,6 +570,7 @@ describe("sportSettingsRouter", () => {
     sport: "cycling",
     thresholdHr: 175,
     thresholdPacePerKm: null,
+    ftp: null,
     powerZonePcts: [0.55, 0.75, 0.9, 1.05, 1.2, 1.5],
     hrZonePcts: [0.6, 0.7, 0.8, 0.9],
     paceZonePcts: null,
@@ -630,7 +632,11 @@ describe("sportSettingsRouter", () => {
       vi.mocked(invalidateUserQueryDomains).mockClear();
       const result = await caller.upsert({ sport: "cycling", thresholdHr: 175 });
       expect(result).toEqual(returnedSettings);
-      expect(invalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["sportSettings"]);
+      expect(invalidateUserQueryDomains).toHaveBeenCalledWith("user-1", [
+        "sportSettings",
+        "activity",
+        "personalization",
+      ]);
     });
   });
 
@@ -642,7 +648,11 @@ describe("sportSettingsRouter", () => {
         id: "00000000-0000-0000-0000-000000000001",
       });
       expect(result).toEqual({ success: true });
-      expect(invalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["sportSettings"]);
+      expect(invalidateUserQueryDomains).toHaveBeenCalledWith("user-1", [
+        "sportSettings",
+        "activity",
+        "personalization",
+      ]);
     });
   });
 });

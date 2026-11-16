@@ -4,6 +4,7 @@ import { cyclingThresholdEvidenceSchema } from "./cycling-threshold.ts";
 
 export const activityPowerZonesSchema = z
   .object({
+    activityDate: z.iso.date(),
     zones: z.array(
       z.object({
         zone: z.number().int().min(1).max(7),
@@ -21,7 +22,7 @@ export const activityPowerZonesSchema = z
     (value) =>
       value.ftp === value.thresholdEvidence.value &&
       (value.ftp !== null || value.zones.length === 0),
-    { message: "Power zones require matching computed threshold evidence" },
+    { message: "Power zones require matching configured threshold evidence" },
   )
   .nullable();
 

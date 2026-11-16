@@ -25,7 +25,7 @@ export const SETTINGS_CATEGORIES: readonly {
   {
     id: "models-units",
     label: "Models & Units",
-    searchText: "models units goal weight algorithm personalization",
+    searchText: "models units goal weight algorithm personalization cycling ftp",
   },
   {
     id: "privacy-export",

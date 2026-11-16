@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { buildAccountErasureFenceTableSql } from "../metric-stream/clickhouse-table.ts";
+import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
 import { cyclingPowerSchemaStatements } from "./cycling-power-schema.ts";
 import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
@@ -18,19 +20,18 @@ describe("activity sensor consumers before background merges", () => {
     client = createClient({ url });
     const statements = [
       `CREATE DATABASE ${database}`,
+      buildAccountErasureFenceTableSql().replaceAll("ingest.", `${database}.`),
+      buildActivitySummaryRowsTableSql().replaceAll("analytics.", `${database}.`),
       ...cyclingPowerSchemaStatements().map((query) =>
-        query.replaceAll("analytics.", `${database}.`),
+        query.replaceAll("analytics.", `${database}.`).replaceAll("ingest.", `${database}.`),
       ),
-      `CREATE TABLE ${database}.activity_summary_rows (
-        activity_id UUID, user_id UUID, canonical_type String, name String,
-        started_at DateTime64(6, 'UTC'), ended_at DateTime64(6, 'UTC'), is_deleted UInt8, refreshed_at DateTime64(9, 'UTC')
-      ) ENGINE = ReplacingMergeTree ORDER BY (user_id, activity_id)`,
       `INSERT INTO ${database}.activity_summary_rows
+        (activity_id,user_id,canonical_type,name,started_at,ended_at,power_sample_count,refresh_version,is_deleted,refreshed_at)
         SELECT toUUID(tupleElement(activity, 1)), toUUID('${userId}'),
           tupleElement(activity, 2), tupleElement(activity, 2),
           toDateTime64(today() - INTERVAL 1 DAY, 6, 'UTC') + INTERVAL 14 HOUR,
           toDateTime64(today() - INTERVAL 1 DAY, 6, 'UTC') + INTERVAL 14 HOUR + INTERVAL 10 MINUTE,
-          0, now64(9)
+          if(tupleElement(activity, 2) = 'cycling', 600, 0), 1, 0, now64(9)
         FROM (SELECT arrayJoin([('${cyclingId}', 'cycling'), ('${runningId}', 'running')]) AS activity)`,
       `CREATE TABLE ${database}.deduped_activities
         ENGINE = ReplacingMergeTree ORDER BY (user_id, activity_id) AS

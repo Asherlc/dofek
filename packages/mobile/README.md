@@ -784,10 +784,14 @@ unnamed activity. Supplied primary titles and types keep precedence in the
 [activity card](components/ActivityCard.tsx); unrelated required response fields
 remain validated.
 
-The [persisted query contract](lib/mobile-query-persistence.ts) invalidates older
-calendar/detail responses and cycling power responses without computed threshold
-evidence before restoring activity data. Its account-specific version buster
-uses TanStack's [persisted-client invalidation](https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient#cache-busting),
+Cycling activities resolve dated manual FTP from `activity.powerZones`. When
+power is present and no FTP applies, **Set FTP for this date** opens Models &
+Units at the Cycling FTP input using the activity's local date. The settings
+form uses the existing sport-settings history; Estimate runs the bounded server
+suggestion query only when requested, and Save or Clear applies the selected
+date. The [persisted query contract](lib/mobile-query-persistence.ts) bumps its
+account-specific buster when the server response changes, using TanStack's
+[persisted-client invalidation](https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient#cache-busting),
 covered by the [upgrade regression](lib/mobile-query-persistence.test.tsx).
 
 The inline source button has its own 44-point touch target, independent of the

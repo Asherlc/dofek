@@ -69,19 +69,17 @@ describe("mobile query persistence", () => {
     expect(restoredClient.getQueryData(queryKey)).toEqual(data);
   });
 
-  it("discards cached cycling thresholds from before required computed evidence", async () => {
+  it("discards mobile query caches from the previous FTP response contract", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "cycling-evidence-owner";
     const zonesKey = [["activity", "powerZones"], { input: { id: "ride-1" }, type: "query" }];
-    const trendKey = [["power", "eftpTrend"], { input: { days: 90 }, type: "query" }];
     const seedClient = createQueryClient();
     seedClient.setQueryData(zonesKey, { ftp: 250, zones: [] });
-    seedClient.setQueryData(trendKey, { currentEftp: 250, trend: [] });
     await AsyncStorage.setItem(
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v24`,
+        buster: `${userId}:v27`,
         clientState: dehydrate(seedClient),
       }),
     );
@@ -93,7 +91,6 @@ describe("mobile query persistence", () => {
       buster: mobileQueryCacheBuster(userId),
     });
     expect(restoredClient.getQueryData(zonesKey)).toBeUndefined();
-    expect(restoredClient.getQueryData(trendKey)).toBeUndefined();
     await expect(AsyncStorage.getItem(`dofek-query-cache:${userId}`)).resolves.toBeNull();
   });
 

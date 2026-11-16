@@ -10,10 +10,6 @@ import {
 } from "../contracts/activity-location.ts";
 import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
 import { climbingLogEntryDetailResponseSchema } from "../contracts/climbing-log-contracts.ts";
-import {
-  cyclingThresholdEvidenceSchema,
-  cyclingThresholdHistoryItemSchema,
-} from "../contracts/cycling-threshold.ts";
 import { activityOriginColumnsSchema } from "../models/activity-origin.ts";
 import {
   fingerLoadingExerciseSchema,
@@ -501,8 +497,17 @@ export const cyclingPerformanceOutputSchema = jsonResult(
         duration_minutes: z.number(),
         average_power_watts: nullableNumber,
         normalized_power_watts: nullableNumber,
-        estimated_ftp_watts: nullableNumber,
-        estimated_ftp_source: nullableString,
+        ftp_watts: nullableNumber,
+        ftp_source: z
+          .object({
+            value: nullableNumber,
+            unit: z.literal("watt"),
+            effective_from: z.string(),
+            source_record_id: z.uuid(),
+            kind: z.literal("configured"),
+          })
+          .strict()
+          .nullable(),
         intensity_factor: nullableNumber,
         elevation_gain_m: nullableNumber,
         best_efforts_watts: cyclingEffortsSchema,
@@ -600,47 +605,6 @@ export const cyclingPowerCurveOutputSchema = z
         bests: z.array(cyclingPowerCurveEffortSchema),
         activity_curve: z.array(cyclingPowerCurveEffortSchema),
         next_cursor: nullableString,
-      })
-      .strict(),
-  })
-  .strict();
-
-export const thresholdHistoryOutputSchema = z
-  .object({
-    result: z
-      .object({
-        start_date: z.string(),
-        end_date: z.string(),
-        items: z.array(cyclingThresholdHistoryItemSchema),
-        next_cursor: nullableString,
-      })
-      .strict(),
-  })
-  .strict();
-export const cyclingThresholdEstimateOutputSchema = z
-  .object({
-    result: z
-      .object({
-        start_date: z.string(),
-        end_date: z.string(),
-        result: z
-          .object({
-            threshold_watts: z.number().positive(),
-            watts_per_kg: z.number().positive().nullable(),
-            watts_per_kg_reason: nullableString,
-            method: z.literal("computed_eftp"),
-            classification: z.literal("estimated"),
-            uncertainty: z
-              .object({ watts: z.null(), kind: z.literal("not_quantifiable"), reason: z.string() })
-              .strict(),
-            evidence: cyclingThresholdEvidenceSchema,
-            relevant_activity_ids: z.array(z.uuid()),
-            assumptions: z.array(z.string()),
-          })
-          .strict()
-          .nullable(),
-        unavailable_reason: nullableString,
-        weight: cyclingPowerCurveWeightSchema,
       })
       .strict(),
   })
@@ -749,7 +713,6 @@ export const trainingLoadToolOutputSchema = jsonResult(
 );
 
 export const mcpOutputSchemas = {
-  cyclingThresholdEstimate: cyclingThresholdEstimateOutputSchema,
   cyclingPowerCurve: cyclingPowerCurveOutputSchema,
   cyclingTrainingMetrics: cyclingTrainingMetricsOutputSchema,
   activityTimeseries: activityTimeseriesOutputSchema,
@@ -770,6 +733,5 @@ export const mcpOutputSchemas = {
   providers: providersOutputSchema,
   searchActivities: searchActivitiesOutputSchema,
   sleepSummary: sleepSummaryOutputSchema,
-  thresholdHistory: thresholdHistoryOutputSchema,
   trainingLoad: trainingLoadToolOutputSchema,
 };

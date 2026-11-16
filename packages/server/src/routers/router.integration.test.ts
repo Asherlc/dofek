@@ -21,7 +21,7 @@ import {
  * - recovery (sleepConsistency, hrvVariability, workloadRatio, sleepAnalytics)
  * - strength (volumeOverTime, estimatedOneRepMax, muscleGroupVolume, progressiveOverload, workoutSummary)
  * - anomalyDetection (check + history)
- * - power (eFTP fallback path)
+ * - power (power-duration path)
  * - efficiency (aerobicDecoupling edge case)
  */
 describe("Router coverage", () => {
@@ -928,36 +928,6 @@ describe("Router coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Power — eFTP trend (fallback path when CP model can't fit)
-  // ══════════════════════════════════════════════════════════════
-  describe("power eFTP fallback", () => {
-    it("eftpTrend returns current eFTP from trend when CP model unavailable", async () => {
-      // With limited data the CP model may or may not fit.
-      // Either way, the endpoint should return a result.
-      const result = await query<{
-        trend: { date: string; eftp: number; activityName: string | null }[];
-        currentEftp: number | null;
-        model: { cp: number; wPrime: number; r2: number } | null;
-      }>("power.eftpTrend", { days: 365 });
-
-      expect(Array.isArray(result.trend)).toBe(true);
-
-      for (const point of result.trend) {
-        expect(point.date).toBeTruthy();
-        expect(point.eftp).toBeGreaterThan(0);
-      }
-
-      // currentEftp should be estimated from either CP model or best NP
-      if (result.trend.length > 0) {
-        expect(result.currentEftp).not.toBeNull();
-        if (result.currentEftp != null) {
-          expect(result.currentEftp).toBeGreaterThan(50);
-        }
-      }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
   // Efficiency — aerobic decoupling with real data
   // ══════════════════════════════════════════════════════════════
   describe("efficiency aerobicDecoupling", () => {
@@ -1339,7 +1309,7 @@ describe("Router coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Power — powerCurve and eFTP trend
+  // Power — powerCurve
   // ══════════════════════════════════════════════════════════════
   describe("power", () => {
     it("powerCurve returns best power per duration", async () => {
@@ -1360,25 +1330,6 @@ describe("Router coverage", () => {
         expect(point.bestPower).toBeGreaterThan(0);
         expect(point.activityDate).toBeTruthy();
         expect(point.label).toBeTruthy();
-      }
-    });
-
-    it("eftpTrend returns per-activity eFTP", async () => {
-      const result = await query<{
-        trend: { date: string; eftp: number; activityName: string | null }[];
-        currentEftp: number | null;
-        model: { cp: number; wPrime: number; r2: number } | null;
-      }>("power.eftpTrend", { days: 365 });
-
-      expect(Array.isArray(result.trend)).toBe(true);
-
-      for (const point of result.trend) {
-        expect(point.date).toBeTruthy();
-        expect(point.eftp).toBeGreaterThan(0);
-      }
-
-      if (result.trend.length > 0) {
-        expect(result.currentEftp).not.toBeNull();
       }
     });
   });

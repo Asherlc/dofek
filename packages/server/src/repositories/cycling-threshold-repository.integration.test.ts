@@ -1,201 +1,189 @@
 import { randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { z } from "zod";
+import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
+import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import {
-  type CyclingThresholdHistoryInput,
-  CyclingThresholdRepository,
-} from "./cycling-threshold-repository.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 
-describe("computed cycling threshold serving semantics", () => {
-  const database = `cycling_threshold_${randomUUID().replaceAll("-", "")}`;
-  const client = createClickHouseClientFromEnv();
+describe("CyclingThresholdRepository database semantics", () => {
+  const analyticsDatabase = `manual_ftp_${randomUUID().replaceAll("-", "")}`;
+  const clickhouse = createClickHouseClientFromEnv();
   const userId = randomUUID();
-  const activityId = randomUUID();
+  const providerId = `manual-ftp-${randomUUID()}`;
+  const canonicalId = randomUUID();
+  const groupedMemberId = randomUUID();
+  const fallbackId = randomUUID();
+  const noNpId = randomUUID();
+  const clearedId = randomUUID();
+  const absentId = randomUUID();
+  const withdrawnId = randomUUID();
+  const beforeInstantStartId = randomUUID();
+  const atInstantStartId = randomUUID();
+  const insideAfterMidnightId = randomUUID();
+  const atInstantEndId = randomUUID();
+  let postgres: TestContext;
   const store: Pick<ActivitySensorStore, "query"> = {
-    async query<T extends z.ZodType>(
-      schema: T,
-      query: string,
-      params: Record<string, unknown> = {},
-    ): Promise<z.infer<T>[]> {
-      const result = await client.query({
-        query: query.replaceAll("analytics.", `${database}.`),
+    async query<TSchema extends z.ZodType>(schema: TSchema, query: string, params = {}) {
+      const result = await clickhouse.query({
+        query: query.replaceAll("analytics.", `${analyticsDatabase}.`),
         query_params: params,
         format: "JSONEachRow",
       });
-      const rows = await result.json();
-      return rows.map((row) => schema.parse(row));
+      return z.array(schema).parse(await result.json());
     },
   };
+
   beforeAll(async () => {
-    await client.command({ query: `CREATE DATABASE ${database}` });
-    await client.command({
-      query: `CREATE TABLE ${database}.cycling_threshold_history (
-      user_id UUID, event_at DateTime64(6, 'UTC'), activity_id Nullable(UUID), eftp Nullable(Float64),
-      evidence_activity_id Nullable(UUID), evidence_at Nullable(DateTime64(6, 'UTC')),
-      evidence_duration_seconds Nullable(UInt32), evidence_power Nullable(Float64), model_version String
-    ) ENGINE = Memory`,
+    postgres = await setupTestDatabase();
+    await postgres.db.execute(sql`
+      INSERT INTO fitness.user_profile (id, name) VALUES (${userId}::uuid, 'Manual FTP integration')
+    `);
+    await postgres.db.execute(sql`
+      INSERT INTO fitness.provider (id, name, user_id) VALUES (${providerId}, 'Manual FTP fixture', ${userId}::uuid)
+    `);
+    await postgres.db.execute(sql`
+      INSERT INTO fitness.sport_settings (user_id, sport, ftp, effective_from) VALUES
+        (${userId}::uuid, 'cycling', 200, '2026-06-14'),
+        (${userId}::uuid, 'cycling', 250, '2026-06-15'),
+        (${userId}::uuid, 'cycling', 220, '2026-06-16'),
+        (${userId}::uuid, 'cycling', NULL, '2026-06-17')
+    `);
+    await postgres.db.execute(sql`
+      INSERT INTO fitness.activity (
+        id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+        started_at, ended_at, raw, local_time_source, start_utc_offset_minutes,
+        provider_absent_at, deleted_at
+      ) VALUES
+        (${canonicalId}::uuid, ${canonicalId}::uuid, ${providerId}, ${userId}::uuid, 'canonical', 'cycling', 'cycling',
+          '2026-06-15T00:30:00Z', '2026-06-15T01:30:00Z', '{}'::jsonb, 'provider_offset', 120, NULL, NULL),
+        (${groupedMemberId}::uuid, ${canonicalId}::uuid, ${providerId}, ${userId}::uuid, 'grouped-member', 'cycling', 'cycling',
+          '2026-06-15T00:30:00Z', '2026-06-15T01:30:00Z', '{}'::jsonb, 'provider_offset', 120, NULL, NULL),
+        (${fallbackId}::uuid, ${fallbackId}::uuid, ${providerId}, ${userId}::uuid, 'fallback', 'cycling', 'cycling',
+          '2026-06-15T00:30:00Z', '2026-06-15T01:30:00Z', '{}'::jsonb, 'unknown', NULL, NULL, NULL),
+        (${noNpId}::uuid, ${noNpId}::uuid, ${providerId}, ${userId}::uuid, 'no-np', 'cycling', 'cycling',
+          '2026-06-15T12:00:00Z', '2026-06-15T13:00:00Z', '{}'::jsonb, 'unknown', NULL, NULL, NULL),
+        (${clearedId}::uuid, ${clearedId}::uuid, ${providerId}, ${userId}::uuid, 'clear', 'cycling', 'cycling',
+          '2026-06-17T12:00:00Z', '2026-06-17T13:00:00Z', '{}'::jsonb, 'unknown', NULL, NULL, NULL),
+        (${absentId}::uuid, ${absentId}::uuid, ${providerId}, ${userId}::uuid, 'provider-absent', 'cycling', 'cycling',
+          '2026-06-15T12:00:00Z', '2026-06-15T13:00:00Z', '{}'::jsonb, 'unknown', NULL, now(), NULL),
+        (${withdrawnId}::uuid, ${withdrawnId}::uuid, ${providerId}, ${userId}::uuid, 'withdrawn', 'cycling', 'cycling',
+          '2026-06-15T12:00:00Z', '2026-06-15T13:00:00Z', '{}'::jsonb, 'unknown', NULL, NULL, now()),
+        (${beforeInstantStartId}::uuid, ${beforeInstantStartId}::uuid, ${providerId}, ${userId}::uuid, 'before-instant-start', 'cycling', 'cycling',
+          '2026-06-15T01:00:00Z', '2026-06-15T02:00:00Z', '{}'::jsonb, 'unknown', NULL, NULL, NULL),
+        (${atInstantStartId}::uuid, ${atInstantStartId}::uuid, ${providerId}, ${userId}::uuid, 'at-instant-start', 'cycling', 'cycling',
+          '2026-06-15T06:00:00Z', '2026-06-15T07:00:00Z', '{}'::jsonb, 'unknown', NULL, NULL, NULL),
+        (${insideAfterMidnightId}::uuid, ${insideAfterMidnightId}::uuid, ${providerId}, ${userId}::uuid, 'inside-after-midnight', 'cycling', 'cycling',
+          '2026-06-16T01:00:00Z', '2026-06-16T02:00:00Z', '{}'::jsonb, 'unknown', NULL, NULL, NULL),
+        (${atInstantEndId}::uuid, ${atInstantEndId}::uuid, ${providerId}, ${userId}::uuid, 'at-instant-end', 'cycling', 'cycling',
+          '2026-06-16T06:00:00Z', '2026-06-16T07:00:00Z', '{}'::jsonb, 'unknown', NULL, NULL, NULL)
+    `);
+    await clickhouse.command({ query: `CREATE DATABASE ${analyticsDatabase}` });
+    await clickhouse.command({
+      query: `CREATE TABLE ${analyticsDatabase}.cycling_activity_power_metrics (
+        user_id UUID, activity_id UUID, normalized_power Nullable(Float64), power_sample_count UInt64
+      ) ENGINE = Memory`,
     });
-    await client.command({
-      query: `INSERT INTO ${database}.cycling_threshold_history VALUES
-      ('${userId}', '2026-06-01 06:59:59.999999', '${activityId}', 240, '${activityId}', '2026-05-01 12:00:00', 1200, 260, 'v1'),
-      ('${userId}', '2026-06-01 07:00:00.000001', NULL, 239, '${activityId}', '2026-05-01 12:00:00', 1200, 260, 'v1'),
-      ('${userId}', '2026-06-02 07:00:00', NULL, 238, '${activityId}', '2026-05-01 12:00:00', 1200, 260, 'v1'),
-      ('${userId}', '2026-06-03 07:00:00', NULL, NULL, NULL, NULL, NULL, NULL, 'v1')`,
+    await clickhouse.command({
+      query: `INSERT INTO ${analyticsDatabase}.cycling_activity_power_metrics VALUES
+        ('${userId}', '${canonicalId}', 250, 3600),
+        ('${userId}', '${fallbackId}', 250, 3600),
+        ('${userId}', '${clearedId}', 250, 3600)`,
     });
-    await client.command({
-      query: `CREATE TABLE ${database}.cycling_activity_power_metrics (
-      user_id UUID, activity_id UUID, started_at DateTime64(6, 'UTC'), normalized_power Nullable(Float64),
-      eftp Nullable(Float64), power_tss Nullable(Float64), intensity_factor Nullable(Float64),
-      evidence_activity_id Nullable(UUID), evidence_at Nullable(DateTime64(6, 'UTC')),
-      evidence_duration_seconds Nullable(UInt32), evidence_power Nullable(Float64), model_version String
-    ) ENGINE = Memory`,
-    });
-    await client.command({
-      query: `INSERT INTO ${database}.cycling_activity_power_metrics VALUES
-      ('${userId}', '${activityId}', '2026-06-01 07:00:00', 240, 245, 80, 0.98, '${activityId}', '2026-05-01 12:00:00', 1200, 260, 'v1')`,
-    });
-  });
+  }, 60_000);
+
   afterAll(async () => {
-    await client.command({ query: `DROP DATABASE IF EXISTS ${database}` });
-    await client.close?.();
+    await postgres?.cleanup();
+    await clickhouse.command({ query: `DROP DATABASE IF EXISTS ${analyticsDatabase} SYNC` });
+    await clickhouse.close?.();
   });
-  it("resolves local calendar end dates and exact timestamp cutoffs", async () => {
-    const repository = new CyclingThresholdRepository(store, userId, "America/Los_Angeles");
-    expect((await repository.getAsOf("2026-05-31")).value).toBe(240);
-    expect((await repository.getAsOf("2026-06-01")).value).toBe(239);
-    expect((await repository.getAsOf("2026-06-01T07:00:00.000000Z")).value).toBe(240);
-    expect((await repository.getAsOf("2026-06-03T07:00:00Z")).unavailable_reason).toContain(
-      "qualifying cycling power evidence",
+
+  it("uses source-local FTP dates for canonical groups and user-zone fallback when context is missing", async () => {
+    const repository = new CyclingThresholdRepository(
+      postgres.db,
+      store,
+      userId,
+      "America/Los_Angeles",
     );
-  });
-  it("paginates microsecond boundaries and nullable midnight events without dropping rows", async () => {
-    const repository = new CyclingThresholdRepository(store, userId, "UTC");
-    const input: CyclingThresholdHistoryInput = {
-      startDate: "2026-06-01",
-      endDate: "2026-06-02",
-      limit: 1,
-      cursor: null,
-    };
-    const values: Array<number | null> = [];
-    do {
-      const page = await repository.listHistory(input);
-      values.push(...page.items.map((item) => item.value));
-      input.cursor = page.next_cursor;
-    } while (input.cursor);
-    expect(values).toEqual([238, 239, 240]);
-  });
-  it("reads canonical activity metrics and their model provenance with user isolation", async () => {
-    const repository = new CyclingThresholdRepository(store, userId, "UTC");
-    const metrics = await repository.getForActivities([activityId]);
-    expect(metrics.get(activityId)).toMatchObject({
-      eftp: 245,
-      power_tss: 80,
-      model_version: "v1",
-      evidence_duration_seconds: 1200,
+    const metrics = await repository.getForActivities([canonicalId, groupedMemberId, fallbackId]);
+    expect(metrics.get(canonicalId)).toMatchObject({
+      activity_id: canonicalId,
+      activity_date: "2026-06-15",
+      normalized_power: 250,
+      power_tss: 100,
+      ftp: 250,
     });
-    expect(
-      (
-        await new CyclingThresholdRepository(store, randomUUID(), "UTC").getForActivities([
-          activityId,
-        ])
-      ).size,
-    ).toBe(0);
+    expect(metrics.get(groupedMemberId)).toMatchObject({
+      activity_id: canonicalId,
+      activity_date: "2026-06-15",
+      ftp: 250,
+      power_tss: 100,
+    });
+    expect(metrics.get(fallbackId)).toMatchObject({
+      activity_date: "2026-06-14",
+      ftp: 200,
+      power_tss: 156.25,
+    });
   });
-  it("serves only permitted history events without refitting the canonical estimate", async () => {
-    const repository = new CyclingThresholdRepository(store, userId, "UTC", {
+
+  it("keeps configured FTP without an NP row, applies dated clears, and excludes deleted activities", async () => {
+    const repository = new CyclingThresholdRepository(
+      postgres.db,
+      store,
+      userId,
+      "America/Los_Angeles",
+    );
+    const metrics = await repository.getForActivities([noNpId, clearedId, absentId, withdrawnId]);
+    expect(metrics.get(noNpId)).toMatchObject({
+      ftp: 250,
+      normalized_power: null,
+      power_tss: null,
+    });
+    expect(metrics.get(clearedId)).toMatchObject({
+      ftp: null,
+      intensity_factor: null,
+      power_tss: null,
+    });
+    expect(metrics.get(absentId)).toMatchObject({ activity_id: absentId, ftp: 250 });
+    expect(metrics.has(withdrawnId)).toBe(false);
+  });
+
+  it("preserves context-zone entitlement boundaries while using source-local FTP date", async () => {
+    const repository = new CyclingThresholdRepository(
+      postgres.db,
+      store,
+      userId,
+      "America/Los_Angeles",
+      {
+        kind: "limited",
+        paid: false,
+        reason: "free_recent_week",
+        startDate: "2026-06-14",
+        endDateExclusive: "2026-06-15",
+      },
+    );
+    const metrics = await repository.getForActivities([canonicalId]);
+    expect(metrics.get(canonicalId)).toMatchObject({ activity_date: "2026-06-15", ftp: 250 });
+  });
+
+  it("preserves explicit timestamp access bounds and both half-open edges", async () => {
+    const repository = new CyclingThresholdRepository(postgres.db, store, userId, "UTC", {
       kind: "limited",
       paid: false,
       reason: "free_recent_week",
-      startDate: "2026-06-01T07:00:00.000000Z",
-      endDateExclusive: "2026-06-03T07:00:00.000000Z",
+      startDate: "2026-06-15T06:00:00Z",
+      endDateExclusive: "2026-06-16T06:00:00Z",
     });
-    expect((await repository.getCurrent()).value).toBe(238);
-    expect((await repository.getAsOf("2026-06-01T06:59:59.999999Z")).value).toBeNull();
-    const page = await repository.listHistory({
-      startDate: "2026-05-01",
-      endDate: "2026-07-01",
-      cursor: null,
-      limit: 100,
-    });
-    expect(page.items.map((item) => item.value)).toEqual([238, 239]);
-  });
-  it.each([
-    { timezone: "America/Los_Angeles", values: [239] },
-    { timezone: "Asia/Tokyo", values: [239, 240] },
-  ])("uses local access dates in $timezone", async ({ timezone, values }) => {
-    const repository = new CyclingThresholdRepository(store, userId, timezone, {
-      kind: "limited",
-      paid: false,
-      reason: "free_recent_week",
-      startDate: "2026-06-01",
-      endDateExclusive: "2026-06-02",
-    });
-    const page = await repository.listHistory({
-      startDate: "2026-05-01",
-      endDate: "2026-07-01",
-      cursor: null,
-      limit: 100,
-    });
-    expect(page.items.map((item) => item.value)).toEqual(values);
-    expect((await repository.getCurrent()).value).toBe(239);
-    expect((await repository.getForActivities([activityId])).size).toBe(1);
-  });
-  it.each([
-    {
-      timezone: "America/Los_Angeles",
-      startDate: "2026-03-08",
-      endDate: "2026-03-09",
-      instants: [
-        "2026-03-08 07:59:59.999999",
-        "2026-03-08 08:00:00",
-        "2026-03-09 06:59:59.999999",
-        "2026-03-09 07:00:00",
-      ],
-    },
-    {
-      timezone: "Asia/Tokyo",
-      startDate: "2026-06-01",
-      endDate: "2026-06-02",
-      instants: [
-        "2026-05-31 14:59:59.999999",
-        "2026-05-31 15:00:00",
-        "2026-06-01 14:59:59.999999",
-        "2026-06-01 15:00:00",
-      ],
-    },
-  ])("enforces both access boundaries across $timezone calendar days", async (scenario) => {
-    const boundaryUser = randomUUID();
-    await client.insert({
-      table: `${database}.cycling_threshold_history`,
-      format: "JSONEachRow",
-      values: scenario.instants.map((eventAt, index) => ({
-        user_id: boundaryUser,
-        event_at: eventAt,
-        activity_id: null,
-        eftp: 200 + index,
-        evidence_activity_id: activityId,
-        evidence_at: "2026-01-01 12:00:00",
-        evidence_duration_seconds: 1200,
-        evidence_power: 260,
-        model_version: "v1",
-      })),
-    });
-    const repository = new CyclingThresholdRepository(store, boundaryUser, scenario.timezone, {
-      kind: "limited",
-      paid: false,
-      reason: "free_recent_week",
-      startDate: scenario.startDate,
-      endDateExclusive: scenario.endDate,
-    });
-    expect((await repository.getCurrent()).value).toBe(202);
-    const page = await repository.listHistory({
-      startDate: "2026-01-01",
-      endDate: "2026-12-31",
-      cursor: null,
-      limit: 100,
-    });
-    expect(page.items.map((item) => item.value)).toEqual([202, 201]);
+    const metrics = await repository.getForActivities([
+      beforeInstantStartId,
+      atInstantStartId,
+      insideAfterMidnightId,
+      atInstantEndId,
+    ]);
+    expect(metrics.has(beforeInstantStartId)).toBe(false);
+    expect(metrics.has(atInstantStartId)).toBe(true);
+    expect(metrics.has(insideAfterMidnightId)).toBe(true);
+    expect(metrics.has(atInstantEndId)).toBe(false);
   });
 });
