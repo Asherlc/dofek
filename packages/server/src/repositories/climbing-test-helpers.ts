@@ -172,6 +172,117 @@ export function climbingNamedLogEntryFixture(
     ],
   });
 }
+export function climbingBoardSeshGradeFixture({
+  id = "20000000-0000-4000-8000-000000000001",
+  climbId = "20000000-0000-4000-8000-000000000003",
+  boardseshDifficulty = 18.672,
+}: {
+  id?: string;
+  climbId?: string;
+  boardseshDifficulty?: number;
+} = {}): ClimbingLogEntryDetail {
+  const entry = climbingNamedLogEntryFixture("boardsesh", id);
+  if (!entry.climb) throw new Error("Expected climb");
+  entry.climb.id = climbId;
+  entry.climb.externalId = climbId;
+  entry.climbId = climbId;
+  entry.climb.kind = "boulder";
+  entry.climb.publishedGrades = [];
+  entry.reportedGrades = [];
+  entry.raw = {
+    difficulty: null,
+    metadata: {
+      ascent: {
+        boardseshDifficulty,
+        boardseshConfidence: "confirmed",
+        consensusDifficulty: 18,
+        consensusDifficultyName: "6b/V4",
+      },
+      grades: [
+        { difficultyId: 18, name: "6b/V4" },
+        { difficultyId: 19, name: "6b+/V4" },
+        { difficultyId: 20, name: "6c/V5" },
+      ],
+    },
+  };
+  return entry;
+}
+export function climbingGradeSortFixtures() {
+  const base = climbingNamedLogEntryFixture("openbeta");
+  const lower = climbingNamedLogEntryFixture("openbeta", "20000000-0000-4000-8000-000000000006");
+  const higher = climbingNamedLogEntryFixture("openbeta", "20000000-0000-4000-8000-000000000007");
+  const ungraded = climbingNamedLogEntryFixture("openbeta", "20000000-0000-4000-8000-000000000008");
+  for (const [index, entry] of [lower, higher, ungraded].entries()) {
+    if (!entry.climb) throw new Error("Expected climb");
+    entry.climb.id = `20000000-0000-4000-8000-00000000001${index}`;
+    entry.climb.externalId = `distinct-climb-${index}`;
+    entry.climbId = entry.climb.id;
+  }
+  if (!lower.climb || !higher.climb || !ungraded.climb) throw new Error("Expected climbs");
+  lower.climb.publishedGrades = [{ value: "5.9", system: "yds" }];
+  higher.climb.publishedGrades = [{ value: "5.11a", system: "yds" }];
+  ungraded.climb.publishedGrades = [];
+  return {
+    base,
+    lower,
+    higher,
+    ungraded,
+    sortRows: [ungraded, lower, base, higher],
+    sortedRows: [higher, base, lower, ungraded],
+  };
+}
+export function climbingBoardSeshGradeSortFixtures() {
+  const easier = climbingBoardSeshGradeFixture({ boardseshDifficulty: 18 });
+  const plus = climbingBoardSeshGradeFixture({
+    id: "20000000-0000-4000-8000-000000000006",
+    climbId: "20000000-0000-4000-8000-000000000006",
+  });
+  const harder = climbingBoardSeshGradeFixture({
+    id: "20000000-0000-4000-8000-000000000007",
+    climbId: "20000000-0000-4000-8000-000000000007",
+    boardseshDifficulty: 20,
+  });
+  const ungraded = climbingBoardSeshGradeFixture({
+    id: "20000000-0000-4000-8000-000000000009",
+    climbId: "20000000-0000-4000-8000-000000000009",
+  });
+  ungraded.raw = null;
+  const missingClimb = climbingBoardSeshGradeFixture({
+    id: "20000000-0000-4000-8000-000000000010",
+    climbId: "20000000-0000-4000-8000-000000000010",
+  });
+  missingClimb.climb = null;
+  missingClimb.climbId = null;
+  const other = climbingNamedLogEntryFixture("openbeta", "20000000-0000-4000-8000-000000000011");
+  if (!other.climb) throw new Error("Expected climb");
+  other.climb.kind = "boulder";
+  other.climb.publishedGrades = [{ value: "V1", system: "v_scale" }];
+  other.raw = plus.raw;
+  const nonRock = climbingNamedLogEntryFixture("openbeta", "20000000-0000-4000-8000-000000000012");
+  if (!nonRock.climb) throw new Error("Expected climb");
+  nonRock.discipline = "ice_climbing";
+  nonRock.climb.kind = "boulder";
+  nonRock.climb.publishedGrades = [{ value: "V1", system: "v_scale" }];
+  nonRock.raw = plus.raw;
+  const historical = climbingBoardSeshGradeFixture({
+    id: "20000000-0000-4000-8000-000000000008",
+    climbId: "20000000-0000-4000-8000-000000000008",
+  });
+  historical.raw = null;
+  historical.reportedGrades = [{ value: "V2", system: "v_scale" }];
+  return {
+    easier,
+    plus,
+    harder,
+    ungraded,
+    missingClimb,
+    other,
+    nonRock,
+    historical,
+    boardRows: [ungraded, missingClimb, other, nonRock, plus, harder, easier],
+    sortedBoardRows: [harder, plus, easier, other, ungraded, missingClimb, nonRock],
+  };
+}
 export function climbingKayaHistoryFixture() {
   const send = climbingNamedLogEntryFixture("kaya", "20000000-0000-4000-8000-000000000001", true);
   if (!send.climb) throw new Error("Expected climb");

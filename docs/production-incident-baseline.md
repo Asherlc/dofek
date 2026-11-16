@@ -1,5 +1,30 @@
 # Production Incident Baseline
 
+## 2026-11-15 — BoardSesh activity group lacks displayed grades
+
+- **Symptoms / impact:** Activity group
+  `324ed832-9b72-4bac-b6dc-5eaa0972c1d6` has seven BoardSesh logs with no
+  displayed grade. Read-only production inspection found each tick's raw
+  `difficulty` null, no personal reported grade, and no shared published grade.
+- **Evidence / root cause:** The importer used the personal tick difficulty and
+  the board's difficulty catalogue, but did not retain consensus/model
+  grades from `userAscentsFeed`. The server therefore had no crowd grade to
+  display for these ungraded personal ticks. A read-only live feed confirmed
+  angle-specific model and consensus grades are available for the source ticks;
+  no production records were changed. See the [BoardSesh mapping and pinned
+  upstream sources](boardsesh.md#implemented-in-dofek).
+- **Direct fix / validation:** The importer now retains the board grade
+  catalogue and exact tick, climb, mirror, and angle-matched ascent fields under
+  `raw.metadata`. The server uses a trusted rounded model grade or the source
+  consensus fallback for display and sorting, while personal grades remain
+  first. Focused provider and repository tests passed 166/166; the real-engine
+  BoardSesh provider integration suite passed 20/20, and `pnpm lint` passed.
+- **Remaining risk / follow-up:** The code is not deployed and the seven
+  existing records have not been re-synced, so their stored raw metadata and
+  displayed grades remain unchanged. After a normal deployment, run a normal
+  BoardSesh re-sync and verify the activity group's returned `displayGrade`
+  values. There was no production write or deployment during diagnosis.
+
 ## 2026-11-15 — Sleep stage timeline rendered empty despite recorded intervals
 
 - **Symptoms / user impact:** The web Sleep page's Last Night's Stages panel
@@ -38428,6 +38453,34 @@ Local qualification and CI are separate from production throughput acceptance. T
   was not performed during this task because it is outside the approved scope.
 - **Follow-up:** Rotate the affected production credentials through the
   established secret rotation workflow and verify consumers afterward.
+
+## 2026-11-16 (UTC) — BoardSesh PR mutation jobs fail required CI gates
+
+- **Symptoms / impact:** PR #3356's CI run `43784341173` failed its two server
+  mutation jobs; aggregate server and compatibility gates consequently failed.
+  Production was unaffected because this branch had not deployed.
+- **Evidence / root cause:** `Check Server / Stryker (0)` and `(1)`, step
+  `Run Stryker`, reported `Final mutation score 65.38 under breaking threshold
+  75` and `Final mutation score 64.71 under breaking threshold 75`. Downloaded
+  mutation reports identified missing tests for source-catalogue personal
+  grades, malformed/partial metadata, and unknown-grade/provider sorting paths.
+  The non-provider isolation fixture used incompatible route grades, so forcing
+  the BoardSesh branch did not alter its result. See the
+  [failed run](https://github.com/Asherlc/dofek/actions/runs/43784341173).
+- **Fix / validation:** Added observable boundary, personal-catalogue, fallback,
+  ungraded-sort, and compatible-provider isolation assertions. The repository
+  regression also asserts positive BoardSesh API grades. Simplified source
+  formatting to boulders and normalized both label formats to uppercase,
+  matching the source app. Exact local mutation targets scored 77.24% for the
+  helper and 100% for the repository under the unchanged 75% gate. The full
+  unit/mobile suite, lint, and all-package typechecks passed. Remote validation
+  is recorded in [PR #3356's checks](https://github.com/Asherlc/dofek/pull/3356/checks).
+- **Remaining risk / follow-up:** A local mutation dry run once failed a
+  separate MCP transport test with a non-JSON-RPC response; its cause remains
+  unclassified. The standalone MCP file and subsequent exact mutation run
+  passed; no MCP change or retry policy was introduced. Preserve the diagnostic
+  if it recurs. No exclusions or thresholds were relaxed. Production rollout
+  and the normal BoardSesh re-sync are still separate operational steps.
 
 ## 2026-11-15 — Activities list delayed by PostgreSQL activity expansion
 

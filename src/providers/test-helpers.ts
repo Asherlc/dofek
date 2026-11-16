@@ -32,11 +32,26 @@ export function boardSeshAscentFixture(overrides: Record<string, unknown> = {}) 
     climbUuid: "climb-1",
     boardType: "kilter",
     isMirror: false,
+    angle: 40,
     climbName: "  Moon Dust  ",
     boardId: 42,
     boardDisplayName: " Display board ",
+    consensusDifficulty: null,
+    consensusDifficultyName: null,
+    boardseshDifficulty: null,
+    boardseshConfidence: null,
     ...overrides,
   };
+}
+
+export function boardSeshGradeAscentFixture(overrides: Record<string, unknown> = {}) {
+  return boardSeshAscentFixture({
+    consensusDifficulty: 19,
+    consensusDifficultyName: "6b+/V4",
+    boardseshDifficulty: 18.672,
+    boardseshConfidence: "provisional",
+    ...overrides,
+  });
 }
 
 export function boardSeshBoardFixture(overrides: Record<string, unknown> = {}) {
@@ -176,11 +191,13 @@ export const boardSeshMetadataCases = [
 export function createBoardSeshMetadataFetch({
   ticks,
   pages,
+  grades = [],
   currentBoard = { uuid: "board-42", name: "Training Kilter", boardType: "kilter" },
   board = boardSeshBoardFixture(),
 }: {
   ticks: unknown[];
   pages: Record<number, unknown>;
+  grades?: unknown[];
   currentBoard?: unknown;
   board?: unknown;
 }) {
@@ -196,7 +213,7 @@ export function createBoardSeshMetadataFetch({
       const input = z.object({ boardType: z.string() }).parse(variables.input);
       data = { ticks: input.boardType === "kilter" ? ticks : [] };
     } else if (query.includes("BoardSeshGrades")) {
-      data = { grades: [] };
+      data = { grades };
     } else if (query.includes("BoardSeshMetadata")) {
       const input = z.object({ offset: z.number() }).parse(variables.input);
       if (!(input.offset in pages)) throw new Error("Unexpected metadata page");
