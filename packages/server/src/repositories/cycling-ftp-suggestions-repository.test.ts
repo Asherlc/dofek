@@ -1,9 +1,24 @@
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { describe, expect, it, vi } from "vitest";
 import { CyclingFtpSuggestionsRepository } from "./cycling-ftp-suggestions-repository.ts";
 
 describe("CyclingFtpSuggestionsRepository", () => {
-  it("returns separately evidenced reference and 95% 20-minute suggestions within explicit dates", async () => {
+  it("returns bounded reference and 95% 20-minute suggestions", async () => {
     const query = vi.fn().mockResolvedValue([
+      {
+        activity_id: "ride-1",
+        activity_date: "2026-06-10",
+        duration_seconds: 180,
+        best_power: 300,
+        activity_name: "Same power at a shorter duration",
+      },
+      {
+        activity_id: "ride-1",
+        activity_date: "2026-06-10",
+        duration_seconds: 600,
+        best_power: 280,
+        activity_name: "Lower power at the selected duration",
+      },
       {
         activity_id: "ride-1",
         activity_date: "2026-06-10",
@@ -18,6 +33,13 @@ describe("CyclingFtpSuggestionsRepository", () => {
         best_power: 330,
         activity_name: "Intervals",
       },
+      {
+        activity_id: "ride-2",
+        activity_date: "2026-06-11",
+        duration_seconds: 1200,
+        best_power: 300,
+        activity_name: "Higher 20-minute effort",
+      },
     ]);
     const repository = new CyclingFtpSuggestionsRepository({ query }, "user-1", "UTC");
 
@@ -29,22 +51,23 @@ describe("CyclingFtpSuggestionsRepository", () => {
       methods: [
         {
           method: "reference_curves",
+          suggested_ftp: 267,
           evidence: {
             activity_id: "ride-2",
             date: "2026-06-11",
-            duration_seconds: 600,
-            power_watts: 330,
+            duration_seconds: 1200,
+            power_watts: 300,
           },
           limitations: expect.any(String),
         },
         {
           method: "95_percent_best_20_minute",
-          suggested_ftp: 266,
+          suggested_ftp: 285,
           evidence: {
-            activity_id: "ride-1",
-            date: "2026-06-10",
+            activity_id: "ride-2",
+            date: "2026-06-11",
             duration_seconds: 1200,
-            power_watts: 280,
+            power_watts: 300,
           },
           limitations: expect.any(String),
         },
@@ -55,6 +78,65 @@ describe("CyclingFtpSuggestionsRepository", () => {
     expect(query.mock.calls[0]?.[2]).toMatchObject({
       startDate: "2026-06-01",
       endDate: "2026-06-15",
+      activityTypes: [...CYCLING_ACTIVITY_TYPES],
+    });
+  });
+
+  it("uses the selected reference and tied 20-minute source rows for evidence", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        activity_id: "ride-a",
+        activity_date: "2026-06-10",
+        duration_seconds: 600,
+        best_power: 330,
+        activity_name: "Reference candidate",
+      },
+      {
+        activity_id: "ride-a",
+        activity_date: "2026-06-10",
+        duration_seconds: 1200,
+        best_power: 300,
+        activity_name: "First tied 20-minute effort",
+      },
+      {
+        activity_id: "ride-b",
+        activity_date: "2026-06-11",
+        duration_seconds: 1200,
+        best_power: 300,
+        activity_name: "Second tied 20-minute effort",
+      },
+    ]);
+    const result = await new CyclingFtpSuggestionsRepository(
+      { query },
+      "user-1",
+      "UTC",
+    ).getSuggestions("2026-06-10", "2026-06-11");
+
+    expect(result.methods[0]?.method).toBe("reference_curves");
+    expect(result.methods[0]?.suggested_ftp).toBeGreaterThan(0);
+    expect(result.methods[0]?.suggested_ftp).toBe(
+      Math.round(result.methods[0]?.suggested_ftp ?? 0),
+    );
+    expect(result.methods[0]?.evidence).toMatchObject({
+      activity_id: expect.stringMatching(/^ride-[ab]$/),
+      date: expect.stringMatching(/^2026-06-1[01]$/),
+      duration_seconds: expect.any(Number),
+      power_watts: expect.any(Number),
+    });
+    expect(result.methods[1]).toMatchObject({
+      method: "95_percent_best_20_minute",
+      suggested_ftp: 285,
+      evidence: {
+        activity_id: "ride-a",
+        activity_name: "First tied 20-minute effort",
+        date: "2026-06-10",
+        duration_seconds: 1200,
+        power_watts: 300,
+      },
+    });
+    expect(query.mock.calls[0]?.[2]).toMatchObject({
+      startDate: "2026-06-10",
+      endDate: "2026-06-11",
     });
   });
 
@@ -98,6 +180,11 @@ describe("CyclingFtpSuggestionsRepository", () => {
       "user-1",
       "UTC",
     ).getSuggestions("2026-06-01", "2026-06-15");
+    expect(result.methods[0]).toMatchObject({
+      suggested_ftp: null,
+      evidence: null,
+      unavailable_reason: expect.any(String),
+    });
     expect(result.methods[1]).toMatchObject({
       suggested_ftp: null,
       evidence: null,

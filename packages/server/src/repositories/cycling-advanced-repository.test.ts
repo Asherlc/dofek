@@ -178,7 +178,7 @@ describe("PedalDynamicsModel", () => {
 describe("CyclingAdvancedRepository", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  function mockThresholds(values: Record<string, { ftp: number; np: number }>) {
+  function mockThresholds(values: Record<string, { ftp: number; np: number | null }>) {
     vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockImplementation(
       async (ids) =>
         new Map(
@@ -192,10 +192,10 @@ describe("CyclingAdvancedRepository", () => {
               activity_date: "2026-03-15",
               canonical_type: "cycling",
               normalized_power: value.np,
-              power_sample_count: 1,
+              power_sample_count: value.np == null ? 0 : 1,
               ftp: value.ftp,
-              intensity_factor: value.np / value.ftp,
-              power_tss: 64,
+              intensity_factor: value.np == null ? null : value.np / value.ftp,
+              power_tss: value.np == null ? null : 64,
               threshold: {
                 value: value.ftp,
                 unit: "watt",
@@ -273,7 +273,7 @@ describe("CyclingAdvancedRepository", () => {
   describe("getActivityVariability", () => {
     it("renders activity-applicable canonical intensity factors", async () => {
       mockThresholds({ "ride-1": { ftp: 300, np: 220 } });
-      const { repo } = makeRepository(
+      const { repo, sensorStore } = makeRepository(
         [
           {
             activity_id: "ride-1",
@@ -288,6 +288,43 @@ describe("CyclingAdvancedRepository", () => {
       );
       const result = await repo.getActivityVariability(90, 20, 0);
       expect(result.models[0]?.intensityFactor).toBeCloseTo(0.733, 3);
+      expect(CyclingThresholdRepository.prototype.getForActivities).toHaveBeenCalledWith([
+        "ride-1",
+      ]);
+      const mainQuery = vi
+        .mocked(sensorStore.query)
+        .mock.calls.find(([, queryText]) => queryText?.includes("LIMIT {limit:UInt32}"));
+      expect(mainQuery?.[2]).not.toHaveProperty("ftpEnd0");
+      expect(
+        vi
+          .mocked(sensorStore.query)
+          .mock.calls.some(([, queryText]) => queryText?.includes("countIf(")),
+      ).toBe(false);
+    });
+    it("omits page rows when normalized power disappears before threshold resolution", async () => {
+      mockThresholds({ "ride-no-ftp": { ftp: 250, np: null } });
+      const { repo } = makeRepository(
+        [
+          {
+            activity_id: "ride-no-ftp",
+            date: "2024-03-15",
+            name: "Cleared ride",
+            np: 200,
+            avg_power: 180,
+            total_count: 1,
+          },
+        ],
+        1,
+      );
+
+      await expect(repo.getActivityVariability(90, 20, 0)).resolves.toMatchObject({
+        models: [],
+        totalCount: 1,
+        emptyReason: null,
+      });
+      expect(CyclingThresholdRepository.prototype.getForActivities).toHaveBeenCalledWith([
+        "ride-no-ftp",
+      ]);
     });
     it("reports insufficient threshold evidence when normalized power exists", async () => {
       mockThresholds({});
@@ -319,6 +356,98 @@ describe("CyclingAdvancedRepository", () => {
         models: [],
         totalCount: 4,
         emptyReason: null,
+      });
+    });
+    it("handles rides missing from the batched threshold result", async () => {
+      mockThresholds({});
+      const { repo } = makeRepository(
+        [
+          {
+            activity_id: "ride-unresolved",
+            date: "2024-03-15",
+            name: "Unresolved threshold",
+            np: 200,
+            avg_power: 180,
+            total_count: 1,
+          },
+        ],
+        1,
+      );
+
+      await expect(repo.getActivityVariability(90, 20, 0)).resolves.toMatchObject({
+        models: [],
+        totalCount: 1,
+        emptyReason: null,
+      });
+    });
+    it("uses bounded FTP intervals ending at a dated clear", async () => {
+      const settings = (
+        id: string,
+        effectiveFrom: string,
+        ftp: number | null,
+      ): SportSettingsRow => ({
+        id,
+        userId: "user-1",
+        sport: "cycling",
+        thresholdHr: null,
+        thresholdPacePerKm: null,
+        ftp,
+        powerZonePcts: null,
+        hrZonePcts: null,
+        paceZonePcts: null,
+        effectiveFrom,
+        notes: null,
+        createdAt: `${effectiveFrom}T00:00:00Z`,
+        updatedAt: `${effectiveFrom}T00:00:00Z`,
+      });
+      mockThresholds({
+        "ride-before-clear": { ftp: 220, np: 200 },
+        "ride-after-clear": { ftp: 250, np: 200 },
+      });
+      const { repo, sensorStore } = makeRepository(
+        [
+          {
+            activity_id: "ride-before-clear",
+            date: "2024-03-05",
+            name: "Before clear",
+            np: 200,
+            avg_power: 180,
+            total_count: 2,
+          },
+          {
+            activity_id: "ride-after-clear",
+            date: "2024-03-15",
+            name: "After clear",
+            np: 200,
+            avg_power: 180,
+            total_count: 2,
+          },
+        ],
+        2,
+        [
+          settings("clear", "2024-03-20", null),
+          settings("new-ftp", "2024-03-10", 250),
+          settings("old-ftp", "2024-03-01", 220),
+        ],
+      );
+
+      const result = await repo.getActivityVariability(90, 20, 0);
+
+      expect(result.models.map((model) => model.activityId)).toEqual([
+        "ride-before-clear",
+        "ride-after-clear",
+      ]);
+      expect(result.models[0]?.intensityFactor).toBeCloseTo(200 / 220, 3);
+      expect(result.models[1]?.intensityFactor).toBeCloseTo(200 / 250, 3);
+      expect(result.totalCount).toBe(2);
+      const mainQuery = vi
+        .mocked(sensorStore.query)
+        .mock.calls.find(([, queryText]) => queryText?.includes("LIMIT {limit:UInt32}"));
+      expect(mainQuery?.[2]).toMatchObject({
+        ftpStart0: "2024-03-10",
+        ftpEnd0: "2024-03-20",
+        ftpStart1: "2024-03-01",
+        ftpEnd1: "2024-03-10",
       });
     });
     it.each([

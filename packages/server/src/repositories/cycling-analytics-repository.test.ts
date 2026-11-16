@@ -146,6 +146,34 @@ describe("CyclingAnalyticsRepository", () => {
     expect(result.variability.rows[0]?.intensityFactor).toBe(0);
   });
 
+  it("keeps activity cards when the batched threshold lookup has no matching row", async () => {
+    const getForActivities = vi
+      .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
+      .mockResolvedValue(new Map());
+    const sensorStore = makeMockSensorStore([cyclingActivityRow()]);
+    const repository = new CyclingAnalyticsRepository(
+      { execute: vi.fn().mockResolvedValue([]) },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getActivities(ChartRange.fromDays(90), {
+      activityLimit: 20,
+      activityOffset: 0,
+      variabilityLimit: 20,
+      variabilityOffset: 0,
+    });
+
+    expect(result.activities.items).toMatchObject([{ id: "11111111-1111-4111-8111-111111111111" }]);
+    expect(result.variability).toMatchObject({
+      rows: [],
+      totalCount: 0,
+      emptyReason: "no_normalized_power",
+    });
+    expect(getForActivities).toHaveBeenCalledWith(["11111111-1111-4111-8111-111111111111"]);
+  });
+
   it("loads power exploration and configured FTP-dependent load", async () => {
     const sensorStore = makeMockSensorStore();
     vi.mocked(sensorStore.query)
@@ -239,6 +267,62 @@ describe("CyclingAnalyticsRepository", () => {
       expect.objectContaining({ userId: "11111111-1111-4111-8111-111111111111", timezone: "UTC" }),
       { priority: "dashboard" },
     );
+  });
+
+  it("keeps PMC date mapping safe when a ride has no batched threshold metric", async () => {
+    const getForActivities = vi
+      .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
+      .mockResolvedValue(new Map());
+    const sensorStore = makeMockSensorStore();
+    const comparisonRows = [
+      {
+        duration_seconds: 300,
+        recent_best_power: 400,
+        recent_activity_date: "2026-07-10",
+        season_best_power: 500,
+        season_activity_date: "2026-03-15",
+      },
+    ];
+    const activityRows = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        date: "2026-07-10",
+        duration_min: 60,
+        avg_hr: 150,
+        max_hr: 180,
+        global_max_hr: 190,
+        resting_hr: 55,
+        avg_power: 250,
+        power_samples: 3600,
+        hr_samples: 3600,
+        normalized_power: 280,
+        power_tss: 80,
+        activity_name: "Intervals",
+        latest_weight_kg: 80,
+      },
+    ];
+    vi.mocked(sensorStore.query).mockImplementation(async (schema, queryText) => {
+      const rows = queryText?.includes("analytics.activity_power_curve")
+        ? comparisonRows
+        : queryText?.includes("analytics.daily_cycling")
+          ? activityRows
+          : [];
+      return rows.map((row) => schema.parse(row));
+    });
+    const repository = new CyclingAnalyticsRepository(
+      {
+        execute: vi.fn().mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111" }]),
+      },
+      "11111111-1111-4111-8111-111111111111",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getPerformance(ChartRange.fromDays(90));
+
+    expect(getForActivities).toHaveBeenCalledWith(["11111111-1111-4111-8111-111111111111"]);
+    expect(result.pmc).toBeDefined();
+    expect(result.pmc.data).toBeInstanceOf(Array);
   });
 
   it("builds critical-power summaries and omits incomplete curve points", async () => {

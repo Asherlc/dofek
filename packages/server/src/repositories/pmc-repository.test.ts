@@ -84,35 +84,37 @@ function makeRepoHarness(
   execute.mockResolvedValue([]);
   const db = { execute };
   const sensorStore = makeSensorStore(activityRows);
-  vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockResolvedValue(
-    new Map(
-      normalizedPowerRows.map((row) => [
-        String(row.activity_id),
-        {
-          activity_id: String(row.activity_id),
-          started_at: "2026-06-15T10:00:00.000Z",
-          ended_at: "2026-06-15T11:00:00.000Z",
-          activity_date: "2026-06-15",
-          canonical_type: "cycling",
-          normalized_power: null,
-          power_sample_count: null,
-          ftp: typeof row.ftp === "number" ? row.ftp : null,
-          power_tss: typeof row.power_tss === "number" ? row.power_tss : null,
-          intensity_factor: null,
-          threshold:
-            typeof row.ftp === "number"
-              ? {
-                  value: row.ftp,
-                  unit: "watt" as const,
-                  effective_from: "2026-06-15",
-                  source_record_id: "00000000-0000-4000-8000-000000000001",
-                  kind: "configured" as const,
-                }
-              : null,
-        },
-      ]),
-    ),
-  );
+  const getForActivities = vi
+    .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
+    .mockResolvedValue(
+      new Map(
+        normalizedPowerRows.map((row) => [
+          String(row.activity_id),
+          {
+            activity_id: String(row.activity_id),
+            started_at: "2026-06-15T10:00:00.000Z",
+            ended_at: "2026-06-15T11:00:00.000Z",
+            activity_date: "2026-06-15",
+            canonical_type: "cycling",
+            normalized_power: null,
+            power_sample_count: null,
+            ftp: typeof row.ftp === "number" ? row.ftp : null,
+            power_tss: typeof row.power_tss === "number" ? row.power_tss : null,
+            intensity_factor: null,
+            threshold:
+              typeof row.ftp === "number"
+                ? {
+                    value: row.ftp,
+                    unit: "watt" as const,
+                    effective_from: "2026-06-15",
+                    source_record_id: "00000000-0000-4000-8000-000000000001",
+                    kind: "configured" as const,
+                  }
+                : null,
+          },
+        ]),
+      ),
+    );
   vi.spyOn(CyclingThresholdRepository.prototype, "getCurrent").mockResolvedValue({
     value: currentFtp,
     unit: "watt",
@@ -125,6 +127,7 @@ function makeRepoHarness(
     repo: new PmcRepository(db, "user-1", timezone, sensorStore),
     execute: db.execute,
     query: sensorStore.query,
+    getForActivities,
   };
 }
 
@@ -296,7 +299,7 @@ describe("PmcRepository", () => {
           source_record_id: "00000000-0000-4000-8000-000000000001",
           unavailable_reason: null,
         });
-      const { repo } = makeRepoHarness(
+      const { repo, getForActivities } = makeRepoHarness(
         [makeActivityRow({ id: "power-activity" })],
         [{ activity_id: "power-activity", power_tss: 220, ftp: 190 }],
       );
@@ -307,6 +310,7 @@ describe("PmcRepository", () => {
       expect(getCurrent).toHaveBeenCalledOnce();
       expect(result.data.length).toBeGreaterThan(0);
       expect(result.unavailableReason).toBeNull();
+      expect(getForActivities).toHaveBeenCalledWith(["power-activity"]);
     });
     it("keeps the current threshold unavailable when no current history exists", async () => {
       const { repo } = makeRepoHarness(

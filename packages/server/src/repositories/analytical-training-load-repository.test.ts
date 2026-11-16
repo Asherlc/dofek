@@ -286,6 +286,14 @@ describe("AnalyticalTrainingLoadRepository", () => {
             source_providers: ["peloton"],
             first_observed_date: "2026-06-15",
           },
+          {
+            activity_id: null,
+            date: "2026-06-15",
+            power_tss: null,
+            source_providers: [],
+            first_observed_date: "2026-06-15",
+            date_was_authoritative: false,
+          },
         ];
       }
       return [];
@@ -295,6 +303,9 @@ describe("AnalyticalTrainingLoadRepository", () => {
       { query: withManualFtp(query) },
       userId,
       "UTC",
+    );
+    vi.mocked(CyclingThresholdRepository.prototype.getForActivities).mockResolvedValueOnce(
+      new Map(),
     );
 
     const result = await repository.listRange("2026-06-14", "2026-06-15");
@@ -316,6 +327,12 @@ describe("AnalyticalTrainingLoadRepository", () => {
       status: "unavailable",
       reason: "Configured FTP or normalized power is unavailable for 1 cycling activity.",
     });
+    expect(
+      vi.mocked(CyclingThresholdRepository.prototype.getForActivities).mock.calls.at(-1)?.[0],
+    ).toEqual(["00000000-0000-4000-9000-000000000001"]);
+    expect(result.rows[1]?.channels.cycling_power_tss.source_activity_ids).toEqual([
+      "00000000-0000-4000-9000-000000000001",
+    ]);
     expect(result.rows[1]?.channels.climbing_attempts).toMatchObject({
       daily_value: null,
       status: "unavailable",

@@ -64,13 +64,15 @@ describe("CyclingPerformanceRepository", () => {
     });
   });
   it("returns per-ride and rolling-90-day load-normalized power without look-ahead", async () => {
-    vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockResolvedValue(
-      new Map([
-        ["older-ride", powerMetrics("older-ride", 210, 190)],
-        ["outdoor-ride", powerMetrics("outdoor-ride", 245, 220)],
-        ["ride-without-power", powerMetrics("ride-without-power", 245, null)],
-      ]),
-    );
+    const getForActivities = vi
+      .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
+      .mockResolvedValue(
+        new Map([
+          ["older-ride", powerMetrics("older-ride", 210, 190)],
+          ["outdoor-ride", powerMetrics("outdoor-ride", 245, 220)],
+          ["ride-without-power", powerMetrics("ride-without-power", 245, null)],
+        ]),
+      );
     const query = vi
       .fn()
       .mockResolvedValueOnce([
@@ -160,6 +162,11 @@ describe("CyclingPerformanceRepository", () => {
     );
 
     const actual = await repository.listRange("2026-08-29", "2026-09-01");
+    expect(getForActivities).toHaveBeenCalledWith([
+      "older-ride",
+      "outdoor-ride",
+      "ride-without-power",
+    ]);
     expect(actual, JSON.stringify(actual)).toEqual({
       activities: [
         {
