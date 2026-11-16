@@ -257,13 +257,19 @@ public class WhoopBleModule: Module {
             let operationId = UUID().uuidString
             let startedAt = ProcessInfo.processInfo.systemUptime
             var stage = "ble_suspend"
-            func recordStage(_ nextStage: String) {
+            var currentSqliteCacheWritePages: (() -> Int?)?
+            var sqliteCacheWritePageBaseline: Int?
+            func recordStage(_ nextStage: String, cacheWritePages: Int? = nil) {
                 stage = nextStage
-                SentrySDK.logger.info("WHOOP cleanup stage", attributes: [
+                var attributes: [String: Any] = [
                     "operation": "disableUploads", "operationId": operationId, "stage": stage,
                     "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
                     "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
-                ])
+                ]
+                if let cacheWritePages, let sqliteCacheWritePageBaseline {
+                    attributes["sqliteCacheWritePages"] = max(0, cacheWritePages - sqliteCacheWritePageBaseline)
+                }
+                SentrySDK.logger.info("WHOOP cleanup stage", attributes: attributes)
             }
 
             recordStage("ble_suspend")
@@ -276,19 +282,27 @@ public class WhoopBleModule: Module {
             do {
                 recordStage("uploader_bootstrap")
                 let uploader = try self.uploader
-                recordStage("uploader_disable")
+                currentSqliteCacheWritePages = { uploader.sqliteCacheWritePages }
+                sqliteCacheWritePageBaseline = uploader.sqliteCacheWritePages
+                recordStage("uploader_disable", cacheWritePages: sqliteCacheWritePageBaseline)
                 let cutoff = UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date
-                try uploader.disable(cutoff: cutoff, onStage: recordStage)
-                recordStage("completed")
+                try uploader.disable(cutoff: cutoff) { nextStage in
+                    recordStage(nextStage, cacheWritePages: uploader.sqliteCacheWritePages)
+                }
+                recordStage("completed", cacheWritePages: uploader.sqliteCacheWritePages)
                 self.cleanupFailure = nil
             } catch {
                 self.cleanupFailure = error.localizedDescription
-                SentrySDK.logger.error("WHOOP cleanup failed", attributes: [
+                var attributes: [String: Any] = [
                     "operation": "disableUploads", "operationId": operationId,
                     "stage": "failed", "failedStage": stage,
                     "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
                     "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
-                ])
+                ]
+                if let pages = currentSqliteCacheWritePages?(), let sqliteCacheWritePageBaseline {
+                    attributes["sqliteCacheWritePages"] = max(0, pages - sqliteCacheWritePageBaseline)
+                }
+                SentrySDK.logger.error("WHOOP cleanup failed", attributes: attributes)
                 SentrySDK.capture(error: error) { scope in scope.setUser(nil) }
                 throw error
             }

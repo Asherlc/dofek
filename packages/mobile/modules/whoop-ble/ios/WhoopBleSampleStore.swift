@@ -33,6 +33,14 @@ struct WhoopStoredBatch {
 /// The database owns samples and reservations. Transport files are disposable projections.
 final class WhoopBleSampleStore {
     private var database: OpaquePointer?
+
+    var cacheWritePages: Int? {
+        guard let database else { return nil }
+        var current: Int32 = 0
+        var highwater: Int32 = 0
+        guard sqlite3_db_status(database, SQLITE_DBSTATUS_CACHE_WRITE, &current, &highwater, 0) == SQLITE_OK else { return nil }
+        return Int(current)
+    }
     var secureDeleteToRestore: Int?
     private let lock = NSLock()
     private let formatter: ISO8601DateFormatter = {
