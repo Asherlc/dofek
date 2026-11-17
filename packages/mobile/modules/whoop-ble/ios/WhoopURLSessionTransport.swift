@@ -2,7 +2,7 @@ import Foundation
 
 /// One durable reservation may use two network paths, but reports one completion.
 final class WhoopURLSessionTransport: NSObject, WhoopUploadTransport, URLSessionDataDelegate {
-    var onCompletion: ((String, Int?, Data, (attempt: Int?, responseURL: URL?), Error?) -> Void)?
+    var onCompletion: WhoopUploadCompletion?
     var onAttemptFailure: ((String, Error, Int?) -> Void)?
     var onFinishEvents: (() -> Void)?
     private final class Delivery {
@@ -192,12 +192,21 @@ final class WhoopURLSessionTransport: NSObject, WhoopUploadTransport, URLSession
         defer { if delivery.tasks.isEmpty { deliveries[identity] = nil } }
         guard !delivery.reported else { return }
         if let error, !wasOversized, !delivery.tasks.isEmpty {
-            onAttemptFailure?(identity, error, delivery.attempt)
+            let transportContext: [String: Any] = [
+                "taskIdentifier": task.taskIdentifier,
+                "transportPath": key.hasPrefix("background.") ? "background" : "live",
+                "siblingTaskPending": true,
+            ]
+            onAttemptFailure?(identity, WhoopUploadTelemetry.adding(transportContext, to: error,
+                                                                     key: WhoopUploadTelemetry.transportContextKey),
+                              delivery.attempt)
             return
         }
         delivery.reported = true
         let response = task.response as? HTTPURLResponse
-        onCompletion?(identity, response?.statusCode, data, (delivery.attempt, response?.url),
+        onCompletion?(identity, response?.statusCode, data,
+                      (delivery.attempt, response?.url, task.taskIdentifier,
+                       key.hasPrefix("background.") ? "background" : "live"),
                       wasOversized ? WhoopUploadError(message: "WHOOP upload response exceeds 64 KiB") : error)
     }
 

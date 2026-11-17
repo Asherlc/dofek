@@ -152,6 +152,8 @@ extension WhoopBleBackgroundUploaderTests {
         WhoopUploadOutcome(
             batchIdentity: "generation.batch", stream: "sensorRecords",
             route: "whoopBleSync.pushSensorRecords", stage: stage, statusCode: status,
-            responseOriginValidated: originValidated, acknowledgmentValidated: false, outboxState: "pending")
+            responseOriginValidated: originValidated, acknowledgmentValidated: false, outboxState: "pending",
+            batchSampleCount: nil, attempt: nil, taskIdentifier: nil, transportPath: nil,
+            siblingTaskPending: nil, occurredAt: "2026-11-17T00:00:00Z")
     }
 }

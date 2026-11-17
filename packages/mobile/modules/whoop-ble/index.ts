@@ -138,6 +138,23 @@ const WhoopBufferCheckpointSchema = z.object({
   sensorRecords: WhoopBufferStreamDiagnosticsSchema,
 });
 
+const WhoopUploadOutcomeSchema = z.object({
+  batchIdentity: z.string().min(1),
+  stream: z.enum(["imu", "realtime", "sensorRecords", "unknown"]),
+  route: z.string().min(1),
+  stage: z.string().min(1),
+  statusCode: z.number().int().optional(),
+  responseOriginValidated: z.boolean().nullable().optional(),
+  acknowledgmentValidated: z.boolean(),
+  outboxState: z.enum(["pending", "retired", "absent", "unknown"]),
+  batchSampleCount: DiagnosticCountSchema.nullable().optional(),
+  attempt: DiagnosticCountSchema.optional(),
+  taskIdentifier: DiagnosticCountSchema.optional(),
+  transportPath: z.enum(["background", "live"]).optional(),
+  siblingTaskPending: z.boolean().optional(),
+  occurredAt: DiagnosticTimestampSchema,
+});
+
 const WhoopConnectionEventSchema = z.object({
   eventId: z.uuid(),
   occurredAt: DiagnosticTimestampSchema,
@@ -192,6 +209,7 @@ const WhoopDataPathStatsSchema = z.object({
     activeUploadCount: DiagnosticCountSchema,
     blockedUploadStreams: z.array(z.enum(["imu", "realtime", "sensorRecords"])),
     lastUploadError: z.string().nullable(),
+    lastUploadOutcome: WhoopUploadOutcomeSchema.nullable().optional(),
     http5xxResponseCount: DiagnosticCountSchema.optional(),
   }),
 });
