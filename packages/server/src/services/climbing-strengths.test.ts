@@ -112,6 +112,25 @@ describe("catalogue-enriched training", () => {
       ["sloper", [{ ...sloperSource, trait: "Sloper" }]],
     ]);
   });
+  it("uses the selected example's label once for repeated unnamed catalogue evidence", () => {
+    const source = { ...routeSource, name: null };
+    const attempt = observation({
+      catalogueTraits: [{ dimension: "hold_type", value: "crimp", source }],
+    });
+    const send = observation({ outcome: "sent", catalogueTraits: attempt.catalogueTraits });
+    const result = analyze([
+      { ...attempt, example: { ...attempt.example, name: "Climbing log" } },
+      { ...send, example: { ...send.example, logEntryId: "send", name: "Black boulder" } },
+    ]);
+    const examples = result.panels.find((panel) => panel.dimension === "hold_type")?.rows[0]
+      ?.cells[0]?.examples;
+    expect(examples).toMatchObject([
+      {
+        name: "Black boulder",
+        traitSources: [{ ...source, name: "Black boulder", trait: "Crimp" }],
+      },
+    ]);
+  });
   it("uses area tags in the existing dimensions and attributes each contributing example", () => {
     const result = analyze([enriched()]);
     const holds = result.panels.find((p) => p.dimension === "hold_type");

@@ -62,6 +62,51 @@ describe("climbing strengths PostgreSQL", () => {
       ],
       ...patch,
     });
+  it.each([
+    {
+      raw: { climb: { color: { name: "black" }, slug: "Pacific-Pipe-black" } },
+      sourceResult: "Send",
+      outcome: "sent",
+      name: "Black boulder",
+      slug: "Pacific-Pipe-black",
+    },
+    {
+      raw: { color: { name: "white" }, slug: "Pacific-Pipe-white" },
+      sourceResult: "Attempt",
+      outcome: "not_sent",
+      name: "White boulder",
+      slug: "Pacific-Pipe-white",
+    },
+  ])("uses the activity detail label for a Kaya $sourceResult", async (record) => {
+    const logEntryId = await write(
+      "unnamed-kaya-climb",
+      {
+        raw: record.raw,
+        climb: {
+          externalId: record.slug,
+          name: null,
+          kind: "boulder",
+          setting: "indoor",
+          publishedGrades: [{ value: "V4", system: "v_scale" }],
+        },
+        attempts: [
+          record.outcome === "sent"
+            ? { scope: "climb", sourceResult: record.sourceResult, qualifier: "free-send" }
+            : { scope: "climb", sourceResult: record.sourceResult },
+        ],
+      },
+      "kaya",
+    );
+    const observations = await repo().getObservations(30);
+    expect(
+      observations.find((entry) => entry.example.logEntryId === logEntryId)?.example,
+    ).toMatchObject({
+      name: record.name,
+      grade: "V4",
+      outcome: record.outcome,
+      sourceUrl: `https://kaya-app.kayaclimb.com/climb/${record.slug}`,
+    });
+  });
   it("projects historical retained raw tags into category strengths without a resync", async () => {
     const id = await write("historical-tags", {}, "kaya");
     await context.db
