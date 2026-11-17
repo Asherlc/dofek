@@ -122,6 +122,7 @@ export const EstimateOptions: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Estimate" }));
     await expect(await canvas.findByText("Reference curves")).toBeVisible();
+    await expect(canvas.getByRole("status")).toHaveClass("min-h-6");
     await expect(
       canvas.getByText("Unavailable: No qualifying effort in this date range."),
     ).toBeVisible();

@@ -573,38 +573,33 @@ describe("ActivityDetailPage", () => {
         queryResult({ ...mockActivity, activityType: "cycling" }),
       );
       mockMetricSourcesUseQuery.mockReturnValue(
-        queryResult([
-          {
-            key: "power",
-            label: "Power",
-            defaultSourceId: "wahoo",
-            sources: [
-              {
-                id: "wahoo",
-                label: "Wahoo",
-                presentation: {
-                  displayName: "Wahoo",
-                  providerId: "wahoo",
-                  sourceName: null,
-                  attribution: null,
-                },
-              },
-            ],
-          },
-        ]),
+        queryResult(detailPageMetricSources.filter((source) => source.key === "power")),
       );
-      mockPowerWorkUseQuery.mockReturnValue({
+      const workState = {
         data: { workKilojoules: 478, coverage: { coveredSeconds: 2700, coveragePct: 100 } },
         error,
         isError: error !== null,
         isLoading: false,
         isFetching,
-      });
-      renderWithUnits(<ActivityDetailPage />);
+      };
+      mockPowerWorkUseQuery.mockReturnValue(workState);
+      const { rerender } = renderWithUnits(<ActivityDetailPage />);
       expect(screen.getByText("478 kJ")).toBeVisible();
       if (error) expect(screen.getByText(error.message)).toBeVisible();
-      if (isFetching) expect(screen.getByText("Updating metrics…")).toBeVisible();
-      else expect(screen.queryByText("Updating metrics…")).toBeNull();
+      if (!isFetching) expect(screen.queryByText("Updating metrics…")).toBeNull();
+      else {
+        const status = screen.getByText("Updating metrics…");
+        workState.isFetching = false;
+        rerender(
+          <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+            <ActivityDetailPage />
+          </UnitContext.Provider>,
+        );
+        expect(status).toBeInTheDocument();
+        expect(status).toHaveClass("min-h-4");
+        expect(status).toBeEmptyDOMElement();
+        expect(screen.getByText("478 kJ")).toBeVisible();
+      }
     },
   );
 

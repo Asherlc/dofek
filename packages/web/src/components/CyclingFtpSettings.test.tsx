@@ -409,6 +409,22 @@ describe("CyclingFtpSettings", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Suggestions unavailable");
   });
 
+  it("keeps estimate status space through fetch cycles with cached suggestions", async () => {
+    const { CyclingFtpSettings } = await import("./CyclingFtpSettings.tsx");
+    mocks.suggestionFetching = true;
+    const { rerender } = render(<CyclingFtpSettings />);
+    fireEvent.click(screen.getByRole("button", { name: "Estimate" }));
+    const status = screen.getByText("Estimating from recorded activities…");
+    for (const isFetching of [false, true, false]) {
+      mocks.suggestionFetching = isFetching;
+      rerender(<CyclingFtpSettings />);
+      expect(status).toBeInTheDocument();
+      expect(status).toHaveClass("min-h-6");
+      expect(status.textContent).toBe(isFetching ? "Estimating from recorded activities…" : "");
+      expect(screen.getByText("Reference curves")).toBeVisible();
+    }
+  });
+
   it("keeps cached suggestion evidence visible while refreshing the same date bounds", async () => {
     const { CyclingFtpSettings } = await import("./CyclingFtpSettings.tsx");
     const { rerender } = render(<CyclingFtpSettings />);

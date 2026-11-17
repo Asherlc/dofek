@@ -72,11 +72,12 @@ export function ClimbingStrengths({
         <Text style={styles.link}>{includeAreaMetadata ? "☑" : "☐"}</Text>
         <Text style={styles.text}>Include area metadata</Text>
       </Pressable>
-      {data?.enrichmentPending ? (
-        <Text accessibilityLiveRegion="polite" style={styles.meta}>
-          Updating catalogue metadata…
-        </Text>
-      ) : null}
+      <Text
+        accessibilityLiveRegion="polite"
+        style={[styles.meta, { minHeight: 18, lineHeight: 18 }]}
+      >
+        {data?.enrichmentPending ? "Updating catalogue metadata…" : null}
+      </Text>
       {enrichmentErrors.length > 0 ? (
         <View style={styles.metadataWarning}>
           <Text accessibilityLiveRegion="polite" style={styles.text}>

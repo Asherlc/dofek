@@ -20,6 +20,9 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const PendingMetadata: Story = {
+  args: { data: { ...climbingStrengthsFixture, enrichmentPending: true } },
+};
 export const SingleClimb: Story = {
   args: { data: climbingStrengthsSingleClimbFixture },
   play: async ({ canvasElement, userEvent }) => {
