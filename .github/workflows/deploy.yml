@@ -1,4 +1,4 @@
-name: Deploy
+name: Reusable / Deploy
 
 on:
   workflow_call:
@@ -33,28 +33,6 @@ on:
         required: false
       CLOUDFLARE_ACCOUNT_ID:
         required: false
-  workflow_dispatch:
-    inputs:
-      target:
-        description: "What to deploy"
-        required: true
-        type: choice
-        default: all
-        options:
-          - all
-          - web
-          - infra
-          - web-stack
-          - ios
-          - ota
-      image_tag:
-        description: "Docker image tag to deploy (e.g. sha-abc1234). Skips Docker build when provided."
-        required: false
-        type: string
-      recover_failed_deployment_id:
-        description: "Exact failed live server deployment receipt to replace after verifying its source run and live identity. Use only for target web-stack."
-        required: false
-        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -84,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REF" != "refs/heads/main" ]; then
-            echo "::error::Dispatch Deploy from main, then select an immutable source with image_tag when needed."
+            echo "::error::Dispatch Release / Production from main, then select an immutable source with image_tag when needed."
             exit 1
           fi
           if [ -n "$RECOVER_FAILED_DEPLOYMENT_ID" ] && { [ "$EVENT_NAME" != "workflow_dispatch" ] || [ "$TARGET" != "web-stack" ] || [[ ! "$RECOVER_FAILED_DEPLOYMENT_ID" =~ ^[1-9][0-9]*$ ]]; }; then

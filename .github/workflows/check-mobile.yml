@@ -1,4 +1,4 @@
-name: Check Mobile
+name: Reusable / Check Mobile
 
 on:
   workflow_call:

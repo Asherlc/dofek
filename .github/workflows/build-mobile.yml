@@ -1,4 +1,4 @@
-name: Build Mobile
+name: Reusable / Build Mobile
 
 on:
   workflow_call:

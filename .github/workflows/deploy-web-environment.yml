@@ -1,4 +1,4 @@
-name: Deploy Web Environment
+name: Reusable / Deploy Web Environment
 
 on:
   workflow_call:
@@ -363,6 +363,7 @@ jobs:
             const serverStackJobNames = new Set([
               'Deploy Server Production / Deploy Web Stack / Deploy Web Stack',
               'Deploy Web Stack / Deploy Web Stack',
+              'Manual Release / Deploy Web Stack / Deploy Web Stack / Deploy Web Stack',
             ]);
             const failedDeployJobs = jobs.filter((job) => serverStackJobNames.has(job.name));
             if (failedDeployJobs.length !== 1 || failedDeployJobs[0].run_id !== priorRunId || failedDeployJobs[0].run_attempt !== priorRunAttempt || failedDeployJobs[0].head_sha !== priorRun.head_sha || failedDeployJobs[0].status !== 'completed' || failedDeployJobs[0].conclusion !== 'failure') {

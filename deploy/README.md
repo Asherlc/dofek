@@ -274,8 +274,9 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
   See the [CDC deploy boundary and interrupted-addition recovery procedure](../docs/clickhouse-read-model-deploy-runbook.md#known-failure-new-peerdb-table-added-before-its-migration).
 
 The [main CI workflow](../.github/workflows/ci.yml) resolves the pushed source
-revision, runs applicable validation and builds, then starts each publisher
-from its own successful prerequisites. Server production still uses one Swarm
+revision and runs applicable validation and builds. After CI completes,
+[Release / Production](../.github/workflows/deploy-web.yml) starts each publisher
+from its own successful prerequisites and the exact tested source. Server production still uses one Swarm
 release for web and worker. OTA and TestFlight use their own publication locks
 and target receipts. New client API dependencies still require a verified,
 additive server release before client activation; shared and repository safety
@@ -338,6 +339,8 @@ CI pull request -> resolve candidate merge SHA -> detect changes
 
 CI main push -> resolve exact pushed SHA -> detect changes
              -> repository/shared/server/mobile checks and selected builds run in parallel
+             -> upload attempt-scoped job results and immutable build identifiers
+             -> CI completes -> Release / Production validates the exact source and attempt
                 |-> server: repository + shared + server checks + immutable image
                 |   -> deploy-server-production lock -> Terraform -> one web/worker Swarm release
                 |      -> verify image, schema/CDC, backups and Sentry receipt
@@ -345,16 +348,16 @@ CI main push -> resolve exact pushed SHA -> detect changes
                 |   -> deploy-ota lock -> publish -> verify manifest/assets -> finalize same receipt
                 |-> TestFlight: repository + shared + mobile checks + native build gate
                     -> exact signed archive -> deploy-ios lock -> upload -> finalize same receipt
-             -> always-running CI summary reports each target separately
+             -> standalone release summary reports each target separately
 
-Manual Deploy -> resolve selected source/image before checks
+Manual Release / Production -> resolve selected source/image before checks
               -> web/web-stack: server checks -> server release
               -> ota or ios: target checks and publication without server deployment
               -> all: coordinated server-first sequence, then selected mobile targets
 ```
 
 Production server deployments are serialized and never cancel an in-progress
-deployment. Main CI and manual Deploy route server mutations through the same
+deployment. Automatic and manual release jobs route server mutations through the same
 environment workflow and target lock, held from admission through receipt
 finalization. Admission verifies live web and worker identity and writes a
 pending GitHub deployment before Terraform, asset upload, migration, or stack
@@ -369,9 +372,18 @@ migrations and restores all five only after the final stack converges, so a
 newer job must wait rather than interrupt that state transition. GitHub documents
 [job-level concurrency and pending-job replacement](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
-Automatic releases are direct jobs in `ci.yml` for the exact main push SHA.
-Each selected publisher waits for its own checks and immutable artifact; it
-does not wait for `CI Gate` or for an unrelated publisher. PR required reports
+Automatic releases run in [Release / Production](../.github/workflows/deploy-web.yml)
+after a completed CI push run on this repository's main branch. CI keeps its
+validation and build jobs, including signed iOS archives, and uploads native job
+results/outputs as `release-inputs-<CI attempt>`. The release workflow downloads
+that exact attempt's artifact and requires its resolved source to equal
+`workflow_run.head_sha`; it never substitutes a newer default-branch head.
+GitHub documents the [workflow_run event and upstream artifacts](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
+
+The trigger waits for the whole CI run to finish. Each publisher still requires
+its own checks and immutable artifact rather than the overall CI conclusion;
+an unrelated target failure does not block a target whose gates passed. Missing,
+expired, or mismatched release inputs fail before publication. PR required reports
 still aggregate all selected checks. Inspect `Deploy Server Production`,
 `Publish Matching OTA`, and `Publish Matching iOS` individually: skipped or
 cancelled publisher jobs do not establish that a target changed. A successful
@@ -386,22 +398,21 @@ deployment record.
 
 ### Checking the Latest Production Deployment
 
-Start with the [CI workflow](../.github/workflows/ci.yml) for automatic main
-releases or the [Deploy workflow](../.github/workflows/deploy.yml) for a manual
-request. On CI, inspect the exact target job and its summary; the summary links
+Start with [Release / Production](../.github/workflows/deploy-web.yml) for automatic
+and manual releases. Inspect the exact target job and its summary; the summary links
 its producer, immutable artifact, publisher attempt, and existing deployment
 record. Called reusable workflows may appear under the caller run, so inspect
 the job groups in that run rather than searching only for child workflow runs;
 see GitHub's [reusable workflow documentation](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows).
 
-If a publisher is pending, inspect its exact CI or manual Deploy run and the
+If a publisher is pending, inspect its exact Release / Production run and the
 target's lock group before rerunning. A slow mobile publisher does not hold the
 server lock. A server stack release intentionally retains the server lock
 through verification and receipt finalization; compare lock groups using
 [GitHub's concurrency rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
 ```bash
-gh run list --repo Asherlc/dofek --workflow ci.yml --limit 10
+gh run list --repo Asherlc/dofek --workflow deploy-web.yml --limit 10
 gh run view RUN_ID --repo Asherlc/dofek --json jobs
 ```
 
@@ -430,16 +441,15 @@ change independently. Correlate the live revision and digest with the
 CI run's source commit, server publisher job, and deployment receipt. Report the
 server job's completion
 time separately from container start times, OTA publication, signed iOS upload,
-and the overall run conclusion. Automatic main pushes use the independent
-publisher jobs in [CI](../.github/workflows/ci.yml); manual requests use the
-separate [Deploy workflow](../.github/workflows/deploy.yml).
-See the [production release jobs](../.github/workflows/ci.yml)
+and the overall run conclusion. Automatic and manual requests both use
+[Release / Production](../.github/workflows/deploy-web.yml).
+See the [production release jobs](../.github/workflows/deploy-web.yml)
 and Docker's [service inspect](https://docs.docker.com/reference/cli/docker/service/inspect/)
 and [container inspect](https://docs.docker.com/reference/cli/docker/container/inspect/)
 references.
 
-Automatic CI runs start the signed iOS build alongside applicable server and
-OTA work. The [release builder](../.github/workflows/build-ios-release.yml)
+Automatic CI runs start the signed iOS build alongside applicable validation and
+image builds. The [release builder](../.github/workflows/build-ios-release.yml)
 compares native changes with the last successful TestFlight upload and returns
 the signed archive's artifact ID, source SHA and build number. Build detection
 uses the last successful receipt, skipping unresolved intents without taking the
@@ -454,7 +464,7 @@ These branches use GitHub's
 [job dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds),
 [reusable workflow outputs](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-outputs-from-a-reusable-workflow)
 and [artifact IDs](https://github.com/actions/download-artifact#download-artifacts-by-id).
-The manual [Deploy workflow](../.github/workflows/deploy.yml) resolves an
+The manual path in [Release / Production](../.github/workflows/deploy-web.yml) resolves an
 explicit image tag to its immutable digest and source before validation. `ota`
 and `ios` release only the selected mobile target and do not implicitly deploy
 the server. `all` is the explicit coordinated server-first operation. Manual
@@ -489,7 +499,7 @@ come from the existing [Infisical OIDC action](../.github/actions/load-infisical
 GitHub automatically supplies the scoped `GITHUB_TOKEN` to reusable workflows,
 as documented in its [reusable workflow context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context).
 
-For a manual mobile release, dispatch **Deploy** (`deploy.yml`) from `main` with
+For a manual mobile release, dispatch **Release / Production** (`deploy-web.yml`) from `main` with
 target `ota` or `ios`. Without an `image_tag`, the selected source is the main
 revision that started the dispatch. Supplying an `image_tag` resolves its full
 source SHA from the immutable image's OCI revision and `SENTRY_RELEASE`, then
@@ -497,7 +507,7 @@ runs the selected checks and build against that source. Targets `ota` and `ios`
 run the selected mobile checks and publisher without server checks, server-image
 builds, or server deployment. Target `all` runs the server release first, then
 the selected mobile publishers. The OTA, signed iOS, and stack workflows are
-reusable only. For a server-only manual rollout, dispatch **Deploy** with target
+reusable only. For a server-only manual rollout, dispatch **Release / Production** with target
 `web` (including infrastructure) or `web-stack` (stack only).
 Automatic and manual server jobs share the production concurrency group only
 until server deployment completes. Mobile publication uses the independent
@@ -505,9 +515,10 @@ until server deployment completes. Mobile publication uses the independent
 [job and workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
 and [manual workflow ref selection](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
 
-The CI run summary links the pull request (when present), the exact source
-commit and run attempt, lane results, iOS archive artifact, publisher attempt,
-and each existing target deployment record. The repository environment-history
+The CI summary reports the exact source commit and validation/build lane results.
+The standalone release summary links the originating CI attempt, tested source,
+immutable image and iOS archive, publisher attempt, and each target deployment record.
+The repository environment-history
 link opens the filtered history list; the separate API deployment link names
 the exact record ID and returns that record's JSON. GitHub documents the
 [deployment REST endpoint](https://docs.github.com/en/rest/deployments/deployments#get-a-deployment)
@@ -518,7 +529,7 @@ Each publisher also writes its own attempt summary, so an admission ID and
 incomplete verification or receipt remain visible when the parent workflow
 cannot receive outputs from a failed reusable workflow. It reports server, OTA, and
 TestFlight outcomes separately, so a failed lane does not hide a different
-target that completed. The manual Deploy workflow writes the same per-target
+target that completed. The manual release path writes the same per-target
 outcome view for the selected targets. These summaries are navigation aids;
 they do not admit a release or replace target verification. If cancellation
 prevents a summary from being written, inspect the publisher attempt and its
@@ -779,20 +790,20 @@ and [status reporting](https://docs.github.com/en/rest/deployments/statuses#crea
 1. **Build and release selection**: `ci.yml` resolves the exact pushed SHA and
    uses change selection to start applicable checks and builds concurrently.
    The server publisher requires repository, shared, and server checks plus the
-   immutable app image; it does not wait for `CI Gate`, mobile checks, or mobile
-   publishers. The server image uses a commit-derived tag (`<tag>`), while all
+   immutable app image. The standalone trigger waits for CI completion, while
+   each target retains its own validation predicates. The server image uses a commit-derived tag (`<tag>`), while all
    deploy steps consume its immutable digest and verify the embedded full source
    SHA. The web build uses
    `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated
    JavaScript and CSS references point at immutable R2-backed CDN assets
    instead of the Express origin; Vite's `base` option controls the public base
    path for built assets: https://vite.dev/config/shared-options.html#base. The
-   `ml` image is built only when ML image inputs change. The main CI run itself
-   owns release jobs, so no `workflow_run` SHA comparison or second automatic
-   publisher is involved. Local reusable workflows use the caller's revision;
+   `ml` image is built only when ML image inputs change. The main CI run uploads
+   its attempt-scoped job outputs; Release / Production compares their source
+   with `workflow_run.head_sha` before automatic publication. Local reusable workflows use the caller's revision;
    see [reusable workflow revision selection](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#calling-a-reusable-workflow)
    and [GitHub job concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
-   Manual Deploy runs must be dispatched from `main`. To select the historical
+   Manual Release / Production runs must be dispatched from `main`. To select the historical
    source associated with an immutable image, provide its `image_tag`; source
    resolution uses the OCI revision and full `SENTRY_RELEASE` recorded in that
    image. The workflow rejects a mismatch before any server mutation. Targets

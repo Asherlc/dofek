@@ -1,4 +1,4 @@
-name: Release Swift Packages
+name: Release / Swift packages
 
 on:
   workflow_run:

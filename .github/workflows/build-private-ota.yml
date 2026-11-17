@@ -1,4 +1,4 @@
-name: Build private OTA
+name: Build / OTA server image
 
 on:
   workflow_call:

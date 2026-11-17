@@ -1,4 +1,4 @@
-name: Check Server
+name: Reusable / Check Server
 
 on:
   workflow_call:

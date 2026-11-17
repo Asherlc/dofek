@@ -1,4 +1,4 @@
-name: Deploy OTA
+name: Reusable / Deploy OTA
 
 on:
   workflow_call:

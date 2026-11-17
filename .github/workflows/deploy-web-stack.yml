@@ -1,4 +1,4 @@
-name: Deploy Web Stack
+name: Reusable / Deploy Web Stack
 
 on:
   workflow_call:

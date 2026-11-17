@@ -1,4 +1,4 @@
-name: Storybook Preview
+name: Reusable / Storybook Preview
 
 on:
   workflow_call:

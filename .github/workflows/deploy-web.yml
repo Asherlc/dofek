@@ -1,21 +1,110 @@
-name: Release Production
+name: Release / Production
+run-name: Production · ${{ github.event.workflow_run.head_sha || github.sha }} · ${{ inputs.target || 'automatic' }}
 
 on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
   workflow_dispatch:
     inputs:
+      target:
+        description: What to release
+        required: true
+        type: choice
+        default: web
+        options: [all, web, web-stack, ios, ota, infra]
       image_tag:
-        description: "Docker image tag; source is resolved from its immutable image before checks"
+        description: "Optional image tag; its immutable source is resolved before validation"
         required: false
-        default: ""
+        type: string
+      recover_failed_deployment_id:
+        description: "Exact failed server receipt to recover (web-stack only)"
+        required: false
         type: string
 
 permissions:
   contents: read
 
 jobs:
-  production:
-    name: Deploy Web Production
-    if: github.ref == 'refs/heads/main'
+  automatic:
+    name: Select Validated Release
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      source_sha: ${{ steps.select.outputs.source_sha }}
+      server_selected: ${{ steps.select.outputs.server_selected }}
+      mobile_selected: ${{ steps.select.outputs.mobile_selected }}
+      server_ready: ${{ steps.select.outputs.server_ready }}
+      ota_ready: ${{ steps.select.outputs.ota_ready }}
+      ios_ready: ${{ steps.select.outputs.ios_ready }}
+      ios_should_deploy: ${{ steps.select.outputs.ios_should_deploy }}
+      ios_build_result: ${{ steps.select.outputs.ios_build_result }}
+      image_ref: ${{ steps.select.outputs.image_ref }}
+      ios_artifact_id: ${{ steps.select.outputs.ios_artifact_id }}
+      ios_build_number: ${{ steps.select.outputs.ios_build_number }}
+    steps:
+      - name: Download inputs from the exact originating CI attempt
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-inputs-${{ github.event.workflow_run.run_attempt }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/release-inputs
+      - name: Select validated source and independent target gates
+        id: select
+        env:
+          CI_RUN: ${{ toJSON(github.event.workflow_run) }}
+        run: |
+          node <<'NODE'
+          const { readFileSync, appendFileSync } = require('node:fs');
+          const run = JSON.parse(process.env.CI_RUN);
+          if (run.event !== 'push' || run.head_branch !== 'main' ||
+              run.head_repository?.full_name !== process.env.GITHUB_REPOSITORY ||
+              run.path !== '.github/workflows/ci.yml' || run.status !== 'completed') {
+            throw new Error('Release inputs must come from a completed CI push on this repository main branch');
+          }
+          const needs = JSON.parse(readFileSync(process.env.RUNNER_TEMP + '/release-inputs/needs.json', 'utf8'));
+          const source = needs['resolve-commit']?.outputs?.commit_sha;
+          if (!/^[a-f0-9]{40}$/.test(source ?? '') || source !== run.head_sha) {
+            throw new Error('Release source does not match the exact tested CI source');
+          }
+          const succeeded = (...names) => names.every(name => needs[name]?.result === 'success');
+          const changes = needs['detect-changes']?.outputs ?? {};
+          const selected = name => changes[name] === 'true';
+          const serverSelected = ['docker_server', 'web', 'terraform', 'docker_ota'].some(selected);
+          const mobileSelected = selected('mobile');
+          const commonReady = succeeded('resolve-commit', 'detect-changes', 'check-repository', 'check-shared');
+          const image = needs['build-docker']?.outputs ?? {};
+          const expectedImage = new RegExp('^ghcr\\.io/' + process.env.GITHUB_REPOSITORY.toLowerCase() + '@sha256:[a-f0-9]{64}$');
+          const serverReady = commonReady && serverSelected && succeeded('check-server', 'build-docker') &&
+            image.commit_sha === source && expectedImage.test(image.image_ref ?? '') &&
+            (!selected('docker_ota') || succeeded('build-ota-publish'));
+          const mobileReady = commonReady && mobileSelected && succeeded('check-mobile', 'build-mobile');
+          const archive = needs['build-ios-release']?.outputs ?? {};
+          const iosReady = mobileReady && succeeded('build-ios-release') && archive.should_deploy === 'true' &&
+            archive.commit_sha === source && /^[1-9][0-9]*$/.test(archive.artifact_id ?? '') &&
+            /^[0-9]+$/.test(archive.build_number ?? '');
+          const outputs = {
+            source_sha: source, server_selected: serverSelected, mobile_selected: mobileSelected,
+            server_ready: serverReady, ota_ready: mobileReady, ios_ready: iosReady,
+            ios_should_deploy: archive.should_deploy ?? '', ios_build_result: needs['build-ios-release']?.result ?? '',
+            image_ref: serverReady ? image.image_ref : '',
+            ios_artifact_id: iosReady ? archive.artifact_id : '', ios_build_number: iosReady ? archive.build_number : '',
+          };
+          for (const [name, value] of Object.entries(outputs)) appendFileSync(process.env.GITHUB_OUTPUT, name + '=' + value + '\n');
+          NODE
+
+  manual:
+    name: Manual Release
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     permissions:
       actions: read
       contents: read
@@ -24,8 +113,9 @@ jobs:
       packages: write
     uses: ./.github/workflows/deploy.yml
     with:
-      target: web
+      target: ${{ inputs.target }}
       image_tag: ${{ inputs.image_tag }}
+      recover_failed_deployment_id: ${{ inputs.recover_failed_deployment_id }}
     secrets:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -34,3 +124,121 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  deploy-server:
+    name: Deploy Server Production
+    needs: automatic
+    if: needs.automatic.outputs.server_ready == 'true'
+    concurrency:
+      group: deploy-web-stack-dofek-${{ vars.ORACLE_SERVER_HOST }}
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      packages: read
+      deployments: write
+    uses: ./.github/workflows/deploy-web-environment.yml
+    with:
+      environment_name: production
+      ssh_user: ubuntu
+      stack_override: deploy/stack.oracle.yml
+      image_ref: ${{ needs.automatic.outputs.image_ref }}
+      automatic_commit_sha: ${{ needs.automatic.outputs.source_sha }}
+      ci_run_id: ${{ format('{0}', github.event.workflow_run.id) }}
+
+      public_url: https://dofek.fit
+      web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
+    secrets:
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  deploy-ota:
+    name: Publish Matching OTA
+    needs: automatic
+    if: needs.automatic.outputs.ota_ready == 'true'
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      deployments: write
+    uses: ./.github/workflows/deploy-ota.yml
+    with:
+      commit_sha: ${{ needs.automatic.outputs.source_sha }}
+      dispatching_run_id: ${{ github.event.workflow_run.id }}
+  deploy-ios:
+    name: Publish Matching iOS
+    needs: automatic
+    if: needs.automatic.outputs.ios_ready == 'true'
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      deployments: write
+    uses: ./.github/workflows/deploy-ios.yml
+    with:
+      commit_sha: ${{ needs.automatic.outputs.source_sha }}
+      archive_commit_sha: ${{ needs.automatic.outputs.source_sha }}
+      build_number: ${{ needs.automatic.outputs.ios_build_number }}
+      artifact_id: ${{ needs.automatic.outputs.ios_artifact_id }}
+      ci_run_id: ${{ format('{0}', github.event.workflow_run.id) }}
+
+  release-summary:
+    name: Automatic Release Summary
+    needs: [automatic, deploy-server, deploy-ota, deploy-ios]
+    if: always() && github.event_name == 'workflow_run' && needs.automatic.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Report independent production outcomes
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          node <<'NODE'
+          const { appendFileSync } = require('node:fs');
+          const results = JSON.parse(process.env.RESULTS);
+          const selection = results.automatic.outputs;
+          const repository = process.env.GITHUB_SERVER_URL + '/' + process.env.GITHUB_REPOSITORY;
+          const source = selection.source_sha || process.env.TESTED_SHA;
+          const ciRun = repository + '/actions/runs/' + process.env.CI_RUN_ID;
+          const publisher = repository + '/actions/runs/' + process.env.GITHUB_RUN_ID + '/attempts/' + process.env.GITHUB_RUN_ATTEMPT;
+          const lines = ['## Production release', '',
+            '- Tested source: [' + source + '](' + repository + '/commit/' + source + ')',
+            '- Validation and builds: [CI attempt](' + ciRun + '/attempts/' + process.env.CI_RUN_ATTEMPT + ')',
+            '- Publisher: [Release attempt](' + publisher + ')', '',
+            '| Target | Outcome | Deployment record |', '|---|---|---|'];
+          for (const [label, name, selected] of [
+            ['Server', 'deploy-server', selection.server_selected],
+            ['OTA', 'deploy-ota', selection.mobile_selected],
+            ['TestFlight', 'deploy-ios', selection.mobile_selected],
+          ]) {
+            const job = results[name];
+            const decision = job.outputs.publication_decision || job.outputs.decision;
+            let outcome;
+            if (results.automatic.result !== 'success') outcome = 'Blocked — release inputs are missing or invalid';
+            else if (selected !== 'true') outcome = 'Not selected';
+            else if (name === 'deploy-ios' && selection.ios_build_result === 'success' && selection.ios_should_deploy === 'false') outcome = 'Unchanged — no new native archive required';
+            else if (job.result === 'success') outcome = {
+              publish: 'Published and verified', recover: 'Recovered and verified',
+              upload: 'Uploaded to TestFlight; Apple processing continues separately',
+              unchanged: 'Unchanged — already published', superseded: 'Superseded — a newer source is live',
+            }[decision] || 'Blocked — no verified publisher decision';
+            else if (job.result === 'skipped') outcome = 'Blocked — required validation or build did not succeed';
+            else outcome = 'Failed — publisher ' + job.result;
+            const deployment = job.outputs.deployment_id;
+            const record = deployment ? '[Deployment #' + deployment + '](' + (process.env.GITHUB_API_URL || 'https://api.github.com') + '/repos/' + process.env.GITHUB_REPOSITORY + '/deployments/' + deployment + ')' : '—';
+            lines.push('| ' + label + ' | ' + outcome + ' | ' + record + ' |');
+          }
+          if (selection.image_ref) lines.push('', 'Server image: `' + selection.image_ref + '`');
+          if (selection.ios_artifact_id) lines.push('', 'Signed archive: [artifact ' + selection.ios_artifact_id + '](' + ciRun + '/artifacts/' + selection.ios_artifact_id + '), build ' + selection.ios_build_number);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          NODE

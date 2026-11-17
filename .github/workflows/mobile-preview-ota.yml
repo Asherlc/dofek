@@ -1,4 +1,4 @@
-name: Mobile Preview OTA
+name: Preview / Mobile OTA
 
 on:
   pull_request:
