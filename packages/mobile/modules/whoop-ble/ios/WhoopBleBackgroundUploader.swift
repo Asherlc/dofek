@@ -406,8 +406,13 @@ private extension WhoopBleBackgroundUploader {
         nextPartial: inout Bool?
     ) throws -> Bool {
         if let error = response.error { throw error }
-        guard let responseOrigin = response.originString,
-              try Self.validatedOrigin(responseOrigin) == batch.binding.serverURL else {
+        let validatedResponseOrigin: String?
+        if let responseOrigin = response.originString {
+            validatedResponseOrigin = try? Self.validatedOrigin(responseOrigin)
+        } else {
+            validatedResponseOrigin = nil
+        }
+        guard validatedResponseOrigin == batch.binding.serverURL else {
             outcome?.stage = "response_origin_rejected"
             outcome?.responseOriginValidated = false
             blocked.insert(batch.stream)
@@ -431,8 +436,14 @@ private extension WhoopBleBackgroundUploader {
             throw WhoopUploadError(
                 message: "WHOOP \(batch.stream.rawValue) upload returned HTTP \(response.status ?? 0)")
         }
+        let json: Any?
+        if response.data.count <= 65_536 {
+            json = try? JSONSerialization.jsonObject(with: response.data)
+        } else {
+            json = nil
+        }
         guard response.data.count <= 65_536,
-              let json = try JSONSerialization.jsonObject(with: response.data) as? [String: Any],
+              let json = json as? [String: Any],
               let result = json["result"] as? [String: Any],
               let value = result["data"] as? [String: Any],
               let inserted = value["inserted"] as? NSNumber,

@@ -103,6 +103,51 @@ extension WhoopBleBackgroundUploaderTests {
             .isValidatedHttp5xxRejection)
     }
 
+    func testNonHTTPSResponseOriginReportsRejectionAndBlocksStream() throws {
+        var outcomes: [WhoopUploadOutcome] = []
+        var errors: [Error] = []
+        let (uploader, store, transport) = try setup(
+            reportError: { errors.append($0) },
+            reportUploadOutcome: { outcomes.append($0) }
+        )
+        try uploader.append(deviceId: "a", samplesByStream: [.sensorRecords: rows])
+        try uploader.flush()
+        try settle(uploader)
+
+        transport.complete(0, status: 503, responseURL: URL(string: "http://example.com"))
+        try settle(uploader)
+
+        let outcome = try XCTUnwrap(outcomes.first)
+        XCTAssertEqual(outcome.stage, "response_origin_rejected")
+        XCTAssertEqual(outcome.responseOriginValidated, false)
+        XCTAssertEqual(errors.count, 1)
+        XCTAssertEqual(try store.pendingBatches().count, 1)
+        XCTAssertEqual(try uploader.diagnostics()["blockedUploadStreams"] as? [String], ["sensorRecords"])
+    }
+
+    func testMalformedJSONAcknowledgmentReportsInvalidStageAndBlocksStream() throws {
+        var outcomes: [WhoopUploadOutcome] = []
+        var errors: [Error] = []
+        let (uploader, store, transport) = try setup(
+            reportError: { errors.append($0) },
+            reportUploadOutcome: { outcomes.append($0) }
+        )
+        try uploader.append(deviceId: "a", samplesByStream: [.sensorRecords: rows])
+        try uploader.flush()
+        try settle(uploader)
+
+        transport.complete(0, body: "{")
+        try settle(uploader)
+
+        let outcome = try XCTUnwrap(outcomes.first)
+        XCTAssertEqual(outcome.stage, "acknowledgment_invalid")
+        XCTAssertEqual(outcome.responseOriginValidated, true)
+        XCTAssertFalse(outcome.acknowledgmentValidated)
+        XCTAssertEqual(errors.count, 1)
+        XCTAssertEqual(try store.pendingBatches().count, 1)
+        XCTAssertEqual(try uploader.diagnostics()["blockedUploadStreams"] as? [String], ["sensorRecords"])
+    }
+
     private func outcome(stage: String, status: Int, originValidated: Bool?) -> WhoopUploadOutcome {
         WhoopUploadOutcome(
             batchIdentity: "generation.batch", stream: "sensorRecords",

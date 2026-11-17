@@ -115,12 +115,17 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
         let cancel = { self.tasks.removeAll { $0 == identity }; self.pairedTasks.remove(identity); self.attempts[identity] = nil }
         if delayCancellation { delayedCancellations.append(cancel) } else { cancel() }
     }
-    func complete(_ index: Int, status: Int = 200, body: String = "{\"result\":{\"data\":{\"inserted\":0}}}") {
+    func complete(
+        _ index: Int,
+        status: Int = 200,
+        body: String = "{\"result\":{\"data\":{\"inserted\":0}}}",
+        responseURL: URL? = nil
+    ) {
         let task = requests[index]
         guard requests.last(where: { $0.2 == task.2 })?.0 == task.0 else { return }
         tasks.removeAll { $0 == task.2 }
         pairedTasks.remove(task.2)
-        onCompletion?(task.2, status, Data(body.utf8), (attempts[task.2], task.0.url), nil)
+        onCompletion?(task.2, status, Data(body.utf8), (attempts[task.2], responseURL ?? task.0.url), nil)
     }
     func fail(_ index: Int, error: Error = URLError(.unknown)) {
         let task = requests[index]
