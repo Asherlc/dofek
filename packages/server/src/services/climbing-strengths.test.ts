@@ -4,9 +4,13 @@ import { buildClimbingStrengths } from "./climbing-strengths.ts";
 import {
   analyze,
   dated,
+  emptyClippedMonth,
+  mixedGradeMonthlyObservations,
+  mixedGradeMonthlyProgress,
   mixedSettingObservations,
   observation,
   progressCell,
+  resolvedGradeMonthlyProgress,
 } from "./climbing-strengths-test-helpers.ts";
 
 const recordedTag = (patch: Partial<ClimbingTag> = {}): ClimbingTag => ({
@@ -611,38 +615,7 @@ describe("climbing strengths", () => {
       unknownOutcomes: 0,
       successRate: 100,
     });
-    expect(panel?.progress).toEqual([
-      {
-        startDate: "2026-08-15",
-        endDate: "2026-08-31",
-        rows: [
-          {
-            key: "crimp",
-            cells: [progressCell("V4", 0, 1, 0, 0, "limited")],
-          },
-        ],
-      },
-      {
-        startDate: "2026-09-01",
-        endDate: "2026-09-30",
-        rows: [
-          {
-            key: "crimp",
-            cells: [progressCell("V4", 1, 1, 0, 100, "limited")],
-          },
-        ],
-      },
-      {
-        startDate: "2026-10-01",
-        endDate: "2026-10-20",
-        rows: [
-          {
-            key: "crimp",
-            cells: [progressCell("V4", 0, 1, 1, null, "limited")],
-          },
-        ],
-      },
-    ]);
+    expect(panel?.progress).toEqual(resolvedGradeMonthlyProgress);
     expect(
       result.panels.find((candidatePanel) => candidatePanel.dimension === "wall_angle")?.progress[1]
         ?.rows[0]?.key,
@@ -657,26 +630,7 @@ describe("climbing strengths", () => {
     ]);
     const panel = result.panels.find((candidatePanel) => candidatePanel.dimension === "setting");
     expect(result.coverage.missingGrades).toBe(2);
-    expect(panel?.progress[0]).toEqual({
-      startDate: "2026-08-15",
-      endDate: "2026-08-31",
-      rows: [
-        {
-          key: "indoor",
-          cells: [
-            progressCell("V3", 0, 0, 0, null, "no_data"),
-            progressCell("V4", 0, 0, 0, null, "no_data"),
-          ],
-        },
-        {
-          key: "outdoor",
-          cells: [
-            progressCell("V3", 0, 0, 0, null, "no_data"),
-            progressCell("V4", 0, 0, 0, null, "no_data"),
-          ],
-        },
-      ],
-    });
+    expect(panel?.progress[0]).toEqual(emptyClippedMonth);
     expect(panel?.progress[1]?.rows[0]?.cells[1]).toMatchObject({
       climbs: 0,
       unknownOutcomes: 0,
@@ -689,53 +643,7 @@ describe("climbing strengths", () => {
     });
   });
   it("keeps monthly styles and grades independent across the selected cohort while deduplicating known outcomes", () => {
-    const result = analyze([
-      dated("2026-08-16", {
-        identity: "sloper-high",
-        holdTypes: ["sloper"],
-        grade: "V10",
-        gradeSortValue: 10,
-        outcome: null,
-      }),
-      dated("2026-08-17", {
-        identity: "crimp-high",
-        holdTypes: ["crimp"],
-        grade: "V10",
-        gradeSortValue: 10,
-        outcome: "sent",
-      }),
-      dated("2026-08-18", { identity: "sloper-low", holdTypes: ["sloper"] }),
-      dated("2026-09-01", { identity: "sloper-low", holdTypes: ["sloper"], outcome: "sent" }),
-      dated("2026-09-30", {
-        identity: "sloper-high",
-        holdTypes: ["sloper"],
-        grade: "V10",
-        gradeSortValue: 10,
-        outcome: "sent",
-      }),
-      ...Array.from({ length: 5 }, (_, index) =>
-        dated("2026-08-19", {
-          identity: `crimp-low-${index}`,
-          holdTypes: ["crimp"],
-          outcome: index < 2 ? "sent" : "not_sent",
-        }),
-      ),
-      dated("2026-08-20", { identity: "crimp-low-0", holdTypes: ["crimp"], outcome: null }),
-      dated("2026-08-21", { identity: "crimp-low-0", holdTypes: ["crimp"] }),
-      dated("2026-10-20", { identity: "crimp-low-0", holdTypes: ["crimp"], outcome: null }),
-      dated("2026-08-20", {
-        identity: "outdoor",
-        holdTypes: ["crimp"],
-        setting: "outdoor",
-        outcome: "sent",
-      }),
-      dated("2026-08-20", {
-        identity: "missing-trait",
-        grade: "V8",
-        gradeSortValue: 8,
-        outcome: "sent",
-      }),
-    ]);
+    const result = analyze(mixedGradeMonthlyObservations());
     const panel = result.panels.find((panel) => panel.dimension === "hold_type");
     expect(panel?.rows).toEqual([
       {
@@ -773,74 +681,7 @@ describe("climbing strengths", () => {
         ],
       },
     ]);
-    expect(panel?.progress).toEqual([
-      {
-        startDate: "2026-08-15",
-        endDate: "2026-08-31",
-        rows: [
-          {
-            key: "crimp",
-            cells: [
-              progressCell("V4", 3, 6, 0, 50, "available"),
-              progressCell("V8", 0, 0, 0, null, "no_data"),
-              progressCell("V10", 1, 1, 0, 100, "limited"),
-            ],
-          },
-          {
-            key: "sloper",
-            cells: [
-              progressCell("V4", 0, 1, 0, 0, "limited"),
-              progressCell("V8", 0, 0, 0, null, "no_data"),
-              progressCell("V10", 0, 1, 1, null, "limited"),
-            ],
-          },
-        ],
-      },
-      {
-        startDate: "2026-09-01",
-        endDate: "2026-09-30",
-        rows: [
-          {
-            key: "crimp",
-            cells: [
-              progressCell("V4", 0, 0, 0, null, "no_data"),
-              progressCell("V8", 0, 0, 0, null, "no_data"),
-              progressCell("V10", 0, 0, 0, null, "no_data"),
-            ],
-          },
-          {
-            key: "sloper",
-            cells: [
-              progressCell("V4", 1, 1, 0, 100, "limited"),
-              progressCell("V8", 0, 0, 0, null, "no_data"),
-              progressCell("V10", 1, 1, 0, 100, "limited"),
-            ],
-          },
-        ],
-      },
-      {
-        startDate: "2026-10-01",
-        endDate: "2026-10-20",
-        rows: [
-          {
-            key: "crimp",
-            cells: [
-              progressCell("V4", 0, 1, 1, null, "limited"),
-              progressCell("V8", 0, 0, 0, null, "no_data"),
-              progressCell("V10", 0, 0, 0, null, "no_data"),
-            ],
-          },
-          {
-            key: "sloper",
-            cells: [
-              progressCell("V4", 0, 0, 0, null, "no_data"),
-              progressCell("V8", 0, 0, 0, null, "no_data"),
-              progressCell("V10", 0, 0, 0, null, "no_data"),
-            ],
-          },
-        ],
-      },
-    ]);
+    expect(panel?.progress).toEqual(mixedGradeMonthlyProgress);
   });
   it("keeps observations with conflicting setting facts in the selected cohort", () => {
     const result = analyze([
