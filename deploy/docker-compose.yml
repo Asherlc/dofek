@@ -342,7 +342,7 @@ services:
           memory: 2G
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.6.1.1193-alpine
+    image: clickhouse/clickhouse-server:26.10.3.7-alpine
     environment:
       CLICKHOUSE_DB: fitness
       CLICKHOUSE_USER: default
