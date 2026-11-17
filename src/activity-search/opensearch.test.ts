@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -5,6 +6,8 @@ import { ActivitySearchIndex } from "./opensearch.ts";
 
 const endpoint = "https://search.example.test";
 const indexPath = `${endpoint}/dofek-activity-search-v1`;
+const fixtureUsername = "fixture-reader";
+const fixturePassword = randomUUID();
 const userId = "a0000000-0000-4000-8000-000000000001";
 const activityId = "a0000000-0000-4000-8000-000000000002";
 const checkpoint = { version: "1794952647000000000", userId, activityId };
@@ -22,7 +25,10 @@ afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 function index() {
-  return new ActivitySearchIndex("https://reader:secret@search.example.test");
+  const url = new URL(endpoint);
+  url.username = fixtureUsername;
+  url.password = fixturePassword;
+  return new ActivitySearchIndex(url.href);
 }
 
 function runMutation<T>(request: (requestId: string) => Promise<T>) {
@@ -35,7 +41,10 @@ describe("ActivitySearchIndex", () => {
     const next = [2.5, 1_600_000_000_000, activityId];
     server.use(
       http.post(`${indexPath}/_search`, async ({ request }) => {
-        expect(request.headers.get("authorization")).toBe("Basic cmVhZGVyOnNlY3JldA==");
+        const fixtureCredentials = Buffer.from(`${fixtureUsername}:${fixturePassword}`);
+        expect(request.headers.get("authorization")).toBe(
+          `Basic ${fixtureCredentials.toString("base64")}`,
+        );
         expect(await request.json()).toMatchObject({
           size: 20,
           _source: false,
