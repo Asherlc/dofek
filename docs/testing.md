@@ -33,6 +33,16 @@ replacement would narrow the required set.
 
 ### Current workflow groups
 
+The [Actions entry-point guide](../.github/workflows/README.md) describes sidebar
+names and manual operations. CI retains validation and builds; automatic
+production publication runs in `Release / Production` (`deploy-web.yml`) after
+the originating CI run completes. Its selection step verifies the exact source
+and original per-target prerequisites from an attempt-scoped artifact; it does
+not treat the overall CI conclusion as a substitute for those gates. Executable
+fixtures in `deploy-web.test.ts` cover source/run rejection and independent target
+failures. Cross-workflow downloads use the originating run and artifact ID, as
+documented by [download-artifact](https://github.com/actions/download-artifact#download-artifacts-from-other-workflow-runs-or-repositories).
+
 `check-repository.yml`, `check-shared.yml`, `check-server.yml`, and
 `check-mobile.yml` are reusable workflows called independently by `ci.yml`.
 Each lane receives and checks the caller's full commit SHA. The server lane

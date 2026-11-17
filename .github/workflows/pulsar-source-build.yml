@@ -1,4 +1,4 @@
-name: Pulsar Source Build
+name: Build / Pulsar source
 # cspell:words buildkit buildx
 
 on:

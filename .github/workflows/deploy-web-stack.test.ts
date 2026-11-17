@@ -20,12 +20,55 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseEnv } from "node:util";
+import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { z } from "zod";
 
 const workflowText = readFileSync(".github/workflows/deploy-web-stack.yml", "utf8");
 const otaImage = `${deployTestRepository}-ota@${deployTestDigest}`;
+
+describe("Pipedash production access verification", () => {
+  const execute = async (statuses: number[], password = "fixture-vault-password") => {
+    const script = workflowRunScript("Verify Pipedash health and authentication")
+      .split("<<'NODE'\n")[1]?.replace(/\nNODE\s*$/, "");
+    if (!script) throw new Error("Missing executable Pipedash access verification");
+    const requests: Array<{ url: string; headers?: Record<string, string> }> = [];
+    await runInNewContext(script, {
+      require: (module: string) => module === "node:fs"
+        ? { readFileSync: () => `PIPEDASH_VAULT_PASSWORD=${password}\n` }
+        : { parseEnv },
+      process: { env: { PIPEDASH_ENV_FILE: "/fixture/pipedash.env", PIPEDASH_URL: "https://actions.example.test" } },
+      fetch: async (url: string, options?: { headers?: Record<string, string> }) => {
+        requests.push({ url, headers: options?.headers });
+        return { status: statuses[requests.length - 1] };
+      },
+    });
+    return requests;
+  };
+
+  it("requires health, anonymous rejection and authenticated access", async () => {
+    const requests = await execute([200, 401, 200]);
+    expect(requests.map(request => request.url)).toEqual([
+      "https://actions.example.test/api/v1/health",
+      "https://actions.example.test/api/v1/providers",
+      "https://actions.example.test/api/v1/providers",
+    ]);
+    expect(requests[1]?.headers).toBeUndefined();
+    expect(requests[2]?.headers).toEqual({ Authorization: "Bearer fixture-vault-password" });
+  });
+
+  it.each([[503], [200, 200], [200, 403], [200, 401, 401], [200, 401, 500]])(
+    "rejects failed access verification: %j", async (...statuses) => {
+      await expect(execute(statuses)).rejects.toThrow(/Pipedash/);
+    },
+  );
+
+  it("rejects a missing vault password before probing the service", async () => {
+    await expect(execute([], "")).rejects.toThrow(/PIPEDASH_VAULT_PASSWORD/);
+  });
+});
 
 describe("PeerDB catalog migration image", () => {
   const image = `ghcr.io/peerdb-io/flow-api:stable-v0.37.15@sha256:${"d".repeat(64)}`;
@@ -277,6 +320,7 @@ function runDeployQuiesced(
       "dofek_metric-stream-history-r2-archive",
       "dofek_clickhouse",
       "dofek_databasus",
+      "dofek_pipedash",
     ];
     for (const serviceName of defaultServiceNames) {
       writeFileSync(

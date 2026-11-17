@@ -45,6 +45,7 @@ function failedRecoveryEnvironment(
   directory: string,
   logPath: string,
   overrides: Record<string, string> = {},
+  jobName = "Deploy Server Production / Deploy Web Stack / Deploy Web Stack",
 ): Record<string, string> {
   const priorRun = {
     id: 124,
@@ -58,7 +59,7 @@ function failedRecoveryEnvironment(
     run_id: 124,
     run_attempt: 1,
     head_sha: baseSha,
-    name: "Deploy Server Production / Deploy Web Stack / Deploy Web Stack",
+    name: jobName,
     status: "completed",
     conclusion: "failure",
   };
@@ -563,7 +564,10 @@ describe("server publication workflow step", () => {
     }
   });
 
-  it("checks the selected failed attempt when a later origin run attempt also completed", () => {
+  it.each([
+    "Deploy Server Production / Deploy Web Stack / Deploy Web Stack",
+    "Manual Release / Deploy Web Stack / Deploy Web Stack / Deploy Web Stack",
+  ])("checks the selected failed attempt for %s when a later attempt also completed", (jobName) => {
     const directory = mkdtempSync(join(tmpdir(), "server-publication-recovery-later-attempt-"));
     try {
       const bin = fixtureBin(directory);
@@ -577,7 +581,7 @@ describe("server publication workflow step", () => {
           status: "completed",
           conclusion: "failure",
         }),
-      });
+      }, jobName);
       const result = runWorkflowStep(script, bin, outputPath, env);
       expect(result.status, result.stderr).toBe(0);
       expect(readFileSync(outputPath, "utf8")).toContain("recovery_deployment_id=99");

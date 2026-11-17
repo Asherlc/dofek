@@ -161,6 +161,8 @@ function completeDeployEnvironment(): Record<string, string> {
     ...WORKER_ONLY_ENVIRONMENT_KEYS,
     "CLICKHOUSE_PASSWORD",
     "CREDENTIAL_ENCRYPTION_KEY_BASE64",
+    "PIPEDASH_VAULT_PASSWORD",
+    "PIPEDASH_GITHUB_TOKEN",
   ]);
   return {
     ...Object.fromEntries([...runtimeKeys].map((key) => [key, `${key.toLowerCase()}-value`])),
@@ -360,6 +362,17 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     writeFileSync(sourcePath, dotenv(completeDeployEnvironment()));
 
     const paths = renderDeployServiceEnvironmentFiles(sourcePath, outputDirectory);
+
+    expect(parseEnv(readFileSync(join(outputDirectory, "pipedash.env"), "utf8"))).toEqual({
+      PIPEDASH_VAULT_PASSWORD: "pipedash_vault_password-value",
+      PIPEDASH_GITHUB_TOKEN: "pipedash_github_token-value",
+    });
+    for (const [service, path] of Object.entries(paths)) {
+      if (service === "pipedash") continue;
+      const environment = parseEnv(readFileSync(path, "utf8"));
+      expect(environment).not.toHaveProperty("PIPEDASH_VAULT_PASSWORD");
+      expect(environment).not.toHaveProperty("PIPEDASH_GITHUB_TOKEN");
+    }
 
     const web = parseEnv(readFileSync(paths.web, "utf8"));
     expect(Object.keys(web).sort()).toEqual(
@@ -571,6 +584,7 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       collector: "collector.env",
       databaseOperations: "database-operations.env",
       r2Operations: "r2-operations.env",
+      pipedash: "pipedash.env",
       web: "web.env",
       webPreMigration: "web-pre-migration.env",
       worker: "worker.env",
@@ -583,4 +597,18 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       metricStreamHistoryR2Archive: "metric-stream-history-r2-archive.env",
     });
   });
+
+  it.each(["PIPEDASH_VAULT_PASSWORD", "PIPEDASH_GITHUB_TOKEN"])(
+    "fails before publication when %s is missing",
+    (key) => {
+      const directory = makeTemporaryDirectory();
+      const sourcePath = join(directory, "all.env");
+      const environment = completeDeployEnvironment();
+      delete environment[key];
+      writeFileSync(sourcePath, dotenv(environment));
+      expect(() =>
+        renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+      ).toThrow(`pipedash deploy environment is missing required keys: ${key}`);
+    },
+  );
 });

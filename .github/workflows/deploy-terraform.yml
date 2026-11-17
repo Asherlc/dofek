@@ -1,4 +1,4 @@
-name: Deploy Terraform
+name: Operations / Terraform
 
 on:
   workflow_call:

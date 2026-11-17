@@ -1,4 +1,4 @@
-name: Version npm Packages
+name: Release / npm version PR
 
 on:
   workflow_run:

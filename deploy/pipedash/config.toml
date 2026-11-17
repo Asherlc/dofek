@@ -1,0 +1,20 @@
+[general]
+default_refresh_interval = 60
+status_pages_enabled = false
+
+[server]
+bind_addr = "0.0.0.0:8080"
+cors_allow_all = false
+
+[storage]
+backend = "sqlite"
+
+[providers.dofek]
+name = "Dofek"
+type = "github"
+token = "${PIPEDASH_GITHUB_TOKEN}"
+refresh_interval = 60
+
+[providers.dofek.config]
+base_url = "https://github.com"
+selected_items = "Asherlc/dofek"

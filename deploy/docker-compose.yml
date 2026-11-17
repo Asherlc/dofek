@@ -844,6 +844,34 @@ services:
         - traefik.http.routers.ota.tls.certresolver=le
         - traefik.http.services.ota.loadbalancer.server.port=3000
 
+  pipedash:
+    image: ghcr.io/hcavarsan/pipedash-web:0.14.0@sha256:5b289f776e876221776f335f257199d1e727e0e00ddb9ef99c8ba2499f585bed
+    env_file: ${PIPEDASH_ENV_FILE:?PIPEDASH_ENV_FILE is required}
+    environment:
+      PIPEDASH_DATA_DIR: /data
+      PIPEDASH_CONFIG_PATH: /config/pipedash.toml
+    volumes:
+      - pipedash_data:/data
+    configs:
+      - source: pipedash_config_v1
+        target: /config/pipedash.toml
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 256M
+      update_config:
+        order: stop-first
+        failure_action: rollback
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.pipedash.rule=Host(`actions.dofek.fit`)
+        - traefik.http.routers.pipedash.entrypoints=websecure
+        - traefik.http.routers.pipedash.tls=true
+        - traefik.http.routers.pipedash.tls.certresolver=le
+        - traefik.http.services.pipedash.loadbalancer.server.port=8080
+        - traefik.http.services.pipedash.loadbalancer.healthcheck.path=/api/v1/health
+
   portainer:
     image: portainer/portainer-ce:2.40.0
     volumes:
@@ -896,6 +924,7 @@ volumes:
   pgadmin_data:
   job_files:
   portainer_data:
+  pipedash_data:
   netdata_config:
   netdata_lib:
   netdata_cache:
@@ -907,6 +936,8 @@ networks:
     attachable: true
 
 configs:
+  pipedash_config_v1:
+    file: ./pipedash/config.toml
   clickhouse_default_query_guardrails_v2:
     file: ./clickhouse/users.d/default-query-guardrails.xml
   clickhouse_system_log_ttl:
