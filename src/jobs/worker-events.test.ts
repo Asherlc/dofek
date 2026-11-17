@@ -1,4 +1,5 @@
 import "./worker-test/test-helpers.ts";
+import { CatalogueSearchError } from "@dofek/climbing-catalogue";
 import {
   ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
@@ -8,6 +9,7 @@ import {
   APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
   STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME,
 } from "./import-validation-error.ts";
+import { POST_SYNC_QUEUE } from "./queues.ts";
 import { attachWorkerEvents } from "./worker-events.ts";
 import { createWorkerQueues } from "./worker-queues.ts";
 import {
@@ -314,6 +316,48 @@ describe("worker events", () => {
     expect(logger.error).toHaveBeenCalledWith(
       "[worker] Job failed: Zwift API service unavailable (503): upstream outage",
     );
+  });
+
+  it.each([1, 2])("keeps catalogue outage attempt %s out of Sentry", async (attemptsMade) => {
+    const Sentry = await import("@sentry/node");
+    const { logger } = await import("../logger.ts");
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(logger.warn).mockClear();
+    vi.mocked(logger.error).mockClear();
+    const outage = new ProviderServiceUnavailableError({
+      providerId: "openbeta",
+      statusCode: 502,
+      message: "OpenBeta temporarily unavailable",
+      responseBody: "gateway page",
+    });
+    const failure = new CatalogueSearchError([{ providerId: "openbeta", error: outage }], []);
+    getQueueWorkerHandler(POST_SYNC_QUEUE, "failed")(
+      { name: "climbing-catalogue", attemptsMade, opts: { attempts: 2 } },
+      failure,
+    );
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    if (attemptsMade === 1) {
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Job retrying"));
+    } else {
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("Job failed"));
+    }
+  });
+
+  it("does not recapture an aggregate after the catalogue service reports its unexpected cause", async () => {
+    const Sentry = await import("@sentry/node");
+    const { UnrecoverableError } = await import("bullmq");
+    vi.mocked(Sentry.captureException).mockClear();
+    const failure = new UnrecoverableError("Kaya rejected the catalogue request");
+    failure.cause = new CatalogueSearchError(
+      [{ providerId: "kaya", error: new Error("Kaya rejected the catalogue request") }],
+      [],
+    );
+    getQueueWorkerHandler(POST_SYNC_QUEUE, "failed")(
+      { name: "climbing-catalogue", attemptsMade: 1, opts: { attempts: 2 } },
+      failure,
+    );
+    expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
   it("redrives provider deletion after BullMQ exhausts all attempts", async () => {

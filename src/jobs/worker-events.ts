@@ -1,3 +1,4 @@
+import { CatalogueSearchError } from "@dofek/climbing-catalogue";
 import { Job, UnrecoverableError, type Worker } from "bullmq";
 import type { createDatabaseFromEnv } from "../db/index.ts";
 import { markProviderDataDeletionFailed } from "../db/provider-data-deletion.ts";
@@ -12,6 +13,7 @@ import {
   ACCOUNT_ERASURE_QUEUE,
   FIT_FILE_IMPORT_QUEUE,
   IMPORT_QUEUE,
+  POST_SYNC_QUEUE,
   type ProviderDataDeletionJobData,
 } from "./queues.ts";
 
@@ -97,15 +99,26 @@ export function attachWorkerEvents(
       const isOpenBetaRetry =
         job !== undefined &&
         isRetryingOpenBetaTransportFailure(err, job.attemptsMade, job.opts.attempts);
+      // The catalogue service owns reporting for provider search errors.
+      const isCatalogueSearchFailure =
+        worker.name === POST_SYNC_QUEUE &&
+        job?.name === "climbing-catalogue" &&
+        (err instanceof CatalogueSearchError ||
+          (err instanceof UnrecoverableError && err.cause instanceof CatalogueSearchError));
+      const isCatalogueRetry =
+        isCatalogueSearchFailure &&
+        !(err instanceof UnrecoverableError) &&
+        job.attemptsMade < (job.opts.attempts ?? 1);
       if (
         !isFitBatchChildFailure &&
         !isImportValidationFailure &&
         !isZeppRetry &&
-        !isOpenBetaRetry
+        !isOpenBetaRetry &&
+        !isCatalogueSearchFailure
       ) {
         captureException(err);
       }
-      if (isZeppRetry || isOpenBetaRetry) {
+      if (isZeppRetry || isOpenBetaRetry || isCatalogueRetry) {
         logger.warn(`[worker] Job retrying after provider service unavailable: ${err.message}`);
       } else {
         logger.error(`[worker] Job failed: ${err.message}`);

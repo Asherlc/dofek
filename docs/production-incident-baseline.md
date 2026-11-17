@@ -28,6 +28,21 @@
   the provider failures and their scope. If Kaya public search failures recur,
   distinguish GraphQL error responses from response schema failures in
   telemetry without recording query text, response bodies, or credentials.
+- **Direct application fix:** Replaying a public Kaya lookup reproduced HTTP
+  `200` with GraphQL `INTERNAL_SERVER_ERROR` on a later page. The same page
+  succeeded on a repeat request. A public OpenBeta search and its detail
+  requests also succeeded on replay. The worker now retries once after 60
+  seconds when every failure is a typed provider HTTP `5xx` or a confirmed
+  Kaya GraphQL internal server error. The delay gives brief outages time to
+  recover while BullMQ releases the worker for other jobs. Known outages go
+  to logs and catalogue status, and only unexpected causes go to Sentry.
+  [Catalogue job policy](../src/jobs/README.md#configuration)
+- **Fix validation:** Regression tests reproduced both exception capture paths
+  before the change. Local BullMQ with Redis kept the job pending for the
+  delayed retry, retained the healthy source, and published all sources on
+  the second attempt. Production deployment and the original lookup remain
+  unverified. For future provider incidents, trace both the operation's
+  reporting and the worker's failed-event listener before attributing an alert.
 
 ## 2026-11-16 — HealthKit permission request interrupted by backgrounding
 
