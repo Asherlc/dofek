@@ -32,7 +32,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
             do {
                 try uploader.disable { stage in
                     stages.append(stage)
-                    if stage == "uploader_queue_wait" { waiting.fulfill() }
+                    if stage.name == "uploader_queue_wait" { waiting.fulfill() }
                 }
             } catch { XCTFail("Unexpected cleanup error: \(error)") }
             cleaned.fulfill()
@@ -47,7 +47,8 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
             "uploader_queue_wait", "uploader_cancel_tasks", "uploader_store_purge",
             "store_lock_wait", "store_begin", "store_reset_stats", "store_delete_samples",
             "store_delete_batches", "store_clear_binding", "store_rotate_generation",
-            "store_commit", "store_completed", "store_vacuum", "uploader_remove_bodies"
+            "store_commit", "store_completed", "store_vacuum", "store_wal_checkpoint",
+            "store_wal_checkpoint_completed", "uploader_remove_bodies"
         ])
         XCTAssertNil(try store.binding)
         XCTAssertEqual(try store.queuedCount(stream: .realtime), 0)

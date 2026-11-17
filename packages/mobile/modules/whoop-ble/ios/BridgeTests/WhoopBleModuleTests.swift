@@ -95,6 +95,7 @@ final class WhoopBleModuleTests: XCTestCase {
             records.map { $0.attributes["stage"]?.value as? String },
             expectedCleanupStages(hasRetainedCutoff: hasRetainedCutoff)
         )
+        try assertCheckpointFrameCounts(records)
         try logs.assertOperationMetadata()
         module.connectionManager.syncOnBleQueue { XCTAssertTrue(module.captureSuspended) }
     }
