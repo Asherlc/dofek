@@ -360,6 +360,38 @@ describe("worker events", () => {
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { queue: POST_SYNC_QUEUE, jobName: undefined },
+    { queue: POST_SYNC_QUEUE, jobName: "user-refit" },
+    { queue: "sync-strava", jobName: "climbing-catalogue" },
+  ])(
+    "reports catalogue-shaped errors outside a known catalogue job ($queue, $jobName)",
+    async ({ queue, jobName }) => {
+      const Sentry = await import("@sentry/node");
+      vi.mocked(Sentry.captureException).mockClear();
+      const failure = new CatalogueSearchError(
+        [{ providerId: "kaya", error: new Error("Provider response invalid") }],
+        [],
+      );
+      const job = jobName ? { name: jobName, attemptsMade: 1, opts: { attempts: 1 } } : undefined;
+      getQueueWorkerHandler(queue, "failed")(job, failure);
+      expect(Sentry.captureException).toHaveBeenCalledExactlyOnceWith(failure);
+    },
+  );
+
+  it("reports catalogue worker setup failures that bypass the catalogue service", async () => {
+    const Sentry = await import("@sentry/node");
+    const { UnrecoverableError } = await import("bullmq");
+    vi.mocked(Sentry.captureException).mockClear();
+    const failure = new UnrecoverableError("Account-erasure work lock unavailable");
+    failure.cause = new Error("Database connection failed");
+    getQueueWorkerHandler(POST_SYNC_QUEUE, "failed")(
+      { name: "climbing-catalogue", attemptsMade: 1, opts: { attempts: 2 } },
+      failure,
+    );
+    expect(Sentry.captureException).toHaveBeenCalledExactlyOnceWith(failure);
+  });
+
   it("redrives provider deletion after BullMQ exhausts all attempts", async () => {
     const retry = vi.fn(async () => undefined);
 

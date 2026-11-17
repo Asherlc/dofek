@@ -91,16 +91,6 @@ const searchSchema = z.object({
   data: z.object({ webSearchForClimb: z.array(climbSchema) }),
   errors: z.array(z.unknown()).optional(),
 });
-const internalErrorSchema = z.object({
-  errors: z
-    .array(
-      z.object({
-        message: z.string(),
-        extensions: z.object({ code: z.literal("INTERNAL_SERVER_ERROR") }),
-      }),
-    )
-    .nonempty(),
-});
 // Native Location rejects the public WebLocation short-description fields.
 const nativeLocationFields = `id slug name latitude longitude description description_bouldering description_routes access_description_bouldering access_description_routes access_issues_description_bouldering access_issues_description_routes location_type { id name } parent_location { id slug name } is_access_sensitive is_closed closed_date`;
 const nativeClimbFields = `id slug name climb_type { name } grade { name } gym { id slug name latitude longitude address city postal_code region country website is_official } board { id name } destination { ${nativeLocationFields} } area { ${nativeLocationFields} } subarea { ${nativeLocationFields} } angle`;
@@ -272,7 +262,19 @@ export class KayaCatalogueUnavailableError extends Error {
 }
 
 function throwKayaResponseError(body: unknown, message: string): never {
-  if (internalErrorSchema.safeParse(body).success) throw new KayaCatalogueUnavailableError();
+  const internalError = z
+    .object({
+      errors: z
+        .array(
+          z.object({
+            message: z.string(),
+            extensions: z.object({ code: z.literal("INTERNAL_SERVER_ERROR") }),
+          }),
+        )
+        .nonempty(),
+    })
+    .safeParse(body);
+  if (internalError.success) throw new KayaCatalogueUnavailableError();
   throw new Error(message);
 }
 

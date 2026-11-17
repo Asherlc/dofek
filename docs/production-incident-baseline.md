@@ -46,6 +46,14 @@
   deployment and the original lookup remain unverified. For future provider
   incidents, trace both the operation's reporting and the worker's failed-event
   listener before attributing an alert.
+- **CI follow-up:** The first PR run's `Run Stryker` step scored 66.67 for
+  Kaya, 72.73 for worker queues, and 74.19 for worker events against a required
+  75. The mutation report attributed the module-level Kaya error schema to
+  unrelated import-time tests. Moving validation into the response failure
+  path let the GraphQL fixtures exercise the mutations. The worker tests now
+  exercise global maintenance, refit failures, and alert reporting outside a
+  known catalogue aggregate. All three changed-line shards scored 100 locally.
+  [First PR run](https://github.com/Asherlc/dofek/actions/runs/44166944418)
 
 ## 2026-11-16 — HealthKit permission request interrupted by backgrounding
 

@@ -480,6 +480,34 @@ describe("worker queues", () => {
     expect(processPostSyncJob).toHaveBeenCalled();
   });
 
+  it("runs global maintenance without a per-user work lock", async () => {
+    const { runQueuedUserWorkUnlessAccountErasing } = await import(
+      "./account-erasure-work-guard.ts"
+    );
+    const { processPostSyncJob } = await import("./process-post-sync-job.ts");
+    vi.mocked(runQueuedUserWorkUnlessAccountErasing).mockClear();
+    vi.mocked(processPostSyncJob).mockClear();
+    await invokeProcessor("post-sync-queue", { type: "global-maintenance" });
+    expect(processPostSyncJob).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { type: "global-maintenance" } }),
+      mockDatabase,
+      expect.any(Function),
+      expect.any(Function),
+    );
+    expect(runQueuedUserWorkUnlessAccountErasing).not.toHaveBeenCalled();
+  });
+
+  it("lets BullMQ apply the usual retry policy to refit lock failures", async () => {
+    const { runQueuedUserWorkUnlessAccountErasing } = await import(
+      "./account-erasure-work-guard.ts"
+    );
+    const failure = new Error("Account-erasure work lock unavailable");
+    vi.mocked(runQueuedUserWorkUnlessAccountErasing).mockRejectedValueOnce(failure);
+    await expect(
+      invokeProcessor("post-sync-queue", { type: "user-refit", userId: "u" }),
+    ).rejects.toBe(failure);
+  });
+
   it("ends catalogue work immediately when the account-erasure guard fails", async () => {
     const { runQueuedUserWorkUnlessAccountErasing } = await import(
       "./account-erasure-work-guard.ts"
