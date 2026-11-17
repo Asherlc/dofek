@@ -35,6 +35,7 @@ export interface RateLimitAwareFetchOptions {
     init: RequestInit | undefined,
   ) => Promise<RequestInit | undefined>;
   onResponse?: FetchRateLimitHandlingOptions["onResponse"];
+  onRequestTimeout?: (error: ProviderRequestTimeoutError) => void;
   providerId: string;
   scope?: ProviderRateLimitScope;
   userId?: string | null;
@@ -259,23 +260,19 @@ export function createRateLimitAwareFetch(
 
       return response;
     } catch (err) {
-      if (timeoutSignal.aborted && signal.reason === timeoutSignal.reason) {
-        throw new ProviderRequestTimeoutError({
+      if (
+        (timeoutSignal.aborted && signal.reason === timeoutSignal.reason) ||
+        isProviderConnectFailure(err)
+      ) {
+        const timeout = new ProviderRequestTimeoutError({
           cause: err,
           providerId: options.providerId,
           scope,
           timeoutMs: PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
           userId,
         });
-      }
-      if (isProviderConnectFailure(err)) {
-        throw new ProviderRequestTimeoutError({
-          cause: err,
-          providerId: options.providerId,
-          scope,
-          timeoutMs: PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
-          userId,
-        });
+        options.onRequestTimeout?.(timeout);
+        throw timeout;
       }
       if (options.adaptiveStore && err instanceof ProviderRateLimitError) {
         await options.adaptiveStore.recordRateLimit(err);

@@ -1,5 +1,6 @@
 import { type CaptureContext, captureException as sentryCaptureException } from "@sentry/node";
 import { capturePostHogException } from "./posthog.ts";
+import { isProviderTimeoutOnly } from "./provider-transport-error.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -50,9 +51,15 @@ function flattenCaptureContext(captureContext?: unknown): Record<string, unknown
 export { flattenCaptureContext };
 
 /**
- * Reports an exception to Sentry and PostHog error tracking.
+ * Reports an exception to Sentry and PostHog error tracking. Typed provider
+ * HTTP timeouts are counted at the request boundary instead.
  */
-export function captureException(exception: unknown, captureContext?: CaptureContext): string {
+export function captureException(
+  exception: unknown,
+  captureContext?: CaptureContext,
+): string | undefined {
+  if (isProviderTimeoutOnly(exception)) return undefined;
+
   const eventId =
     captureContext !== undefined
       ? sentryCaptureException(exception, captureContext)

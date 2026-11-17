@@ -178,37 +178,40 @@ describe("logSync", () => {
     expect(captureException).not.toHaveBeenCalled();
   });
 
-  it("keeps the repeated-failure alert when typed HTTP 5xx is mixed with an unexpected cause", async () => {
-    db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
-
-    await logSync(db.db, {
+  it.each([
+    new ProviderServiceUnavailableError({
+      message: "Provider returned HTTP 503",
       providerId: "provider",
-      dataType: "sync",
-      status: "error",
-      errorMessage: "Provider failed",
-      errorCauses: [
-        new ProviderServiceUnavailableError({
-          message: "Provider returned HTTP 503",
-          providerId: "provider",
-          statusCode: 503,
-          responseBody: "unavailable",
+      statusCode: 503,
+      responseBody: "unavailable",
+    }),
+    new ProviderRequestTimeoutError({ providerId: "provider", timeoutMs: 1000 }),
+  ])(
+    "keeps the repeated-failure alert when $name is mixed with an unexpected cause",
+    async (error) => {
+      db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
+
+      await logSync(db.db, {
+        providerId: "provider",
+        dataType: "sync",
+        status: "error",
+        errorMessage: "Provider failed",
+        errorCauses: [error, new SyntaxError("Invalid response JSON")],
+        userId: "user-123",
+        origin: "scheduled",
+      });
+
+      expect(captureException).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({
+          level: "warning",
+          tags: expect.objectContaining({ operation: "scheduled-provider-sync" }),
         }),
-        new SyntaxError("Invalid response JSON"),
-      ],
-      userId: "user-123",
-      origin: "scheduled",
-    });
+      );
+    },
+  );
 
-    expect(captureException).toHaveBeenCalledWith(
-      expect.any(Error),
-      expect.objectContaining({
-        level: "warning",
-        tags: expect.objectContaining({ operation: "scheduled-provider-sync" }),
-      }),
-    );
-  });
-
-  it("keeps the repeated-failure alert for transport errors without an HTTP status", async () => {
+  it("keeps repeated typed provider timeouts in sync status without a Sentry warning", async () => {
     db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
 
     await logSync(db.db, {
@@ -216,18 +219,19 @@ describe("logSync", () => {
       dataType: "sync",
       status: "error",
       errorMessage: "Provider request timed out",
-      errorCauses: [new ProviderRequestTimeoutError({ providerId: "provider", timeoutMs: 1000 })],
+      errorCauses: [
+        new Error("Wrapped timeout", {
+          cause: new ProviderRequestTimeoutError({ providerId: "provider", timeoutMs: 1000 }),
+        }),
+      ],
       userId: "user-123",
       origin: "scheduled",
     });
 
-    expect(captureException).toHaveBeenCalledWith(
-      expect.any(Error),
-      expect.objectContaining({
-        level: "warning",
-        tags: expect.objectContaining({ operation: "scheduled-provider-sync" }),
-      }),
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({ errorMessage: "Provider request timed out", status: "error" }),
     );
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it.each([1, 3])("does not alert at consecutive-failure count %i", async (consecutiveFailures) => {
