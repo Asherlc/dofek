@@ -30,6 +30,20 @@ struct WhoopStoredBatch {
     let sampleCount: Int
 }
 
+struct WhoopSQLiteWriteMeasurement: Equatable {
+    let walPagesWritten: Int
+    let walPagesSpilled: Int
+
+    func delta(since previous: Self) -> Self? {
+        guard walPagesWritten >= previous.walPagesWritten,
+              walPagesSpilled >= previous.walPagesSpilled else { return nil }
+        return Self(
+            walPagesWritten: walPagesWritten - previous.walPagesWritten,
+            walPagesSpilled: walPagesSpilled - previous.walPagesSpilled
+        )
+    }
+}
+
 enum WhoopCleanupAttribute {
     case string(String)
     case integer(Int)
@@ -184,8 +198,21 @@ final class WhoopBleSampleStore {
         try execute("UPDATE stats SET erased = erased + ? WHERE stream = ?", [erased, stream.rawValue])
     }
 
-    func reserve(stream: WhoopUploadStream, limit: Int = 500) throws -> WhoopStoredBatch? {
-        try transaction {
+    func reserve(
+        stream: WhoopUploadStream,
+        limit: Int = 500,
+        reportWrites: ((WhoopSQLiteWriteMeasurement?) -> Void)? = nil
+    ) throws -> WhoopStoredBatch? {
+        var reserved = false
+        let measurementCallback: ((WhoopSQLiteWriteMeasurement?) -> Void)?
+        if let reportWrites {
+            measurementCallback = { measurement in
+                if reserved { reportWrites(measurement) }
+            }
+        } else {
+            measurementCallback = nil
+        }
+        return try transaction(reportWrites: measurementCallback) {
             if let existing = try readBatches().first(where: { $0.stream == stream }) { return existing }
             guard limit > 0, let binding = try readBinding() else { return nil }
             let head = try rows("SELECT device FROM samples WHERE stream = ? ORDER BY id LIMIT 1", [stream.rawValue])
@@ -222,6 +249,7 @@ final class WhoopBleSampleStore {
                 let rowId: Int = try field("id", in: row)
                 try execute("UPDATE samples SET batch = ? WHERE id = ?", [id, rowId])
             }
+            reserved = true
             return WhoopStoredBatch(
                 id: id, generation: generation, binding: binding, stream: stream,
                 deviceId: device, body: body, sampleCount: selected.count
@@ -339,13 +367,37 @@ final class WhoopBleSampleStore {
         lock.lock(); defer { lock.unlock() }
         return try action()
     }
-    private func transaction<T>(onStage: WhoopCleanupStageHandler = { _ in }, _ action: () throws -> T) throws -> T {
+    private func transaction<T>(
+        onStage: WhoopCleanupStageHandler = { _ in },
+        reportWrites: ((WhoopSQLiteWriteMeasurement?) -> Void)? = nil,
+        _ action: () throws -> T
+    ) throws -> T {
         onStage(WhoopCleanupStage("store_lock_wait"))
         return try synchronized {
             try restoreSecureDeleteLocked()
             try finishPendingPurgeLocked()
-            return try transactionLocked(onStage: onStage, action)
+            let countersBefore = reportWrites == nil ? nil : writeCounters()
+            let result = try transactionLocked(onStage: onStage, action)
+            if let reportWrites {
+                let measurement = countersBefore.flatMap { before in
+                    writeCounters()?.delta(since: before)
+                }
+                reportWrites(measurement)
+            }
+            return result
         }
+    }
+
+    private func writeCounters() -> WhoopSQLiteWriteMeasurement? {
+        guard let database else { return nil }
+        var cacheWrites: Int32 = 0
+        var cacheSpills: Int32 = 0
+        var highwater: Int32 = 0
+        guard sqlite3_db_status(database, SQLITE_DBSTATUS_CACHE_WRITE, &cacheWrites, &highwater, 0) == SQLITE_OK,
+              sqlite3_db_status(database, SQLITE_DBSTATUS_CACHE_SPILL, &cacheSpills, &highwater, 0) == SQLITE_OK else {
+            return nil
+        }
+        return WhoopSQLiteWriteMeasurement(walPagesWritten: Int(cacheWrites), walPagesSpilled: Int(cacheSpills))
     }
     func transactionLocked<T>(onStage: WhoopCleanupStageHandler = { _ in }, _ action: () throws -> T) throws -> T {
         onStage(WhoopCleanupStage("store_begin"))
