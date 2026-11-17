@@ -356,7 +356,7 @@ in Infisical. See the [renderer](../scripts/deploy-service-environment.ts) and
 [command-prefixed environment assignments](https://www.gnu.org/software/bash/manual/html_node/Environment.html).
 
 The web image build and post-rollout Sentry release step also require the
-GitHub Actions `SENTRY_AUTH_TOKEN` secret already used for browser source-map
+Infisical Production `SENTRY_AUTH_TOKEN` secret already used for browser source-map
 uploads. The token must be able to manage releases for both `dofek-web` and
 `dofek-server`; Sentry documents `org:ci` as the scope intended for CI release
 and deployment workflows:
