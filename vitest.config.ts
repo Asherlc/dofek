@@ -124,6 +124,7 @@ export default defineConfig({
           name: "unit",
           setupFiles: [path.resolve(dirname, "packages/web/test-setup.ts")],
           include: [
+            ".github/actions/**/*.test.ts",
             ".github/workflows/**/*.test.ts",
             "entrypoint.test.ts",
             "analytics/models/**/*.test.ts",
