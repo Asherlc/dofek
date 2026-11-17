@@ -5,6 +5,23 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 const repositoryResultMock = vi.hoisted(() => vi.fn());
 const repositoryInputMock = vi.hoisted(() => vi.fn());
 const cachedQueryOptions = vi.hoisted(() => vi.fn());
+const calendarConstructorMock = vi.hoisted(() => vi.fn());
+const searchIndexMock = vi.hoisted(() => vi.fn());
+const titleSearchMock = vi.hoisted(() => vi.fn());
+const searchHydrationMock = vi.hoisted(() => vi.fn());
+const captureSearchErrorMock = vi.hoisted(() => vi.fn());
+
+vi.mock("dofek/activity-search/config", () => ({
+  createActivitySearchIndexFromEnv: searchIndexMock,
+}));
+vi.mock("dofek/lib/error-reporting", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("dofek/lib/error-reporting")>()),
+  captureException: captureSearchErrorMock,
+}));
+vi.mock("../repositories/activity-title-search.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../repositories/activity-title-search.ts")>()),
+  searchActivityTitles: titleSearchMock,
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -30,6 +47,12 @@ vi.mock("../trpc.ts", async () => {
 
 vi.mock("../repositories/activities-calendar-repository.ts", () => ({
   ActivitiesCalendarRepository: class {
+    constructor(...args: unknown[]) {
+      calendarConstructorMock(...args);
+    }
+    findByIds(ids: string[], activityType?: string) {
+      return searchHydrationMock(ids, activityType);
+    }
     getWeekList(input: unknown) {
       repositoryInputMock(input);
       return repositoryResultMock();
@@ -64,6 +87,100 @@ describe("calendarRouter", () => {
   beforeEach(() => {
     repositoryResultMock.mockReset();
     repositoryInputMock.mockReset();
+    calendarConstructorMock.mockReset();
+    searchIndexMock.mockReset();
+    titleSearchMock.mockReset();
+    searchHydrationMock.mockReset();
+    captureSearchErrorMock.mockReset();
+  });
+
+  describe("searchActivities", () => {
+    const context = {
+      db: {},
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore: { query: vi.fn() },
+      accessWindow: { kind: "limited", startDate: "2026-11-11", endDateExclusive: "2026-11-18" },
+    };
+
+    it("passes the current user, entitlement and normalized search to the index and card lookup", async () => {
+      const index = { name: "reader" };
+      const ids = ["candidate-1", "candidate-2"];
+      searchIndexMock.mockReturnValue(index);
+      searchHydrationMock.mockResolvedValue([]);
+      titleSearchMock.mockImplementation(async (_index, hydrate) => ({
+        activities: await hydrate(ids),
+        next: null,
+      }));
+      await expect(
+        createCaller(context).searchActivities({
+          title: "  golden hill  ",
+          activityType: "cycling",
+          cursor: null,
+        }),
+      ).resolves.toEqual({ activities: [], next: null });
+      expect(searchIndexMock).toHaveBeenCalledWith("ACTIVITY_SEARCH_READ_URL");
+      expect(calendarConstructorMock).toHaveBeenCalledWith(
+        context.db,
+        context.userId,
+        context.timezone,
+        context.sensorStore,
+        context.accessWindow,
+      );
+      expect(titleSearchMock).toHaveBeenCalledWith(index, expect.any(Function), {
+        title: "golden hill",
+        activityType: "cycling",
+        pageSize: 20,
+        cursor: undefined,
+        userId: context.userId,
+        timezone: context.timezone,
+        accessWindow: context.accessWindow,
+      });
+      expect(searchHydrationMock).toHaveBeenCalledWith(ids, "cycling");
+    });
+
+    it("reports disabled search before constructing the calendar repository", async () => {
+      await expect(createCaller(context).searchActivities({ title: "hill" })).rejects.toMatchObject(
+        {
+          code: "PRECONDITION_FAILED",
+          message: "Activity search is unavailable in this environment.",
+        },
+      );
+      expect(titleSearchMock).not.toHaveBeenCalled();
+      expect(calendarConstructorMock).not.toHaveBeenCalled();
+      expect(captureSearchErrorMock).not.toHaveBeenCalled();
+    });
+
+    it("preserves client-safe errors and sanitizes unexpected failures", async () => {
+      const caller = createCaller(context);
+      searchIndexMock.mockReturnValue({});
+      const known = new TRPCError({ code: "BAD_REQUEST", message: "Start a new search." });
+      const unexpected = new Error("internal search provider error");
+      titleSearchMock.mockRejectedValueOnce(known).mockRejectedValueOnce(unexpected);
+      await expect(caller.searchActivities({ title: "hill" })).rejects.toBe(known);
+      expect(captureSearchErrorMock).not.toHaveBeenCalled();
+      await expect(caller.searchActivities({ title: "hill" })).rejects.toMatchObject({
+        code: "SERVICE_UNAVAILABLE",
+        message: "Activity search is temporarily unavailable. Try again in a minute.",
+      });
+      expect(captureSearchErrorMock).toHaveBeenCalledWith(unexpected, {
+        tags: { trpcPath: "calendar.searchActivities" },
+      });
+    });
+
+    it.each([
+      { title: "   " },
+      { title: "a".repeat(201) },
+      { title: "hill", activityType: "" },
+      { title: "hill", pageSize: 0 },
+      { title: "hill", pageSize: 51 },
+      { title: "hill", pageSize: 1.5 },
+    ])("rejects invalid search inputs before calling the index", async (input) => {
+      await expect(createCaller(context).searchActivities(input)).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+      expect(searchIndexMock).not.toHaveBeenCalled();
+    });
   });
 
   it("keeps the released unpaged API and returns a page envelope from V2", async () => {

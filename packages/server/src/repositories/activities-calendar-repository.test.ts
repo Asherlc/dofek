@@ -673,6 +673,57 @@ describe("ActivitiesCalendarRepository", () => {
     expect(sensorStore.query).toHaveBeenCalledTimes(1);
   });
 
+  it("hydrates search candidates by account, IDs and type across dates", async () => {
+    const database = makeDatabase([[{ id: "old-ride" }]]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "old-ride",
+          name: "Golden Hill Ride",
+          canonical_type: "cycling",
+          local_date: "2021-05-14",
+        }),
+        makeActivityRow({
+          id: "hidden-ride",
+          canonical_type: "cycling",
+          local_date: "2025-08-11",
+        }),
+        makeActivityRow({
+          id: "old-run",
+          canonical_type: "running",
+          local_date: "2020-06-04",
+        }),
+      ],
+    ]);
+    const userId = "00000000-0000-0000-0000-000000000001";
+    const timezone = "America/Los_Angeles";
+    const ids = ["old-run", "old-ride", "hidden-ride"];
+    const repository = new ActivitiesCalendarRepository(database, userId, timezone, sensorStore);
+    await expect(repository.findByIds(ids, "cycling")).resolves.toEqual([
+      expect.objectContaining({ id: "old-ride", name: "Golden Hill Ride", date: "2021-05-14" }),
+    ]);
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.stringContaining("activity.activity_id IN {activityIds:Array(UUID)}"),
+      { userId, timezone, activityIds: ids, activityType: "cycling" },
+    );
+    const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    expect(query).not.toContain("windowStart");
+    expect(query).toContain(
+      "coalesce(activity.primary_canonical_type, activity.canonical_type) = {activityType:String}",
+    );
+  });
+
+  it("returns an empty search candidate set without querying a backing store", async () => {
+    const database = makeDatabase();
+    const sensorStore = makeSensorStore([]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+    await expect(repository.findByIds([])).resolves.toEqual([]);
+    expect(sensorStore.query).not.toHaveBeenCalled();
+    expect(database.execute).not.toHaveBeenCalled();
+  });
+
   it("reads precomputed centroids from activity summary without a runtime location query", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([

@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { KafkaRemoteStorage } from "../account-erasure/kafka-remote-storage.ts";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
+import { ActivitySearchIndex } from "../activity-search/opensearch.ts";
 import type { ClaimedAccountErasureRequest } from "../db/account-erasure-processing.ts";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { createDatabase } from "../db/index.ts";
@@ -18,7 +19,10 @@ const mocks = vi.hoisted(() => ({
       _database: unknown,
       client: ClickHouseClient,
       _input: { resourceId: string; intentId: string },
-      operation: (owner: { client: ClickHouseClient }) => Promise<unknown>,
+      operation: (owner: {
+        client: ClickHouseClient;
+        runSynchronousRequest?: unknown;
+      }) => Promise<unknown>,
     ) => operation({ client }),
   ),
   assertPeerDbDrained: vi.fn(async () => undefined),
@@ -460,6 +464,60 @@ describe("createAccountErasureRuntime", () => {
     ).rejects.toThrow("ACTIVITY_SEARCH_ERASE_URL and ACTIVITY_SEARCH_RETENTION_TOKEN are required");
     expect(mocks.ensureProvidersRegistered).not.toHaveBeenCalled();
     expect(workPurger.close).toHaveBeenCalledOnce();
+  });
+
+  it("checks search deletion under its own owner and includes search in retention evidence", async () => {
+    vi.stubEnv("ACTIVITY_SEARCH_ERASE_URL", "https://eraser:fixture@search.example.test");
+    vi.stubEnv("ACTIVITY_SEARCH_RETENTION_TOKEN", "fixture-token");
+    const eraseSearch = vi.spyOn(ActivitySearchIndex.prototype, "eraseAccount").mockResolvedValue();
+    const fetchBackups = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(Response.json({ backups: [{ backup_time: "2026-08-04T12:00:00Z" }] }));
+    const runSynchronousRequest = vi.fn();
+    mocks.withOwner
+      .mockImplementationOnce(async (_db, client, _scope, task) => task({ client }))
+      .mockImplementationOnce(async (_db, client, _scope, task) =>
+        task({ client, runSynchronousRequest }),
+      );
+    const { database, clickHouseClient, workPurger } = runtimeInputs();
+    try {
+      const runtime = await createAccountErasureRuntime(database, clickHouseClient, workPurger);
+      try {
+        await expect(
+          runtime.phaseRunner.runPhase("clickhouse_initial", execution()),
+        ).resolves.toEqual({
+          verified: false,
+        });
+        expect(mocks.withOwner).toHaveBeenNthCalledWith(
+          2,
+          database,
+          clickHouseClient,
+          { resourceId: "activity-search-index", intentId: "activity-search" },
+          expect.any(Function),
+        );
+        expect(mocks.eraseClickHouse).toHaveBeenCalledBefore(eraseSearch);
+        expect(eraseSearch).toHaveBeenCalledWith(request.userId, runSynchronousRequest);
+
+        await expect(
+          runtime.phaseRunner.runPhase(
+            "retention_verification",
+            execution(retentionLoadCheckpointDetails, retainedRequest),
+          ),
+        ).resolves.toMatchObject({
+          processorRetention: {
+            axiomRetentionDays: 30,
+            sentryRetentionDays: 30,
+            activitySearch: { backupCount: 1, serviceLogsExpired: true },
+          },
+        });
+      } finally {
+        await runtime.close();
+      }
+    } finally {
+      eraseSearch.mockRestore();
+      fetchBackups.mockRestore();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("connects the remote verifier to the dedicated client, native history and consumer factory", async () => {

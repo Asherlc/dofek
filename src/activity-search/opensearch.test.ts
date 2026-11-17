@@ -36,6 +36,61 @@ function runMutation<T>(request: (requestId: string) => Promise<T>) {
 }
 
 describe("ActivitySearchIndex", () => {
+  it.each([
+    "not a service URL",
+    "http://reader:fixture@search.example.test",
+    "https://search.example.test",
+    "https://reader@search.example.test",
+  ])("rejects service URLs without HTTPS and both credentials", (url) => {
+    expect(() => new ActivitySearchIndex(url)).toThrow(
+      "Activity search requires an HTTPS service URL with credentials.",
+    );
+  });
+
+  it("reports an unavailable read without exposing the response body", async () => {
+    server.use(
+      http.post(`${indexPath}/_search`, () =>
+        HttpResponse.json({ reason: "private request detail" }, { status: 503 }),
+      ),
+    );
+    await expect(index().search({ userId, title: "golden", limit: 20 })).rejects.toThrow(
+      /^Activity search request failed with HTTP 503\.$/,
+    );
+  });
+
+  it("keeps the account filter when there is no activity type and reads an uninitialized index", async () => {
+    server.use(
+      http.post(`${indexPath}/_search`, async ({ request }) => {
+        expect(await request.json()).toMatchObject({
+          query: { bool: { filter: [{ term: { userId } }] } },
+        });
+        return HttpResponse.json({ hits: { hits: [] } });
+      }),
+      http.post(`${indexPath}/_mget`, () => HttpResponse.json({ docs: [{ found: false }] })),
+    );
+    await expect(index().search({ userId, title: "golden", limit: 20 })).resolves.toEqual([]);
+    await expect(index().loadState()).resolves.toEqual({ ready: false });
+  });
+
+  it("leaves an empty batch unsent", async () => {
+    await expect(
+      index().applyChanges([], () => {
+        throw new Error("An empty batch must not dispatch a write");
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each([
+    { items: [] },
+    { items: [{ index: { status: 300 } }] },
+    { items: [{ index: { status: 199 } }] },
+  ])("rejects incomplete and unsuccessful bulk responses", async (body) => {
+    server.use(http.post(`${indexPath}/_bulk`, () => HttpResponse.json(body)));
+    await expect(index().applyChanges([{ kind: "index", activity }], runMutation)).rejects.toThrow(
+      "OpenSearch did not apply every activity update.",
+    );
+  });
+
   it("sends a scoped ranked prefix and fuzzy query and decodes its search-after values", async () => {
     const previous = [3.5, 1_700_000_000_000, activityId] satisfies [number, number, string];
     const next = [2.5, 1_600_000_000_000, activityId];
@@ -160,6 +215,20 @@ describe("ActivitySearchIndex", () => {
 
     await expect(index().eraseAccount(userId, runMutation)).rejects.toThrow(
       "OpenSearch did not erase every activity.",
+    );
+  });
+
+  it("requires zero visible results after deleting the account", async () => {
+    server.use(
+      http.post(`${indexPath}/_delete_by_query`, () =>
+        HttpResponse.json({ timed_out: false, version_conflicts: 0, failures: [] }),
+      ),
+      http.post(`${indexPath}/_search`, () =>
+        HttpResponse.json({ hits: { total: { value: 1, relation: "eq" } } }),
+      ),
+    );
+    await expect(index().eraseAccount(userId, runMutation)).rejects.toThrow(
+      "OpenSearch still contains activities for the erased account.",
     );
   });
 
