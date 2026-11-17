@@ -24,6 +24,8 @@ struct WhoopUploadError: LocalizedError {
 /// Native owner of the durable outbox. React and the Expo module are clients of this service.
 final class WhoopBleBackgroundUploader: NSObject {
     private let store: WhoopBleSampleStore
+
+    var sqliteCacheWritePages: Int? { store.cacheWritePages }
     private let directory: URL
     private let transport: WhoopUploadTransport
     private let reportError: (Error) -> Void
