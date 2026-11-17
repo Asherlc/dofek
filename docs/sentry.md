@@ -124,6 +124,20 @@ diagnostics retain their structured logs without manufacturing a second
 exception; the caller still reports unexpected failures. OpenTelemetry describes
 [counter aggregation](https://opentelemetry.io/docs/specs/otel/metrics/api/#counter).
 
+The [provider HTTP wrapper](../src/lib/provider-rate-limit-fetch.ts) increments
+`provider.http.timeouts` once per request classified as a typed provider timeout,
+including recognized connection resets. Its only application label is `provider`.
+[Shared exception reporting](../src/lib/error-reporting.ts) skips timeout-only
+errors, including wrapped errors, catalogue aggregates, and failures after the
+last queue attempt. Mixed aggregates still reach exception tracking. Queue and
+catalogue failures remain visible through their existing status and logs.
+
+After deploying a change to this policy, start with an observed provider timeout
+in `dofek-logs`. In Axiom Builder, select `dofek-host-metrics:provider.http.timeouts`
+and filter by `provider` in a window covering the request and metric export.
+Confirm the counter advances and check Sentry for timeout-only events from the
+same release and window. See [Axiom's metrics guide](https://axiom.co/docs/query-data/metrics).
+
 Classification requires a known transport shape or an explicit credential
 marker from Dofek's own password-check rejection. A generic 401/403, BAD_REQUEST,
 or vendor credential error class does not establish invalid credentials: existing
@@ -151,16 +165,13 @@ reportable. A generic HTTP 401/403 alone does not establish an expected account
 failure. This preserves Sentry's role for actionable exceptions; see its
 [capture API](https://docs.sentry.io/platforms/javascript/guides/node/usage/#capturing-errors).
 
-The [sync-log policy](../src/db/sync-log.ts) separately raises a warning at exactly
-two consecutive scheduled overall-sync failures. The
+The [sync-log policy](../src/db/sync-log.ts) checks for a warning at exactly two
+consecutive scheduled overall-sync failures. If every cause is a typed provider
+HTTP `500`–`599` response or a typed provider timeout, the failure is recorded in
+sync status, logs, and metrics. Unclassified transport failures and mixed results
+containing an unexpected cause still raise the warning. The
 [user notification policy](../src/db/provider-issue-notification.ts) deduplicates
-notifications until recovery. Suppressing an expected per-attempt exception does
-not disable either persistence escalation or user-facing failure information.
-Typed provider HTTP `500`–`599` responses remain visible in sync status, logs,
-and metrics without creating Sentry exception or repeated-failure warning events.
-The scheduled warning uses the original typed causes; statusless transport
-failures and mixed results containing an unexpected cause keep their existing
-warning behavior.
+authorization notifications until recovery.
 
 ## Access failures
 
