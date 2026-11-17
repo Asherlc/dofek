@@ -1596,7 +1596,7 @@ jobs:
       - name: Verify Pipedash health and authentication
         if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
         env:
-          PIPEDASH_URL: https://actions.dofek.fit
+          PIPEDASH_URL: https://pipedash.dofek.fit
         run: |
           node <<'NODE'
           (async () => {

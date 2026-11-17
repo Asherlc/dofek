@@ -865,7 +865,7 @@ services:
         failure_action: rollback
       labels:
         - traefik.enable=true
-        - traefik.http.routers.pipedash.rule=Host(`actions.dofek.fit`)
+        - traefik.http.routers.pipedash.rule=Host(`pipedash.dofek.fit`)
         - traefik.http.routers.pipedash.entrypoints=websecure
         - traefik.http.routers.pipedash.tls=true
         - traefik.http.routers.pipedash.tls.certresolver=le

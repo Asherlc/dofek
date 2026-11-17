@@ -32,7 +32,7 @@ resource "cloudflare_dns_record" "dofek_fit_www" {
 resource "cloudflare_dns_record" "actions_dofek_fit" {
   zone_id = cloudflare_zone.dofek_fit.id
   type    = "A"
-  name    = "actions.dofek.fit"
+  name    = "pipedash.dofek.fit"
   content = local.dofek_primary_host
   proxied = true
   ttl     = 1
