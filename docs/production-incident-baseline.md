@@ -35934,6 +35934,48 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - **Read-only health snapshot:** November11 at20:59UTC, public health returned200/statusok; core containers and CDC health checks were healthy, with web2/2. Data-disk availability was30,315,843,584bytes (28.23GiB), above the unchanged15GiB admission threshold. Recent Axiom logs still showed the separate theCrag HTTP400 access denial; service availability does not establish complete provider recovery. No additional storage capacity is indicated by this snapshot.
 - **Release boundary / retrospective:** Merge follows the existing automatic current-main CI/release workflow; disk-directory provisioning and OCI planning are no longer prerequisites. Preserve the canonical drain, migration and CDC gates, and coordinate the paused Strava queue before worker interruption. Native runtime checks and review made the restricted log contract concrete; use the [observability runbook](axiom-observability-runbook.md) for future failures and retain response/router evidence at the first failed health check. No timeout, retry, sampler or custom validation machinery was added.
 
+## 2026-11-16 — Peloton null summaries reject a full-history graph response
+
+- **Symptoms / impact:** During the user-authorized SERVER-7Y provider pass,
+  Peloton processed 604 workouts and 238,440 metric-stream records. The parent
+  BullMQ job completed at 21:55:42.701 UTC, but its provider result and matching
+  manual `fitness.sync_log` row at 21:55:42.673 UTC explicitly reported an error.
+  Queue completion did not establish successful full-history ingestion; no
+  later provider was admitted.
+- **Evidence / cause:** The first fatal worker line at 21:55:42.648 UTC was
+  `Peloton returned an invalid performance-graph response`. One authorized
+  read-only GET of the exact failed graph at 22:03:44.800 UTC returned HTTP 200
+  JSON. Schema validation rejected six `null` values at
+  `average_summaries[0..3].value` and `summaries[0..1].value`, where the
+  [summary schema](../packages/peloton-client/src/types.ts) required numbers.
+  Output, cadence, resistance and speed each had an empty values array.
+  The [metric parser](../packages/peloton-client/src/parsing.ts) consumes those
+  arrays and does not ingest summary aggregates. The response inspection used
+  existing credentials without refresh/save or retries; its raw body is retained
+  privately with mode `0600`, and shared evidence contains only status, schema
+  paths, types and counts.
+- **Direct correction / validation:** Accept `number | null` for summary
+  values while retaining validation of other types. A sanitized schema regression
+  failed before the correction because it expected a number and received null.
+  Numeric summaries and empty metric arrays remain unchanged; strings, objects,
+  arrays, booleans and missing summary values remain invalid. Missing values
+  are never converted to zeros, and no sensor samples are invented.
+  All 174 focused package/provider tests passed, as did full lint, workspace
+  typechecks and the full unit/mobile tier (24,789 passed, 19 skipped). Offline
+  replay of the retained response passed without another upstream request.
+- **Production status / remaining risk:** This local parser correction is not
+  deployed. The full pass remains incomplete; no retry, merge or release was
+  performed for this correction. Empty upstream metric arrays remain unavailable
+  data. The separate historical SERVER-7Y disk-growth cause remains unknown,
+  and its correct 15 GiB fail-fast guard is retained. The accepted incomplete
+  Wahoo source was not fetched or imported again.
+- **Retrospective / proposed guidance:** Comparing the queue state with the
+  manual sync result prevented a false success claim. A single targeted response
+  identified the schema mismatch without replaying the full provider. Proposed
+  provider-runbook addition: “When an HTTP 200 response fails validation, retain
+  a private payload and share schema paths/types before changing the boundary.”
+  No retry, timeout, suppression or fallback was introduced.
+
 ## 2026-11-02 — theCrag scheduled sync warning after upstream gateway failures
 
 - **Symptoms / impact:** The connection-attention email arrived at 20:01 Pacific (November 3, 04:01 UTC). Two automatic logbook syncs failed, delaying new climbing data. Read-only `fitness.sync_log` inspection confirmed successful scheduled imports through 03:01:40 UTC, then errors at 03:31:49 and 04:01:20 UTC.
