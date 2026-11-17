@@ -87,11 +87,9 @@ export function ClimbingStrengths({
         />
         Include area metadata
       </label>
-      {data?.enrichmentPending ? (
-        <p role="status" className="text-xs text-muted">
-          Updating catalogue metadata…
-        </p>
-      ) : null}
+      <p role="status" className="min-h-4 text-xs text-muted">
+        {data?.enrichmentPending ? "Updating catalogue metadata…" : null}
+      </p>
       {enrichmentErrors.length > 0 ? (
         <section
           aria-label="Catalogue metadata"

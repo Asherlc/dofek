@@ -200,6 +200,10 @@ export function initTelemetry() {
     ...(SENTRY_RELEASE ? { release: SENTRY_RELEASE } : {}),
     ...(SENTRY_DIST ? { dist: SENTRY_DIST } : {}),
     debug: __DEV__,
+    enableJsHangTracking: true,
+    // The V2 tracker covers watchdog terminations during foreground hangs that
+    // the legacy tracker can report only as an app hang.
+    _experiments: { enableWatchdogTerminationsV2: true },
     tracesSampler: ({ name, inheritOrSampleWith }) =>
       name === "App Start" || name === "Mobile Startup" ? 1 : inheritOrSampleWith(0),
   });
@@ -255,6 +259,7 @@ function sanitizePostHogProperties(
 
 export type CaptureExceptionOptions = {
   reportToErrorTracking?: boolean;
+  tags?: Record<string, string>;
 };
 
 export function captureException(
@@ -288,13 +293,18 @@ export function captureException(
     if (retiredLifetime) {
       Sentry.captureException(error, (scope) => {
         scope.setUser(null);
+        for (const [key, value] of Object.entries(options.tags ?? {})) {
+          scope.setTag(key, value);
+        }
         if (source) scope.setTag("source", source);
         scope.setExtras(telemetryContext);
         return scope;
       });
     } else {
       Sentry.captureException(error, {
-        ...(source ? { tags: { source } } : {}),
+        ...(source || options.tags
+          ? { tags: { ...options.tags, ...(source ? { source } : {}) } }
+          : {}),
         extra: telemetryContext,
       });
       // PostHog's mobile captureException binds to its current distinct ID;

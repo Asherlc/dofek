@@ -15,9 +15,6 @@ on:
       image_ref:
         description: Immutable server image reference produced by this build.
         value: ${{ jobs.build.outputs.image_ref }}
-    secrets:
-      SENTRY_AUTH_TOKEN:
-        required: false
   workflow_dispatch:
 
 jobs:
@@ -31,7 +28,18 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     steps:
+      - name: Check out credential loader from the workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Load credentials through Infisical OIDC
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: SENTRY_AUTH_TOKEN
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit_sha || github.sha }}
@@ -100,7 +108,7 @@ jobs:
             VITE_ASSET_BASE_URL=${{ steps.web-assets.outputs.base_url }}
             REQUIRE_SENTRY_RELEASE_UPLOAD=true
           secrets: |
-            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+            SENTRY_AUTH_TOKEN=${{ env.SENTRY_AUTH_TOKEN }}
           cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:server-buildcache
           cache-to: type=registry,ref=${{ steps.image-name.outputs.name }}:server-buildcache,mode=max
       - name: Emit immutable server image reference

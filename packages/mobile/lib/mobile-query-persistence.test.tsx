@@ -69,6 +69,35 @@ describe("mobile query persistence", () => {
     expect(restoredClient.getQueryData(queryKey)).toEqual(data);
   });
 
+  it("discards mobile query caches without server-computed sleep interval durations", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const userId = "sleep-owner";
+    const queryKey = [["sleep", "stagesByDate"], { type: "query" }];
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(queryKey, {
+      date: "2026-11-15",
+      stages: [
+        { stage: "deep", started_at: "2026-11-15T23:00:00Z", ended_at: "2026-11-15T23:30:00Z" },
+      ],
+    });
+    await AsyncStorage.setItem(
+      `dofek-query-cache:${userId}`,
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: `${userId}:v28`,
+        clientState: dehydrate(seedClient),
+      }),
+    );
+    const restoredClient = createQueryClient();
+    await persistQueryClientRestore({
+      queryClient: restoredClient,
+      persister: createMobileQueryPersister(userId),
+      maxAge: QUERY_CACHE_MAX_AGE_MS,
+      buster: mobileQueryCacheBuster(userId),
+    });
+    expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+  });
+
   it("discards mobile query caches from the previous FTP response contract", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "cycling-evidence-owner";

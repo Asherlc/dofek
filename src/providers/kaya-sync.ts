@@ -13,6 +13,7 @@ import {
   refreshKayaAccessToken,
   signInToKaya,
 } from "@dofek/kaya-client";
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { isValidClimbingGrade } from "@dofek/training/climbing-grades";
 import { sql } from "drizzle-orm";
@@ -34,6 +35,7 @@ import {
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
 import { captureException } from "../lib/error-reporting.ts";
+import { isKnownProviderHttp5xxError } from "../lib/provider-error-reporting.ts";
 import {
   ProviderInvalidCredentialsError,
   ProviderStoredIdentityMissingError,
@@ -44,6 +46,17 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult, TokenSet }
 
 const scopesSchema = z.object({ kayaUserId: z.string() });
 const KAYA_ACCESS_TOKEN_REFRESH_INTERVAL_MS = 25 * 60_000;
+
+function normalizeKayaHttp5xxError(error: unknown): unknown {
+  if (!(error instanceof KayaApiError) || !Number.isInteger(error.status)) return error;
+  if (error.status === undefined || error.status < 500 || error.status > 599) return error;
+  return new ProviderServiceUnavailableError({
+    message: error.message,
+    providerId: "kaya",
+    statusCode: error.status,
+    responseBody: "",
+  });
+}
 
 export class KayaSyncProvider implements SyncProvider {
   readonly id = "kaya";
@@ -144,8 +157,14 @@ export class KayaSyncProvider implements SyncProvider {
             images: [],
           };
     } catch (error) {
-      if (!(error instanceof RefreshTokenRevokedError)) captureException(error);
-      throw error;
+      const normalizedError = normalizeKayaHttp5xxError(error);
+      if (
+        !(normalizedError instanceof RefreshTokenRevokedError) &&
+        !isKnownProviderHttp5xxError(normalizedError)
+      ) {
+        captureException(error);
+      }
+      throw normalizedError;
     }
   }
 
@@ -174,8 +193,14 @@ export class KayaSyncProvider implements SyncProvider {
       try {
         activeTokens = await this.#refreshTokens(run.db, userId, tokens);
       } catch (error) {
-        if (!(error instanceof RefreshTokenRevokedError)) captureException(error);
-        return this.#result(startedAt, 0, [error]);
+        const normalizedError = normalizeKayaHttp5xxError(error);
+        if (
+          !(normalizedError instanceof RefreshTokenRevokedError) &&
+          !isKnownProviderHttp5xxError(normalizedError)
+        ) {
+          captureException(error);
+        }
+        return this.#result(startedAt, 0, [normalizedError]);
       }
     }
     let client = new KayaClient(activeTokens.accessToken, this.fetchFn);
@@ -392,8 +417,14 @@ export class KayaSyncProvider implements SyncProvider {
       });
       return this.#result(startedAt, recordsSynced, []);
     } catch (error) {
-      if (!(error instanceof RefreshTokenRevokedError)) captureException(error);
-      return this.#result(startedAt, recordsSynced, [error]);
+      const normalizedError = normalizeKayaHttp5xxError(error);
+      if (
+        !(normalizedError instanceof RefreshTokenRevokedError) &&
+        !isKnownProviderHttp5xxError(normalizedError)
+      ) {
+        captureException(error);
+      }
+      return this.#result(startedAt, recordsSynced, [normalizedError]);
     }
   }
 
@@ -409,6 +440,7 @@ export class KayaSyncProvider implements SyncProvider {
           typeof error.message === "string"
         ) {
           const result: SyncError = { message: error.message };
+          if (error instanceof ProviderServiceUnavailableError) result.cause = error;
           if ("externalId" in error && typeof error.externalId === "string") {
             result.externalId = error.externalId;
           }

@@ -127,6 +127,11 @@ All remote JSON crosses a
 shape does not match the currently observed API throws
 `PelotonResponseError`.
 
+Performance-graph summary values accept numbers or `null`. The
+[response schema](src/types.ts) preserves upstream `null` summary values as `null`
+and empty metric arrays as empty; it does not substitute zeros or create sensor
+samples. Omitted summary values and other value types still fail validation.
+
 ## Parsing
 
 ```ts

@@ -122,6 +122,7 @@ export class WhoopBleDiagnostics {
             uploadSiblingTaskPending: buffers.lastUploadOutcome.siblingTaskPending,
           }
         : {}),
+      http5xxResponseCount: buffers.http5xxResponseCount,
     });
   }
 }

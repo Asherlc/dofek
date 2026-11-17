@@ -97,11 +97,9 @@ export function SportVolumeChart({ days, sport }: { days: TimeRangeDays; sport?:
           </select>
         </div>
       </div>
-      {query.isFetching && data ? (
-        <p role="status" className="text-xs text-muted">
-          Updating volume…
-        </p>
-      ) : null}
+      <p role="status" className="min-h-4 text-xs text-muted">
+        {query.isFetching && data ? "Updating volume…" : null}
+      </p>
       {query.error ? <QueryStatePanel error={query.error} height={0} /> : null}
       {query.error && !data ? null : (
         <>

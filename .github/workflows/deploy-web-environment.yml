@@ -15,6 +15,9 @@ on:
       deployment_id:
         description: "Existing server deployment record for this publication decision"
         value: ${{ jobs.check.outputs.deployment_id }}
+      recovery_deployment_id:
+        description: "Failed server deployment receipt replaced by this verified publication, if any"
+        value: ${{ jobs.check.outputs.recovery_deployment_id }}
     inputs:
       environment_name:
         description: "Human-readable deploy environment name"
@@ -37,6 +40,11 @@ on:
         default: ""
       image_ref:
         description: "Pre-admitted immutable image reference passed to the stack publisher"
+        required: false
+        type: string
+        default: ""
+      recover_failed_deployment_id:
+        description: "Exact failed live server receipt to replace; only set for an operator-directed recovery"
         required: false
         type: string
         default: ""
@@ -126,19 +134,7 @@ on:
         type: string
         default: ""
     secrets:
-      DEPLOY_SSH_KEY:
-        required: false
-      GHCR_TOKEN:
-        required: false
-      SENTRY_AUTH_TOKEN:
-        required: false
-      TF_API_TOKEN:
-        required: false
-      CLOUDFLARE_API_TOKEN:
-        required: false
       CLOUDFLARE_TERRAFORM_R2_API_TOKEN:
-        required: false
-      CLOUDFLARE_ACCOUNT_ID:
         required: false
 
 permissions:
@@ -157,6 +153,10 @@ jobs:
       source_sha: ${{ steps.publication.outputs.source_sha }}
       image_ref: ${{ steps.publication.outputs.image_ref }}
       deployment_id: ${{ steps.publication.outputs.deployment_id }}
+      recovery_deployment_id: ${{ steps.publication.outputs.recovery_deployment_id }}
+      recovery_source_sha: ${{ steps.publication.outputs.recovery_source_sha }}
+      recovery_image_digest: ${{ steps.publication.outputs.recovery_image_digest }}
+      recovery_run_url: ${{ steps.publication.outputs.recovery_run_url }}
       publication_decision: ${{ steps.publication.outputs.decision }}
     steps:
       - name: Resolve deploy target
@@ -192,12 +192,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Load credentials through Infisical OIDC
+        if: inputs.apply_infrastructure || inputs.server_host != '' || vars.ORACLE_SERVER_HOST != ''
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: DEPLOY_SSH_KEY
+
       - name: Setup SSH for live server identity
         if: inputs.apply_infrastructure || inputs.server_host != '' || vars.ORACLE_SERVER_HOST != ''
         uses: ./.github/actions/setup-ssh-host
         with:
           host: ${{ inputs.server_host != '' && inputs.server_host || vars.ORACLE_SERVER_HOST }}
-          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+          private_key: ${{ env.DEPLOY_SSH_KEY }}
 
       - name: Resolve and validate immutable server image before production changes
         id: image
@@ -225,6 +231,7 @@ jobs:
           RUN_ATTEMPT: ${{ github.run_attempt }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
           ENVIRONMENT_URL: ${{ inputs.public_url || 'https://dofek.fit' }}
+          RECOVER_FAILED_DEPLOYMENT_ID: ${{ inputs.recover_failed_deployment_id }}
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
@@ -246,7 +253,7 @@ jobs:
             if (!/^[a-f0-9]{40}$/.test(value ?? '')) throw new Error(`${label} is not a full source SHA`);
           }
 
-          const { SOURCE_SHA, STACK_NAME, SERVER_HOST, SSH_USER, REPOSITORY, RUN_ID, RUN_ATTEMPT, RUN_URL, ENVIRONMENT_URL, IMAGE_REF, GITHUB_OUTPUT } = process.env;
+          const { SOURCE_SHA, STACK_NAME, SERVER_HOST, SSH_USER, REPOSITORY, RUN_ID, RUN_ATTEMPT, RUN_URL, ENVIRONMENT_URL, IMAGE_REF, RECOVER_FAILED_DEPLOYMENT_ID = '', GITHUB_OUTPUT } = process.env;
           sha(SOURCE_SHA, 'server candidate');
           command('git', ['cat-file', '-e', `${SOURCE_SHA}^{commit}`]);
           const imageRef = IMAGE_REF;
@@ -277,7 +284,7 @@ jobs:
             after = page.pageInfo.endCursor;
           }
           const unresolved = history.filter((record) => !['SUCCESS', 'INACTIVE'].includes(record.state));
-          if (unresolved.length > 0) throw new Error(`unresolved server publication ${unresolved[0].databaseId} (${unresolved[0].state ?? 'no status'}); verify the original deploy job before rerunning its receipt finalizer`);
+          if (RECOVER_FAILED_DEPLOYMENT_ID !== '' && unresolved.length === 0) throw new Error(`selected server deployment ${RECOVER_FAILED_DEPLOYMENT_ID} is not unresolved`);
           const successful = history.find((record) => record.state === 'SUCCESS');
           const readLive = (service) => {
             const result = command('ssh', ['-o','BatchMode=yes','-o','ServerAliveInterval=30','-o','ServerAliveCountMax=10',`${SSH_USER}@${SERVER_HOST}`,`docker ps -q --filter label=com.docker.swarm.service.name=${service} | xargs -r docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{.Config.Image}} {{.State.Status}}'`]);
@@ -313,12 +320,65 @@ jobs:
             if (!/^sha256:[a-f0-9]{64}$/.test(value.image_digest ?? '')) throw new Error(`deployment ${record.databaseId} has no immutable image digest`);
             return value;
           };
+          let recovery = null;
+          if (RECOVER_FAILED_DEPLOYMENT_ID !== '') {
+            if (!/^[1-9][0-9]*$/.test(RECOVER_FAILED_DEPLOYMENT_ID)) throw new Error('failed server receipt recovery requires a positive exact deployment ID');
+            if (unresolved.length !== 1) throw new Error(`failed server receipt recovery requires exactly one unresolved server publication; found ${unresolved.length}`);
+            const selected = unresolved[0];
+            if (String(selected.databaseId) !== RECOVER_FAILED_DEPLOYMENT_ID || selected.state !== 'PENDING') throw new Error(`selected server deployment ${RECOVER_FAILED_DEPLOYMENT_ID} is not the sole pending publication`);
+            const prior = getIdentity(selected);
+            if (!/^\d+$/.test(String(prior.run_id ?? '')) || !/^[1-9][0-9]*$/.test(String(prior.run_attempt ?? '')) || typeof prior.run_url !== 'string') {
+              throw new Error(`server deployment ${selected.databaseId} has incomplete originating run metadata`);
+            }
+            const priorRunId = Number(prior.run_id);
+            const priorRunAttempt = Number(prior.run_attempt);
+            if (!Number.isSafeInteger(priorRunId) || !Number.isSafeInteger(priorRunAttempt)) throw new Error(`server deployment ${selected.databaseId} has invalid originating run metadata`);
+            const expectedRunUrl = new URL(RUN_URL);
+            const storedRunUrl = new URL(prior.run_url);
+            if (storedRunUrl.origin !== expectedRunUrl.origin || storedRunUrl.pathname !== `/${REPOSITORY}/actions/runs/${priorRunId}/attempts/${priorRunAttempt}`) {
+              throw new Error(`server deployment ${selected.databaseId} originating run URL does not match its immutable metadata`);
+            }
+            const priorRun = gh([`repos/${REPOSITORY}/actions/runs/${priorRunId}`]);
+            if (priorRun.id !== priorRunId || !Number.isSafeInteger(priorRun.run_attempt) || priorRun.run_attempt < priorRunAttempt || !/^[a-f0-9]{40}$/.test(priorRun.head_sha ?? '') || priorRun.status !== 'completed' || priorRun.conclusion !== 'failure') {
+              throw new Error(`originating run ${priorRunId} is not conclusively failed at the recorded attempt`);
+            }
+            const priorAttempt = gh([`repos/${REPOSITORY}/actions/runs/${priorRunId}/attempts/${priorRunAttempt}`]);
+            if (priorAttempt.id !== priorRunId || priorAttempt.run_attempt !== priorRunAttempt || priorAttempt.head_sha !== priorRun.head_sha || priorAttempt.status !== 'completed' || priorAttempt.conclusion !== 'failure') {
+              throw new Error(`originating run attempt ${priorRunId}/${priorRunAttempt} is not conclusively failed at the recorded run SHA`);
+            }
+            const jobPages = gh(['--paginate', '--slurp', `repos/${REPOSITORY}/actions/runs/${priorRunId}/attempts/${priorRunAttempt}/jobs?per_page=100`]);
+            if (!Array.isArray(jobPages) || jobPages.length === 0 || jobPages.some((page) => !Array.isArray(page.jobs) || !Number.isSafeInteger(page.total_count))) {
+              throw new Error(`originating run ${priorRunId}/${priorRunAttempt} job history is incomplete`);
+            }
+            const jobs = jobPages.flatMap((page) => page.jobs);
+            if (jobs.length !== jobPages[0].total_count || jobPages.some((page) => page.total_count !== jobPages[0].total_count)) {
+              throw new Error(`originating run ${priorRunId}/${priorRunAttempt} job history is incomplete`);
+            }
+            const serverStackJobNames = new Set([
+              'Deploy Server Production / Deploy Web Stack / Deploy Web Stack',
+              'Deploy Web Stack / Deploy Web Stack',
+            ]);
+            const failedDeployJobs = jobs.filter((job) => serverStackJobNames.has(job.name));
+            if (failedDeployJobs.length !== 1 || failedDeployJobs[0].run_id !== priorRunId || failedDeployJobs[0].run_attempt !== priorRunAttempt || failedDeployJobs[0].head_sha !== priorRun.head_sha || failedDeployJobs[0].status !== 'completed' || failedDeployJobs[0].conclusion !== 'failure') {
+              throw new Error(`originating run ${priorRunId}/${priorRunAttempt} did not complete its exact server stack job with failure`);
+            }
+            if (!git(['merge-base','--is-ancestor',prior.source_sha,SOURCE_SHA]) || prior.source_sha === SOURCE_SHA) {
+              throw new Error(`server recovery candidate ${SOURCE_SHA} must be a strict descendant of failed source ${prior.source_sha}`);
+            }
+            if (!successful) throw new Error('server recovery requires a prior verified success receipt to preserve the forward-only target baseline');
+            const baseline = getIdentity(successful);
+            if (!git(['merge-base','--is-ancestor',baseline.source_sha,prior.source_sha])) throw new Error(`failed server source ${prior.source_sha} is not a descendant of the latest verified baseline ${baseline.source_sha}`);
+            if (!live || live.sourceSha !== prior.source_sha || live.imageDigest !== prior.image_digest) throw new Error(`live web and worker identity does not match selected failed server deployment ${selected.databaseId}`);
+            recovery = { ...selected, identity: prior };
+          } else if (unresolved.length > 0) {
+            throw new Error(`unresolved server publication ${unresolved[0].databaseId} (${unresolved[0].state ?? 'no status'}); verify the original deploy job before rerunning its receipt finalizer`);
+          }
           const post = (method, path, body) => gh(['--method', method, path, '--input', '-'], body);
-          const record = (sourceSha, imageDigest, state, description) => {
+          const record = (sourceSha, imageDigest, state, description, recoveryFrom = null) => {
             const deployment = post('POST', `repos/${REPOSITORY}/deployments`, {
               ref: sourceSha, environment, task: 'server-stack-publish', auto_merge: false,
               required_contexts: [], production_environment: true,
-              payload: { source_sha: sourceSha, image_digest: imageDigest, run_id: RUN_ID, run_attempt: RUN_ATTEMPT, run_url: RUN_URL },
+              payload: { source_sha: sourceSha, image_digest: imageDigest, run_id: RUN_ID, run_attempt: RUN_ATTEMPT, run_url: RUN_URL, ...(recoveryFrom ? { recovery_from_deployment_id: recoveryFrom.databaseId } : {}) },
             });
             if (!Number.isInteger(deployment.id)) throw new Error('GitHub did not acknowledge the server deployment');
             appendFileSync(GITHUB_OUTPUT, `deployment_id=${deployment.id}\n`);
@@ -330,10 +390,10 @@ jobs:
           };
           const existingDeploymentId = successful?.databaseId ?? '';
 
-          if (successful) {
+          if (successful && !recovery) {
             const baseline = getIdentity(successful);
             if (!live || live.sourceSha !== baseline.source_sha || live.imageDigest !== baseline.image_digest) throw new Error('live server identity does not match the latest successful receipt; reconcile target evidence before publication');
-          } else if (live) {
+          } else if (!successful && !recovery && live) {
             throw new Error(`live server ${live.sourceSha} ${live.imageDigest} has no verified target receipt. Operator initialization required: establish the source from immutable task labels and image digest; verify the original release completed every server deployment gate; then create its server-production/server-stack-publish deployment receipt and success status. Do not infer completed verification from live task identity or workflow conclusion.`);
           }
 
@@ -356,7 +416,11 @@ jobs:
             appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndeployment_id=${existingDeploymentId}\ndecision=superseded\n`);
             process.exit(0);
           }
-          const deploymentId = record(SOURCE_SHA, candidateDigest, 'pending', `Server source ${SOURCE_SHA} awaiting stack verification`);
+          if (RECOVER_FAILED_DEPLOYMENT_ID !== '' && !recovery) throw new Error(`selected failed server deployment ${RECOVER_FAILED_DEPLOYMENT_ID} was not eligible for recovery`);
+          const deploymentId = record(SOURCE_SHA, candidateDigest, 'pending', `Server source ${SOURCE_SHA} awaiting stack verification`, recovery);
+          if (recovery) {
+            appendFileSync(GITHUB_OUTPUT, `recovery_deployment_id=${recovery.databaseId}\nrecovery_source_sha=${recovery.identity.source_sha}\nrecovery_image_digest=${recovery.identity.image_digest}\nrecovery_run_url=${recovery.identity.run_url}\n`);
+          }
           appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndeployment_id=${deploymentId}\ndecision=publish\n`);
           NODE
 
@@ -374,10 +438,7 @@ jobs:
       commit_sha: ${{ inputs.automatic_commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
     secrets:
-      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   deploy-web-stack:
     name: Deploy Web Stack
@@ -405,10 +466,6 @@ jobs:
       peerdb_public_url: ${{ inputs.peerdb_public_url }}
       peerdb_host_rule: ${{ inputs.peerdb_host_rule }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets:
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   finalize-server-receipt:
     name: Finalize verified server receipt
@@ -422,10 +479,15 @@ jobs:
     permissions:
       contents: read
       deployments: write
+      id-token: write
     env:
       SOURCE_SHA: ${{ needs.check.outputs.source_sha }}
       IMAGE_REF: ${{ needs.check.outputs.image_ref }}
       DEPLOYMENT_ID: ${{ needs.check.outputs.deployment_id }}
+      RECOVERY_DEPLOYMENT_ID: ${{ needs.check.outputs.recovery_deployment_id }}
+      RECOVERY_SOURCE_SHA: ${{ needs.check.outputs.recovery_source_sha }}
+      RECOVERY_IMAGE_DIGEST: ${{ needs.check.outputs.recovery_image_digest }}
+      RECOVERY_RUN_URL: ${{ needs.check.outputs.recovery_run_url }}
       STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
       SSH_USER: ${{ inputs.ssh_user != '' && inputs.ssh_user || 'ubuntu' }}
       SERVER_HOST: ${{ needs.terraform.outputs.server_host || inputs.server_host || vars.ORACLE_SERVER_HOST }}
@@ -437,10 +499,15 @@ jobs:
           persist-credentials: false
           ref: ${{ needs.check.outputs.source_sha }}
       - uses: ./.github/actions/setup-node-pnpm
+      - name: Load credentials through Infisical OIDC
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: DEPLOY_SSH_KEY
+
       - uses: ./.github/actions/setup-ssh-host
         with:
           host: ${{ needs.terraform.outputs.server_host || inputs.server_host || vars.ORACLE_SERVER_HOST }}
-          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+          private_key: ${{ env.DEPLOY_SSH_KEY }}
       - name: Verify live web and worker identity before finalizing
         id: verify-live
         env:
@@ -453,6 +520,7 @@ jobs:
           [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
           [[ "$IMAGE_REF" =~ @sha256:[a-f0-9]{64}$ ]]
           [[ "$DEPLOYMENT_ID" =~ ^[0-9]+$ ]]
+          RECOVERY_DEPLOYMENT_ID="${RECOVERY_DEPLOYMENT_ID:-}"
           image_digest="${IMAGE_REF##*@}"
           for service in web worker; do
             service_name="${STACK_NAME}_${service}"
@@ -470,22 +538,52 @@ jobs:
           jq -e --arg source "$SOURCE_SHA" --arg digest "$image_digest" \
             '.environment == "server-production" and .sha == $source and .payload.source_sha == $source and .payload.image_digest == $digest' \
             <<<"$deployment" >/dev/null || { echo "::error::Server deployment ref or payload does not match the admitted identity"; exit 1; }
+          if [ -n "$RECOVERY_DEPLOYMENT_ID" ]; then
+            [[ "$RECOVERY_DEPLOYMENT_ID" =~ ^[1-9][0-9]*$ && "$RECOVERY_SOURCE_SHA" =~ ^[a-f0-9]{40}$ && "$RECOVERY_IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+            jq -e --arg recovery_id "$RECOVERY_DEPLOYMENT_ID" \
+              '.payload.recovery_from_deployment_id == ($recovery_id | tonumber)' \
+              <<<"$deployment" >/dev/null || { echo "::error::New server receipt does not link to the admitted recovery receipt"; exit 1; }
+          fi
           statuses="$(gh api "repos/$REPOSITORY/deployments/$DEPLOYMENT_ID/statuses")"
           latest_state="$(jq -er '.[0].state // "missing"' <<<"$statuses")"
           if [ "$latest_state" = "success" ]; then
             jq -e --arg description "Verified server $SOURCE_SHA" '.[0].description == $description' \
               <<<"$statuses" >/dev/null || { echo "::error::Existing server receipt description does not match source"; exit 1; }
             echo "Server receipt already finalized."
-            exit 0
-          fi
-          if [ "$latest_state" = "inactive" ]; then
+          elif [ "$latest_state" = "inactive" ]; then
             echo "::error::Server deployment was reconciled inactive; do not overwrite it."; exit 1
-          fi
-          response="$(gh api --method POST "repos/$REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --input - <<JSON
+          elif [ "$latest_state" = "pending" ]; then
+            response="$(gh api --method POST "repos/$REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --input - <<JSON
           {"state":"success","auto_inactive":false,"log_url":"$RUN_URL","environment_url":"$ENVIRONMENT_URL","description":"Verified server $SOURCE_SHA"}
           JSON
-          )"
-          jq -e '.state == "success" and (.description | length <= 140)' <<<"$response" >/dev/null
+            )"
+            jq -e '.state == "success" and (.description | length <= 140)' <<<"$response" >/dev/null
+          else
+            echo "::error::Server deployment has an unexpected receipt state: $latest_state"; exit 1
+          fi
+          if [ -n "$RECOVERY_DEPLOYMENT_ID" ]; then
+            old_deployment="$(gh api "repos/$REPOSITORY/deployments/$RECOVERY_DEPLOYMENT_ID")"
+            jq -e --arg id "$RECOVERY_DEPLOYMENT_ID" --arg source "$RECOVERY_SOURCE_SHA" --arg digest "$RECOVERY_IMAGE_DIGEST" \
+              --arg run_url "$RECOVERY_RUN_URL" \
+              '.id == ($id | tonumber) and .environment == "server-production" and .task == "server-stack-publish" and .sha == $source and .payload.source_sha == $source and .payload.image_digest == $digest and .payload.run_url == $run_url' \
+              <<<"$old_deployment" >/dev/null || { echo "::error::Selected recovery receipt no longer matches its admitted immutable metadata"; exit 1; }
+            old_statuses="$(gh api "repos/$REPOSITORY/deployments/$RECOVERY_DEPLOYMENT_ID/statuses")"
+            old_state="$(jq -er '.[0].state // "missing"' <<<"$old_statuses")"
+            expected_inactive_description="Replaced by verified server $SOURCE_SHA"
+            if [ "$old_state" = "inactive" ]; then
+              jq -e --arg description "$expected_inactive_description" '.[0].description == $description' \
+                <<<"$old_statuses" >/dev/null || { echo "::error::Selected recovery receipt was inactivated for a different release"; exit 1; }
+              echo "Replaced server receipt already finalized."
+            elif [ "$old_state" = "pending" ]; then
+              response="$(gh api --method POST "repos/$REPOSITORY/deployments/$RECOVERY_DEPLOYMENT_ID/statuses" --input - <<JSON
+          {"state":"inactive","auto_inactive":false,"log_url":"$RUN_URL","description":"$expected_inactive_description"}
+          JSON
+              )"
+              jq -e --arg description "$expected_inactive_description" '.state == "inactive" and .description == $description' <<<"$response" >/dev/null
+            else
+              echo "::error::Selected recovery receipt has an unexpected state after replacement: $old_state"; exit 1
+            fi
+          fi
 
   publisher-result:
     name: Server publisher result

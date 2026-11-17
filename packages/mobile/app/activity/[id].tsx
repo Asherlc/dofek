@@ -9,13 +9,11 @@ import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
-import { activityQueryPlaceholder } from "@dofek/training/activity-query-placeholder";
-import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import { cadenceUnit, isActivityDetailType, isCyclingActivity } from "@dofek/training/training";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { type ComponentProps, useCallback, useMemo, useState } from "react";
+import { type ComponentProps, useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -26,24 +24,15 @@ import {
   Text,
   View,
 } from "react-native";
-import type {
-  ActivityMetricSourceSelection,
-  ActivityMetric as SourceMetric,
-} from "../../../server/src/contracts/activity-metric-sources.ts";
-import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ActivityClimbingPanel } from "../../components/ActivityClimbingPanel";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
-import {
-  AreaChart,
-  CHART_COLORS,
-  chartStyles,
-  LineChart,
-} from "../../components/activity/ActivityDetailCharts";
+import { ActivityMetricsCharts, chartStyles } from "../../components/activity/ActivityDetailCharts";
 import { ActivityDetailHeader } from "../../components/activity/ActivityDetailHeader";
-import { ActivityMetricSourcePicker } from "../../components/activity/ActivityMetricSourcePicker";
 import { RecomputeActivityButton } from "../../components/activity/RecomputeActivityButton";
 import { statsStyles, styles } from "../../components/activity/styles";
+import { useActivityClimbing } from "../../components/activity/useActivityClimbing";
 import { useActivityMapHover } from "../../components/activity/useActivityMapHover";
+import { useActivityMetrics } from "../../components/activity/useActivityMetrics";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
 import { CyclingThresholdDetails } from "../../components/CyclingThresholdDetails";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
@@ -64,7 +53,9 @@ const EMPTY_ROUTE_POINTS: ComponentProps<typeof RouteMap>["points"] = [];
 
 // ── Stats Grid ──
 
-type StatItem = ActivityMetric | { label: string; value: string; qualifier?: string };
+type StatItem =
+  | ActivityMetric
+  | { label: string; value: string; qualifier?: string; attribution?: string };
 
 function StatsGrid({ stats }: { stats: StatItem[] }) {
   return (
@@ -109,6 +100,14 @@ function StatsGrid({ stats }: { stats: StatItem[] }) {
             {"qualifier" in stat && stat.qualifier && (
               <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
                 {stat.qualifier}
+              </Text>
+            )}
+            {"attribution" in stat && stat.attribution && (
+              <Text
+                accessibilityLiveRegion="polite"
+                style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}
+              >
+                {stat.attribution}
               </Text>
             )}
           </View>
@@ -342,38 +341,22 @@ export default function ActivityDetailScreen() {
     { id: id ?? "" },
     { ...ACTIVITY_IMAGES_QUERY_OPTIONS, enabled: !!id },
   );
-  const metricSources = trpc.activity.metricSources.useQuery(
-    { id: id ?? "", responseVersion: 2 },
-    { enabled: !!id },
-  );
   const hardware = trpc.activity.hardware.useQuery({ id: id ?? "" }, { enabled: !!id });
-  const [sourceSelection, setSourceSelection] = useState<{
-    activityId: string;
-    sources: ActivityMetricSourceSelection;
-  } | null>(null);
-  const sources: ActivityMetricSourceSelection = {};
-  for (const metric of metricSources.data ?? []) {
-    const selected =
-      sourceSelection?.activityId === id ? sourceSelection.sources[metric.key] : undefined;
-    sources[metric.key] = metric.sources.some((source) => source.id === selected)
-      ? selected
-      : metric.defaultSourceId;
-  }
-  const selectSource = (metric: SourceMetric, sourceId: string) =>
-    setSourceSelection((previous) => ({
-      activityId: id ?? "",
-      sources: { ...(previous?.activityId === id ? previous.sources : {}), [metric]: sourceId },
-    }));
-  const sourceControls = (metricSources.data ?? []).map((metric) => ({
-    ...metric,
-    selectedId: sources[metric.key] ?? metric.defaultSourceId,
-    onChange: (sourceId: string) => selectSource(metric.key, sourceId),
-  }));
-  const heartRateSourceInput = sources.heartRate ? { heartRateSourceId: sources.heartRate } : {};
-  const stream = trpc.activity.stream.useQuery(
-    { id: id ?? "", maxPoints: 200, sources },
-    { enabled: !!id, placeholderData: (previousData) => previousData },
-  );
+  const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
+  const isClimbingActivity =
+    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
+  const metrics = useActivityMetrics(id, { isCycling, isClimbing: isClimbingActivity });
+  const {
+    metricSources,
+    sourceControls,
+    stream,
+    hrZones,
+    points,
+    hasPower,
+    powerWork,
+    powerZones,
+    heartRateContext,
+  } = metrics;
   const route = trpc.activity.route.useQuery(
     { id: id ?? "", maxPoints: 200 },
     {
@@ -382,113 +365,24 @@ export default function ActivityDetailScreen() {
         query.state.data?.status === "processing" ? processingPollInterval("active") : false,
     },
   );
-  const hrZones = trpc.activity.hrZones.useQuery(
-    { id: id ?? "", ...heartRateSourceInput },
-    { enabled: !!id, placeholderData: (previousData) => previousData },
-  );
-  const points = stream.data ?? [];
-  const hasPower = points.some((p) => p.power != null);
-  const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
-  const powerWork = trpc.activity.powerWork.useQuery(
-    { id: id ?? "", powerSourceId: sources.power },
-    {
-      enabled: !!id && isCycling,
-      placeholderData: activityQueryPlaceholder(id),
-    },
-  );
-  const powerZones = trpc.activity.powerZones.useQuery(
-    { id: id ?? "", powerSourceId: sources.power },
-    {
-      enabled: !!id && isCycling && hasPower,
-      placeholderData: activityQueryPlaceholder(id),
-    },
-  );
   const isStrengthActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "strength");
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
     { id: id ?? "" },
     { enabled: !!id && isStrengthActivity },
   );
-  const isClimbingActivity =
-    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
-  const heartRateContext = trpc.activity.heartRateContext.useQuery(
-    { id: id ?? "", maxPoints: 200, ...heartRateSourceInput },
-    { enabled: !!id && isClimbingActivity, placeholderData: activityQueryPlaceholder(id) },
-  );
-  const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
-    { activityId: id ?? "", responseVersion: 5 },
-    { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
-  );
-  const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
-    { activityId: id, responseVersion: 5 },
-    { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
-  );
-  const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
-  const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
+  const climbing = useActivityClimbing(id, isClimbingActivity);
+  const climbingEntries = climbing.entries;
+  const entrySuggestions = climbing.suggestions;
+  const climbingEntriesLoading = climbing.loading;
+  const selectedClimbingEntryId = climbing.selectedEntryId;
+  const setSelectedClimbingEntryId = climbing.setSelectedEntryId;
   const [highlightedClimbId, setHighlightedClimbId] = useState<string | null>(null);
-  const selectedClimbingEntry = [
-    ...(climbingEntries.data ?? []),
-    ...(entrySuggestions.data ?? []),
-  ].find((entry) => entry.id === selectedClimbingEntryId);
-  const climbingLocations = useMemo(
-    () =>
-      buildClimbingMapLocations([
-        ...(climbingEntries.data ?? []),
-        ...(entrySuggestions.data ?? []),
-      ]),
-    [climbingEntries.data, entrySuggestions.data],
-  );
-  const climbMarkers = useMemo(
-    () =>
-      isClimbingActivity
-        ? buildClimbingMapMarkers([
-            ...(climbingEntries.data ?? []),
-            ...(entrySuggestions.data ?? []),
-          ])
-        : [],
-    [isClimbingActivity, climbingEntries.data, entrySuggestions.data],
-  );
-  const [entryAttachState, setEntryAttachState] = useState<
-    Record<string, { pending: boolean; error: string | null }>
-  >({});
-  const attachEntry = trpc.climbing.attachClimbingLogEntry.useMutation({
-    onSuccess: async (_result, input) => {
-      await Promise.all([
-        trpcUtils.activity.images.invalidate({ id: input.activityId }),
-        trpcUtils.climbing.activityLogEntries.invalidate({
-          activityId: input.activityId,
-          responseVersion: 5,
-        }),
-        trpcUtils.climbing.sessionSummary.invalidate(),
-        trpcUtils.mobileDashboard.trainingV2.invalidate(),
-        trpcUtils.climbing.volumeByGrade.invalidate(),
-        trpcUtils.climbing.strengths.invalidate(),
-        trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
-          activityId: input.activityId,
-          responseVersion: 5,
-        }),
-      ]);
-    },
-  });
-  const handleAttachEntry = (entryId: string) => {
-    if (!id) return;
-    setEntryAttachState((current) => ({ ...current, [entryId]: { pending: true, error: null } }));
-    attachEntry.mutate(
-      { activityId: id, climbingLogEntryId: entryId },
-      {
-        onSuccess: () =>
-          setEntryAttachState((current) => ({
-            ...current,
-            [entryId]: { pending: false, error: null },
-          })),
-        onError: (error) =>
-          setEntryAttachState((current) => ({
-            ...current,
-            [entryId]: { pending: false, error: userFacingErrorMessage(error) },
-          })),
-      },
-    );
-  };
+  const selectedClimbingEntry = climbing.selectedEntry;
+  const climbingLocations = climbing.locations;
+  const climbMarkers = climbing.markers;
+  const entryAttachState = climbing.attachmentStates;
+  const handleAttachEntry = climbing.attachEntry;
   const isHangboardingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "hangboard");
   const hangboardDetails = trpc.activity.hangboardDetails.useQuery(
@@ -653,6 +547,7 @@ export default function ActivityDetailScreen() {
       label: "Energy Output",
       value: `${formatNumber(powerWork.data.workKilojoules, 0)} kJ`,
       qualifier: powerWork.data.coverage.coveragePct < 99 ? "Partial power data" : undefined,
+      attribution: metrics.attributionHints.powerWork,
     });
   }
   stats.push(
@@ -805,189 +700,94 @@ export default function ActivityDetailScreen() {
       {isClimbingActivity && heartRateContext.error && (
         <QueryStatePanel variant="error" message={heartRateContext.error.message} />
       )}
-      {sourceControls.length > 0 &&
-        (stream.isFetching ||
+      {sourceControls.length > 0 && (
+        <Text
+          accessibilityLiveRegion="polite"
+          style={{ color: colors.textSecondary, minHeight: 20, lineHeight: 20 }}
+        >
+          {stream.isFetching ||
           heartRateContext.isFetching ||
           hrZones.isFetching ||
           powerZones.isFetching ||
-          powerWork.isFetching) && (
-          <Text accessibilityLiveRegion="polite" style={{ color: colors.textSecondary }}>
-            Updating metrics…
-          </Text>
-        )}
+          powerWork.isFetching
+            ? "Updating metrics…"
+            : null}
+        </Text>
+      )}
       {stream.isLoading ? (
         <View style={styles.chartsLoading}>
           <ActivityIndicator color={colors.accent} size="small" />
           <Text style={styles.chartsLoadingText}>Loading charts...</Text>
         </View>
       ) : null}
-      {sourceControls
-        .filter((metric) => metric.key === "heartRate")
-        .map((metric) => (
-          <ActivityMetricSourcePicker
-            key={metric.key}
-            label={metric.label}
-            serverUrl={serverUrl}
-            sources={metric.sources}
-            selectedId={metric.selectedId}
-            onChange={metric.onChange}
-          />
-        ))}
-      {hasHr && (
-        <>
-          <LineChart
-            highlightedClimbId={highlightedClimbId}
-            onSelectClimb={setHighlightedClimbId}
-            activityWindow={
-              isClimbingActivity ? (heartRateContext.data?.window ?? activity) : activity
-            }
-            climbAnnotations={
-              isClimbingActivity
-                ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
-                : undefined
-            }
-            data={
-              isClimbingActivity && heartRateContext.data
-                ? heartRateContext.data.points
-                : points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate }))
-            }
-            color={CHART_COLORS.heartRate}
-            label="Heart Rate"
-            unit="bpm"
-            onHoverTime={hasGps ? handleHeartRateHoverTime : undefined}
-            onScrubStart={hasGps ? handleScrubStart : undefined}
-            onScrubEnd={hasGps ? handleScrubEnd : undefined}
-          />
-          {isClimbingActivity && heartRateContext.data && (
-            <Text style={styles.chartsLoadingText}>
-              {heartRateContext.data.window.endedAt
-                ? "HR chart spans 5 minutes before and after the activity."
-                : "HR chart starts 5 minutes before the activity."}
-            </Text>
-          )}
-        </>
-      )}
-
-      {sourceControls
-        .filter((metric) => metric.key === "power")
-        .map((metric) => (
-          <ActivityMetricSourcePicker
-            key={metric.key}
-            label={metric.label}
-            serverUrl={serverUrl}
-            sources={metric.sources}
-            selectedId={metric.selectedId}
-            onChange={metric.onChange}
-          />
-        ))}
-      {hasPower && (
-        <LineChart
-          data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.power }))}
-          color={CHART_COLORS.power}
-          label="Power"
-          unit="W"
-          onHoverIndex={hasGps ? handleHoverIndex : undefined}
-          onScrubStart={hasGps ? handleScrubStart : undefined}
-          onScrubEnd={hasGps ? handleScrubEnd : undefined}
-        />
-      )}
-
-      {sourceControls
-        .filter((metric) => metric.key === "speed")
-        .map((metric) => (
-          <ActivityMetricSourcePicker
-            key={metric.key}
-            label={metric.label}
-            serverUrl={serverUrl}
-            sources={metric.sources}
-            selectedId={metric.selectedId}
-            onChange={metric.onChange}
-          />
-        ))}
-      {points.some((point) => point.speed != null) && (
-        <LineChart
-          data={points.map((p) => ({
-            recordedAt: p.recordedAt,
-            value: p.speed != null ? units.convertSpeed(p.speed * 3.6) : null,
-          }))}
-          color={CHART_COLORS.speed}
-          label="Speed"
-          unit={units.speedLabel}
-          onHoverIndex={hasGps ? handleHoverIndex : undefined}
-          onScrubStart={hasGps ? handleScrubStart : undefined}
-          onScrubEnd={hasGps ? handleScrubEnd : undefined}
-        />
-      )}
-      {sourceControls
-        .filter((metric) => metric.key === "cadence")
-        .map((metric) => (
-          <ActivityMetricSourcePicker
-            key={metric.key}
-            label={metric.label}
-            serverUrl={serverUrl}
-            sources={metric.sources}
-            selectedId={metric.selectedId}
-            onChange={metric.onChange}
-          />
-        ))}
-      {points.some((point) => point.cadence != null) && (
-        <LineChart
-          data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.cadence }))}
-          color={CHART_COLORS.cadence}
-          label="Cadence"
-          unit={cadenceUnit(activity.activityType)}
-          onHoverIndex={hasGps ? handleHoverIndex : undefined}
-          onScrubStart={hasGps ? handleScrubStart : undefined}
-          onScrubEnd={hasGps ? handleScrubEnd : undefined}
-        />
-      )}
-      {sourceControls
-        .filter((metric) => metric.key === "altitude")
-        .map((metric) => (
-          <ActivityMetricSourcePicker
-            key={metric.key}
-            label={metric.label}
-            showLabel={false}
-            serverUrl={serverUrl}
-            sources={metric.sources}
-            selectedId={metric.selectedId}
-            onChange={metric.onChange}
-          />
-        ))}
-      {hasAltitude && (
-        <AreaChart
-          data={points.map((p) => ({
-            recordedAt: p.recordedAt,
-            value: p.altitude != null ? units.convertElevation(p.altitude) : null,
-          }))}
-          color={CHART_COLORS.altitude}
-          label="Elevation Profile"
-          unit={units.elevationLabel}
-          onHoverIndex={hasGps ? handleHoverIndex : undefined}
-          onScrubStart={hasGps ? handleScrubStart : undefined}
-          onScrubEnd={hasGps ? handleScrubEnd : undefined}
-        />
-      )}
+      <ActivityMetricsCharts
+        points={points}
+        sourceControls={sourceControls}
+        sourceAttribution={{
+          ...metrics.attributionHints.stream,
+          heartRate:
+            isClimbingActivity && heartRateContext.data !== undefined
+              ? metrics.attributionHints.heartRateContext
+              : metrics.attributionHints.stream.heartRate,
+        }}
+        serverUrl={serverUrl}
+        activityWindow={activity}
+        cadenceLabel={cadenceUnit(activity.activityType)}
+        isClimbingActivity={isClimbingActivity}
+        heartRateContext={heartRateContext.data}
+        climbingAnnotations={climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])}
+        highlightedClimbId={highlightedClimbId}
+        onSelectClimb={setHighlightedClimbId}
+        hasHr={hasHr}
+        hasPower={hasPower}
+        hasAltitude={hasAltitude}
+        units={units}
+        hasGps={hasGps}
+        onHoverIndex={handleHoverIndex}
+        onHoverTime={handleHeartRateHoverTime}
+        onScrubStart={handleScrubStart}
+        onScrubEnd={handleScrubEnd}
+      />
 
       {(hasHr || zones.length > 0) && (
-        <HrZonesChart
-          zones={zones}
-          loading={hrZones.isLoading}
-          errorMessage={
-            hrZones.error
-              ? userFacingErrorMessage(
-                  hrZones.error,
-                  "Heart rate zones could not be loaded. Please try again.",
-                )
-              : undefined
-          }
-        />
+        <View>
+          {zones.length > 0 && metrics.attributionHints.hrZones && (
+            <Text
+              accessibilityLiveRegion="polite"
+              style={{ color: colors.textSecondary, fontSize: 12 }}
+            >
+              {metrics.attributionHints.hrZones}
+            </Text>
+          )}
+          <HrZonesChart
+            zones={zones}
+            loading={hrZones.isLoading}
+            errorMessage={
+              hrZones.error
+                ? userFacingErrorMessage(
+                    hrZones.error,
+                    "Heart rate zones could not be loaded. Please try again.",
+                  )
+                : undefined
+            }
+          />
+        </View>
       )}
 
       {/* Power Zones and dated manual FTP settings link */}
       {powerZones.error && <QueryStatePanel variant="error" message={powerZones.error.message} />}
       {isCycling && hasPower && powerZones.data != null && (
         <View style={{ gap: 8 }}>
+          {powerZones.data.ftp != null &&
+            powerZones.data.zones.length > 0 &&
+            metrics.attributionHints.powerZones && (
+              <Text
+                accessibilityLiveRegion="polite"
+                style={{ color: colors.textSecondary, fontSize: 12 }}
+              >
+                {metrics.attributionHints.powerZones}
+              </Text>
+            )}
           <CyclingThresholdDetails evidence={powerZones.data.thresholdEvidence} />
           {!powerZones.error && !powerZones.isFetching && powerZones.data.ftp == null ? (
             <Pressable

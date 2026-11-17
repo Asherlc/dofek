@@ -4,6 +4,11 @@ import { SleepRepository, sleepStageRowSchema } from "../repositories/sleep-repo
 
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
+const stagesByDateSchema = z.object({
+  date: z.iso.date().nullable(),
+  stages: z.array(sleepStageRowSchema),
+});
+
 export const sleepRouter = router({
   list: selectedChartDateRangeQuery(
     "sleep.list",
@@ -20,7 +25,10 @@ export const sleepRouter = router({
     },
   ),
 
-  stages: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  stages: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    outputSchema: z.array(sleepStageRowSchema),
+  })
     .input(z.object({ sessionId: z.guid() }))
     .query(({ ctx, input }) => {
       const repo = new SleepRepository(
@@ -33,7 +41,10 @@ export const sleepRouter = router({
       return repo.getStages(input.sessionId);
     }),
 
-  latestStages: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(({ ctx }) => {
+  latestStages: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    outputSchema: z.array(sleepStageRowSchema),
+  }).query(({ ctx }) => {
     const repo = new SleepRepository(
       ctx.db,
       ctx.userId,
@@ -44,9 +55,9 @@ export const sleepRouter = router({
     return repo.getLatestStages();
   }),
 
-  stagesByDate: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+  stagesByDate: cachedProtectedQuery({ maxAge: CacheTTL.SHORT, outputSchema: stagesByDateSchema })
     .input(z.object({ date: z.iso.date().optional() }).optional())
-    .output(z.object({ date: z.iso.date().nullable(), stages: z.array(sleepStageRowSchema) }))
+    .output(stagesByDateSchema)
     .query(({ ctx, input }) => {
       const repo = new SleepRepository(
         ctx.db,

@@ -310,6 +310,39 @@ Required app, database, ClickHouse, PeerDB, export, and mobile pipeline keys are
 listed in the deploy steps and mobile CI sections below. Missing required keys
 must fail the workflow before rollout.
 
+CI credentials also come directly from Infisical through
+[the shared OIDC action](../.github/actions/load-infisical-secrets/action.yml),
+which masks each selected value before exporting it to subsequent steps.
+Each consuming job and its reusable-workflow callers require
+`id-token: write`; reusable workflows load their own credentials rather than
+accepting copies of repository secrets. See
+[GitHub OIDC](https://docs.github.com/en/actions/concepts/security/openid-connect)
+and [Infisical OIDC authentication](https://infisical.com/docs/documentation/platform/identities/oidc-auth).
+The separately managed `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` remains in the
+GitHub `terraform` environment, and `GITHUB_TOKEN` is provided by GitHub.
+Neither belongs to the production-root secret sync. Keep explicit
+`CLOUDFLARE_TERRAFORM_R2_API_TOKEN` declarations and pass-through at every
+reusable-workflow layer leading to Terraform: GitHub requires callers to
+pass an environment secret even when its value exists only in the called
+job's environment. See
+[reusable workflow environment secrets](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow).
+GitHub also documents
+[environment secrets](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)
+and [automatic token authentication](https://docs.github.com/en/actions/concepts/security/github_token).
+
+Do not mirror the entire production root into GitHub: repositories have a
+[100-secret limit](https://docs.github.com/en/actions/reference/security/secrets#limits-for-secrets).
+To retire an existing mirror, first merge the OIDC consumers, verify their
+hosted credential-loading steps, and let runs using the old workflows finish.
+Then disable the Infisical GitHub sync before deleting its repository copies
+with `gh secret delete <name> --repo Asherlc/dofek`. Compare names from
+`gh secret list --repo Asherlc/dofek --json name` with a names-only Infisical
+inventory, and delete only confirmed mirror-owned keys. Preserve Infisical
+source secrets and the `terraform` environment secret. Historical workflow
+reruns can still reference the removed copies; use the current workflow's
+dispatch entry point when deploying an older source revision. Infisical
+documents [GitHub sync settings](https://infisical.com/docs/integrations/secret-syncs/github).
+
 The renderer also creates `web-pre-migration.env` for the canonical dependency
 apply, which can still run the previously deployed web image. This artifact
 contains the normal web environment plus `METRIC_STREAM_TOPIC` derived strictly
@@ -323,7 +356,7 @@ in Infisical. See the [renderer](../scripts/deploy-service-environment.ts) and
 [command-prefixed environment assignments](https://www.gnu.org/software/bash/manual/html_node/Environment.html).
 
 The web image build and post-rollout Sentry release step also require the
-GitHub Actions `SENTRY_AUTH_TOKEN` secret already used for browser source-map
+Infisical Production `SENTRY_AUTH_TOKEN` secret already used for browser source-map
 uploads. The token must be able to manage releases for both `dofek-web` and
 `dofek-server`; Sentry documents `org:ci` as the scope intended for CI release
 and deployment workflows:
@@ -611,6 +644,41 @@ it does not repeat Terraform or stack mutation. If any existing stack
 verification failed, keep the intent unresolved until the target is reconciled
 and all required verification gates pass. Do not mark it inactive while either
 service may be running the candidate.
+
+For one explicitly selected failed live candidate, the canonical `Deploy`
+workflow also supports a guarded replacement through its `web-stack` target.
+Dispatch from `main` with the exact immutable `image_tag` for a verified strict
+descendant image and `recover_failed_deployment_id` set to the one pending
+`server-stack-publish` deployment ID. Admission requires that ID to be the sole
+unresolved server receipt; its immutable payload must link to a completed failed
+server-stack job on the recorded run attempt, the current run must be completed
+with failure, and every running web/worker task must match that receipt's source
+and image digest. The run's control SHA may differ from the selected image
+source when `image_tag` is used; admission checks that control SHA consistently
+across the run, attempt, and job, while the deployment payload binds the selected
+image source and digest. The replacement candidate must be a strict descendant
+of both the failed source and the latest verified success. The workflow then
+runs its ordinary Terraform, migration, CDC, API, health, and stack verification
+gates without skipping phases. It records the new receipt as pending and links
+the old deployment ID in its payload.
+
+Only after all stack gates pass and both live web and worker images match the
+new immutable candidate does the finalizer mark the new receipt successful and
+the replaced receipt inactive. The finalizer is safe to rerun if the new
+success write or old inactive write was only partially acknowledged: it
+verifies the live identity again, leaves an already successful new receipt
+unchanged, and completes the old inactive status only when it names that same
+verified replacement. If the recovery deployment itself fails, both receipts
+remain unresolved and later publication stays blocked. Retry only failed jobs
+in that same workflow run so the original admission outputs and receipt IDs are
+preserved. If that run cannot be safely retried, reconcile every receipt only
+after checking the current web and worker identities and the complete run
+history; do not clear a live candidate or start a second recovery dispatch.
+Admission reads GitHub's [workflow run attempt](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)
+and [attempt job history](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt)
+endpoints; finalization uses the existing
+[deployment status API](https://docs.github.com/en/rest/deployments/statuses#create-a-deployment-status).
+
 Bootstrap with no successful server receipt is fail-closed whenever a live
 web/worker target exists. Matching task labels and image digests establish only
 the observed live identity; they do not prove that the prior release passed
@@ -1115,10 +1183,11 @@ Workflows using this path:
 - `.github/workflows/deploy-ota.yml`
 - `.github/workflows/mobile-preview-ota.yml`
 
-PR preview object cleanup:
+PR preview uploads and cleanup:
 
 - `.github/workflows/cleanup-pr-r2.yml` waits for the same PR’s mobile publication through [GitHub workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency), loads required identity before deleting, then removes `pr-<number>/` objects from `dofek-storybook` and `<app-id>/pr-<number>/` objects from `dofek-ota-releases` when the PR closes. Both deletions can be rerun safely using [AWS recursive removal](https://docs.aws.amazon.com/cli/latest/reference/s3/rm.html). The historical `dofek-ota` bucket remains untouched.
 - R2 lifecycle rules in `deploy/storage.tf` also expire preview prefixes after 14 days as a safety net if a workflow-run cleanup is missed.
+- `.github/workflows/storybook-preview.yml` explicitly selects the AWS CLI `classic` S3 transfer client before uploading previews. In a controlled AWS CLI 2.40.0 replay, CRT returned failure after R2's HTTP 429 / `ServiceUnavailable`, while `classic` retried the same response under the default standard retry behavior; the native `classic` upload to R2 also succeeded. The pinned [CRT status classifier](https://github.com/awslabs/aws-c-s3/blob/1e5889547f1bdfd1d950829971503091e2dc91fd/source/s3_meta_request.c#L1808-L1829) and [recoverable error map](https://github.com/awslabs/aws-c-s3/blob/1e5889547f1bdfd1d950829971503091e2dc91fd/source/s3_util.c#L908-L925) explain the observed response handling; the pinned [AWS CLI 2.40.0 standard retry checker](https://github.com/aws/aws-cli/blob/2.40.0/awscli/botocore/retries/standard.py#L502-L527) recognizes an unmodeled HTTP 429. Keep the standard retry mode and attempt budget unchanged. AWS documents the [transfer-client selection](https://docs.aws.amazon.com/cli/latest/topic/s3-config.html#preferred_transfer_client); Cloudflare documents R2's [S3 API compatibility](https://developers.cloudflare.com/r2/api/s3/api/).
 
 Postgres backup status:
 

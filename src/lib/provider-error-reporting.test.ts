@@ -8,7 +8,10 @@ import {
   ProviderConnectionError,
   ProviderStoredIdentityInvalidError,
 } from "../providers/auth-errors.ts";
-import { shouldReportProviderError } from "./provider-error-reporting.ts";
+import {
+  isKnownProviderHttp5xxError,
+  shouldReportProviderError,
+} from "./provider-error-reporting.ts";
 
 describe("provider exception reporting", () => {
   it.each([
@@ -33,9 +36,39 @@ describe("provider exception reporting", () => {
     expect(shouldReportProviderError(error)).toBe(false);
   });
 
+  it.each([500, 503, 521, 599])(
+    "keeps a typed HTTP %i response in sync status and metrics without a Sentry alert",
+    (statusCode) => {
+      const error = new ProviderServiceUnavailableError({
+        message: `Provider returned HTTP ${statusCode}`,
+        providerId: "provider",
+        statusCode,
+        responseBody: "unavailable",
+      });
+
+      expect(shouldReportProviderError(error)).toBe(false);
+      expect(shouldReportProviderError(new Error("wrapped response", { cause: error }))).toBe(
+        false,
+      );
+      expect(isKnownProviderHttp5xxError(error)).toBe(true);
+      expect(isKnownProviderHttp5xxError(new Error("wrapped response", { cause: error }))).toBe(
+        true,
+      );
+    },
+  );
+
+  it("does not classify a transport timeout as an HTTP 5xx response", () => {
+    expect(
+      isKnownProviderHttp5xxError(
+        new ProviderRequestTimeoutError({ providerId: "provider", timeoutMs: 1000 }),
+      ),
+    ).toBe(false);
+  });
+
   it.each([
     new SyntaxError("Invalid response JSON"),
     new Error("Database is unavailable"),
+    new Error("HTTP 503 with unknown cause"),
     new Error("HTTP 403 with unknown cause"),
     new ProviderConnectionError("Garmin", "permissions", 403),
     "Unexpected thrown value",

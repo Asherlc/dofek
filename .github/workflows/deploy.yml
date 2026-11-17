@@ -13,20 +13,13 @@ on:
         required: false
         type: string
         default: ""
+      recover_failed_deployment_id:
+        description: "Exact failed live server deployment receipt to replace after verifying its source run and live identity. Use only for target web-stack."
+        required: false
+        type: string
+        default: ""
     secrets:
-      SENTRY_AUTH_TOKEN:
-        required: false
-      DEPLOY_SSH_KEY:
-        required: false
-      GHCR_TOKEN:
-        required: false
-      TF_API_TOKEN:
-        required: false
-      CLOUDFLARE_API_TOKEN:
-        required: false
       CLOUDFLARE_TERRAFORM_R2_API_TOKEN:
-        required: false
-      CLOUDFLARE_ACCOUNT_ID:
         required: false
   workflow_dispatch:
     inputs:
@@ -44,6 +37,10 @@ on:
           - ota
       image_tag:
         description: "Docker image tag to deploy (e.g. sha-abc1234). Skips Docker build when provided."
+        required: false
+        type: string
+      recover_failed_deployment_id:
+        description: "Exact failed live server deployment receipt to replace after verifying its source run and live identity. Use only for target web-stack."
         required: false
         type: string
 
@@ -70,10 +67,16 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF: ${{ github.ref }}
           EVENT_SHA: ${{ github.sha }}
+          TARGET: ${{ inputs.target }}
+          RECOVER_FAILED_DEPLOYMENT_ID: ${{ inputs.recover_failed_deployment_id }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REF" != "refs/heads/main" ]; then
             echo "::error::Dispatch Deploy from main, then select an immutable source with image_tag when needed."
+            exit 1
+          fi
+          if [ -n "$RECOVER_FAILED_DEPLOYMENT_ID" ] && { [ "$EVENT_NAME" != "workflow_dispatch" ] || [ "$TARGET" != "web-stack" ] || [[ ! "$RECOVER_FAILED_DEPLOYMENT_ID" =~ ^[1-9][0-9]*$ ]]; }; then
+            echo "::error::Failed server receipt recovery requires a positive exact deployment ID on a manual web-stack dispatch."
             exit 1
           fi
           if [[ ! "$EVENT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -189,10 +192,7 @@ jobs:
       commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
     secrets:
-      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   docker:
     name: Docker Build & Push
@@ -201,11 +201,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     uses: ./.github/workflows/build-docker.yml
     with:
       commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
-    secrets:
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
 
   web-stack:
@@ -236,19 +235,14 @@ jobs:
       automatic_commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       image_tag: ${{ inputs.image_tag }}
       image_ref: ${{ needs.resolve-source.outputs.image_ref || needs.docker.outputs.image_ref }}
+      recover_failed_deployment_id: ${{ inputs.recover_failed_deployment_id }}
       ssh_user: ubuntu
       stack_override: deploy/stack.oracle.yml
       public_url: https://dofek.fit
       web_host_rule: "Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`) || Host(`dofek.asherlc.com`)"
       ci_run_id: ${{ format('{0}', github.run_id) }}
     secrets:
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   ios-archive:
     name: Build iOS Release

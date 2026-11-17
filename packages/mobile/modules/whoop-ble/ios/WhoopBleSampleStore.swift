@@ -30,9 +30,34 @@ struct WhoopStoredBatch {
     let sampleCount: Int
 }
 
+enum WhoopCleanupAttribute {
+    case string(String)
+    case integer(Int)
+}
+
+struct WhoopCleanupStage {
+    let name: String
+    let attributes: [String: WhoopCleanupAttribute]
+
+    init(_ name: String, attributes: [String: WhoopCleanupAttribute] = [:]) {
+        self.name = name
+        self.attributes = attributes
+    }
+}
+
+typealias WhoopCleanupStageHandler = (WhoopCleanupStage) -> Void
+
 /// The database owns samples and reservations. Transport files are disposable projections.
 final class WhoopBleSampleStore {
     private var database: OpaquePointer?
+
+    var cacheWritePages: Int? {
+        guard let database else { return nil }
+        var current: Int32 = 0
+        var highwater: Int32 = 0
+        guard sqlite3_db_status(database, SQLITE_DBSTATUS_CACHE_WRITE, &current, &highwater, 0) == SQLITE_OK else { return nil }
+        return Int(current)
+    }
     var secureDeleteToRestore: Int?
     private let lock = NSLock()
     private let formatter: ISO8601DateFormatter = {
@@ -185,7 +210,10 @@ final class WhoopBleSampleStore {
                 let payload: Data = try field("payload", in: row)
                 return try JSONSerialization.jsonObject(with: payload)
             }
-            var input: [String: Any] = ["deviceId": device, "samples": payloads, "telemetry": ["batchId": id]]
+            var input: [String: Any] = [
+                "deviceId": device, "samples": payloads,
+                "telemetry": ["batchId": id, "bufferInstanceId": generation],
+            ]
             if stream == .imu { input["deviceType"] = "whoop" }
             let body = try JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])
             guard body.count <= stream.bodyLimit else { throw StoreError("WHOOP upload body exceeds its size limit") }
@@ -311,24 +339,24 @@ final class WhoopBleSampleStore {
         lock.lock(); defer { lock.unlock() }
         return try action()
     }
-    private func transaction<T>(onStage: (String) -> Void = { _ in }, _ action: () throws -> T) throws -> T {
-        onStage("store_lock_wait")
+    private func transaction<T>(onStage: WhoopCleanupStageHandler = { _ in }, _ action: () throws -> T) throws -> T {
+        onStage(WhoopCleanupStage("store_lock_wait"))
         return try synchronized {
             try restoreSecureDeleteLocked()
             try finishPendingPurgeLocked()
             return try transactionLocked(onStage: onStage, action)
         }
     }
-    func transactionLocked<T>(onStage: (String) -> Void = { _ in }, _ action: () throws -> T) throws -> T {
-        onStage("store_begin")
+    func transactionLocked<T>(onStage: WhoopCleanupStageHandler = { _ in }, _ action: () throws -> T) throws -> T {
+        onStage(WhoopCleanupStage("store_begin"))
         try execute("BEGIN IMMEDIATE")
         var committed = false
         defer { if !committed { sqlite3_exec(database, "ROLLBACK", nil, nil, nil) } }
         let result = try action()
-        onStage("store_commit")
+        onStage(WhoopCleanupStage("store_commit"))
         try execute("COMMIT")
         committed = true
-        onStage("store_completed")
+        onStage(WhoopCleanupStage("store_completed"))
         return result
     }
     private func prepare(_ sql: String) throws -> OpaquePointer {

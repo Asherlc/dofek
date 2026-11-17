@@ -25,9 +25,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Load credentials through Infisical OIDC
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: OPENCODE_API_KEY
+
       - name: Run opencode
         uses: anomalyco/opencode/github@77fc88c8ade8e5a620ebbe1197f3a572d29ae91a # github-v1.2.19
         env:
-          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENCODE_API_KEY: ${{ env.OPENCODE_API_KEY }}
         with:
           model: opencode/big-pickle

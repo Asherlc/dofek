@@ -1,6 +1,7 @@
 import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { isKnownProviderHttp5xxError } from "../lib/provider-error-reporting.ts";
 import { logger } from "../logger.ts";
 import {
   authFailureReasonFromError,
@@ -24,6 +25,8 @@ export interface SyncLogEntry {
   status: "success" | "error" | "degraded";
   recordCount?: number;
   errorMessage?: string;
+  /** Original failures used for alert classification; never persisted. */
+  errorCauses?: readonly unknown[];
   authFailureReason?: ProviderAuthFailureReason;
   degradationKind?: SyncDegradationKind;
   durationMs?: number;
@@ -145,7 +148,10 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
     await insertSyncLog(db, entry, scopedUserId);
   }
 
-  if (consecutiveFailures === 2) {
+  const errorCauses = entry.errorCauses ?? [];
+  const onlyKnownHttp5xxErrors =
+    errorCauses.length > 0 && errorCauses.every(isKnownProviderHttp5xxError);
+  if (consecutiveFailures === 2 && !onlyKnownHttp5xxErrors) {
     captureException(new Error(`Provider ${entry.providerId} failed two scheduled syncs`), {
       level: "warning",
       tags: {
@@ -212,6 +218,7 @@ export async function withSyncLog<T>(
       status: "error",
       recordCount: err instanceof PartialSyncError ? err.recordCount : undefined,
       errorMessage: err instanceof Error ? err.message : String(err),
+      errorCauses: [err],
       authFailureReason: authFailureReasonFromError(authFailureSource),
       durationMs: Date.now() - start,
       userId,

@@ -16,7 +16,7 @@ export function providerSourceLabel(id: string, subsource?: string | null): stri
   if ((id === "apple_health" || id === "apple-health") && subsource) {
     return `${deviceDisplayName(subsource)} (via Apple Health)`;
   }
-  if (id === "garmin") return providerRecordLabel(id, subsource);
+  if (id === "garmin" || id === "whoop_ble") return providerRecordLabel(id, subsource);
   return providerLabel(id);
 }
 

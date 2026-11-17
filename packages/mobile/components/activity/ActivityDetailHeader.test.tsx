@@ -10,6 +10,9 @@ vi.mock("react-native", async () => {
   const web = await vi.importActual<typeof import("react-native")>("react-native-web");
   return { ...web, Linking: { ...web.Linking, openURL: vi.fn(() => Promise.resolve()) } };
 });
+vi.mock("react-native-svg", () => ({
+  SvgXml: () => <svg data-testid="activity-icon-svg" />,
+}));
 
 vi.mock("../ProviderLogo", () => ({ ProviderLogo: () => null }));
 vi.mock("../../lib/trpc", () => ({
@@ -87,6 +90,79 @@ describe("ActivityDetailHeader", () => {
     expect(screen.getByText("Walking")).toBeDefined();
   });
 
+  it.each(["running", "hangboard", "archery"])(
+    "renders the shared %s activity icon",
+    (activityType) => {
+      render(<ActivityDetailHeader activity={{ ...detailHeaderActivity, activityType }} />);
+      const activityLabel =
+        activityType === "hangboard"
+          ? "Hangboarding activity"
+          : `${activityType[0]?.toUpperCase()}${activityType.slice(1)} activity`;
+      expect(screen.getByLabelText(activityLabel)).toBeDefined();
+      expect(
+        screen.getByTestId("activity-type-icon").querySelector('[data-testid="activity-icon-svg"]'),
+      ).toBeTruthy();
+    },
+  );
+
+  it("uses the activity local date and time at a UTC boundary", () => {
+    render(
+      <ActivityDetailHeader
+        activity={{
+          ...detailHeaderActivity,
+          displayedDate: "2026-03-18",
+          startedAt: "2026-03-18T00:30:00.000Z",
+          localTimeContext: {
+            timezone: null,
+            startUtcOffsetMinutes: 120,
+            endUtcOffsetMinutes: 120,
+            source: "provider_offset",
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText("Wed, Mar 18, 2026 at 2:30 AM")).toBeDefined();
+  });
+
+  it("renders Strong attribution through Apple Health without an external link", () => {
+    render(
+      <ActivityDetailHeader
+        activity={{
+          ...detailHeaderActivity,
+          providerId: "apple_health",
+          subsource: "Strong",
+          sourceTree: {
+            primary: {
+              id: "strong-recording",
+              providerId: "strong-csv",
+              sourceName: null,
+              label: "Strong",
+              description: null,
+              url: null,
+              children: [
+                {
+                  id: "strong-apple-health",
+                  providerId: "apple_health",
+                  sourceName: null,
+                  label: "Apple Health",
+                  description: "Recorded by Strong",
+                  url: null,
+                  children: [],
+                },
+              ],
+            },
+            otherSources: [],
+          },
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Lineage: Strong" }));
+    expect(screen.getByText("Apple Health")).toBeDefined();
+    expect(screen.getByText("Recorded by Strong")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /View activity/ })).toBeNull();
+  });
+
   it.each(["{Enter}", " "])("expands and collapses with the real RN-web %j key", async (key) => {
     render(<ActivityDetailHeader activity={detailHeaderActivity} />);
     const trigger = screen.getByRole("button", { name: "Lineage: Garmin Edge 530" });
@@ -160,5 +236,30 @@ describe("ActivityDetailHeader", () => {
     fireEvent.click(screen.getByRole("button", { name: "Lineage: Garmin Edge 530" }));
     expect(screen.getByText("Removed from provider sync on March 5, 2026")).toBeDefined();
     expect(screen.queryByRole("button", { name: "View activity for Garmin Edge 530" })).toBeNull();
+  });
+
+  it("keeps the removed provider label for Strava activities", () => {
+    render(
+      <ActivityDetailHeader
+        activity={{
+          ...removedDetailHeaderActivity,
+          providerId: "strava",
+          sourceTree: {
+            primary: {
+              id: "removed-strava",
+              providerId: "strava",
+              sourceName: null,
+              label: "Strava",
+              description: "Removed from provider sync on March 5, 2026",
+              url: null,
+              children: [],
+            },
+            otherSources: [],
+          },
+        }}
+      />,
+    );
+    expect(screen.getAllByText("Strava")).toHaveLength(2);
+    expect(screen.getByText("Removed from provider sync")).toBeDefined();
   });
 });

@@ -7,6 +7,7 @@ import {
   climbingLogEntryFixture,
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryContext } from "./ClimbingLogEntryContext.tsx";
+import { mixedClimbingEntries } from "./climbing-log-map-test-helpers.ts";
 
 it("shows the recorded climb time supplied by the server", () => {
   render(
@@ -38,4 +39,11 @@ it("renders a recorded zero-degree angle", () => {
     />,
   );
   expect(screen.getByText("Wall angle: 0°")).toBeTruthy();
+});
+
+it("renders Kaya's positive wall angle in degrees", () => {
+  const project = mixedClimbingEntries[1];
+  if (!project) throw new Error("Expected Kaya project fixture");
+  render(<ClimbingLogEntryContext entry={project} />);
+  expect(screen.getByText("Wall angle: 35°")).toBeTruthy();
 });

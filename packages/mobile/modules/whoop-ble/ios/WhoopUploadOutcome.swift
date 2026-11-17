@@ -47,6 +47,36 @@ struct WhoopUploadOutcome {
         if let siblingTaskPending { data["siblingTaskPending"] = siblingTaskPending }
         return data
     }
+
+    static func received(
+        identity: String,
+        batch: WhoopStoredBatch,
+        response: WhoopUploadResponse,
+        context: WhoopUploadCompletionContext,
+        occurredAt: String
+    ) -> Self {
+        Self(
+            batchIdentity: identity, stream: batch.stream.rawValue, route: batch.stream.route,
+            stage: response.error == nil ? "response_received" : "transport_error", statusCode: response.status,
+            responseOriginValidated: nil, acknowledgmentValidated: false, outboxState: "pending",
+            batchSampleCount: batch.sampleCount, attempt: context.attempt,
+            taskIdentifier: context.taskIdentifier, transportPath: context.transportPath,
+            siblingTaskPending: nil, occurredAt: occurredAt)
+    }
+
+    static func batchNotFound(
+        identity: String,
+        status: Int?,
+        context: WhoopUploadCompletionContext,
+        occurredAt: String
+    ) -> Self {
+        Self(
+            batchIdentity: identity, stream: "unknown", route: "unknown", stage: "batch_not_found",
+            statusCode: status, responseOriginValidated: nil, acknowledgmentValidated: false,
+            outboxState: "absent", batchSampleCount: nil, attempt: context.attempt,
+            taskIdentifier: context.taskIdentifier, transportPath: context.transportPath,
+            siblingTaskPending: nil, occurredAt: occurredAt)
+    }
 }
 
 enum WhoopUploadTelemetry {
@@ -59,11 +89,4 @@ enum WhoopUploadTelemetry {
         userInfo[key] = context
         return NSError(domain: original.domain, code: original.code, userInfo: userInfo)
     }
-}
-
-struct WhoopUploadResponse {
-    let status: Int?
-    let data: Data
-    let responseURL: URL?
-    let error: Error?
 }

@@ -3,6 +3,21 @@ import SQLite3
 @testable import WhoopBLE
 
 final class WhoopBleSampleStoreTests: XCTestCase {
+    func testReservationTelemetryCarriesBatchAndBufferIdentity() throws {
+        let store = try WhoopBleSampleStore(directory: directory())
+        try store.configure(owner)
+        try store.append(deviceId: "a", samplesByStream: [.sensorRecords: samples([1])])
+
+        let batch = try XCTUnwrap(store.reserve(stream: .sensorRecords))
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: batch.body) as? [String: Any])
+        let telemetry = try XCTUnwrap(body["telemetry"] as? [String: String])
+
+        XCTAssertEqual(telemetry["batchId"], batch.id)
+        XCTAssertEqual(telemetry["bufferInstanceId"], batch.generation)
+        XCTAssertNotNil(UUID(uuidString: batch.id))
+        XCTAssertNotNil(UUID(uuidString: batch.generation))
+    }
+
     func testNotificationCommitsEveryStreamBeforeReopening() throws {
         let url = try directory()
         var store: WhoopBleSampleStore? = try WhoopBleSampleStore(directory: url)

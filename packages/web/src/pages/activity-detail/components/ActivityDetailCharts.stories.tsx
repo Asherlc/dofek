@@ -14,7 +14,8 @@ import {
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
-import { ElevationChart, MetricsChart } from "./ActivityDetailCharts.tsx";
+import { MetricsChart } from "./ActivityDetailCharts.tsx";
+import { ElevationChart } from "./ElevationChart.tsx";
 
 const meta = {
   title: "Pages/ActivityDetail/Charts",
@@ -111,6 +112,55 @@ export const IndependentMetricTimelines: Story = {
     points: activityChartTimingPoints,
     activityType: "cycling",
     hasPower: true,
+  },
+};
+
+export const SkinTemperatureReadings: Story = {
+  args: {
+    points: activityPreviewPoints(defaultActivityMetricSources),
+    hasHr: false,
+    hasPower: false,
+    hasSpeed: false,
+    hasCadence: false,
+    metricSources: [
+      {
+        key: "skinTemperature",
+        label: "Skin Temperature",
+        sources: activityMetricSourcePreview
+          .filter((metric) => metric.key === "skinTemperature")
+          .flatMap((metric) => metric.sources),
+        selectedId: defaultActivityMetricSources.skinTemperature,
+        onChange: () => {},
+      },
+    ],
+  },
+};
+
+export const SparseSkinTemperatureReadings: Story = {
+  ...SkinTemperatureReadings,
+  name: "Sparse skin temperature readings",
+};
+
+export const PendingSourceSelection: Story = {
+  args: {
+    points: activityPreviewPoints(defaultActivityMetricSources),
+    activityType: "cycling",
+    hasHr: false,
+    hasPower: true,
+    hasSpeed: false,
+    hasCadence: false,
+    metricSources: [
+      {
+        key: "power",
+        label: "Power",
+        sources: activityMetricSourcePreview
+          .filter((metric) => metric.key === "power")
+          .flatMap((metric) => metric.sources),
+        selectedId: "garmin",
+        onChange: () => {},
+      },
+    ],
+    sourceAttribution: { power: "Showing previous readings from Wahoo" },
   },
 };
 
