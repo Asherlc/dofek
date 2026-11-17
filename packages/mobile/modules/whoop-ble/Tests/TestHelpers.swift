@@ -120,9 +120,9 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
         pairedTasks.remove(task.2)
         onCompletion?(task.2, status, Data(body.utf8), (attempts[task.2], task.0.url), nil)
     }
-    func failOnePath(identity: String) {
+    func failOnePath(identity: String, error: URLError = URLError(.networkConnectionLost)) {
         pairedTasks.remove(identity)
-        onAttemptFailure?(identity, URLError(.networkConnectionLost), attempts[identity])
+        onAttemptFailure?(identity, error, attempts[identity])
     }
 }
 

@@ -104,6 +104,7 @@ export class WhoopBleDiagnostics {
       activeUploadCount: buffers.activeUploadCount,
       blockedUploadStreams: buffers.blockedUploadStreams.join(","),
       lastUploadError: buffers.lastUploadError,
+      http5xxResponseCount: buffers.http5xxResponseCount,
     });
   }
 }
