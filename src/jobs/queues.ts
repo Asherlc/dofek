@@ -763,7 +763,8 @@ export async function enqueueClimbingCatalogueRefresh(
     seed,
   });
   await queue.add("climbing-catalogue", data, {
-    attempts: 1,
+    attempts: 2,
+    backoff: { type: "fixed", delay: 60_000 },
     removeOnComplete: true,
     removeOnFail: true,
     jobId: climbingCatalogueJobId(seed.userId, seed.logEntryId),

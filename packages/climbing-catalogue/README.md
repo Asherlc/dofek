@@ -112,6 +112,9 @@ Kaya's token resolver returns `Promise<string | null>`; return null for public
 metadata or resolve the current user's access token for authenticated details.
 Supply your own rate-limited fetch, request deadlines, or specialized transport.
 The library does not load credentials or set up sessions.
+The Kaya adapter throws `KayaCatalogueUnavailableError` when every error in a
+GraphQL response has code `INTERNAL_SERVER_ERROR`, including responses with
+HTTP 200. The error contains a safe message for the caller's retry policy.
 
 Vertical-Life uses the `eight-a` provider namespace and public outdoor route
 search. Native detail lookup uses an 8a.nu route URL and validates its unified
