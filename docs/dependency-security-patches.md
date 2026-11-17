@@ -24,12 +24,46 @@ retained against the published upstream fix described below.
 The Dependency Audit CI job runs these regressions before `pnpm audit`;
 the braces advisory above is excluded from its version-based report, with
 explicit approval, because the patched package retains an affected version number.
-All other audit findings retain their existing enforcement. The regression
+Other audit findings retain their existing enforcement except for the explicit
+picomatch risk acceptance below. The regression
 command fails if the installed vulnerable behavior returns; patch application
 failures also fail installation under [pnpm v11](https://pnpm.io/cli/patch#allowunusedpatches).
 
 When adopting published upstream fixes, verify the regressions against those
 releases and remove the corresponding patch and advisory exception together.
+
+## Accepted picomatch advisory exception
+
+On November 17, 2026, the user explicitly accepted
+[GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)
+without a dependency patch. Only this advisory is added to pnpm's
+[`audit.ignore`](https://pnpm.io/11.x/cli/audit#auditignore) list; unrelated audit
+findings and the existing dependency-security checks remain enforced.
+
+The rationale is to unblock CI and the canonical production release while no
+fixed release is published. The advisory lists picomatch through 4.0.7 as
+affected and no patched release at the time of acceptance. The installed
+production dependency inventory (`pnpm why picomatch --prod --recursive --depth 0
+--json`) contains **2.3.2 and 4.0.7**. Both remain unpatched. The proposed
+[v2 backport](https://github.com/micromatch/picomatch/pull/246) and
+[v4 fix](https://github.com/micromatch/picomatch/pull/237) were rejected locally
+because bounded probes still timed out on single-branch repeated-extglob
+variants; the v4 proposal also changed matching and capture behavior.
+
+**Remaining risk:** Attacker-controlled glob patterns and matching input can
+cause catastrophic regular-expression backtracking, blocking the calling
+process and causing denial of service. Local probes reproduced this behavior
+in both production versions. This exception suppresses the advisory report;
+it does not fix or mitigate the vulnerability. Reachability from externally
+supplied application input has not been established, so this is not a claim
+that production is unexposed. Passing audit with the exception is not proof
+that picomatch is safe.
+
+Revisit this exception when a fixed upstream release becomes available. Upgrade
+every affected production dependency path, verify the reported exploit and
+matching compatibility, and remove this advisory from `audit.ignore` together
+with that upgrade. No local picomatch patch or security-regression gate is
+retained for this accepted risk.
 
 ## Published node-forge security release
 
