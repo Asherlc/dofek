@@ -40,9 +40,12 @@
 - **Fix validation:** Regression tests reproduced both exception capture paths
   before the change. Local BullMQ with Redis kept the job pending for the
   delayed retry, retained the healthy source, and published all sources on
-  the second attempt. Production deployment and the original lookup remain
-  unverified. For future provider incidents, trace both the operation's
-  reporting and the worker's failed-event listener before attributing an alert.
+  the second attempt. A separate Redis run confirmed that alternating provider
+  failures retain both sources and expose the terminal error. Review regressions
+  cover worker guard failures and malformed Kaya GraphQL errors. Production
+  deployment and the original lookup remain unverified. For future provider
+  incidents, trace both the operation's reporting and the worker's failed-event
+  listener before attributing an alert.
 
 ## 2026-11-16 — HealthKit permission request interrupted by backgrounding
 

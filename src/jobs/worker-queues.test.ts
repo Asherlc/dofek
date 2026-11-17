@@ -1,4 +1,7 @@
 import "./worker-test/test-helpers.ts";
+import { CatalogueSearchError } from "@dofek/climbing-catalogue";
+import { KayaCatalogueUnavailableError } from "@dofek/climbing-catalogue/kaya";
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import { createWorkerQueues } from "./worker-queues.ts";
 import {
@@ -476,6 +479,54 @@ describe("worker queues", () => {
 
     expect(processPostSyncJob).toHaveBeenCalled();
   });
+
+  it("ends catalogue work immediately when the account-erasure guard fails", async () => {
+    const { runQueuedUserWorkUnlessAccountErasing } = await import(
+      "./account-erasure-work-guard.ts"
+    );
+    const { processPostSyncJob } = await import("./process-post-sync-job.ts");
+    vi.mocked(processPostSyncJob).mockClear();
+    const failure = new Error("Account-erasure work lock unavailable");
+    vi.mocked(runQueuedUserWorkUnlessAccountErasing).mockRejectedValueOnce(failure);
+    const result = invokeProcessor("post-sync-queue", { type: "climbing-catalogue", userId: "u" });
+    await expect(result).rejects.toBeInstanceOf(hoisted.MockUnrecoverableError);
+    await expect(result).rejects.toHaveProperty("cause", failure);
+    expect(processPostSyncJob).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { kayaFailure: new KayaCatalogueUnavailableError(), retryable: true },
+    { kayaFailure: new Error("Kaya rejected request"), retryable: false },
+  ])(
+    "checks whether all catalogue failures are temporary ($retryable)",
+    async ({ kayaFailure, retryable }) => {
+      const { processPostSyncJob } = await import("./process-post-sync-job.ts");
+      const outage = new ProviderServiceUnavailableError({
+        providerId: "openbeta",
+        statusCode: 502,
+        message: "OpenBeta temporarily unavailable",
+        responseBody: "gateway failure",
+      });
+      const error = new CatalogueSearchError(
+        [
+          { providerId: "openbeta", error: outage },
+          { providerId: "kaya", error: kayaFailure },
+        ],
+        [],
+      );
+      vi.mocked(processPostSyncJob).mockRejectedValueOnce(error);
+      const result = invokeProcessor("post-sync-queue", {
+        type: "climbing-catalogue",
+        userId: "u",
+      });
+      if (retryable) {
+        await expect(result).rejects.toBe(error);
+      } else {
+        await expect(result).rejects.toBeInstanceOf(hoisted.MockUnrecoverableError);
+        await expect(result).rejects.toHaveProperty("cause", error);
+      }
+    },
+  );
 
   it("activity-delete-analytics processor delegates to processActivityDeleteAnalyticsJob", async () => {
     const { processActivityDeleteAnalyticsJob } = await import(

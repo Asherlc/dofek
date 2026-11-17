@@ -104,17 +104,20 @@ export class ClimbingCatalogueService {
       });
     }
     const previous = await this.read(seed);
-    const partialSources =
-      error instanceof CatalogueSearchError && error.sources.length > 0 ? error.sources : null;
+    const partialSources = error instanceof CatalogueSearchError ? error.sources : [];
+    const sourcesByProvider = new Map(
+      [...previous.sources, ...partialSources].map((source) => [source.providerId, source]),
+    );
     const expiresAt =
-      !partialSources && previous.fetchedAt && previous.expiresAt
+      partialSources.length === 0 && previous.fetchedAt && previous.expiresAt
         ? previous.expiresAt
         : new Date(Date.now() + DAY).toISOString();
     await this.cache.set(
       catalogueSeedCacheKey(seed),
       {
         ...previous,
-        ...(partialSources ? { sources: partialSources, fetchedAt: new Date().toISOString() } : {}),
+        sources: [...sourcesByProvider.values()],
+        ...(partialSources.length > 0 ? { fetchedAt: new Date().toISOString() } : {}),
         status: "error",
         expiresAt,
         error:

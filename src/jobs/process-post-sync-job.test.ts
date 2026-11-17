@@ -1,7 +1,3 @@
-import { CatalogueSearchError } from "@dofek/climbing-catalogue";
-import { KayaCatalogueUnavailableError } from "@dofek/climbing-catalogue/kaya";
-import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
-import { UnrecoverableError } from "bullmq";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PostSyncJob } from "./process-post-sync-job.ts";
 
@@ -71,49 +67,6 @@ const catalogueSeed = {
 };
 
 describe("processPostSyncJob", () => {
-  it.each([
-    { kayaFailure: new KayaCatalogueUnavailableError(), retryable: true },
-    { kayaFailure: new Error("Kaya rejected request"), retryable: false },
-  ])(
-    "checks whether all catalogue causes are temporary ($retryable)",
-    async ({ kayaFailure, retryable }) => {
-      const outage = new ProviderServiceUnavailableError({
-        providerId: "openbeta",
-        statusCode: 502,
-        message: "OpenBeta temporarily unavailable",
-        responseBody: "gateway failure",
-      });
-      const error = new CatalogueSearchError(
-        [
-          { providerId: "openbeta", error: outage },
-          { providerId: "kaya", error: kayaFailure },
-        ],
-        [],
-      );
-      mockCatalogueJob.mockRejectedValueOnce(error);
-      const result = processPostSyncJob(
-        {
-          data: {
-            type: "climbing-catalogue",
-            userId: "user-a",
-            logEntryId: "log-a",
-            seed: catalogueSeed,
-          },
-          updateProgress: vi.fn(),
-        },
-        fakeDb,
-        getFakeSensorStore,
-        refreshBodyMeasurements,
-      );
-      if (!retryable) {
-        await expect(result).rejects.toBeInstanceOf(UnrecoverableError);
-        await expect(result).rejects.toHaveProperty("cause", error);
-      } else {
-        await expect(result).rejects.toBe(error);
-      }
-    },
-  );
-
   it("delegates catalogue refresh without running personalized refits", async () => {
     await processPostSyncJob(
       {

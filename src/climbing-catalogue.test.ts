@@ -178,6 +178,49 @@ describe("ClimbingCatalogueService", () => {
     ]);
     expect(captureException).not.toHaveBeenCalled();
   });
+
+  it("retains results from both attempts when different providers fail", async () => {
+    const outage = new ProviderServiceUnavailableError({
+      providerId: "openbeta",
+      statusCode: 502,
+      message: "OpenBeta temporarily unavailable",
+      responseBody: "gateway page",
+    });
+    const openBetaCandidate = {
+      ...candidate,
+      providerId: "openbeta" as const,
+      url: "https://openbeta.io/climb/cragmont-crack",
+    };
+    const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+      {
+        providerId: "kaya",
+        search: vi
+          .fn()
+          .mockRejectedValueOnce(new KayaCatalogueUnavailableError())
+          .mockResolvedValueOnce({ candidates: [], complete: true }),
+      },
+      {
+        providerId: "openbeta",
+        search: vi
+          .fn()
+          .mockResolvedValueOnce({ candidates: [openBetaCandidate], complete: true })
+          .mockRejectedValueOnce(outage),
+      },
+    ]);
+    await expect(service.refresh(seed)).rejects.toThrow(
+      "Kaya catalogue is temporarily unavailable",
+    );
+    const first = await service.read(seed);
+    expect(first.sources).toMatchObject([
+      { providerId: "openbeta", matches: [{ candidate: openBetaCandidate }] },
+    ]);
+    await expect(service.refresh(seed)).rejects.toThrow(outage.message);
+    expect(await service.read(seed)).toMatchObject({
+      status: "error",
+      sources: [...first.sources, { providerId: "kaya", matches: [] }],
+    });
+    expect(captureException).not.toHaveBeenCalled();
+  });
   it("retains unnamed native source information without inventing discovery names", async () => {
     const { KayaCatalogueAdapter } = await import("@dofek/climbing-catalogue/kaya");
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(

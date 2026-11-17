@@ -1,5 +1,3 @@
-import { UnrecoverableError } from "bullmq";
-import { isRetryableCatalogueSearchError } from "../climbing-catalogue.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { captureException } from "../lib/error-reporting.ts";
@@ -42,16 +40,7 @@ export async function processPostSyncJob(
 ) {
   if (job.data.type === "climbing-catalogue") {
     const { processClimbingCatalogueJob } = await import("./climbing-catalogue-job.ts");
-    try {
-      await processClimbingCatalogueJob(job.data, db);
-    } catch (error) {
-      if (isRetryableCatalogueSearchError(error)) throw error;
-      const terminalFailure = new UnrecoverableError(
-        error instanceof Error ? error.message : String(error),
-      );
-      terminalFailure.cause = error;
-      throw terminalFailure;
-    }
+    await processClimbingCatalogueJob(job.data, db);
     return;
   }
   if (job.data.type === "global-maintenance") {

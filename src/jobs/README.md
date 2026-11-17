@@ -100,8 +100,8 @@ reprocessing and historical-data limits.
   provider-deletion and activity-analytics jobs use a fixed 30-second backoff.
   Climbing catalogue jobs use one retry after 60 seconds when every cause is
   a typed upstream HTTP 5xx or a Kaya GraphQL internal server error. The
-  delayed job is pending and the catalogue can still show available source
-  results. Provider outages remain in logs and terminal catalogue status.
+  delayed job is pending and the catalogue retains available results from
+  both attempts by provider. Outages appear in logs and terminal catalogue status.
   Unexpected causes still go to Sentry and end the refresh immediately.
   Other queues declare retry options at their enqueue sites. See BullMQ's
   [retrying failing jobs](https://docs.bullmq.io/guide/retrying-failing-jobs).

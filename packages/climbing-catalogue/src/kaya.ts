@@ -93,7 +93,12 @@ const searchSchema = z.object({
 });
 const internalErrorSchema = z.object({
   errors: z
-    .array(z.object({ extensions: z.object({ code: z.literal("INTERNAL_SERVER_ERROR") }) }))
+    .array(
+      z.object({
+        message: z.string(),
+        extensions: z.object({ code: z.literal("INTERNAL_SERVER_ERROR") }),
+      }),
+    )
     .nonempty(),
 });
 // Native Location rejects the public WebLocation short-description fields.

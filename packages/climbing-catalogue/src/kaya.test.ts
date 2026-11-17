@@ -81,6 +81,23 @@ describe("Kaya catalogue GraphQL service errors", () => {
       message: expect.not.stringContaining("reconnect"),
     });
   });
+
+  it("treats a GraphQL error without a message as an invalid response", async () => {
+    server.use(
+      http.post("https://kaya-beta.kayaclimb.com/graphql", () =>
+        HttpResponse.json({
+          data: null,
+          errors: [{ extensions: { code: "INTERNAL_SERVER_ERROR" } }],
+        }),
+      ),
+    );
+    await expect(
+      new KayaCatalogueAdapter(fetch, async () => null).search(seed),
+    ).rejects.toMatchObject({
+      name: "Error",
+      message: expect.stringContaining("invalid or rejected search response"),
+    });
+  });
 });
 
 describe("KayaCatalogueAdapter", () => {
