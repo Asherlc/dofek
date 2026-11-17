@@ -41,10 +41,13 @@ audit:
   ignore:
     - GHSA-w3rx-r6r6-pgpr
     - GHSA-5p2g-fcmc-qvqq
-    - GHSA-fc5q-39xc-vjpf
     # Backported fix; CI runs check:dependency-security before auditing.
     # See docs/dependency-security-patches.md for source and validation.
     - GHSA-vfj7-8cjw-p6xm
+    # Explicitly accepted, unpatched picomatch ReDoS risk; not a backported fix.
+    # Rationale, affected production versions and removal criteria:
+    # docs/dependency-security-patches.md#accepted-picomatch-advisory-exception
+    - GHSA-fc5q-39xc-vjpf
 
 overrides:
   "@expo/dom-webview": 58.0.2
