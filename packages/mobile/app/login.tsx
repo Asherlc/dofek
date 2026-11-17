@@ -36,7 +36,7 @@ import {
   startOAuthLogin,
 } from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
-import { captureException } from "../lib/telemetry";
+import { captureException, logger } from "../lib/telemetry";
 import { colors } from "../theme";
 
 type AuthMode = "login" | "register" | "reset";
@@ -109,10 +109,16 @@ export default function LoginScreen() {
     } catch (err: unknown) {
       const diagnostic = providerId === "apple" ? appleSignInDiagnostic(err) : undefined;
       const reportedError = diagnostic?.error ?? err;
-      captureException(reportedError, {
-        source: "login-screen-handle-login",
-        ...diagnostic?.context,
-      });
+      captureException(
+        reportedError,
+        {
+          source: "login-screen-handle-login",
+          ...diagnostic?.context,
+        },
+        {
+          ...(diagnostic ? { tags: diagnostic.tags } : {}),
+        },
+      );
       setError(userFacingErrorMessage(reportedError, "Login failed"));
     } finally {
       setLoggingIn(false);
@@ -194,13 +200,25 @@ export default function LoginScreen() {
 
   async function openLegalDocument(document: "privacy" | "terms") {
     const documentTitle = document === "privacy" ? "Privacy Policy" : "Terms of Service";
+    const source = "login-screen-open-legal-document";
     setError(null);
+    logger.info("legal-document", "Browser request started", {
+      source,
+      document,
+      outcome: "requested",
+    });
     try {
-      await WebBrowser.openBrowserAsync(`${serverUrl}/${document}`);
+      const result = await WebBrowser.openBrowserAsync(`${serverUrl}/${document}`);
+      logger.info("legal-document", "Browser request resolved", {
+        source,
+        document,
+        outcome: result.type,
+      });
     } catch (error_: unknown) {
       captureException(error_, {
-        source: "login-screen-open-legal-document",
+        source,
         document,
+        operation: "WebBrowser.openBrowserAsync",
       });
       setError(`Could not open the ${documentTitle}. Try again.`);
     }

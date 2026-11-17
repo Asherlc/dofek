@@ -4,7 +4,8 @@ The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and
 
 The [dashboard](src/pages/Dashboard.tsx) presents processing status, recorded
 health measurements, personal-baseline comparisons, and insights. The
-[Recovery view](src/routes/training/recovery.tsx) retains HRV and sleep analytics;
+[Recovery view](src/routes/training/recovery.tsx) presents HRV, sleep analytics,
+and existing daily skin-temperature measurements with the selected date range and units;
 custom recovery, 0–21 strain, and sleep-performance scores and their daily
 recommendations have been retired as described in the
 [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-scores-design.md).
@@ -24,6 +25,10 @@ recommendations have been retired as described in the
 - **Admin tables**: Use TanStack Table v9's `useTable` with core features and render all rows in each server-provided page. Keep pagination in the admin query, following the [v9 migration guide](https://tanstack.com/table/latest/docs/framework/react/guide/migrating).
 - **Nutrition history**: The Nutrition page renders read-only nutrition history, totals, source resolution, and analytics.
 - **Sleep stages**: The [Sleep page](src/pages/SleepPage.tsx) keeps its stage timeline date independent of the trend range and uses the server's latest available sleep date for its initial selection.
+  The [stage chart](src/components/Hypnogram.tsx) uses four labeled lanes with
+  solid start/end interval blocks and blank gaps. Hover, tap, or select an exact
+  value in the data disclosure to inspect the stage, times, and server-computed
+  duration. It uses ECharts' [custom interval rendering](https://github.com/apache/echarts-doc/blob/master/en/tutorial/custom-series.md).
 - **Unit System**: A global `UnitProvider` handles conversion between metric and imperial units across the application.
 - **Charts**: Custom visualization components (e.g., `TimeSeriesChart`, `PmcChart`, `Hypnogram`) built on top of ECharts and `react-native-svg` (shared patterns).
 - **Route comparison**: The hiking page's [route picker](src/components/ActivityComparisonChart.tsx) shows one GPS-matched route at a time, with dated pace dots and faster pace higher on the axis. Route choices include distance, the server's attempt count, and dates to distinguish repeated generic names. The attempts disclosure includes start times, exact formatted metrics, unavailable values, and activity links. Route IDs, timestamps, counts, and nullable pace come from the [shared server-computed contract](../training/src/route-comparison.ts); the chart uses an ECharts [time axis](https://echarts.apache.org/handbook/en/concepts/axis/).
@@ -79,7 +84,9 @@ The activity panel and breakdown use named, focusable scroll sections, following
 Those two files have an approved exception for Biome's
 [`noNoninteractiveTabindex`](https://biomejs.dev/linter/rules/no-noninteractive-tabindex/javascript/)
 rule; all other rules remain enabled.
-The activity [climbing panel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx)
+The activity detail page loads attached and suggested climbs through its
+[climbing hook](src/pages/activity-detail/useActivityClimbing.ts). The activity
+[climbing panel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx)
 uses a single-column list grouped by Area beside its shared map; other log
 collections retain the responsive [breakdown](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
 Hovering or keyboard focusing a climb also emphasizes its existing HR chart
@@ -106,7 +113,7 @@ of distance and elevation for indoor and virtual rides, including reported zeros
 See [the card](src/components/ActivityCardContent.tsx) and the
 [shared cycling classification](../training/src/endurance-types.ts).
 
-The [activity detail header](src/pages/ActivityDetailPage.tsx) also omits distance
+The [activity detail header](src/pages/activity-detail/components/ActivityDetailHeader.tsx) also omits distance
 for indoor and virtual cycling. Rides show **Energy Output** in kJ from the
 server's full recorded power samples, following the selected power source.
 Incomplete coverage carries a **Partial power data** qualifier. This is mechanical
@@ -179,7 +186,7 @@ unconnected records appear as other matching sources. Dofek remains implicit.
 See [ActivityCardContent](src/components/ActivityCardContent.tsx) and
 [ActivitySourceDisclosure](src/components/ActivitySourceDisclosure.tsx).
 
-The [activity detail header](src/pages/ActivityDetailPage.tsx) places Lineage
+The [activity detail header](src/pages/activity-detail/components/ActivityDetailHeader.tsx) places Lineage
 beside the title and opens its tree in an anchored flyout. It reuses
 [Radix Popover](https://www.radix-ui.com/primitives/docs/components/popover)
 for positioning, outside-click dismissal, Escape, and focus restoration. Its required `sourceTree` comes from
@@ -205,7 +212,7 @@ Both clients consume the same
 [structured presentation](../providers-meta/src/activity-metric-source.ts).
 
 Activity views offer independent source controls for heart rate, power, speed,
-cadence, and elevation. Each control preselects its existing priority winner
+cadence, elevation, and skin temperature. Each control preselects its existing priority winner
 without an Auto option. Choices distinguish providers and devices and apply
 only to the current view; saved priorities are unchanged. Heart-rate and power
 zones follow their respective selected sources.
@@ -217,9 +224,12 @@ The [source repository](../server/src/repositories/activity-metric-sources-repos
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.
 
-The [metric and elevation charts](src/pages/activity-detail/components/ActivityDetailCharts.tsx)
+The [metric chart](src/pages/activity-detail/components/ActivityDetailCharts.tsx) and
+[elevation chart](src/pages/activity-detail/components/ElevationChart.tsx)
 position observations by elapsed time and evaluate continuity independently for
-each metric. Other metrics' timestamps do not interrupt a recording. Sparse
+each metric. Skin temperature uses selected-device decoded samples and its own
+measurement timestamps, so downsampled heart-rate times do not shift its
+observations. Other metrics' timestamps do not interrupt a recording. Sparse
 observations retain markers; dense recordings show lines with markers on hover.
 The [shared presentation policy](../training/src/activity-chart-series.ts) defines
 the cadence-based gap rule used by both clients. This follows the distinction

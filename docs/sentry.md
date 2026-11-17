@@ -156,6 +156,11 @@ two consecutive scheduled overall-sync failures. The
 [user notification policy](../src/db/provider-issue-notification.ts) deduplicates
 notifications until recovery. Suppressing an expected per-attempt exception does
 not disable either persistence escalation or user-facing failure information.
+Typed provider HTTP `500`–`599` responses remain visible in sync status, logs,
+and metrics without creating Sentry exception or repeated-failure warning events.
+The scheduled warning uses the original typed causes; statusless transport
+failures and mixed results containing an unexpected cause keep their existing
+warning behavior.
 
 ## Access failures
 

@@ -14,9 +14,9 @@ import {
 } from "@dofek/training/fixtures/climbing-chart";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { useState } from "react";
-import { Modal, Platform, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Platform, Pressable, Text, View } from "react-native";
 import { colors } from "../../theme";
-import { AreaChart, CHART_COLORS, LineChart } from "./ActivityDetailCharts";
+import { ActivityMetricsCharts, AreaChart, CHART_COLORS, LineChart } from "./ActivityDetailCharts";
 import { ActivityMetricSourcePicker } from "./ActivityMetricSourcePicker";
 
 const meta = {
@@ -43,6 +43,7 @@ const meta = {
 } satisfies Meta<typeof LineChart>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+const logoServer = Platform.OS === "web" ? "" : "https://dofek.fit";
 export const Default: Story = {};
 export const TimedClimbs: Story = {
   args: {
@@ -52,6 +53,14 @@ export const TimedClimbs: Story = {
   },
 };
 export const Empty: Story = { args: { data: [] } };
+export const Loading: Story = {
+  render: () => (
+    <View style={{ alignItems: "center", gap: 8, padding: 24 }}>
+      <ActivityIndicator color={colors.accent} />
+      <Text style={{ color: colors.textSecondary }}>Loading activity charts…</Text>
+    </View>
+  ),
+};
 export const FractionalReadings: Story = {
   args: {
     data: meta.args.data.map((sample, index) => ({
@@ -66,6 +75,69 @@ export const SparseReadings: Story = {
       recordedAt: new Date(Date.UTC(2026, 9, 20, 16, index)).toISOString(),
       value,
     })),
+  },
+};
+export const SkinTemperatureReadings: Story = {
+  args: {
+    data: [32.18, 32.4, 32.3].map((value, index) => ({
+      recordedAt: new Date(Date.UTC(2026, 9, 20, 16, index * 10)).toISOString(),
+      value,
+    })),
+    color: CHART_COLORS.skinTemperature,
+    label: "Skin Temperature",
+    unit: "°C",
+    precision: 1,
+  },
+};
+export const SparseSkinTemperatureReadings: Story = {
+  ...SkinTemperatureReadings,
+  name: "Sparse skin temperature readings",
+  args: {
+    ...SkinTemperatureReadings.args,
+    data: [32.18, null, null, 32.4, null, 32.3].map((value, index) => ({
+      recordedAt: new Date(Date.UTC(2026, 9, 20, 16, index * 10)).toISOString(),
+      value,
+    })),
+  },
+};
+export const PendingSourceSelection: Story = {
+  render: () => {
+    const powerMetric = activityMetricSourcePreview.find((metric) => metric.key === "power");
+    if (!powerMetric) throw new Error("Power preview metric is required");
+    return (
+      <ActivityMetricsCharts
+        points={activityPreviewPoints(defaultActivityMetricSources)}
+        sourceControls={[
+          {
+            key: "power",
+            label: "Power",
+            defaultSourceId: defaultActivityMetricSources.power,
+            sources: powerMetric.sources,
+            selectedId: "garmin",
+            onChange: () => {},
+          },
+        ]}
+        sourceAttribution={{ power: "Showing previous readings from Wahoo" }}
+        serverUrl={logoServer}
+        activityWindow={{
+          startedAt: "2026-10-18T17:30:00.000Z",
+          endedAt: "2026-10-18T19:30:00.000Z",
+        }}
+        cadenceLabel="rpm"
+        isClimbingActivity={false}
+        highlightedClimbId={null}
+        onSelectClimb={() => {}}
+        hasHr={false}
+        hasPower
+        hasAltitude={false}
+        units={new UnitConverter("metric")}
+        hasGps={false}
+        onHoverIndex={() => {}}
+        onHoverTime={() => {}}
+        onScrubStart={() => {}}
+        onScrubEnd={() => {}}
+      />
+    );
   },
 };
 export const MissingSamples: Story = {
@@ -231,11 +303,16 @@ function MetricSourcePreview() {
           const data = points.map((point) => {
             const value = point[metric.key];
             return {
-              recordedAt: point.recordedAt,
+              recordedAt:
+                metric.key === "skinTemperature"
+                  ? (point.skinTemperatureRecordedAt ?? point.recordedAt)
+                  : point.recordedAt,
               value:
                 metric.key === "speed" && value !== null
                   ? Number(units.convertSpeed(value * 3.6).toFixed(1))
-                  : value,
+                  : metric.key === "skinTemperature" && value !== null
+                    ? units.convertTemperature(value)
+                    : value,
             };
           });
           return (
@@ -245,6 +322,7 @@ function MetricSourcePreview() {
               color={color}
               label={metric.label}
               unit={metric.unit}
+              precision={metric.key === "skinTemperature" ? 1 : undefined}
             />
           );
         })}

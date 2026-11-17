@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClickHouseCommandClient } from "./clickhouse.ts";
+import { createMigration as createMigration0115 } from "./clickhouse-migrations/0115_restore_user_profile_ftp_mirror_column.ts";
 import type { ClickHouseMigration } from "./clickhouse-migrations/types.ts";
 
 const { mockClickHouseMigrations, mockRunClickHouseMigrationStatement } = vi.hoisted(() => ({
@@ -22,12 +23,16 @@ vi.mock("../logger.ts", () => ({
 import { runClickHouseMigrations } from "./clickhouse-migrations.ts";
 
 function makeClient(appliedMigrationIds: string[] = []): ClickHouseCommandClient {
+  const recordedMigrationIds = new Set(appliedMigrationIds);
   return {
-    command: vi.fn(),
+    command: vi.fn(async ({ query }: { query: string }) => {
+      const migrationId = query.match(/VALUES \('([^']+)'\)/)?.[1];
+      if (migrationId) recordedMigrationIds.add(migrationId);
+    }),
     query: async <TRow extends object>({ query }: { query: string }) => ({
       json: async (): Promise<TRow[]> => {
         const row = {
-          migration_count: appliedMigrationIds.some((migrationId) =>
+          migration_count: [...recordedMigrationIds].some((migrationId) =>
             query.includes(`'${migrationId}'`),
           )
             ? 1
@@ -128,5 +133,30 @@ describe("runClickHouseMigrations", () => {
 
     expect(mockRunClickHouseMigrationStatement).toHaveBeenCalledOnce();
     expect(mockRunClickHouseMigrationStatement).toHaveBeenCalledWith(client, "EXPAND");
+  });
+
+  it("applies the ftp restoration after the historical drop on a fresh migration sequence", async () => {
+    const restoration = createMigration0115();
+    mockClickHouseMigrations.mockReturnValue([
+      {
+        id: "0108_computed_cycling_power",
+        statements: ["ALTER TABLE postgres_fitness.user_profile DROP COLUMN IF EXISTS ftp"],
+      },
+      restoration,
+    ]);
+    const client = makeClient();
+
+    await expect(
+      runClickHouseMigrations(client, "postgres://test", { phase: "pre-cdc" }),
+    ).resolves.toBe(0);
+    await expect(runClickHouseMigrations(client, "postgres://test")).resolves.toBe(2);
+
+    expect(mockRunClickHouseMigrationStatement.mock.calls).toEqual([
+      [client, "ALTER TABLE postgres_fitness.user_profile DROP COLUMN IF EXISTS ftp"],
+      [
+        client,
+        "ALTER TABLE postgres_fitness.user_profile ADD COLUMN IF NOT EXISTS ftp Nullable(Int16) AFTER resting_hr",
+      ],
+    ]);
   });
 });

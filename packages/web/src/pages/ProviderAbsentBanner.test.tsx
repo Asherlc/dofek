@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { formatDateTime } from "@dofek/format/format";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -91,6 +92,23 @@ describe("ProviderAbsentBanner", () => {
     mocks.refreshStatus = null;
   });
   afterEach(() => cleanup());
+
+  it("shows the tombstone status, provider, and removed time", () => {
+    render(
+      <ProviderAbsentBanner
+        activity={{
+          id: "activity-1",
+          providerId: "strava",
+          subsource: null,
+          providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        }}
+      />,
+    );
+    expect(screen.getByText("Removed from provider sync")).toBeDefined();
+    expect(screen.getByText("Removed")).toBeDefined();
+    expect(screen.getByText("Strava")).toBeDefined();
+    expect(screen.getByText(formatDateTime("2026-03-05T14:30:00.000Z"))).toBeDefined();
+  });
 
   it("restores this activity and refreshes the activity detail, list, and calendar", async () => {
     render(

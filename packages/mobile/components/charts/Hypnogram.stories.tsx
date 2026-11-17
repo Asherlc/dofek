@@ -18,21 +18,25 @@ const meta = {
         stage: "deep",
         started_at: "2026-07-01T22:00:00",
         ended_at: "2026-07-01T22:30:00",
+        duration_seconds: 1800,
       },
       {
         stage: "rem",
         started_at: "2026-07-01T22:30:00",
         ended_at: "2026-07-01T23:00:00",
+        duration_seconds: 1800,
       },
       {
         stage: "light",
         started_at: "2026-07-01T23:00:00",
         ended_at: "2026-07-02T00:00:00",
+        duration_seconds: 3600,
       },
       {
         stage: "awake",
         started_at: "2026-07-02T00:00:00",
         ended_at: "2026-07-02T00:10:00",
+        duration_seconds: 600,
       },
     ],
   },
@@ -43,6 +47,39 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const GapsAndBriefAwakenings: Story = {
+  args: {
+    data: [
+      {
+        stage: "deep",
+        started_at: "2026-11-15T23:00:00",
+        ended_at: "2026-11-15T23:30:00",
+        duration_seconds: 1800,
+      },
+      {
+        stage: "awake",
+        started_at: "2026-11-16T00:00:00",
+        ended_at: "2026-11-16T00:00:15",
+        duration_seconds: 15,
+      },
+      {
+        stage: "rem",
+        started_at: "2026-11-16T00:00:15",
+        ended_at: "2026-11-16T01:00:00",
+        duration_seconds: 3585,
+      },
+      {
+        stage: "light",
+        started_at: "2026-11-16T01:00:00",
+        ended_at: "2026-11-16T02:00:00",
+        duration_seconds: 3600,
+      },
+    ],
+  },
+};
+
+export const SingleStage: Story = { args: { data: meta.args.data.slice(0, 1) } };
 
 export const Empty: Story = {
   args: { data: [] },

@@ -146,17 +146,17 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
-    func disable(cutoff: Date? = nil, onStage: (String) -> Void = { _ in }) throws {
-        onStage("uploader_queue_wait")
+    func disable(cutoff: Date? = nil, onStage: WhoopCleanupStageHandler = { _ in }) throws {
+        onStage(WhoopCleanupStage("uploader_queue_wait"))
         try queue.sync { try disableLocked(cutoff: cutoff, onStage: onStage) }
     }
 
-    private func disableLocked(cutoff: Date? = nil, onStage: (String) -> Void) throws {
+    private func disableLocked(cutoff: Date? = nil, onStage: WhoopCleanupStageHandler) throws {
         token = nil; headers = [:]; blocked.removeAll()
-        onStage("uploader_cancel_tasks")
+        onStage(WhoopCleanupStage("uploader_cancel_tasks"))
         try cancelOwnedTasks()
         if let cutoff {
-            onStage("uploader_advance_erasure_cutoff")
+            onStage(WhoopCleanupStage("uploader_advance_erasure_cutoff"))
             try store.advanceErasureCutoff(to: cutoff)
         }
         active.removeAll()
@@ -168,9 +168,9 @@ final class WhoopBleBackgroundUploader: NSObject {
         lastSubmission.removeAll()
         lastCaptureSchedule = nil
         // Invalidate persisted completion identity even if file cleanup fails.
-        onStage("uploader_store_purge")
+        onStage(WhoopCleanupStage("uploader_store_purge"))
         try store.purge(onStage: onStage)
-        onStage("uploader_remove_bodies")
+        onStage(WhoopCleanupStage("uploader_remove_bodies"))
         try removeBodies()
     }
 

@@ -44,6 +44,23 @@ struct WhoopSQLiteWriteMeasurement: Equatable {
     }
 }
 
+enum WhoopCleanupAttribute {
+    case string(String)
+    case integer(Int)
+}
+
+struct WhoopCleanupStage {
+    let name: String
+    let attributes: [String: WhoopCleanupAttribute]
+
+    init(_ name: String, attributes: [String: WhoopCleanupAttribute] = [:]) {
+        self.name = name
+        self.attributes = attributes
+    }
+}
+
+typealias WhoopCleanupStageHandler = (WhoopCleanupStage) -> Void
+
 /// The database owns samples and reservations. Transport files are disposable projections.
 final class WhoopBleSampleStore {
     private var database: OpaquePointer?
@@ -340,11 +357,11 @@ final class WhoopBleSampleStore {
         return try action()
     }
     private func transaction<T>(
-        onStage: (String) -> Void = { _ in },
+        onStage: WhoopCleanupStageHandler = { _ in },
         reportWrites: ((WhoopSQLiteWriteMeasurement?) -> Void)? = nil,
         _ action: () throws -> T
     ) throws -> T {
-        onStage("store_lock_wait")
+        onStage(WhoopCleanupStage("store_lock_wait"))
         return try synchronized {
             try restoreSecureDeleteLocked()
             try finishPendingPurgeLocked()
@@ -371,16 +388,16 @@ final class WhoopBleSampleStore {
         }
         return WhoopSQLiteWriteMeasurement(walPagesWritten: Int(cacheWrites), walPagesSpilled: Int(cacheSpills))
     }
-    func transactionLocked<T>(onStage: (String) -> Void = { _ in }, _ action: () throws -> T) throws -> T {
-        onStage("store_begin")
+    func transactionLocked<T>(onStage: WhoopCleanupStageHandler = { _ in }, _ action: () throws -> T) throws -> T {
+        onStage(WhoopCleanupStage("store_begin"))
         try execute("BEGIN IMMEDIATE")
         var committed = false
         defer { if !committed { sqlite3_exec(database, "ROLLBACK", nil, nil, nil) } }
         let result = try action()
-        onStage("store_commit")
+        onStage(WhoopCleanupStage("store_commit"))
         try execute("COMMIT")
         committed = true
-        onStage("store_completed")
+        onStage(WhoopCleanupStage("store_completed"))
         return result
     }
     private func prepare(_ sql: String) throws -> OpaquePointer {

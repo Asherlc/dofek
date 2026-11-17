@@ -150,6 +150,13 @@ describe("buildClickHouseBootstrapStatements", () => {
     );
     expect(activityDefinition).toContain("ORDER BY id");
     expect(activityDefinition).not.toContain("ORDER BY (user_id, started_at, id)");
+    const userProfileDefinition = sql.slice(
+      sql.indexOf("CREATE TABLE IF NOT EXISTS postgres_fitness.user_profile ("),
+      sql.indexOf("CREATE OR REPLACE VIEW postgres_fitness.user_profile_current"),
+    );
+    // PeerDB keeps naming columns dropped from the Postgres source in its persisted pair
+    // schema and inserts NULL for them, so the mirrored destination must retain them.
+    expect(userProfileDefinition).toContain("ftp Nullable(Int16)");
     expect(sql).toContain("CREATE OR REPLACE VIEW postgres_fitness.user_profile_current");
     expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");

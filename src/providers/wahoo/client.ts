@@ -83,14 +83,6 @@ export const wahooWorkoutListResponseSchema = createWahooWorkoutListResponseSche
 
 export type WahooWorkoutListResponse = z.infer<typeof wahooWorkoutListResponseSchema>;
 
-export function createWahooSingleWorkoutResponseSchema() {
-  return z.object({
-    workout: wahooWorkoutSchema,
-  });
-}
-
-export const wahooSingleWorkoutResponseSchema = createWahooSingleWorkoutResponseSchema();
-
 export function createWahooWebhookPayloadSchema() {
   return z.object({
     event_type: z.string().optional(),
@@ -174,8 +166,8 @@ export class WahooClient extends ProviderHttpClient {
     });
   }
 
-  async getWorkout(id: number): Promise<z.infer<typeof wahooSingleWorkoutResponseSchema>> {
-    return this.get(`/v1/workouts/${id}`, wahooSingleWorkoutResponseSchema);
+  async getWorkout(id: number): Promise<WahooWorkout> {
+    return this.get(`/v1/workouts/${id}`, wahooWorkoutSchema);
   }
 
   async revokeAuthorization(): Promise<void> {

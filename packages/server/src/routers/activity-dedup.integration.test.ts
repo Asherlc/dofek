@@ -12,7 +12,7 @@ import {
   ActivityRepository,
   type ActivitySensorStore,
 } from "../repositories/activity-repository.ts";
-import { makeMockSensorStore } from "./test-helpers.ts";
+import { makeMockSensorStore, readActivityProjectionForTest } from "./test-helpers.ts";
 
 describe("Persisted PostgreSQL activity representatives", () => {
   let context: TestContext;
@@ -20,28 +20,7 @@ describe("Persisted PostgreSQL activity representatives", () => {
   const firstId = "00000000-0000-4000-8000-000000000302";
   const secondId = "00000000-0000-4000-8000-000000000303";
   const exerciseId = "00000000-0000-4000-8000-000000000304";
-  const projectionSchema = z.object({
-    id: z.string(),
-    representative_activity_id: z.string(),
-    member_activity_ids: z.array(z.string()),
-    source_providers: z.array(z.string()),
-    source_external_ids: z.array(z.object({ memberActivityId: z.string() }).passthrough()),
-    started_at: z.string(),
-    ended_at: z.string(),
-    raw: z.record(z.string(), z.unknown()),
-    timezone: z.string().nullable(),
-    local_time_source: z.string(),
-    perceived_exertion: z.number().nullable(),
-  });
-  const readProjection = () =>
-    executeWithSchema(
-      context.db,
-      projectionSchema,
-      sql`SELECT id, representative_activity_id, member_activity_ids::text[], source_providers,
-        source_external_ids, started_at::text, ended_at::text, raw, timezone,
-        local_time_source, perceived_exertion
-        FROM fitness.v_activity WHERE ${firstId}::uuid = ANY(member_activity_ids)`,
-    );
+  const readProjection = () => readActivityProjectionForTest(context.db, firstId);
 
   beforeAll(async () => {
     context = await setupTestDatabase();
@@ -838,6 +817,8 @@ describe("Activity summary deduplication", () => {
         altitude: 120,
         lat: 47.6,
         lng: -122.3,
+        skinTemperature: null,
+        skinTemperatureRecordedAt: null,
       },
     ]);
 

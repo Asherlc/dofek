@@ -1,6 +1,7 @@
 import { WhoopClient } from "@dofek/whoop/client";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { captureException } from "../../lib/error-reporting.ts";
+import { isKnownProviderHttp5xxError } from "../../lib/provider-error-reporting.ts";
 import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
 import { logger } from "../../logger.ts";
 import { fingerprintOpaqueValue } from "../../sync/pagination-fingerprint.ts";
@@ -522,7 +523,7 @@ export async function runWhoopOrchestratedSync(
       await checkpointStore?.save(checkpoint);
       throw err;
     }
-    captureException(err);
+    if (!isKnownProviderHttp5xxError(err)) captureException(err);
     errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
     return {
       provider: "whoop",

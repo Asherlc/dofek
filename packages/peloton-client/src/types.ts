@@ -66,7 +66,7 @@ export const pelotonMetricSchema = z.object({
 
 const pelotonSummarySchema = z.object({
   display_name: z.string(),
-  value: z.number(),
+  value: z.number().nullable(),
   slug: z.string(),
 });
 

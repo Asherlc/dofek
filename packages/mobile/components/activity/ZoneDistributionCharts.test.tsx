@@ -3,7 +3,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
-import { HrZonesChart } from "./ZoneDistributionCharts";
+import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
 
 function stripStyle({
   style: _style,
@@ -146,5 +146,39 @@ describe("ZoneDistributionCharts", () => {
     expect(screen.getByText(/33.3%/)).toBeDefined();
     expect(screen.getByText("Zone 2 · Endurance")).toBeDefined();
     expect(screen.getByText(/66.7%/)).toBeDefined();
+  });
+
+  it("keeps a zero-percent heart rate zone bar at zero width", () => {
+    const { container } = render(
+      <HrZonesChart
+        zones={[
+          { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 0, percent: 0 },
+          { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600, percent: 100 },
+        ]}
+      />,
+    );
+    const bars = container.querySelectorAll("rect");
+    expect(screen.getByText("Recovery")).toBeDefined();
+    expect(bars[1]?.getAttribute("width")).toBe("0");
+  });
+
+  it("labels multiple configured power zones and announces their exact distribution", () => {
+    render(
+      <PowerZonesChart
+        zones={[
+          { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 120, percent: 20 },
+          { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 480, percent: 80 },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Zone 1")).toBeDefined();
+    expect(screen.getByText("Zone 2")).toBeDefined();
+    expect(screen.getByText("Endurance")).toBeDefined();
+    expect(
+      screen.getByRole("image", { name: "Power Zones. Time spent in each power zone." }),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "View Power Zones data" }));
+    expect(screen.getByText("Zone 2 · Endurance")).toBeDefined();
+    expect(screen.getByText(/80% · 480 seconds/)).toBeDefined();
   });
 });

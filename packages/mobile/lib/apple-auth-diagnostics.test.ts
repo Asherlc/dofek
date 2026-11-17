@@ -20,6 +20,13 @@ describe("appleSignInDiagnostic", () => {
       underlyingDomain: "AKAuthenticationError",
       underlyingCode: -7026,
     });
+    expect(result?.tags).toEqual({
+      appleCode: "ERR_REQUEST_UNKNOWN",
+      nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
+      nativeCode: "1000",
+      underlyingDomain: "AKAuthenticationError",
+      underlyingCode: "-7026",
+    });
     expect(result?.error.message).toBe("Apple could not complete sign-in. Please try again.");
     expect(result?.error).not.toBe(original);
     expect(result?.error).not.toHaveProperty("cause");

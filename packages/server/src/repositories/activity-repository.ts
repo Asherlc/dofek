@@ -1,55 +1,36 @@
-import { mapHrZones, mapPowerZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
 import { retireActivityImages } from "dofek/db/activity-images";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
-import type { ActivityLocation } from "../contracts/activity-location.ts";
 import type { ActivityMetricSourceSelection } from "../contracts/activity-metric-sources.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import {
-  postgresCurrentTimestampRangeLowerBound,
-  postgresEndDateTimestampRangeLowerBound,
-  type RangeDays,
-} from "../lib/date-window.ts";
-import { routeMapPreview } from "../lib/map-preview.ts";
+import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ActivityRow } from "../models/activity.ts";
-import { activityOriginFromColumns } from "../models/activity-origin.ts";
-import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
-import { buildActivitySourceTree } from "../models/activity-source-tree.ts";
-import { activityMeasurementState } from "../services/activity-data-state.ts";
-import { listActivityHardware } from "./activity-hardware-repository.ts";
+import type {
+  ActivityListItem,
+  CountVisibleInWindowInput,
+  ListInput,
+  SearchInput,
+} from "./activity-list-repository.ts";
+import { ActivityListRepository } from "./activity-list-repository.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
-import {
-  getActivityMetricSources,
-  getActivitySourceHrZones,
-} from "./activity-metric-sources-repository.ts";
 import {
   type ActivityIdResolution,
   activityDetailRowSchema,
   activityIdResolutionSchema,
-  activityListColumns,
-  activityListRowSchema,
   activitySensorWindowRowSchema,
-  activitySummaryReadModelRowSchema,
-  type hrZoneRowSchema,
-  type powerZoneRowSchema,
-  streamPointRowSchema,
 } from "./activity-repository-schemas.ts";
-import { getActivityMapReadiness, getActivityRoutePreviews } from "./activity-route-preview.ts";
-import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
+import type { StreamPoint } from "./activity-sensor-repository.ts";
+import { ActivitySensorRepository } from "./activity-sensor-repository.ts";
+import type { ActivitySensorReadStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
+import { withActivitySummaries } from "./activity-summary-enrichment.ts";
 
 export type { ActivitySensorQueryOptions, ActivitySensorWindow } from "./activity-sensor-types.ts";
 
 import { ActivityVisibilityRepository } from "./activity-visibility-repository.ts";
-import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
-
-type ActivityListItem = Record<string, unknown> & {
-  location: ActivityLocation | null;
-  primary_canonical_type: string | null;
-};
 
 function activityNotFoundError(): TRPCError {
   return new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
@@ -81,21 +62,7 @@ const vo2MaxEstimateSchema = z.object({
 // Domain models
 // ---------------------------------------------------------------------------
 
-export interface StreamPointRow {
-  recorded_at: string;
-  heart_rate: number | null;
-  power: number | null;
-  speed: number | null;
-  cadence: number | null;
-  altitude: number | null;
-  lat: number | null;
-  lng: number | null;
-}
-
-export interface ActivitySensorStore extends ActivitySensorQueryStore {
-  getActivitySummaries(
-    activityIds: string[],
-  ): Promise<z.infer<typeof activitySummaryReadModelRowSchema>[]>;
+export interface ActivitySensorStore extends ActivitySensorReadStore {
   getPowerCurveSamples(
     days: number | null,
     userId: string,
@@ -124,68 +91,12 @@ export interface ActivitySensorStore extends ActivitySensorQueryStore {
     userId: string,
     timezone: string,
   ): Promise<Array<{ duration_seconds: number; best_pace: number; activity_date: string }>>;
-  getStream(
-    window: ActivitySensorWindow,
-    maxPoints: number,
-    sources?: ActivityMetricSourceSelection,
-  ): Promise<StreamPointRow[]>;
-  getHeartRateZoneSeconds(window: ActivitySensorWindow): Promise<z.infer<typeof hrZoneRowSchema>[]>;
-  getPowerZoneSeconds(
-    window: ActivitySensorWindow,
-    ftp: number,
-    powerSourceId?: string,
-  ): Promise<z.infer<typeof powerZoneRowSchema>[]>;
   refreshBodyMeasurements(): Promise<void>;
-}
-
-/** A single data point from an activity's metric stream. */
-export class StreamPoint {
-  readonly #row: StreamPointRow;
-
-  constructor(row: StreamPointRow) {
-    this.#row = row;
-  }
-
-  toDetail() {
-    return {
-      recordedAt: String(this.#row.recorded_at),
-      heartRate: this.#row.heart_rate != null ? Number(this.#row.heart_rate) : null,
-      power: this.#row.power != null ? Number(this.#row.power) : null,
-      speed: this.#row.speed != null ? Number(this.#row.speed) : null,
-      cadence: this.#row.cadence != null ? Number(this.#row.cadence) : null,
-      altitude: this.#row.altitude != null ? Number(this.#row.altitude) : null,
-      lat: this.#row.lat != null ? Number(this.#row.lat) : null,
-      lng: this.#row.lng != null ? Number(this.#row.lng) : null,
-    };
-  }
 }
 
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
-
-/** Input parameters for the activity list query. */
-export interface ListInput {
-  days: RangeDays;
-  endDate: string;
-  limit: number;
-  offset: number;
-  activityTypes?: string[];
-}
-
-export interface SearchInput {
-  startDate: string;
-  endDate: string;
-  query?: string;
-  limit: number;
-}
-
-export interface CountVisibleInWindowInput {
-  days: RangeDays;
-  activityTypes?: string[];
-  requireEndedAt?: boolean;
-  accessWindow?: AccessWindow;
-}
 
 /** Factory for repositories that need activity visibility helpers without a sensor store. */
 export function activityRepositoryFor(
@@ -201,6 +112,8 @@ export function activityRepositoryFor(
 export class ActivityRepository extends BaseRepository {
   readonly #sensorStore?: ActivitySensorStore;
   readonly #visibilityRepository: ActivityVisibilityRepository;
+  readonly #listRepository: ActivityListRepository;
+  readonly #sensorRepository: ActivitySensorRepository;
   readonly #activityIdResolutions = new Map<string, ActivityIdResolution | null>();
 
   constructor(
@@ -218,6 +131,14 @@ export class ActivityRepository extends BaseRepository {
       timezone,
       accessWindow,
     );
+    this.#listRepository = new ActivityListRepository(
+      db,
+      userId,
+      timezone,
+      accessWindow,
+      sensorStore,
+    );
+    this.#sensorRepository = new ActivitySensorRepository(db, userId, timezone, accessWindow);
   }
 
   /** Returns activity IDs currently visible in fitness.v_activity. */
@@ -263,58 +184,17 @@ export class ActivityRepository extends BaseRepository {
 
   /** Counts visible activities in fitness.v_activity for the requested window. */
   async countVisibleInWindow(input: CountVisibleInWindowInput): Promise<number> {
-    const activityTypePredicate =
-      input.activityTypes && input.activityTypes.length > 0
-        ? sql`AND canonical_type IN (${sql.join(
-            input.activityTypes.map((activityType) => sql`${activityType}`),
-            sql`, `,
-          )})`
-        : sql``;
-    const endedAtPredicate = input.requireEndedAt ? sql`AND ended_at IS NOT NULL` : sql``;
-    const accessWindow = input.accessWindow ?? this.accessWindow;
-    const accessWindowPredicate = this.timestampAccessPredicate(sql`started_at`, accessWindow);
-    const dateWindowPredicate = postgresCurrentTimestampRangeLowerBound(
-      input.days,
-      sql`started_at`,
-    );
-
-    const rows = await this.query(
-      z.object({ activity_count: z.coerce.number() }),
-      sql`SELECT count(*)::int AS activity_count
-          FROM fitness.v_activity
-          WHERE user_id = ${this.userId}::uuid
-            ${dateWindowPredicate}
-            ${endedAtPredicate}
-            ${activityTypePredicate}
-            ${accessWindowPredicate}`,
-    );
-    return rows[0]?.activity_count ?? 0;
+    return this.#listRepository.countVisibleInWindow(input);
   }
 
   /** Paginated activity list with summary metrics. */
   async list(input: ListInput): Promise<{ items: ActivityListItem[]; totalCount: number }> {
-    const rows = await this.#listRawRows(input);
-    const hydratedRows = await this.#withActivitySummaries(rows);
-    const totalCount = hydratedRows.length > 0 ? (hydratedRows[0]?.total_count ?? 0) : 0;
-    const items = hydratedRows.map((row) => this.#toListItem(row));
-    return { items, totalCount };
+    return this.#listRepository.list(input);
   }
 
   /** Activities inside an exact inclusive local-date range, optionally filtered before paging. */
   async search(input: SearchInput): Promise<{ items: ActivityListItem[]; totalCount: number }> {
-    const escapedQuery = input.query?.replace(/[%_\\]/g, (character) => `\\${character}`);
-    const queryPattern = escapedQuery ? `%${escapedQuery}%` : null;
-    const rows = await this.#exactRangeRows(
-      input.startDate,
-      input.endDate,
-      undefined,
-      queryPattern,
-      input.limit,
-    );
-    const hydratedRows = await this.#withActivitySummaries(rows);
-    const totalCount = hydratedRows[0]?.total_count ?? 0;
-    const items = hydratedRows.map((row) => this.#toListItem(row));
-    return { items, totalCount };
+    return this.#listRepository.search(input);
   }
 
   /** All activities inside an exact inclusive local-date range for server-side aggregation. */
@@ -323,100 +203,7 @@ export class ActivityRepository extends BaseRepository {
     endDate: string,
     activityTypes?: string[],
   ): Promise<ActivityListItem[]> {
-    const rows = await this.#exactRangeRows(startDate, endDate, activityTypes);
-    const hydratedRows = await this.#withActivitySummaries(rows);
-    return hydratedRows.map((row) => this.#toListItem(row));
-  }
-
-  #toListItem<
-    TRow extends {
-      distance_meters: number | null;
-      elevation_gain_m: number | null;
-      provider_type: string;
-      primary_canonical_type: string | null;
-      total_count?: number;
-      member_activity_ids?: string[];
-      location: ActivityLocation | null;
-    },
-  >(row: TRow): ActivityListItem {
-    const { total_count: _totalCount, member_activity_ids: _memberActivityIds, ...rest } = row;
-    return {
-      avg_hr: null,
-      max_hr: null,
-      avg_power: null,
-      max_power: null,
-      avg_speed: null,
-      max_speed: null,
-      avg_cadence: null,
-      total_distance: null,
-      elevation_loss_m: null,
-      sample_count: null,
-      ...rest,
-      raw_type: row.provider_type,
-      distance_state: activityMeasurementState("Distance", row.distance_meters),
-      elevation_state: activityMeasurementState("Elevation gain", row.elevation_gain_m),
-    };
-  }
-
-  #exactRangeRows(
-    startDate: string,
-    endDate: string,
-    activityTypes?: string[],
-    queryPattern: string | null = null,
-    limit?: number,
-  ) {
-    const typeFilter =
-      activityTypes && activityTypes.length > 0
-        ? sql`AND a.canonical_type IN (${sql.join(
-            activityTypes.map((activityType) => sql`${activityType}`),
-            sql`, `,
-          )})`
-        : sql``;
-    const queryFilter = queryPattern
-      ? sql`AND (a.name ILIKE ${queryPattern} OR a.canonical_type::text ILIKE ${queryPattern})`
-      : sql``;
-    const limitClause = limit == null ? sql`` : sql`LIMIT ${limit}`;
-    return this.query(
-      activityListRowSchema,
-      sql`SELECT
-            ${activityListColumns}
-          FROM fitness.v_activity a
-          WHERE a.user_id = ${this.userId}
-            AND a.started_at >= (${startDate}::date AT TIME ZONE ${this.timezone})
-            AND a.started_at < ((${endDate}::date + 1) AT TIME ZONE ${this.timezone})
-            ${typeFilter}
-            ${queryFilter}
-            ${this.timestampAccessPredicate(sql`a.started_at`)}
-          ORDER BY a.started_at DESC
-          ${limitClause}`,
-    );
-  }
-
-  #listRawRows(input: ListInput) {
-    const typeFilter =
-      input.activityTypes && input.activityTypes.length > 0
-        ? sql`AND a.canonical_type IN (${sql.join(
-            input.activityTypes.map((type) => sql`${type}`),
-            sql`, `,
-          )})`
-        : sql``;
-    const rangeFilter = postgresEndDateTimestampRangeLowerBound(
-      input.days,
-      sql`a.started_at`,
-      input.endDate,
-    );
-    return this.query(
-      activityListRowSchema,
-      sql`SELECT
-            ${activityListColumns}
-          FROM fitness.v_activity a
-          WHERE a.user_id = ${this.userId}
-            ${rangeFilter}
-            ${typeFilter}
-            ${this.timestampAccessPredicate(sql`a.started_at`)}
-          ORDER BY a.started_at DESC
-          LIMIT ${input.limit} OFFSET ${input.offset}`,
-    );
+    return this.#listRepository.listRange(startDate, endDate, activityTypes);
   }
 
   /** Single activity with full detail row. Returns null when not found. */
@@ -562,7 +349,7 @@ export class ActivityRepository extends BaseRepository {
             AND a.user_id = ${this.userId}
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
-    const hydratedRows = await this.#withActivitySummaries(rows);
+    const hydratedRows = await withActivitySummaries(rows, this.#sensorStore, this.userId);
     const firstRow = hydratedRows[0];
     if (!firstRow) return null;
     const { member_activity_ids: _, ...activity } = firstRow;
@@ -684,92 +471,11 @@ export class ActivityRepository extends BaseRepository {
             a.id ASC
           LIMIT 1`,
     );
-    const hydratedRows = await this.#withActivitySummaries(rows);
+    const hydratedRows = await withActivitySummaries(rows, this.#sensorStore, this.userId);
     const firstRow = hydratedRows[0];
     if (!firstRow) return null;
     const { member_activity_ids: _, ...activity } = firstRow;
     return activity;
-  }
-
-  async #withActivitySummaries<
-    TRow extends {
-      id: string;
-      member_activity_ids: string[];
-      provider_absent_at?: string | null;
-    },
-  >(rows: TRow[]): Promise<Array<TRow & { location: ActivityLocation | null }>> {
-    const sensorStore = this.#sensorStore;
-    if (!sensorStore) {
-      return rows.map((row) => ({ ...row, location: null }));
-    }
-    if (rows.length === 0) {
-      return [];
-    }
-
-    const activityIds = [...new Set(rows.map((row) => row.id))];
-    const [summaries, routePreviewByActivityId] = await Promise.all([
-      sensorStore.getActivitySummaries(activityIds),
-      getActivityRoutePreviews(sensorStore, this.userId, activityIds),
-    ]);
-    const summaryByActivityId = new Map(
-      summaries.map((summary) => [
-        summary.activity_id,
-        activitySummaryReadModelRowSchema.parse(summary),
-      ]),
-    );
-    const mapReadinessByActivityId = await getActivityMapReadiness(
-      sensorStore,
-      this.userId,
-      rows
-        .filter((row) => {
-          const summary = summaryByActivityId.get(row.id);
-          return summary?.centroid_lat == null || summary.centroid_lng == null;
-        })
-        .map((row) => ({
-          id: row.id,
-          routeActivityId: row.id,
-          memberActivityIds: row.member_activity_ids,
-        })),
-    );
-    return rows.map((row) => {
-      const summary = summaryByActivityId.get(row.id);
-      const mapReadiness = mapReadinessByActivityId.get(row.id);
-      const pendingLocation: ActivityLocation | null =
-        mapReadiness === "processing" ||
-        (mapReadiness === "awaiting_summary" && row.provider_absent_at == null)
-          ? { kind: "processing" }
-          : null;
-      if (!summary) {
-        return { ...row, location: pendingLocation };
-      }
-      const routePreview = routePreviewByActivityId.get(summary.activity_id);
-      return {
-        ...row,
-        avg_hr: summary.avg_hr,
-        max_hr: summary.max_hr,
-        avg_power: summary.avg_power,
-        max_power: summary.max_power,
-        avg_speed: summary.avg_speed,
-        max_speed: summary.max_speed,
-        avg_cadence: summary.avg_cadence,
-        total_distance: summary.total_distance,
-        distance_meters: summary.total_distance,
-        elevation_gain_m: summary.elevation_gain_m,
-        elevation_loss_m: summary.elevation_loss_m,
-        sample_count: summary.sample_count,
-        location:
-          summary.centroid_lat != null && summary.centroid_lng != null
-            ? {
-                kind: "recorded_gps" as const,
-                centroidLat: summary.centroid_lat,
-                centroidLng: summary.centroid_lng,
-                mapPreview:
-                  routePreview ??
-                  routeMapPreview([{ lat: summary.centroid_lat, lng: summary.centroid_lng }]),
-              }
-            : pendingLocation,
-      };
-    });
   }
 
   /** Downsampled metric stream for a single activity. */
@@ -781,56 +487,21 @@ export class ActivityRepository extends BaseRepository {
     const sensorStore = this.#requireSensorStore("activity streams");
     const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
-    const rows = await (sources && Object.keys(sources).length > 0
-      ? sensorStore.getStream(window, maxPoints, sources)
-      : sensorStore.getStream(window, maxPoints));
-    return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
+    return this.#sensorRepository.getStream(sensorStore, window, maxPoints, sources);
   }
 
   async getMetricSources(activityId: string, responseVersion: 1 | 2 = 1) {
     const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
-    const hardware = await listActivityHardware(this.db, window);
+    const hardware = await this.#sensorRepository.getHardware(window);
     const store = this.#requireSensorStore("metric sources");
-    if (responseVersion === 1) return getActivityMetricSources(store, window, hardware);
-    const [ancestry] = await this.query(
-      activityDetailRowSchema.pick({
-        primary_activity_id: true,
-        primary_provider_id: true,
-        primary_source_name: true,
-        origin_candidate_member_ids: true,
-        origin_evidence: true,
-        source_external_ids: true,
-        absent_source_external_ids: true,
-      }),
-      sql`SELECT primary_activity_id::text, primary_provider_id, primary_source_name,
-        origin_candidate_member_ids::text[], origin_evidence,
-        source_external_ids, absent_source_external_ids
-      FROM fitness.v_activity WHERE id = ${window.activityId}::uuid AND user_id = ${this.userId}::uuid`,
-    );
-    if (!ancestry) throw activityNotFoundError();
-    const sessions = await new ClimbingActivityLogEntryRepository(
-      this.db,
-      this.userId,
-      this.timezone,
-      this.accessWindow,
-    ).getActivityLogSessions([window.activityId]);
-    const sourceTree = buildActivitySourceTree(
-      activityOriginFromColumns(ancestry),
-      ActivitySourceAttribution.fromEntries(
-        ancestry.source_external_ids,
-        ancestry.absent_source_external_ids,
-      ).toSourceLinks(() => undefined),
-      ancestry.origin_evidence,
-      sessions.get(window.activityId) ?? [],
-    );
-    return getActivityMetricSources(store, window, hardware, sourceTree);
+    return this.#sensorRepository.getMetricSources(store, window, hardware, responseVersion);
   }
 
   async getHardware(activityId: string) {
     const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
-    return listActivityHardware(this.db, window);
+    return this.#sensorRepository.getHardware(window);
   }
 
   /** HR zone distribution for a single activity using the canonical Karvonen model. */
@@ -841,9 +512,7 @@ export class ActivityRepository extends BaseRepository {
     const sensorStore = this.#requireSensorStore("heart-rate zones");
     const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
-    return heartRateSourceId
-      ? getActivitySourceHrZones(sensorStore, window, heartRateSourceId)
-      : mapHrZones(await sensorStore.getHeartRateZoneSeconds(window));
+    return this.#sensorRepository.getHrZones(sensorStore, window, heartRateSourceId);
   }
 
   /** Cycling power zone distribution for a single activity using 7 zones relative to FTP. */
@@ -855,11 +524,7 @@ export class ActivityRepository extends BaseRepository {
     const sensorStore = this.#requireSensorStore("power zones");
     const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
-    return mapPowerZones(
-      await (powerSourceId
-        ? sensorStore.getPowerZoneSeconds(window, ftp, powerSourceId)
-        : sensorStore.getPowerZoneSeconds(window, ftp)),
-    );
+    return this.#sensorRepository.getPowerZones(sensorStore, window, ftp, powerSourceId);
   }
 
   #requireSensorStore(featureName: string): ActivitySensorStore {

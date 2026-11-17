@@ -300,6 +300,7 @@ ${replacingMergeTreeTable("(operation_id, dataset_key, flow_name, batch_key, id)
   birth_date Nullable(Date),
   max_hr Nullable(Int16),
   resting_hr Nullable(Int16),
+  ftp Nullable(Int16),
   is_admin Bool,
   created_at DateTime64(6, 'UTC'),
   updated_at DateTime64(6, 'UTC'),

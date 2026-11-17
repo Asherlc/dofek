@@ -66,6 +66,12 @@ jobs:
           echo "mobile_preview_url=$MOBILE_PREVIEW_URL" >> "$GITHUB_OUTPUT"
           echo "commit_sha=${GITHUB_SHA:0:8}" >> "$GITHUB_OUTPUT"
 
+      - name: Configure AWS CLI S3 transfer client for R2
+        if: steps.preview.outputs.ready == 'true'
+        # AWS CLI 2.40.0 CRT did not retry R2's HTTP 429 / ServiceUnavailable response.
+        # The classic client uses the standard SDK retry classifier for this response.
+        run: aws configure set default.s3.preferred_transfer_client classic
+
       - name: Deploy Web Storybook to R2
         if: steps.preview.outputs.ready == 'true'
         env:
