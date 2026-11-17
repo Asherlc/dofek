@@ -8,7 +8,7 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { z } from "zod";
-import StrainScreen from "../../app/(tabs)/strain";
+import { TrainingScreen } from "../../app/(tabs)/strain";
 import { createFixtureDates, type FixtureDates } from "../../app-fixtures/(tabs)/fixture-dates";
 import {
   createProcessingStatusStoryLink,
@@ -31,6 +31,12 @@ const STRAIN_COMPANION_RESPONSES = {
   "climbing.attachClimbingLogEntry": { attached: true },
   "climbing.locationMap": climbingLocationMapFixture,
   "climbing.strengths": climbingStrengthsFixture,
+  "climbing.volumeIncrease": {
+    status: "increase",
+    recentMinutes: 300,
+    baselineMinutes: 210,
+    increasePercent: 42.86,
+  },
   "climbing.volumeOverTime": [
     { week: "2026-09-28", attempts: 12, minutes: 120 },
     { week: "2026-10-05", attempts: 8, minutes: 90 },
@@ -364,7 +370,8 @@ function MockProviders({
 
 const meta = {
   title: "Pages/Strain",
-  component: StrainScreen,
+  component: TrainingScreen,
+  args: { isFocused: true },
   parameters: {
     layout: "fullscreen",
   },
@@ -377,7 +384,7 @@ const meta = {
       </MockProviders>
     ),
   ],
-} satisfies Meta<typeof StrainScreen>;
+} satisfies Meta<typeof TrainingScreen>;
 
 export default meta;
 

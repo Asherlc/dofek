@@ -1,4 +1,8 @@
 import {
+  climbingVolumeIncreaseTitle,
+  formatClimbingVolumeIncrease,
+} from "@dofek/format/climbing-volume";
+import {
   formatDateShort,
   formatDurationMinutes,
   formatNumber,
@@ -14,7 +18,7 @@ import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
 } from "@dofek/training/training";
-import { useRouter } from "expo-router";
+import { useIsFocused, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
@@ -62,6 +66,11 @@ function useReportQueryError(query: { isError: boolean; error: object | null }) 
 }
 
 export default function StrainScreen() {
+  const isFocused = useIsFocused();
+  return <TrainingScreen isFocused={isFocused} />;
+}
+
+export function TrainingScreen({ isFocused }: { isFocused: boolean }) {
   const [climbingFilters, setClimbingFilters] = useState<ClimbingFilterValues>({});
   const [strengthsAllTime, setStrengthsAllTime] = useState(false);
   const [includeAreaMetadata, setIncludeAreaMetadata] = useState(true);
@@ -119,6 +128,12 @@ export default function StrainScreen() {
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
+  const climbingVolumeIncrease = trpc.climbing.volumeIncrease.useQuery(undefined, {
+    enabled: isHydrated && isFocused,
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
   const climbingVolumeQuery = trpc.climbing.volumeOverTime.useQuery(
     { days, ...climbingFilters },
     {
@@ -133,6 +148,7 @@ export default function StrainScreen() {
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
+  useReportQueryError(climbingVolumeIncrease);
   useReportQueryError(climbingVolumeQuery);
   useReportQueryError(strengthVolumeQuery);
   const hrZonesQuery = trpc.training.hrZones.useQuery(
@@ -209,6 +225,7 @@ export default function StrainScreen() {
         utils.running.dynamicsV2.invalidate(),
         utils.climbing.locationMap.invalidate(),
         utils.climbing.strengths.invalidate(),
+        utils.climbing.volumeIncrease.invalidate(),
         utils.climbing.volumeOverTime.invalidate(),
         utils.strength.volumeOverTime.invalidate(),
         utils.training.hrZones.invalidate(),
@@ -317,6 +334,18 @@ export default function StrainScreen() {
       <SportVolumeChart days={days} enabled={isHydrated} />
       <RouteComparisonCard days={days} enabled={isHydrated} />
       <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
+      {climbingVolumeIncrease.error ? (
+        <QueryStatePanel variant="error" message={climbingVolumeIncrease.error.message} />
+      ) : climbingVolumeIncrease.data?.status === "increase" ? (
+        <View style={styles.volumeIncrease}>
+          <Text accessibilityRole="header" style={styles.volumeIncreaseTitle}>
+            {climbingVolumeIncreaseTitle}
+          </Text>
+          <Text style={styles.volumeIncreaseMessage}>
+            {formatClimbingVolumeIncrease(climbingVolumeIncrease.data)}
+          </Text>
+        </View>
+      ) : null}
       {climbingVolumeQuery.error ? (
         <QueryStatePanel variant="error" message={climbingVolumeQuery.error.message} />
       ) : null}
@@ -512,6 +541,23 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  volumeIncrease: {
+    backgroundColor: colors.surface,
+    borderColor: colors.accent,
+    borderLeftWidth: 3,
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+  },
+  volumeIncreaseTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  volumeIncreaseMessage: {
+    color: colors.textSecondary,
+    fontSize: 14,
   },
   loadGrid: {
     flexDirection: "row",

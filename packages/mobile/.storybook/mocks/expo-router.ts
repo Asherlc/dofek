@@ -19,6 +19,10 @@ export function useRouter() {
   return router;
 }
 
+export function useIsFocused(): boolean {
+  return true;
+}
+
 export function useLocalSearchParams(): Record<string, string | string[] | undefined> {
   return {};
 }

@@ -9,6 +9,7 @@
     "./baseline-context": "./src/baseline-context.ts",
     "./climbing-context": "./src/climbing-context.ts",
     "./climbing-log": "./src/climbing-log.ts",
+    "./climbing-volume": "./src/climbing-volume.ts",
     "./data-quality": "./src/data-quality.ts",
     "./body-decision-context": "./src/body-decision-context.ts",
     "./format": "./src/format.ts",

@@ -1,3 +1,7 @@
+import {
+  climbingVolumeIncreaseTitle,
+  formatClimbingVolumeIncrease,
+} from "@dofek/format/climbing-volume";
 import type { ClimbingFilters as Filters } from "@dofek/training/climbing-filters";
 import { keepPreviousData } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -38,6 +42,9 @@ export function ClimbingTab() {
     climbingQueryOptions,
   );
   const volumeByGrade = trpc.climbing.volumeByGrade.useQuery(rangeInput, climbingQueryOptions);
+  const volumeIncrease = trpc.climbing.volumeIncrease.useQuery(undefined, {
+    refetchOnWindowFocus: true,
+  });
   const volumeOverTime = trpc.climbing.volumeOverTime.useQuery(
     { ...rangeInput, days },
     climbingQueryOptions,
@@ -71,6 +78,19 @@ export function ClimbingTab() {
       </p>
       <div className="grid grid-cols-1 gap-6">
         <Section title="Climbing Volume">
+          {volumeIncrease.error ? (
+            <QueryStatePanel error={volumeIncrease.error} height={0} />
+          ) : volumeIncrease.data?.status === "increase" ? (
+            <aside
+              aria-labelledby="climbing-volume-increase-title"
+              className="mb-4 rounded-lg border border-border bg-accent/10 px-4 py-3 text-sm"
+            >
+              <h3 id="climbing-volume-increase-title" className="font-semibold text-foreground">
+                {climbingVolumeIncreaseTitle}
+              </h3>
+              <p className="mt-1 text-muted">{formatClimbingVolumeIncrease(volumeIncrease.data)}</p>
+            </aside>
+          ) : null}
           {volumeOverTime.error ? (
             <QueryStatePanel error={volumeOverTime.error} height={0} />
           ) : null}

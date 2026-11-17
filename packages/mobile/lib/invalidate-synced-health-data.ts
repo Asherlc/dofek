@@ -4,6 +4,7 @@ const SYNCED_HEALTH_DATA_QUERY_PATHS = new Set([
   "mobileDashboard.dashboardV2",
   "mobileDashboard.recovery",
   "mobileDashboard.trainingV2",
+  "climbing.volumeIncrease",
   "calendar.weekListV2",
   "calendar.activityOverview",
   "activity.list",

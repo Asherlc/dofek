@@ -230,6 +230,16 @@ describe("formatDurationHoursMinutes", () => {
 });
 
 describe("formatDurationMinutes", () => {
+  it.each([
+    [0, "0 minutes"],
+    [1, "1 minute"],
+    [60, "1 hour"],
+    [61, "1 hour 1 minute"],
+    [210, "3 hours 30 minutes"],
+  ])("spells out %s minutes for prose", (minutes, expected) => {
+    expect(formatDurationMinutes(minutes, { style: "long" })).toBe(expected);
+  });
+
   it("keeps an unknown duration distinct from zero", () => {
     expect(formatDurationMinutes(null)).toBe("--");
     expect(formatDurationMinutes(0)).toBe("0m");

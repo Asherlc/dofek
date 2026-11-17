@@ -32,6 +32,9 @@ const mockProcessingStatusInvalidate = vi.fn();
 const mockRunningInvalidate = vi.fn();
 const mockRouteComparisonInvalidate = vi.fn();
 const mockRouteComparisonQuery = vi.fn();
+const mockVolumeIncreaseQuery = vi.fn();
+const mockVolumeIncreaseInvalidate = vi.fn();
+let mockTrainingScreenFocused = true;
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 let mockTrainingDataDays = 90;
 type MockRangeQueryOptions = {
@@ -124,6 +127,7 @@ function resetMockTrainingState() {
 }
 
 vi.mock("expo-router", () => ({
+  useIsFocused: () => mockTrainingScreenFocused,
   useRouter: () => ({ push: mockRouterPush }),
 }));
 
@@ -145,6 +149,7 @@ vi.mock("../../lib/trpc", () => ({
     },
     hiking: { activityComparison: { useQuery: mockRouteComparisonQuery } },
     climbing: {
+      volumeIncrease: { useQuery: mockVolumeIncreaseQuery },
       volumeOverTime: {
         useQuery: () => ({
           data: [],
@@ -226,6 +231,7 @@ vi.mock("../../lib/trpc", () => ({
       running: { dynamicsV2: { invalidate: mockRunningInvalidate } },
       hiking: { activityComparison: { invalidate: mockRouteComparisonInvalidate } },
       climbing: {
+        volumeIncrease: { invalidate: mockVolumeIncreaseInvalidate },
         volumeOverTime: { invalidate: vi.fn() },
         locationMap: { invalidate: mockLocationMapInvalidate },
         strengths: { invalidate: vi.fn().mockResolvedValue(undefined) },
@@ -329,6 +335,9 @@ describe("StrainScreen", () => {
   });
 
   beforeEach(() => {
+    mockTrainingScreenFocused = true;
+    mockVolumeIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
+    mockVolumeIncreaseInvalidate.mockReset().mockResolvedValue(undefined);
     mockRunningData = { ...runningData, data: [] };
     mockRunningLoading = false;
     mockRunningError = null;
@@ -539,6 +548,78 @@ describe("StrainScreen", () => {
     expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
     expect(screen.getByText("Climbing strengths")).toBeTruthy();
     expect(screen.getByText("Climbing locations")).toBeTruthy();
+  });
+
+  it("shows the fixed-window climbing volume increase and clears it after refresh", async () => {
+    mockVolumeIncreaseQuery.mockReturnValue({
+      data: {
+        status: "increase",
+        recentMinutes: 300,
+        baselineMinutes: 210,
+        increasePercent: 42.86,
+      },
+      error: null,
+    });
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { rerender } = render(<StrainScreen />);
+    expect(screen.getByText("Climbing volume increased")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "You logged 5 hours of climbing in the last 7 days, up 43% from your recent weekly average of 3 hours 30 minutes.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
+    expect(mockVolumeIncreaseQuery).toHaveBeenLastCalledWith(
+      undefined,
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(screen.getByText("Climbing volume increased")).toBeTruthy();
+
+    await mockRefreshInvalidate?.();
+    expect(mockVolumeIncreaseInvalidate).toHaveBeenCalledOnce();
+    mockVolumeIncreaseQuery.mockReturnValue({ data: { status: "below_threshold" }, error: null });
+    rerender(<StrainScreen />);
+    expect(screen.queryByText("Climbing volume increased")).toBeNull();
+  });
+
+  it("reloads a stale comparison when the Training tab regains focus", async () => {
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { rerender } = render(<StrainScreen />);
+    mockTrainingScreenFocused = false;
+    rerender(<StrainScreen />);
+    expect(mockVolumeIncreaseQuery.mock.lastCall?.[1]).toMatchObject({ enabled: false });
+
+    mockTrainingScreenFocused = true;
+    rerender(<StrainScreen />);
+    expect(mockVolumeIncreaseQuery.mock.lastCall?.[1]).toMatchObject({
+      enabled: true,
+      staleTime: 0,
+      refetchOnWindowFocus: true,
+    });
+  });
+
+  it("keeps the comparison while refreshing and hides it after a failed refresh", async () => {
+    const data = {
+      status: "increase",
+      recentMinutes: 300,
+      baselineMinutes: 210,
+      increasePercent: 42.86,
+    };
+    mockVolumeIncreaseQuery.mockReturnValue({ data, isFetching: true, error: null });
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { rerender } = render(<StrainScreen />);
+    expect(screen.getByText("Climbing volume increased")).toBeTruthy();
+
+    mockVolumeIncreaseQuery.mockReturnValue({
+      data,
+      error: new Error("Climbing time unavailable"),
+    });
+    rerender(<StrainScreen />);
+    expect(screen.getByText("Climbing time unavailable")).toBeTruthy();
+    expect(screen.getByText("Climbing locations")).toBeTruthy();
+    expect(screen.queryByText("Climbing volume increased")).toBeNull();
   });
 
   it("refreshes training, intensity, polarization, and processing status together", async () => {
