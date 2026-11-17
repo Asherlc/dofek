@@ -54,6 +54,7 @@ final class WhoopBleBackgroundUploader: NSObject {
     private var submissionSequence = 0
     private var authRetriedEpoch: [String: Int] = [:]
     private var lastCaptureSchedule: Date?
+    private var reservationWriteSummary = WhoopReservationWriteSummary()
     private let createdAt = Date()
 
     init(store: WhoopBleSampleStore, directory: URL, transport: WhoopUploadTransport,
@@ -214,6 +215,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                 "activeUploadCount": active.count, "blockedUploadStreams": blocked.map(\.rawValue),
                 "http5xxResponseCount": http5xxResponseCount
             ]
+            result["reservationWriteSummary"] = reservationWriteSummary.asDictionary
             result["lastUploadError"] = lastError.map { $0 as Any } ?? NSNull()
             result["lastUploadOutcome"] = lastUploadOutcome?.sentryData ?? NSNull()
             return result
@@ -288,7 +290,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                 let count = try store.queuedCount(stream: stream, limit: stream.batchLimit)
                 let since = lastSubmission[stream] ?? firstArrival[stream] ?? now()
                 guard count >= stream.batchLimit || partial || now().timeIntervalSince(since) >= 30 else { continue }
-                guard let batch = try store.reserve(stream: stream) else { continue }
+                guard let batch = try store.reserve(stream: stream, reportWrites: recordReservationWrites) else { continue }
                 let identity = identity(batch)
                 guard !pairedActive.contains(identity) || refreshActive else { continue }
                 let file = directory.appendingPathComponent(identity + ".json")
@@ -394,6 +396,9 @@ final class WhoopBleBackgroundUploader: NSObject {
         } else {
             reportError(error)
         }
+    }
+    private func recordReservationWrites(_ measurement: WhoopSQLiteWriteMeasurement?) {
+        reservationWriteSummary.record(measurement)
     }
     private func identity(_ batch: WhoopStoredBatch) -> String { batch.generation + "." + batch.id }
     private func removeBodies() throws {

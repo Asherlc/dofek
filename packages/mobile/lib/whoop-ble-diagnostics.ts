@@ -104,6 +104,17 @@ export class WhoopBleDiagnostics {
       activeUploadCount: buffers.activeUploadCount,
       blockedUploadStreams: buffers.blockedUploadStreams.join(","),
       lastUploadError: buffers.lastUploadError,
+      ...(buffers.reservationWriteSummary
+        ? {
+            reservationWriteMeasurementCount:
+              buffers.reservationWriteSummary.measuredReservationCount,
+            reservationWalPagesWritten: buffers.reservationWriteSummary.walPagesWritten,
+            reservationWalPagesSpilled: buffers.reservationWriteSummary.walPagesSpilled,
+            maxReservationWalPagesWritten: buffers.reservationWriteSummary.maxWalPagesWritten,
+            reservationWriteMeasurementFailureCount:
+              buffers.reservationWriteSummary.measurementFailureCount,
+          }
+        : {}),
       ...(buffers.lastUploadOutcome
         ? {
             uploadOutcomeStage: buffers.lastUploadOutcome.stage,

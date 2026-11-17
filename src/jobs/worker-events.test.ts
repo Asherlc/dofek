@@ -282,18 +282,16 @@ describe("worker events", () => {
     expect(Sentry.captureException).toHaveBeenCalledWith(error);
   });
 
-  it.each([undefined, { attemptsMade: 0, opts: {} }])(
-    "reports OpenBeta failures when retry eligibility cannot be established: %j",
+  it.each([undefined, { attemptsMade: 1, opts: {} }, { attemptsMade: 2, opts: { attempts: 2 } }])(
+    "keeps provider timeout job failures visible in logs without alerting: %j",
     async (job) => {
       const Sentry = await import("@sentry/node");
       const { logger } = await import("../logger.ts");
       vi.mocked(Sentry.captureException).mockClear();
       vi.mocked(logger.error).mockClear();
-      const error = new ProviderRequestTimeoutError({ providerId: "openbeta", timeoutMs: 120_000 });
-      // Without a job there is no retry policy; an absent attempts option means one attempt.
-      if (job) job.attemptsMade = 1;
+      const error = new ProviderRequestTimeoutError({ providerId: "kaya", timeoutMs: 120_000 });
       getWorkerHandler("failed")(job, error);
-      expect(Sentry.captureException).toHaveBeenCalledWith(error);
+      expect(Sentry.captureException).not.toHaveBeenCalled();
       expect(logger.error).toHaveBeenCalledWith(`[worker] Job failed: ${error.message}`);
     },
   );
