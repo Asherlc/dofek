@@ -68,16 +68,16 @@ it("formats time tooltips and accessible exact values as hours:minutes", () => {
   );
   fireEvent.change(screen.getByLabelText("Climbing volume metric"), { target: { value: "time" } });
   expect(chart.option.tooltip.formatter?.([{ dataIndex: 0 }])).toBe(
-    "2026-01-05<br/>Time (h:mm): 1:30",
+    "Week starting 2026-01-05<br/>Total climbing session time (h:mm): 1:30",
   );
   expect(chart.option.tooltip.formatter?.([{ dataIndex: 1 }])).toBe(
-    "2026-01-12<br/>Time (h:mm): 0:45",
+    "Week starting 2026-01-12<br/>Total climbing session time (h:mm): 0:45",
   );
   expect(chart.option.tooltip.formatter?.([{ dataIndex: 2 }])).toBe(
-    "2026-01-19<br/>Time (h:mm): 0:00",
+    "Week starting 2026-01-19<br/>Total climbing session time (h:mm): 0:00",
   );
   expect(chart.option.tooltip.formatter?.([{ dataIndex: 3 }])).toBe(
-    "2026-01-26<br/>Time (h:mm): Not recorded",
+    "Week starting 2026-01-26<br/>Total climbing session time (h:mm): Not recorded",
   );
   expect(chart.option.series[0]?.data).toContainEqual({
     value: ["2026-01-05", 90],
@@ -95,7 +95,9 @@ it("formats time tooltips and accessible exact values as hours:minutes", () => {
   });
   expect(chart.option.yAxis.name).toBe("Attempts");
   expect(chart.option.yAxis.interval).toBeUndefined();
-  expect(chart.option.tooltip.formatter?.([{ dataIndex: 0 }])).toBe("2026-01-05<br/>Attempts: 5");
+  expect(chart.option.tooltip.formatter?.([{ dataIndex: 0 }])).toBe(
+    "Week starting 2026-01-05<br/>Recorded attempts: 5",
+  );
 });
 
 it("keeps sub-hour time charts in minutes", () => {
@@ -104,6 +106,6 @@ it("keeps sub-hour time charts in minutes", () => {
   expect(chart.option.yAxis.name).toBe("Time (minutes)");
   expect(chart.option.yAxis.interval).toBeUndefined();
   expect(chart.option.tooltip.formatter?.([{ dataIndex: 0 }])).toBe(
-    "2026-01-05<br/>Time (minutes): 59",
+    "Week starting 2026-01-05<br/>Total climbing session time (minutes): 59",
   );
 });

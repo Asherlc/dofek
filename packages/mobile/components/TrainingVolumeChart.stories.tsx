@@ -43,7 +43,11 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {};
+export const Default: Story = {
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByText("Recorded attempts per week")).toBeVisible();
+  },
+};
 
 export const Empty: Story = { args: { data: [] } };
 
@@ -61,7 +65,7 @@ export const Minutes: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("radio", { name: "Time" }));
-    await expect(canvas.getByText("minutes per week")).toBeVisible();
+    await expect(canvas.getByText("Total climbing session time per week (minutes)")).toBeVisible();
     await expect(canvas.getByLabelText("2026-10-12: 45 minutes")).toBeVisible();
   },
 };
@@ -81,7 +85,9 @@ export const HoursMinutes: Story = {
     const time = await canvas.findByRole("radio", { name: "Time" });
     await userEvent.click(time);
     await expect(time).toHaveAttribute("aria-checked", "true");
-    await expect(canvas.getByText("hours:minutes per week")).toBeVisible();
+    await expect(
+      canvas.getByText("Total climbing session time per week (hours:minutes)"),
+    ).toBeVisible();
     await expect(canvas.getByLabelText("2026-09-21: 10:00 h:mm")).toBeVisible();
     await expect(canvas.getByLabelText("2026-09-28: 1:00 h:mm")).toBeVisible();
     await expect(canvas.getByLabelText("2026-10-05: 0:45 h:mm")).toBeVisible();

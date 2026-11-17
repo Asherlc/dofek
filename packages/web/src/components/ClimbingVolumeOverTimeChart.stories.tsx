@@ -5,6 +5,7 @@ import { ClimbingVolumeOverTimeChart } from "./ClimbingVolumeOverTimeChart.tsx";
 const meta = {
   title: "Climbing/ClimbingVolumeOverTimeChart",
   component: ClimbingVolumeOverTimeChart,
+  parameters: { layout: "padded" },
   args: {
     data: [
       { week: "2026-10-05", attempts: 12, minutes: 120 },
