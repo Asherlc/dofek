@@ -7,6 +7,7 @@ import { createDatabase } from "../db/index.ts";
 import type { AccountErasurePhaseExecution } from "./process-account-erasure-request.ts";
 
 const mocks = vi.hoisted(() => ({
+  activitySearchPublicationExists: vi.fn(async () => false),
   configureBrokerStorage: vi.fn(),
   configureRemoteHistory: vi.fn(),
   assertNativeDeleted: vi.fn(async (_boundaries: readonly unknown[]) => new Map()),
@@ -143,6 +144,10 @@ vi.mock("../account-erasure/kafka-log-storage.ts", () => ({
 vi.mock("../analytics/analytics-query-owner.ts", () => ({
   ANALYTICS_PUBLICATION_RESOURCE: "metric-stream-source",
   withAnalyticsQueryOwner: mocks.withOwner,
+}));
+vi.mock("../activity-search/publication.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../activity-search/publication.ts")>()),
+  activitySearchPublicationExists: mocks.activitySearchPublicationExists,
 }));
 const ownerDatabase = createDatabase("postgres://unit:unit@localhost/unit");
 afterAll(async () => ownerDatabase.$client.end());
@@ -445,6 +450,16 @@ describe("createAccountErasureRuntime", () => {
     process.env.METRIC_STREAM_LIVE_TOPIC = "metric-stream-live-v2";
     process.env.METRIC_STREAM_HISTORY_TOPIC = "metric-stream-history-v2";
     mocks.r2Client.send.mockResolvedValue({ Contents: [], IsTruncated: false });
+  });
+
+  it("requires erasure credentials after search has published even when both secrets are removed", async () => {
+    mocks.activitySearchPublicationExists.mockResolvedValueOnce(true);
+    const { database, clickHouseClient, workPurger } = runtimeInputs();
+    await expect(
+      createAccountErasureRuntime(database, clickHouseClient, workPurger),
+    ).rejects.toThrow("ACTIVITY_SEARCH_ERASE_URL and ACTIVITY_SEARCH_RETENTION_TOKEN are required");
+    expect(mocks.ensureProvidersRegistered).not.toHaveBeenCalled();
+    expect(workPurger.close).toHaveBeenCalledOnce();
   });
 
   it("connects the remote verifier to the dedicated client, native history and consumer factory", async () => {

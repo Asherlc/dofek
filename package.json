@@ -7,6 +7,8 @@
     "ioredis": "6.0.0"
   },
   "exports": {
+    "./activity-search/config": "./src/activity-search/config.ts",
+    "./activity-search/opensearch": "./src/activity-search/opensearch.ts",
     "./providers/kilter": "./src/providers/kilter.ts",
     "./providers/tension": "./src/providers/tension.ts",
     "./providers/grasshopper": "./src/providers/grasshopper.ts",

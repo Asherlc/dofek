@@ -19,6 +19,8 @@ interface QueryOwner {
   reuseIngestionReservation(group: PersistedAnalyticsDeliveryGroup): Promise<void>;
   assertActive(): Promise<void>;
   runSynchronousDbt(operation: () => Promise<number>): Promise<number>;
+  /** Resolve only after consuming a response that establishes remote completion. */
+  runSynchronousRequest<T>(request: (requestId: string) => Promise<T>): Promise<T>;
 }
 
 export interface AnalyticsQueryOwner extends Omit<QueryOwner, "client"> {
@@ -378,6 +380,7 @@ async function withOwnedQueries<T>(
       ingestedAt,
       assertActive,
       runSynchronousDbt,
+      runSynchronousRequest: execute,
       reserveIngestionThrough: async (through) => {
         assertSessionActive();
         z.iso.datetime({ precision: 6 }).parse(through);

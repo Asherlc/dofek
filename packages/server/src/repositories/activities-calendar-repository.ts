@@ -52,6 +52,15 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     return mergeDayGroups(activeDays, hiddenDays);
   }
 
+  async findByIds(activityIds: string[], activityType?: string) {
+    if (activityIds.length === 0) return [];
+    const { rows } = await this.#getActiveRows({ activityIds, activityType });
+    const days = await this.#getActiveDayGroups(rows);
+    return days.flatMap(({ date, activities }) =>
+      activities.map((activity) => ({ ...activity, date })),
+    );
+  }
+
   async getPage(
     input: WeekListInput & { page: number; pageSize: number },
   ): Promise<ActivityListPage> {
@@ -99,16 +108,16 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     return { days, totalCount, page, pageSize: input.pageSize };
   }
 
-  async #getActiveRows(input: WeekListInput) {
-    const days = input.weeks * 7;
-    const windowStart = dateWindowStartString(input.endDate, days);
+  async #getActiveRows(input: WeekListInput | { activityIds: string[]; activityType?: string }) {
     const activityTypeFilter = input.activityType
       ? "AND coalesce(activity.primary_canonical_type, activity.canonical_type) = {activityType:String}"
       : "";
     const queryParams = {
       userId: this.userId,
       timezone: this.timezone,
-      windowStart,
+      ...("activityIds" in input
+        ? { activityIds: input.activityIds }
+        : { windowStart: dateWindowStartString(input.endDate, input.weeks * 7) }),
       ...(input.activityType ? { activityType: input.activityType } : {}),
     };
     const activityDate = clickHouseActivityCalendarDate("activity");
@@ -160,7 +169,11 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           WHERE activity.user_id = {userId:UUID}
             AND activity.is_deleted = 0
             AND (activity.ended_at IS NOT NULL OR activity.provider_type = 'climbing_log')
-            AND ${activityDate} >= toDate({windowStart:String})
+            ${
+              "activityIds" in input
+                ? "AND activity.activity_id IN {activityIds:Array(UUID)}"
+                : `AND ${activityDate} >= toDate({windowStart:String})`
+            }
             ${activityTypeFilter}
           ORDER BY activity.started_at DESC`,
       queryParams,

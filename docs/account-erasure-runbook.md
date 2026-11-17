@@ -116,6 +116,47 @@ confirmation: <https://www.postgresql.org/docs/current/tutorial-transactions.htm
 BullMQ jobs are designed to be idempotent because delivery can be retried:
 <https://docs.bullmq.io/patterns/idempotent-jobs>.
 
+## Activities Search
+
+When an OpenSearch index is configured, both active-store erasure passes
+delete the account's documents under the separate `activity-search-index`
+publication owner. The worker checks for remaining search hits, scrubs the
+indexing checkpoint if it identifies the erased account, expunges deletes, and
+checks primary shard statistics for remaining deleted documents. The publisher
+uses the existing account write fence during its indexing requests. Once the
+search publication owner exists, missing search erasure credentials stop the
+erasure worker at startup and before the live-store or retention proof.
+[OpenSearch force merge](https://docs.opensearch.org/latest/api-reference/index-apis/force-merge/).
+
+The shard's peer-recovery lease can retain soft-deleted documents after the
+search count reaches zero. The phase remains incomplete until the merge can
+expunge those documents. The normal erasure retry runs the same checks again
+after OpenSearch advances the lease.
+[OpenSearch retention leases](https://docs.opensearch.org/latest/install-and-configure/configuring-opensearch/index-settings/).
+
+A mutation without a complete response leaves the search publication owner
+blocked. Preserve the owner record and its request ID in
+`fitness.analytics_query_owner`. Use that value as `X-Opaque-Id` to correlate
+the request with Aiven's task and service evidence. Obtain evidence that the
+executor and the admitted request have both terminated before releasing the
+owner. An empty task list alone leaves open the possibility that Aiven has yet
+to accept a request. Ask Aiven support for help if the service evidence cannot
+establish the outcome. Once the owner is recovered, rerun the normal publication
+and erasure processes. A service power cycle can restore an earlier backup and
+requires the account-erasure restore procedure.
+[OpenSearch task correlation](https://docs.opensearch.org/latest/api-reference/tasks/tasks/)
+and [Aiven OpenSearch power cycle](https://aiven.io/docs/products/opensearch/howto/power-cycle-service).
+
+At retention verification the worker checks that the Aiven backup list contains
+no capture at or before the PII-scrub timestamp and that four days have elapsed
+since scrubbing. The service uses the Aiven Developer plan, with one day of
+managed backup retention. Aiven retains service logs for four days. Before using
+a different plan or exporting service logs or snapshots to another destination,
+verify the destination's retention and include it in the erasure proof.
+[Aiven Developer tier](https://aiven.io/developer-tier-opensearch),
+[backup API](https://api.aiven.io/doc/), and
+[Aiven service logs](https://aiven.io/docs/platform/howto/list-monitoring).
+
 ## User Flow
 
 1. The signed-in user opens account deletion on web or iOS, types `DELETE`, and

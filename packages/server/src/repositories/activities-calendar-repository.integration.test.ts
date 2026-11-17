@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { formatDateTime } from "@dofek/format/format";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import {
   buildActivitySummaryRowsTableSql,
@@ -15,7 +17,11 @@ import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { buildAccountErasureFenceTableSql } from "../../../../src/metric-stream/clickhouse-table.ts";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
+import { failOnUnhandledExternalRequest } from "../../../../src/test/msw.ts";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { routeMapPreview } from "../lib/map-preview.ts";
+import { calendarRouter } from "../routers/calendar.ts";
 import { buildTestAnalyticsTableStatement } from "../routers/clickhouse-integration-test-models.ts";
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
 import { ActivityOverviewRepository } from "./activity-overview-repository.ts";
@@ -748,4 +754,112 @@ describe("Calendar measured duration precision", () => {
 
     expect(entry?.durationMin).toBe(90.4);
   });
+});
+
+it("searches historical activity titles and rechecks current ownership, type, visibility and entitlement", async () => {
+  const context = await setupTestDatabase();
+  const external = createIntegrationMswFixture();
+  context.addCleanup(async () => {
+    external.deactivate();
+    vi.unstubAllEnvs();
+  });
+
+  try {
+    const otherUser = randomUUID();
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile(id, name) VALUES (${otherUser}, 'Other search user')`,
+    );
+    await ensureProvider(context.db, "wahoo", "Wahoo", undefined, userId);
+    const candidates = await context.db
+      .insert(activity)
+      .values(
+        [
+          { slug: "hidden", date: "2026-11-17" },
+          { slug: "deleted", date: "2026-11-16" },
+          { slug: "other", date: "2026-11-15", owner: otherUser },
+          { slug: "wrong-type", date: "2026-11-14", type: "running" as const },
+          { slug: "historical", date: "2021-05-14" },
+          { slug: "recent", date: "2026-11-13" },
+        ].map(({ slug, date, owner, type }) => ({
+          userId: owner ?? userId,
+          providerId: "wahoo",
+          externalId: slug,
+          name: "Golden Hill",
+          canonicalType: type ?? ("cycling" as const),
+          providerType: type ?? "cycling",
+          startedAt: new Date(`${date}T12:00:00Z`),
+          endedAt: new Date(`${date}T13:00:00Z`),
+        })),
+      )
+      .returning();
+    const sensorStore = await createCalendarFixture(context, candidates);
+    await context.db.execute(sql`UPDATE fitness.activity SET provider_absent_at = now()
+      WHERE user_id = ${userId} AND external_id = 'hidden'`);
+    await context.db.execute(sql`UPDATE fitness.activity SET deleted_at = now()
+      WHERE user_id = ${userId} AND external_id = 'deleted'`);
+
+    vi.stubEnv("ACTIVITY_SEARCH_ENABLED", "true");
+    vi.stubEnv("ACTIVITY_SEARCH_READ_URL", "https://reader:secret@search.example.test");
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_BASE64", Buffer.alloc(32, 1).toString("base64"));
+    const indexPath = "https://search.example.test/dofek-activity-search-v1";
+    external.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
+    external.use(
+      http.post(`${indexPath}/_mget`, () =>
+        HttpResponse.json({ docs: [{ found: true, _source: { state: { ready: true } } }] }),
+      ),
+      http.post(`${indexPath}/_search`, async ({ request }) => {
+        const query = z
+          .object({
+            size: z.number(),
+            search_after: z.tuple([z.number(), z.number(), z.string()]).optional(),
+            query: z.object({ bool: z.object({ filter: z.array(z.unknown()) }) }),
+          })
+          .parse(await request.json());
+        expect(query.query.bool.filter).toEqual([
+          { term: { userId } },
+          { term: { activityType: "cycling" } },
+        ]);
+        const start = query.search_after
+          ? candidates.findIndex(({ groupId }) => groupId === query.search_after?.[2]) + 1
+          : 0;
+        const hits = candidates
+          .slice(start, start + query.size)
+          .map(({ startedAt, groupId }, index) => ({
+            sort: [candidates.length - start - index, startedAt.getTime(), groupId],
+          }));
+        return HttpResponse.json({ hits: { hits } });
+      }),
+    );
+    const caller = (accessWindow?: AccessWindow) =>
+      calendarRouter.createCaller({
+        db: context.db,
+        userId,
+        timezone: "UTC",
+        accessWindow,
+        sensorStore,
+        accountErasureRestoreLedger: {
+          findIntent: async () => null,
+          listIntentReferences: async () => [],
+          listIntentsForIdentities: async () => [],
+          recordIntent: async () => undefined,
+        },
+      });
+    const input = { title: "golden hi", activityType: "cycling", pageSize: 1 };
+    const first = await caller().searchActivities(input);
+    expect(first.activities.map(({ date }) => date)).toEqual(["2021-05-14"]);
+    expect(first.next).not.toBeNull();
+    const second = await caller().searchActivities({ ...input, cursor: first.next });
+    expect(second.activities.map(({ date }) => date)).toEqual(["2026-11-13"]);
+    expect(second.next).toBeNull();
+    const limited = await caller({
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2026-11-11",
+      endDateExclusive: "2026-11-18",
+    }).searchActivities(input);
+    expect(limited.activities.map(({ date }) => date)).toEqual(["2026-11-13"]);
+  } finally {
+    await context.cleanup();
+  }
 });
