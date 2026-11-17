@@ -16,13 +16,7 @@ on:
         description: "Oracle production server host/IP for Docker SSH deploys"
         value: ${{ jobs.terraform.outputs.server_host }}
     secrets:
-      TF_API_TOKEN:
-        required: false
-      CLOUDFLARE_API_TOKEN:
-        required: false
       CLOUDFLARE_TERRAFORM_R2_API_TOKEN:
-        required: false
-      CLOUDFLARE_ACCOUNT_ID:
         required: false
   workflow_dispatch:
     inputs:
@@ -51,9 +45,7 @@ jobs:
     # default plan supplies plan when omitted.
     name: ${{ inputs.operation == 'plan' && 'Terraform Plan' || 'Terraform Apply' }}
     runs-on: ubuntu-latest
-    # Environment-scoped CLOUDFLARE_TERRAFORM_R2_API_TOKEN (not repo-level) so
-    # Infisical dofek-github-sync overwrite cannot prune it. No required
-    # reviewers. Default CLOUDFLARE_API_TOKEN stays a repo secret (sync-owned).
+    # The R2 Terraform token is managed separately in this GitHub environment.
     # https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets#using-secrets-in-a-workflow
     environment: terraform
     permissions:
@@ -70,13 +62,14 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
-      - name: Load OTA lifecycle identity through OIDC
+      - name: Load credentials through Infisical OIDC
         uses: ./.github/actions/load-infisical-secrets
         with:
-          keys: EXPO_APP_ID
+          keys: EXPO_APP_ID,TF_API_TOKEN,CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID
+
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
         with:
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          cli_config_credentials_token: ${{ env.TF_API_TOKEN }}
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
@@ -85,16 +78,16 @@ jobs:
       - name: Terraform ${{ env.TF_OPERATION == 'plan' && 'Plan' || 'Apply' }}
         working-directory: deploy
         env:
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_api_token: ${{ env.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_terraform_r2_api_token: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
-          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_cloudflare_account_id: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           TF_VAR_oracle_server_host: ${{ vars.ORACLE_SERVER_HOST }}
           # Infisical OIDC machine identity (same default as load-infisical-secrets).
           # Kafka TS R2: docs/kafka-ts-r2-offload-iac.md (provider.cloudflare.r2).
           INFISICAL_MACHINE_IDENTITY_ID: 46b66f72-0c77-4cfe-be1b-a43395e77be7
         run: |
           set -euo pipefail
-          test -n "$TF_VAR_cloudflare_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_API_TOKEN" >&2; exit 1; }
+          test -n "$TF_VAR_cloudflare_api_token" || { echo "ERROR: missing required Infisical secret CLOUDFLARE_API_TOKEN" >&2; exit 1; }
           test -n "$TF_VAR_cloudflare_terraform_r2_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_TERRAFORM_R2_API_TOKEN" >&2; exit 1; }
           test -n "$TF_VAR_oracle_server_host" || { echo "ERROR: missing required GitHub variable ORACLE_SERVER_HOST" >&2; exit 1; }
           test -n "$EXPO_APP_ID" || { echo "ERROR: EXPO_APP_ID is required" >&2; exit 1; }

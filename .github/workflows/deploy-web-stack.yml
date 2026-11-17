@@ -102,13 +102,6 @@ on:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
-    secrets:
-      DEPLOY_SSH_KEY:
-        required: false
-      GHCR_TOKEN:
-        required: false
-      SENTRY_AUTH_TOKEN:
-        required: false
 
 jobs:
   # The deploy job masks exported dotenv values. Keep public release metadata
@@ -172,11 +165,16 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Load credentials through Infisical OIDC
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: DEPLOY_SSH_KEY,GHCR_TOKEN,SENTRY_AUTH_TOKEN
+
       - name: Setup SSH
         uses: ./.github/actions/setup-ssh-host
         with:
           host: ${{ inputs.server_host != '' && inputs.server_host || vars.ORACLE_SERVER_HOST }}
-          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+          private_key: ${{ env.DEPLOY_SSH_KEY }}
 
       - name: Export Infisical deploy secrets file via OIDC
         uses: ./.github/actions/export-infisical-dotenv
@@ -495,7 +493,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ env.GHCR_TOKEN }}
 
       - name: Reclaim Docker root disk before pull
         run: |
@@ -1599,7 +1597,7 @@ jobs:
         uses: getsentry/action-release@e6703d0b00208e0b3687ba660d18ab5af7892821 # v3.7.2
         env:
           DOCKER_HOST: unix:///var/run/docker.sock
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_AUTH_TOKEN: ${{ env.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: east-bay-software
         with:
           environment: production

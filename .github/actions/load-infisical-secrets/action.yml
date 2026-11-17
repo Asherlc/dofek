@@ -29,9 +29,17 @@ runs:
         fi
 
         if [ "${RUNNER_OS}" = "Linux" ]; then
+          case "$RUNNER_ARCH" in
+            X64) architecture=amd64 ;;
+            ARM64) architecture=arm64 ;;
+            *)
+              echo "::error::Unsupported runner architecture: $RUNNER_ARCH" >&2
+              exit 1
+              ;;
+          esac
           version="0.43.96"
           tmpdir="$(mktemp -d)"
-          curl -sSfL "https://github.com/Infisical/cli/releases/download/v${version}/cli_${version}_linux_amd64.tar.gz" \
+          curl -sSfL "https://github.com/Infisical/cli/releases/download/v${version}/cli_${version}_linux_${architecture}.tar.gz" \
             -o "${tmpdir}/infisical.tar.gz"
           tar -xzf "${tmpdir}/infisical.tar.gz" -C "${tmpdir}" infisical
           sudo install -m 755 "${tmpdir}/infisical" /usr/local/bin/infisical
