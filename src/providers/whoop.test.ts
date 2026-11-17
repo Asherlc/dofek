@@ -1203,6 +1203,32 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
     warnSpy.mockRestore();
   });
 
+  it("keeps a typed HTTP 5xx sync failure in operational status without reporting it to Sentry", async () => {
+    await mockStoredWhoopTokens();
+    const { captureException } = await import("@sentry/node");
+    vi.mocked(captureException).mockClear();
+    const { store } = makeCheckpointStore(null);
+
+    const result = await runWhoopOrchestratedSync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+      makeSyncMockFetch({ cyclesError: true }),
+      Date.now(),
+    );
+
+    expect(result.errors[0]?.cause).toMatchObject({
+      name: "ProviderServiceUnavailableError",
+      statusCode: 500,
+    });
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
   it("enqueues a continuation after fetching a bootstrap cycle chunk", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));

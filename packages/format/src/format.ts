@@ -65,11 +65,18 @@ export function formatDurationMinutes(minutes: number | null): string {
 }
 
 /** Format a duration in seconds as "Xh Ym" or "Xs" for short durations. */
-export function formatDurationSeconds(seconds: number): string {
+export function formatDurationSeconds(
+  seconds: number,
+  options: { precision?: "second" } = {},
+): string {
   if (!Number.isFinite(seconds)) return "--";
   if (Math.abs(seconds) < 60) {
     const decimals = Number.isInteger(seconds) ? 0 : 1;
     return `${fixedDecimalFormatter(decimals).format(seconds)}s`;
+  }
+  if (options.precision === "second") {
+    const totalSeconds = Math.round(seconds);
+    return `${formatDurationMinutes(Math.floor(totalSeconds / 60))} ${totalSeconds % 60}s`;
   }
   return formatDurationMinutes(Math.round(seconds / 60));
 }
@@ -162,8 +169,15 @@ export function formatDateTime(value: DateInput, options: DateFormatOptions = {}
 }
 
 /** Format a time-only label: "2:30 PM" */
-export function formatTimeOnly(value: DateInput, options: DateFormatOptions = {}): string {
-  return formatDateInput(value, { hour: "numeric", minute: "2-digit" }, options);
+export function formatTimeOnly(
+  value: DateInput,
+  options: DateFormatOptions & { seconds?: boolean } = {},
+): string {
+  return formatDateInput(
+    value,
+    { hour: "numeric", minute: "2-digit", second: options.seconds ? "2-digit" : undefined },
+    options,
+  );
 }
 
 /** Format a Date for user-facing display: "Mon, Jan 1, 2024" */

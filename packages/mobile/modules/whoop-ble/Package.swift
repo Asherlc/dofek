@@ -8,6 +8,7 @@ let expoFiles = [
     "WhoopBleModule.swift",
     "WhoopBleModule+Cleanup.swift",
     "WhoopBleModule+ConnectionManagerDelegate.swift",
+    "WhoopBleCleanupTelemetry.swift",
     "WhoopBleUploadAppDelegateSubscriber.swift",
     "WhoopBleUploadRuntime.swift",
     "WhoopURLSessionTransport.swift",

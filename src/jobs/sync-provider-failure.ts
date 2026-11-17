@@ -253,6 +253,7 @@ export async function handleSyncProviderFailure(
     dataType: "sync",
     status: "error",
     errorMessage: message,
+    errorCauses: [err],
     authFailureReason,
     durationMs,
     userId: job.data.userId,

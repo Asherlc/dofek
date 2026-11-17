@@ -4,7 +4,13 @@ const timestamps = Array.from({ length: 121 }, (_, minute) =>
   new Date(startedAt + minute * 60_000).toISOString(),
 );
 
-export type ActivityPreviewMetric = "heartRate" | "power" | "speed" | "cadence" | "altitude";
+export type ActivityPreviewMetric =
+  | "heartRate"
+  | "power"
+  | "speed"
+  | "cadence"
+  | "altitude"
+  | "skinTemperature";
 
 interface PreviewSource {
   id: string;
@@ -189,6 +195,28 @@ export const activityMetricSourcePreview: PreviewMetric[] = [
       ),
     })),
   },
+  {
+    key: "skinTemperature",
+    label: "Skin Temperature",
+    unit: "°C",
+    sources: ["strap-a", "strap-b"].map((deviceId, sourceIndex) => ({
+      id: JSON.stringify(["whoop_ble", deviceId]),
+      label: `WHOOP Bluetooth · ${deviceId}`,
+      presentation: {
+        displayName: deviceId,
+        providerId: "whoop_ble",
+        sourceName: deviceId,
+        attribution: { kind: "bluetooth" as const, label: "Bluetooth" },
+      },
+      sourceLabel: `WHOOP Bluetooth · ${deviceId}`,
+      attribution: "Decoded strap measurement time",
+      values: recording((minute) =>
+        minute % 10 === 0
+          ? Number((32.1 + Math.sin(minute / 18) * 0.6 + sourceIndex * 0.2).toFixed(2))
+          : null,
+      ),
+    })),
+  },
 ];
 
 export const defaultActivityMetricSources: Record<ActivityPreviewMetric, string> = {
@@ -197,6 +225,7 @@ export const defaultActivityMetricSources: Record<ActivityPreviewMetric, string>
   speed: "wahoo",
   cadence: "wahoo",
   altitude: "garmin",
+  skinTemperature: '["whoop_ble","strap-a"]',
 };
 
 export function activityPreviewSource(metric: PreviewMetric, sourceId: string): PreviewSource {
@@ -219,6 +248,8 @@ export function activityPreviewPoints(selection: Record<ActivityPreviewMetric, s
       speed: number | null;
       cadence: number | null;
       altitude: number | null;
+      skinTemperature: number | null;
+      skinTemperatureRecordedAt: string | null;
       lat: null;
       lng: null;
     } = {
@@ -228,10 +259,16 @@ export function activityPreviewPoints(selection: Record<ActivityPreviewMetric, s
       speed: null,
       cadence: null,
       altitude: null,
+      skinTemperature: null,
+      skinTemperatureRecordedAt: null,
       lat: null,
       lng: null,
     };
-    for (const { key, source } of selected) point[key] = source.values[index] ?? null;
+    for (const { key, source } of selected) {
+      point[key] = source.values[index] ?? null;
+      if (key === "skinTemperature")
+        point.skinTemperatureRecordedAt = point.skinTemperature === null ? null : recordedAt;
+    }
     return point;
   });
 }

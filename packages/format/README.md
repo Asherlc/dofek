@@ -18,6 +18,9 @@ The `UnitConverter` class provides a unified interface for converting and labeli
 - **Localization**: Date/time labels follow the device locale and time zone, including its 12/24-hour clock convention. Pass `locale` or `timeZone` options for an explicit display context. API date keys remain `YYYY-MM-DD`. This uses the standard [Intl.DateTimeFormat locale and time-zone defaults](https://tc39.es/ecma402/#sec-createdatetimeformat).
 - **Relative Time**: `formatRelativeTime` provides human-readable strings like "just now", "5m ago", "2h ago", and "3d ago".
 - **Durations**: `formatDurationMinutes`, `formatDurationSeconds`, and `formatDurationRange` format time spans as "Xh Ym", "Xm", or "Xs".
+  For interval details, `formatDurationSeconds(value, { precision: "second" })`
+  retains whole seconds, and `formatTimeOnly(value, { seconds: true })` includes
+  seconds in the boundary timestamps. Compact labels keep their existing defaults.
 - **Hour Formatting**: `formatHour` converts decimal hours to localized 12/24-hour strings, normalizing Unicode non-breaking spaces for consistent display.
 
 ### Numeric Formatting

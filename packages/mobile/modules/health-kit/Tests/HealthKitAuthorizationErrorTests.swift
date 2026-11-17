@@ -4,10 +4,26 @@ import XCTest
 @testable import HealthKitLib
 
 final class HealthKitAuthorizationErrorTests: XCTestCase {
+    func testBackgroundInterruptedAuthorizationResolvesWithoutGrantingPermission() {
+        let error = HKError(.errorAuthorizationNotDetermined)
+
+        XCTAssertTrue(isCanceledHealthKitAuthorization(error, didEnterBackground: true))
+        XCTAssertFalse(isCanceledHealthKitAuthorization(error, didEnterBackground: false))
+    }
+
+    func testBackgroundStateDoesNotHideOtherErrors() {
+        XCTAssertFalse(isCanceledHealthKitAuthorization(
+            HKError(.errorAuthorizationDenied), didEnterBackground: true
+        ))
+        XCTAssertFalse(isCanceledHealthKitAuthorization(
+            NSError(domain: NSCocoaErrorDomain, code: 5), didEnterBackground: true
+        ))
+    }
+
     func testUserCanceledAuthorizationResolvesAsDeniedPermission() {
         let error = HKError(.errorUserCanceled)
 
-        XCTAssertTrue(isUserCanceledHealthKitAuthorization(error))
+        XCTAssertTrue(isCanceledHealthKitAuthorization(error, didEnterBackground: false))
     }
 
     func testNSErrorUserCanceledAuthorizationResolvesAsDeniedPermission() {
@@ -16,7 +32,7 @@ final class HealthKitAuthorizationErrorTests: XCTestCase {
             code: HKError.Code.errorUserCanceled.rawValue
         )
 
-        XCTAssertTrue(isUserCanceledHealthKitAuthorization(error))
+        XCTAssertTrue(isCanceledHealthKitAuthorization(error, didEnterBackground: false))
     }
 
     func testUnrelatedErrorDoesNotResolveAsDeniedPermission() {
@@ -25,12 +41,12 @@ final class HealthKitAuthorizationErrorTests: XCTestCase {
             code: CocoaError.fileNoSuchFile.rawValue
         )
 
-        XCTAssertFalse(isUserCanceledHealthKitAuthorization(error))
+        XCTAssertFalse(isCanceledHealthKitAuthorization(error, didEnterBackground: false))
     }
 
     func testDifferentHealthKitErrorDoesNotResolveAsDeniedPermission() {
         let error = HKError(.errorAuthorizationDenied)
 
-        XCTAssertFalse(isUserCanceledHealthKitAuthorization(error))
+        XCTAssertFalse(isCanceledHealthKitAuthorization(error, didEnterBackground: false))
     }
 }

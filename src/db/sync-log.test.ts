@@ -1,3 +1,7 @@
+import {
+  ProviderRequestTimeoutError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
@@ -144,6 +148,86 @@ describe("logSync", () => {
         provider: "amazfit-zepp",
       },
     });
+  });
+
+  it("does not escalate a repeated typed HTTP 5xx response to Sentry", async () => {
+    db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
+    const errorCause = new Error("wrapped", {
+      cause: new ProviderServiceUnavailableError({
+        message: "Provider returned HTTP 503",
+        providerId: "provider",
+        statusCode: 503,
+        responseBody: "unavailable",
+      }),
+    });
+
+    await logSync(db.db, {
+      providerId: "provider",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "Provider is unavailable",
+      errorCauses: [errorCause],
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({ errorMessage: "Provider is unavailable", status: "error" }),
+    );
+    expect(db.spies.values.mock.calls[0]?.[0]).not.toHaveProperty("errorCauses");
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("keeps the repeated-failure alert when typed HTTP 5xx is mixed with an unexpected cause", async () => {
+    db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
+
+    await logSync(db.db, {
+      providerId: "provider",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "Provider failed",
+      errorCauses: [
+        new ProviderServiceUnavailableError({
+          message: "Provider returned HTTP 503",
+          providerId: "provider",
+          statusCode: 503,
+          responseBody: "unavailable",
+        }),
+        new SyntaxError("Invalid response JSON"),
+      ],
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(captureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        level: "warning",
+        tags: expect.objectContaining({ operation: "scheduled-provider-sync" }),
+      }),
+    );
+  });
+
+  it("keeps the repeated-failure alert for transport errors without an HTTP status", async () => {
+    db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
+
+    await logSync(db.db, {
+      providerId: "provider",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "Provider request timed out",
+      errorCauses: [new ProviderRequestTimeoutError({ providerId: "provider", timeoutMs: 1000 })],
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(captureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        level: "warning",
+        tags: expect.objectContaining({ operation: "scheduled-provider-sync" }),
+      }),
+    );
   });
 
   it.each([1, 3])("does not alert at consecutive-failure count %i", async (consecutiveFailures) => {

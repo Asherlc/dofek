@@ -1,6 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { HeartRateSources, MetricSources } from "./ActivityDetailCharts.stories";
+import {
+  HeartRateSources,
+  MetricSources,
+  PendingSourceSelection,
+} from "./ActivityDetailCharts.stories";
 
 vi.mock("./useChartScrub", () => ({
   useChartScrub: () => ({
@@ -29,6 +33,13 @@ describe("MetricSources preview", () => {
     fireEvent.click(screen.getByRole("button", { name: "View Power data" }));
     expect(screen.getAllByText("199 W").length).toBeGreaterThan(0);
   });
+});
+
+it("renders the pending source-selection story", () => {
+  const story = PendingSourceSelection.render?.();
+  expect(story).toBeDefined();
+  render(story);
+  expect(screen.getByText("Showing previous readings from Wahoo")).toBeDefined();
 });
 
 it("shows a real preselected HR source and exposes checked radio options", () => {

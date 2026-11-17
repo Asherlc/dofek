@@ -3,8 +3,9 @@ import * as WebBrowser from "expo-web-browser";
 import { useWindowDimensions } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockCaptureException } = vi.hoisted(() => ({
+const { mockCaptureException, mockLoggerInfo } = vi.hoisted(() => ({
   mockCaptureException: vi.fn(),
+  mockLoggerInfo: vi.fn(),
 }));
 
 // Mock auth module before importing LoginScreen
@@ -58,6 +59,7 @@ vi.mock("../components/ProviderLogo", () => ({
 
 vi.mock("../lib/telemetry", () => ({
   captureException: mockCaptureException,
+  logger: { info: mockLoggerInfo },
 }));
 
 const { default: LoginScreen } = await import("../app/login");
@@ -190,6 +192,37 @@ describe("LoginScreen", () => {
     );
   });
 
+  it("records the legal browser request and its native outcome", async () => {
+    mockOpenBrowser.mockResolvedValueOnce({ type: WebBrowser.WebBrowserResultType.CANCEL });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
+    fireEvent.click(screen.getByRole("link", { name: "Terms of Service" }));
+
+    await waitFor(() => expect(mockLoggerInfo).toHaveBeenCalledTimes(2));
+    expect(mockLoggerInfo).toHaveBeenNthCalledWith(1, "legal-document", "Browser request started", {
+      source: "login-screen-open-legal-document",
+      document: "terms",
+      outcome: "requested",
+    });
+    expect(mockLoggerInfo).toHaveBeenNthCalledWith(
+      2,
+      "legal-document",
+      "Browser request resolved",
+      {
+        source: "login-screen-open-legal-document",
+        document: "terms",
+        outcome: WebBrowser.WebBrowserResultType.CANCEL,
+      },
+    );
+  });
+
   it("reports a legal-document launch failure and explains it to the user", async () => {
     const openError = new Error("Browser unavailable");
     mockOpenBrowser.mockRejectedValueOnce(openError);
@@ -210,6 +243,7 @@ describe("LoginScreen", () => {
     expect(mockCaptureException).toHaveBeenCalledWith(openError, {
       source: "login-screen-open-legal-document",
       document: "privacy",
+      operation: "WebBrowser.openBrowserAsync",
     });
 
     fireEvent.click(screen.getByRole("link", { name: "Terms of Service" }));
@@ -669,27 +703,43 @@ describe("LoginScreen", () => {
       data: [],
       nativeApple: true,
     });
-    mockStartNativeAppleSignIn.mockRejectedValue(
-      Object.assign(
-        new Error(
-          "private-token [dofek.apple-auth domain=com.apple.AuthenticationServices.AuthorizationError code=1000 underlyingDomain=AKAuthenticationError underlyingCode=-7026]",
-        ),
-        { code: "ERR_REQUEST_UNKNOWN" },
+    const nativeError = Object.assign(
+      new Error(
+        "private-token [dofek.apple-auth domain=com.apple.AuthenticationServices.AuthorizationError code=1000 underlyingDomain=AKAuthenticationError underlyingCode=-7026]",
       ),
+      { code: "ERR_REQUEST_UNKNOWN" },
     );
+    mockStartNativeAppleSignIn.mockRejectedValue(nativeError);
     render(<LoginScreen />);
     fireEvent.click(await screen.findByText("AppleAuthenticationButton"));
     expect(
       await screen.findByText("Apple could not complete sign-in. Please try again."),
     ).toBeTruthy();
     expect(screen.queryByText(/dofek\.apple-auth|private-token/)).toBeNull();
-    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
-      source: "login-screen-handle-login",
-      appleCode: "ERR_REQUEST_UNKNOWN",
-      nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
-      nativeCode: 1000,
-      underlyingDomain: "AKAuthenticationError",
-      underlyingCode: -7026,
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      {
+        source: "login-screen-handle-login",
+        appleCode: "ERR_REQUEST_UNKNOWN",
+        nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
+        nativeCode: 1000,
+        underlyingDomain: "AKAuthenticationError",
+        underlyingCode: -7026,
+      },
+      {
+        tags: {
+          appleCode: "ERR_REQUEST_UNKNOWN",
+          nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
+          nativeCode: "1000",
+          underlyingDomain: "AKAuthenticationError",
+          underlyingCode: "-7026",
+        },
+      },
+    );
+    const capturedError = mockCaptureException.mock.calls[0]?.[0];
+    expect(capturedError).not.toBe(nativeError);
+    expect(capturedError).toMatchObject({
+      message: "Apple could not complete sign-in. Please try again.",
     });
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain("private-token");
     expect(screen.getByText("AppleAuthenticationButton")).toBeTruthy();

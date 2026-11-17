@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { activity } from "../../db/schema/activity.ts";
 import { climbingAttempt, climbingLogEntry } from "../../db/schema/climbing.ts";
 import { TEST_USER_ID } from "../../db/schema/core.ts";
@@ -17,6 +17,8 @@ import { EightAProvider, importEightAExportFile } from "./provider.ts";
 import { eightAMatchingCsv, eightANativeRow } from "./test-helpers.ts";
 
 const server = createIntegrationMswFixture();
+const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
+vi.mock("../../lib/error-reporting.ts", () => ({ captureException }));
 describe("Vertical-Life direct sync persistence", () => {
   let context: TestContext;
   let rows: ReturnType<typeof eightANativeRow>[];
@@ -29,6 +31,7 @@ describe("Vertical-Life direct sync persistence", () => {
     server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
   beforeEach(async () => {
+    captureException.mockReset();
     rows = [eightANativeRow()];
     failLater = false;
     malformed = false;
@@ -129,6 +132,15 @@ describe("Vertical-Life direct sync persistence", () => {
       ),
     ).rejects.toThrow(reason);
     expect(await logs()).toEqual([]);
+  });
+
+  it("does not send a known HTTP 5xx response to Sentry", async () => {
+    await connect();
+    failLater = true;
+
+    await expect(sync()).rejects.toMatchObject({ statusCode: 503 });
+
+    expect(captureException).not.toHaveBeenCalled();
   });
   it("preserves projects without inventing tries and expands only positive source counts", async () => {
     rows = [

@@ -59,6 +59,14 @@ final class CleanupLogRecorder {
             ["completed", "failed"].contains($0.attributes["stage"]?.value as? String ?? "")
         }, file: file, line: line)
         XCTAssertNotNil(terminal.attributes["sqliteCacheWritePages"]?.value as? Int, file: file, line: line)
+        let queueWait = try XCTUnwrap(records.first {
+            $0.attributes["stage"]?.value as? String == "uploader_queue_wait"
+        }, file: file, line: line)
+        XCTAssertNil(queueWait.attributes["sqliteCacheWritePages"], file: file, line: line)
+        let queueAcquired = try XCTUnwrap(records.first {
+            $0.attributes["stage"]?.value as? String == "uploader_cancel_tasks"
+        }, file: file, line: line)
+        XCTAssertEqual(queueAcquired.attributes["sqliteCacheWritePages"]?.value as? Int, 0, file: file, line: line)
     }
 }
 

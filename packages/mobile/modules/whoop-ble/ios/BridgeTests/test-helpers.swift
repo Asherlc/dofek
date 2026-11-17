@@ -395,10 +395,20 @@ func expectedCleanupStages(hasRetainedCutoff: Bool) -> [String] {
         "uploader_queue_wait", "uploader_cancel_tasks", "uploader_store_purge",
         "store_lock_wait", "store_begin", "store_reset_stats", "store_delete_samples",
         "store_delete_batches", "store_clear_binding", "store_rotate_generation",
-        "store_commit", "store_completed", "store_vacuum", "uploader_remove_bodies", "completed"
+        "store_commit", "store_completed", "store_vacuum", "store_wal_checkpoint",
+        "store_wal_checkpoint_completed", "uploader_remove_bodies", "completed"
     ]
     if hasRetainedCutoff, let purgeIndex = stages.firstIndex(of: "uploader_store_purge") {
         stages.insert("uploader_advance_erasure_cutoff", at: purgeIndex)
     }
     return stages
+}
+
+func assertCheckpointFrameCounts(_ records: [SentryLog]) throws {
+    let checkpoint = try XCTUnwrap(records.first {
+        $0.attributes["stage"]?.value as? String == "store_wal_checkpoint_completed"
+    })
+    for key in ["checkpointBusy", "checkpointLogFrames", "checkpointedFrames"] {
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(checkpoint.attributes[key]?.value as? Int), 0)
+    }
 }

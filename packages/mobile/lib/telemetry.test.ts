@@ -263,6 +263,8 @@ describe("ios telemetry", () => {
       autoInitializeNativeSdk: false,
       dsn: "https://key@sentry.example/789",
       debug: true,
+      enableJsHangTracking: true,
+      _experiments: { enableWatchdogTerminationsV2: true },
       tracesSampler: expect.any(Function),
     });
     const options = mocks.mockInit.mock.calls[0]?.[0];
@@ -333,6 +335,44 @@ describe("ios telemetry", () => {
         ...runtimeContext,
         source: "react-native-global",
         operation: "global-handler",
+      },
+    });
+  });
+
+  it("adds safe native Apple diagnostics as searchable Sentry tags", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+
+    const error = new Error("Apple sign-in failed");
+    mod.captureException(
+      error,
+      { source: "login-screen-handle-login", appleCode: "ERR_REQUEST_UNKNOWN" },
+      {
+        tags: {
+          appleCode: "ERR_REQUEST_UNKNOWN",
+          nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
+          nativeCode: "1000",
+          underlyingDomain: "AKAuthenticationError",
+          underlyingCode: "-7026",
+        },
+      },
+    );
+
+    expect(mocks.mockCaptureException).toHaveBeenCalledWith(error, {
+      tags: {
+        source: "login-screen-handle-login",
+        appleCode: "ERR_REQUEST_UNKNOWN",
+        nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
+        nativeCode: "1000",
+        underlyingDomain: "AKAuthenticationError",
+        underlyingCode: "-7026",
+      },
+      extra: {
+        ...runtimeContext,
+        source: "login-screen-handle-login",
+        appleCode: "ERR_REQUEST_UNKNOWN",
       },
     });
   });

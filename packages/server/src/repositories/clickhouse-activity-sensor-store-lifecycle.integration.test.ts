@@ -90,6 +90,8 @@ describe("ClickHouseActivitySensorStore read-model lifecycle rows", () => {
         speed: null,
         cadence: null,
         altitude: null,
+        skin_temperature: null,
+        skin_temperature_recorded_at: null,
         lat: null,
         lng: null,
       },
