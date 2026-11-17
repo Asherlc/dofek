@@ -326,10 +326,10 @@ describe("catalogue trait mapping and provenance", () => {
   });
   it.each([
     { candidateName: "Renamed climb", seedName: "Recorded climb", expected: "Renamed climb" },
-    { candidateName: null, seedName: "Recorded climb", expected: "Recorded climb" },
-    { candidateName: null, seedName: null, expected: "Unnamed climb" },
+    { candidateName: null, seedName: "Recorded climb", expected: null },
+    { candidateName: null, seedName: null, expected: null },
   ])(
-    "preserves current route name and nullable fallbacks: %j",
+    "preserves the catalogue name, including when it is absent: %j",
     ({ candidateName, seedName, expected }) => {
       const data = routeOnly();
       route(data).name = candidateName;

@@ -10,6 +10,7 @@ import {
 import {
   attemptScopeSchema,
   climbingHoldTypesSchema,
+  climbingLogEntryName,
   ropeMethodSchema,
 } from "@dofek/training/climbing-log";
 import { climbingProgressionLaneKey } from "@dofek/training/climbing-progression";
@@ -114,6 +115,12 @@ export class ClimbingStrengthsRepository extends BaseRepository {
         (row.attempt_scope === "climb" || row.pitch_number !== null || row.pitch_id !== null)
           ? JSON.stringify([climbIdentity, row.attempt_scope, row.pitch_number ?? row.pitch_id])
           : null;
+      const exampleName = climbingLogEntryName({
+        providerId: row.provider_id,
+        raw: row.raw,
+        title: row.title,
+        climb: { name: row.climb_name, kind: row.climb_kind },
+      });
       return row.attempt_observations.map((attempt) => {
         const outcome =
           attempt.sends > 0
@@ -157,7 +164,7 @@ export class ClimbingStrengthsRepository extends BaseRepository {
           example: {
             logEntryId: row.id,
             activityId: row.canonical_activity_id,
-            name: row.climb_name ?? row.title ?? "Unnamed climb",
+            name: exampleName,
             grade: grade?.grade ?? "Unknown grade",
             date: row.session_date,
             providerId: row.provider_id,
