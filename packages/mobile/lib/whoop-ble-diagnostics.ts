@@ -115,6 +115,7 @@ export class WhoopBleDiagnostics {
               buffers.reservationWriteSummary.measurementFailureCount,
           }
         : {}),
+      http5xxResponseCount: buffers.http5xxResponseCount,
     });
   }
 }

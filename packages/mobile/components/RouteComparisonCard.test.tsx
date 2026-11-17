@@ -32,6 +32,20 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+it("keeps refresh space through fetch cycles with cached routes", () => {
+  Object.assign(state, { data: routeComparisonFixture, isFetching: true });
+  const { rerender } = render(<RouteComparisonCard days={90} enabled />);
+  const status = screen.getByText("Updating route comparison…");
+  for (const isFetching of [false, true, false]) {
+    state.isFetching = isFetching;
+    rerender(<RouteComparisonCard days={90} enabled />);
+    expect(status.isConnected).toBe(true);
+    expect(status.style.minHeight).toBe("20px");
+    expect(status.textContent).toBe(isFetching ? "Updating route comparison…" : "");
+    expect(screen.getByRole("button", { name: "View Route comparison data" })).toBeTruthy();
+  }
+});
+
 it("distinguishes loading, empty, and actionable errors", () => {
   state.isLoading = true;
   const { rerender } = render(<RouteComparisonCard days={30} enabled />);

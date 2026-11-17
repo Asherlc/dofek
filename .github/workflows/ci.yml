@@ -166,6 +166,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
        (needs.detect-changes.outputs.docker_server == 'true' ||
@@ -177,8 +178,6 @@ jobs:
     uses: ./.github/workflows/build-docker.yml
     with:
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
-    secrets:
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   build-ota:
     name: Validate OTA Build
@@ -248,10 +247,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     uses: ./.github/workflows/storybook-preview.yml
-    secrets:
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
 
   # ── Independent main releases ─────────────────────────────────────────
 
@@ -293,13 +290,7 @@ jobs:
       public_url: https://dofek.fit
       web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
     secrets:
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   build-ios-release:
     name: Build Matching iOS

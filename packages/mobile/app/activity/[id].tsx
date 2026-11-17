@@ -700,16 +700,20 @@ export default function ActivityDetailScreen() {
       {isClimbingActivity && heartRateContext.error && (
         <QueryStatePanel variant="error" message={heartRateContext.error.message} />
       )}
-      {sourceControls.length > 0 &&
-        (stream.isFetching ||
+      {sourceControls.length > 0 && (
+        <Text
+          accessibilityLiveRegion="polite"
+          style={{ color: colors.textSecondary, minHeight: 20, lineHeight: 20 }}
+        >
+          {stream.isFetching ||
           heartRateContext.isFetching ||
           hrZones.isFetching ||
           powerZones.isFetching ||
-          powerWork.isFetching) && (
-          <Text accessibilityLiveRegion="polite" style={{ color: colors.textSecondary }}>
-            Updating metrics…
-          </Text>
-        )}
+          powerWork.isFetching
+            ? "Updating metrics…"
+            : null}
+        </Text>
+      )}
       {stream.isLoading ? (
         <View style={styles.chartsLoading}>
           <ActivityIndicator color={colors.accent} size="small" />

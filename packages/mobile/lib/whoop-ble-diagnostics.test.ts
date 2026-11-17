@@ -27,6 +27,7 @@ describe("WhoopBleDiagnostics", () => {
         maxWalPagesWritten: 16,
         measurementFailureCount: 0,
       },
+      http5xxResponseCount: 4,
     });
     new WhoopBleDiagnostics().snapshot(stats, "foreground", "active");
     expect(logger.info).toHaveBeenCalledWith(
@@ -41,6 +42,7 @@ describe("WhoopBleDiagnostics", () => {
         reservationWalPagesSpilled: 3,
         maxReservationWalPagesWritten: 16,
         reservationWriteMeasurementFailureCount: 0,
+        http5xxResponseCount: 4,
       }),
     );
   });

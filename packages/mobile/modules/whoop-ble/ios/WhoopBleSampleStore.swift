@@ -229,7 +229,10 @@ final class WhoopBleSampleStore {
                 let payload: Data = try field("payload", in: row)
                 return try JSONSerialization.jsonObject(with: payload)
             }
-            var input: [String: Any] = ["deviceId": device, "samples": payloads, "telemetry": ["batchId": id]]
+            var input: [String: Any] = [
+                "deviceId": device, "samples": payloads,
+                "telemetry": ["batchId": id, "bufferInstanceId": generation],
+            ]
             if stream == .imu { input["deviceType"] = "whoop" }
             let body = try JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])
             guard body.count <= stream.bodyLimit else { throw StoreError("WHOOP upload body exceeds its size limit") }

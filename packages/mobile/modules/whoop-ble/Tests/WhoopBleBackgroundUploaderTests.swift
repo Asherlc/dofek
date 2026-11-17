@@ -216,12 +216,15 @@ extension WhoopBleBackgroundUploaderTests {
 
     func testLiveFailureRetainsFallbackAndUsesExistingRetryBackoff() throws {
         var now = Date(timeIntervalSince1970: 1_800_000_000)
-        let (uploader, store, transport) = try setup(now: { now })
+        var errors: [Error] = []
+        let (uploader, store, transport) = try setup(reportError: { errors.append($0) }, now: { now })
         try uploader.append(deviceId: "a", samplesByStream: [.realtime: Array(repeating: rows[0], count: 500)])
         try settle(uploader)
         let identity = try XCTUnwrap(transport.requests.first?.2)
         transport.failOnePath(identity: identity)
         try settle(uploader)
+        XCTAssertEqual(errors.count, 1, "A networkConnectionLost failure without HTTP status remains captured")
+        XCTAssertEqual(try uploader.diagnostics()["http5xxResponseCount"] as? Int, 0)
         XCTAssertTrue(transport.tasks.contains(identity))
         XCTAssertNotNil(try uploader.diagnostics()["lastUploadError"] as? String)
         now.addTimeInterval(5)
@@ -421,7 +424,7 @@ extension WhoopBleBackgroundUploaderTests {
         try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
         try uploader.flush(); try settle(uploader)
         let errorsAfterFailure = errors.count
-        XCTAssertEqual(errorsAfterFailure, 2)
+        XCTAssertEqual(errorsAfterFailure, 1)
         clock = clock.addingTimeInterval(5)
         try uploader.append(deviceId: "a", samplesByStream: [.realtime: Array(repeating: rows[0], count: 500)])
         try settle(uploader)

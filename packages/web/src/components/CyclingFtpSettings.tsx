@@ -273,11 +273,9 @@ export function CyclingFtpSettings({ sectionDate, focusSection = false }: Cyclin
             may not be maximal; easy-only riding can underestimate FTP.
           </p>
           {estimateError ? <p role="alert">{estimateError}</p> : null}
-          {suggestionsQuery.isFetching ? (
-            <p aria-busy="true" role="status" className="text-muted">
-              Estimating from recorded activities…
-            </p>
-          ) : null}
+          <p aria-busy={suggestionsQuery.isFetching} role="status" className="min-h-6 text-muted">
+            {suggestionsQuery.isFetching ? "Estimating from recorded activities…" : null}
+          </p>
           {suggestionsQuery.error ? (
             <p role="alert" className="text-red-400">
               {userFacingErrorMessage(suggestionsQuery.error)}

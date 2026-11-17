@@ -636,17 +636,26 @@ describe("ActivityDetailScreen", () => {
   });
 
   it("keeps recorded output visible while refreshing and shows the server error", async () => {
-    mocks.powerWorkQuery.mockReturnValue({
-      data: powerWorkBySource.wahoo,
-      isLoading: false,
+    mocks.metricSourcesQuery.mockReturnValue(
+      defaultObserver(activityDetailMetricSources.filter((source) => source.key === "power")),
+    );
+    const workState = {
+      ...defaultObserver(powerWorkBySource.wahoo),
       isFetching: true,
       error: new Error("Power data could not be read. Choose another source."),
-    });
-
-    renderActivityDetail();
-
+    };
+    mocks.powerWorkQuery.mockReturnValue(workState);
+    const { rerender } = renderActivityDetail();
+    const status = screen.getByText("Updating metrics…");
     expect(screen.getByText("720 kJ")).toBeTruthy();
     expect(screen.getByText("Power data could not be read. Choose another source.")).toBeTruthy();
+    for (const isFetching of [false, true, false]) {
+      workState.isFetching = isFetching;
+      rerender(<ActivityDetailScreen />);
+      expect(status.isConnected).toBe(true);
+      expect(status.textContent).toBe(isFetching ? "Updating metrics…" : "");
+      expect(screen.getByText("720 kJ")).toBeTruthy();
+    }
   });
 
   it("does not show the previous ride's output after navigating to another activity", async () => {

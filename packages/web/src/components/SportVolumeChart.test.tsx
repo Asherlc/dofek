@@ -15,6 +15,7 @@ const chart = vi.hoisted(() => {
   const state: { option?: VolumeOption } = {};
   return state;
 });
+const queryState = vi.hoisted(() => ({ isFetching: false }));
 vi.mock("../lib/unitContext.ts", () => ({ useUnitConverter: () => new UnitConverter("metric") }));
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -31,7 +32,7 @@ vi.mock("../lib/trpc.ts", () => ({
             ],
           },
           isLoading: false,
-          isFetching: false,
+          isFetching: queryState.isFetching,
           error: null,
         }),
       },
@@ -44,7 +45,24 @@ vi.mock("./DofekChart.tsx", () => ({
     return <div data-testid="chart">{JSON.stringify(option.series[0]?.data)}</div>;
   },
 }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  queryState.isFetching = false;
+});
+it("keeps refresh space and the selected metric through fetch cycles", () => {
+  queryState.isFetching = true;
+  const { rerender } = render(<SportVolumeChart days={30} sport="cycling" />);
+  fireEvent.change(screen.getByLabelText("Volume metric"), { target: { value: "elevation" } });
+  const status = screen.getByText("Updating volume…");
+  for (const isFetching of [false, true, false]) {
+    queryState.isFetching = isFetching;
+    rerender(<SportVolumeChart days={30} sport="cycling" />);
+    expect(status).toBeInTheDocument();
+    expect(status).toHaveClass("min-h-4");
+    expect(status.textContent).toBe(isFetching ? "Updating volume…" : "");
+    expect(screen.getByLabelText("Volume metric")).toHaveValue("elevation");
+  }
+});
 it("switches volume measures and retains unknown distance", () => {
   render(<SportVolumeChart days={30} sport="running" />);
   expect(screen.getByTestId("chart").textContent).toContain(",85.86666666666666]");

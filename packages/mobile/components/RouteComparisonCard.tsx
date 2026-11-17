@@ -25,11 +25,12 @@ export function RouteComparisonCard({ days, enabled }: { days: number; enabled: 
       <Text style={styles.title}>Route comparison</Text>
       {query.error ? <QueryStatePanel variant="error" message={query.error.message} /> : null}
       {query.isLoading && query.data === undefined ? <QueryStatePanel variant="loading" /> : null}
-      {query.isFetching && query.data !== undefined ? (
-        <Text accessibilityLiveRegion="polite" style={styles.text}>
-          Updating route comparison…
-        </Text>
-      ) : null}
+      <Text
+        accessibilityLiveRegion="polite"
+        style={[styles.text, { minHeight: 20, lineHeight: 20 }]}
+      >
+        {query.isFetching && query.data !== undefined ? "Updating route comparison…" : null}
+      </Text>
       {query.data?.length ? (
         <RouteComparisonChart
           routes={query.data}
