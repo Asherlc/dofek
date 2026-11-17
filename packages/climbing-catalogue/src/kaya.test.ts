@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CatalogueSeed } from "./contracts.ts";
 import { KayaCatalogueAdapter } from "./kaya.ts";
 
@@ -27,6 +29,76 @@ const climb = {
   tags: [],
 };
 const response = (rows: unknown[]) => Response.json({ data: { webSearchForClimb: rows } });
+
+describe("Kaya catalogue GraphQL service errors", () => {
+  const server = setupServer();
+  beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+  afterEach(() => server.resetHandlers());
+  afterAll(() => server.close());
+
+  it.each([
+    { codes: ["INTERNAL_SERVER_ERROR"], errorName: "KayaCatalogueUnavailableError" },
+    { codes: ["INTERNAL_SERVER_ERROR", "FORBIDDEN"], errorName: "Error" },
+    { codes: ["GRAPHQL_VALIDATION_FAILED"], errorName: "Error" },
+  ])("classifies HTTP 200 with GraphQL errors $codes", async ({ codes, errorName }) => {
+    server.use(
+      http.post("https://kaya-beta.kayaclimb.com/graphql", () =>
+        HttpResponse.json({
+          data: null,
+          errors: codes.map((code) => ({
+            message: "private provider diagnostic",
+            path: ["webSearchForClimb"],
+            extensions: { code },
+          })),
+        }),
+      ),
+    );
+    await expect(
+      new KayaCatalogueAdapter(fetch, async () => null).search(seed),
+    ).rejects.toMatchObject({
+      name: errorName,
+      message: expect.not.stringContaining("private provider diagnostic"),
+    });
+  });
+
+  it("classifies a native lookup internal error without asking the user to reconnect", async () => {
+    server.use(
+      http.post("https://kaya-beta.kayaclimb.com/graphql", () =>
+        HttpResponse.json({
+          data: null,
+          errors: [{ message: "Try again later", extensions: { code: "INTERNAL_SERVER_ERROR" } }],
+        }),
+      ),
+    );
+    await expect(
+      new KayaCatalogueAdapter(fetch, async () => "token").search({
+        ...seed,
+        providerId: "kaya",
+        externalId: climb.id,
+      }),
+    ).rejects.toMatchObject({
+      name: "KayaCatalogueUnavailableError",
+      message: expect.not.stringContaining("reconnect"),
+    });
+  });
+
+  it("treats a GraphQL error without a message as an invalid response", async () => {
+    server.use(
+      http.post("https://kaya-beta.kayaclimb.com/graphql", () =>
+        HttpResponse.json({
+          data: null,
+          errors: [{ extensions: { code: "INTERNAL_SERVER_ERROR" } }],
+        }),
+      ),
+    );
+    await expect(
+      new KayaCatalogueAdapter(fetch, async () => null).search(seed),
+    ).rejects.toMatchObject({
+      name: "Error",
+      message: expect.stringContaining("invalid or rejected search response"),
+    });
+  });
+});
 
 describe("KayaCatalogueAdapter", () => {
   it("retains a declared parent when the corresponding higher-level slot is absent", async () => {

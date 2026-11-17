@@ -98,8 +98,12 @@ reprocessing and historical-data limits.
 - **Concurrency**: Per-queue concurrency limits for rate-limiting API calls.
 - **Retry Logic**: Sync and post-sync jobs use a fixed five-minute backoff;
   provider-deletion and activity-analytics jobs use a fixed 30-second backoff.
-  Other queues declare retry options at their enqueue sites. BullMQ documents
-  fixed backoff and attempt handling in
+  Climbing catalogue jobs use one retry after 60 seconds when every cause is
+  a typed upstream HTTP 5xx or a Kaya GraphQL internal server error. The
+  delayed job is pending and the catalogue retains available results from
+  both attempts by provider. Outages appear in logs and terminal catalogue status.
+  Unexpected causes still go to Sentry and end the refresh immediately.
+  Other queues declare retry options at their enqueue sites. See BullMQ's
   [retrying failing jobs](https://docs.bullmq.io/guide/retrying-failing-jobs).
 
 ## Provider Issue Emails

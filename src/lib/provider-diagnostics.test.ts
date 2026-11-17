@@ -5,14 +5,18 @@ let reportProviderHttpDiagnostic: typeof import("./provider-diagnostics.ts").rep
 let runWithProviderTokenDiagnostics: typeof import("./provider-token-diagnostic-context.ts").runWithProviderTokenDiagnostics;
 let runTransactionEffects: typeof import("../db/transaction-effects.ts").runTransactionEffects;
 
-const { debug, warn, captureException, add } = vi.hoisted(() => ({
-  debug: vi.fn(),
-  warn: vi.fn(),
-  captureException: vi.fn(),
-  add: vi.fn(),
-}));
+const { debug, warn, captureException, add, createCounter } = vi.hoisted(() => {
+  const add = vi.fn();
+  return {
+    debug: vi.fn(),
+    warn: vi.fn(),
+    captureException: vi.fn(),
+    add,
+    createCounter: vi.fn(() => ({ add })),
+  };
+});
 vi.mock("@opentelemetry/api", () => ({
-  metrics: { getMeter: () => ({ createCounter: () => ({ add }) }) },
+  metrics: { getMeter: () => ({ createCounter }) },
 }));
 vi.mock("../logger.ts", () => ({ logger: { debug, warn } }));
 vi.mock("./error-reporting.ts", () => ({ captureException }));
@@ -22,12 +26,19 @@ vi.mock("../db/token-user-context.ts", () => ({
 
 beforeEach(async () => {
   vi.resetModules();
+  vi.clearAllMocks();
   ({ reportProviderAuthDiagnostic, reportProviderHttpDiagnostic } = await import(
     "./provider-diagnostics.ts"
   ));
   ({ runWithProviderTokenDiagnostics } = await import("./provider-token-diagnostic-context.ts"));
   ({ runTransactionEffects } = await import("../db/transaction-effects.ts"));
-  vi.clearAllMocks();
+});
+
+it("registers the provider timeout counter with request units", () => {
+  expect(createCounter).toHaveBeenCalledWith("provider.http.timeouts", {
+    description: "Provider HTTP requests classified as timeouts",
+    unit: "{requests}",
+  });
 });
 
 describe("reportProviderHttpDiagnostic", () => {

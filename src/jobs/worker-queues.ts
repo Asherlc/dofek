@@ -1,5 +1,6 @@
 import { Job, UnrecoverableError, Worker } from "bullmq";
 import { createActivityImageJobDependencies } from "../activity-images/acquire.ts";
+import { isRetryableCatalogueSearchError } from "../climbing-catalogue.ts";
 import { loadActivityImageWork } from "../db/activity-images.ts";
 import type { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import type { createDatabaseFromEnv } from "../db/index.ts";
@@ -218,18 +219,28 @@ export function createWorkerQueues({
   const postSyncWorker = new Worker<PostSyncJobData>(
     POST_SYNC_QUEUE,
     (job) =>
-      jobContext.run(job, () =>
-        job.data.type === "global-maintenance"
-          ? processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements)
-          : runQueuedUserWorkUnlessAccountErasing(
-              accountErasureWorkLockPool,
-              db,
-              job.data.userId,
-              "post-sync refit",
-              () =>
-                processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements),
-            ),
-      ),
+      jobContext.run(job, async () => {
+        if (job.data.type === "global-maintenance") {
+          return processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements);
+        }
+        try {
+          return await runQueuedUserWorkUnlessAccountErasing(
+            accountErasureWorkLockPool,
+            db,
+            job.data.userId,
+            "post-sync refit",
+            () => processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements),
+          );
+        } catch (error) {
+          if (job.data.type !== "climbing-catalogue" || isRetryableCatalogueSearchError(error))
+            throw error;
+          const failure = new UnrecoverableError(
+            error instanceof Error ? error.message : String(error),
+          );
+          failure.cause = error;
+          throw failure;
+        }
+      }),
     { autorun: false, connection, concurrency: 1 },
   );
   const activityDeleteAnalyticsWorker = new Worker<ActivityAnalyticsJobData>(

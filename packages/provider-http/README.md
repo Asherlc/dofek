@@ -63,8 +63,9 @@ coordination appropriate to their runtime.
 - Every request made through `createRateLimitAwareFetch` has a shared two-minute
   deadline. The wrapper composes its timeout signal with a caller-provided
   signal and throws
-  `ProviderRequestTimeoutError` with code `ETIMEDOUT` only when that deadline
-  wins; caller cancellation remains the caller's error.
+  `ProviderRequestTimeoutError` with code `ETIMEDOUT` when that deadline
+  wins or Fetch reports a recognized connection failure. Caller cancellation
+  retains the caller's error.
 - HTTP errors expose the provider, status, response body, scope, optional user,
   and parsed `retryAfterSeconds`. Timeout errors expose the provider, scope,
   optional user, `timeoutMs`, and original cause.
@@ -90,6 +91,9 @@ coordination appropriate to their runtime.
   leaving the original body unread for classification and the caller. See the
   [implementation](./src/rate-limit.ts) and Fetch's
   [`bodyUsed` contract](https://fetch.spec.whatwg.org/#dom-body-bodyused).
+- `onRequestTimeout(error)` is an optional synchronous observer called once
+  when the wrapper classifies a request as a `ProviderRequestTimeoutError`.
+  The caller still receives the typed error and controls retry behavior.
 
 The deadline uses Node's
 [`AbortSignal.timeout()` and `AbortSignal.any()`](https://nodejs.org/api/globals.html#class-abortsignal)
