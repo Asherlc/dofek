@@ -1315,7 +1315,7 @@ If a recent body measurement is missing from ClickHouse-backed reads, use:
 ## Management UIs
 
 Pipedash is the enabled GitHub Actions dashboard at the configured hostname
-`https://actions.dofek.fit`. It uses native password authentication, a dedicated
+`https://pipedash.dofek.fit`. It uses native password authentication, a dedicated
 Dofek-scoped GitHub token and a persistent SQLite volume. The
 [Pipedash runbook](pipedash/README.md) covers setup, focused views, credentials,
 upgrades and access verification; see the upstream
