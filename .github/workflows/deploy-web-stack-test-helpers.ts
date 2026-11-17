@@ -5,6 +5,48 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { parseEnv } from "node:util";
+import { runInNewContext } from "node:vm";
+import { parse } from "yaml";
+
+export async function runPipedashVerificationFixture(
+  runScript: string,
+  statuses: number[],
+  password = "fixture-vault-password",
+  rule = "Host(`pipedash.dofek.fit`)",
+) {
+  const script = runScript.split("<<'NODE'\n")[1]?.replace(/\nNODE\s*$/, "");
+  if (!script) throw new Error("Missing executable Pipedash access verification");
+  const requests: Array<{ url: string; headers?: Record<string, string> }> = [];
+  await runInNewContext(script, {
+    require: (module: string) => {
+      if (module === "yaml") return { parse };
+      if (module === "node:util") return { parseEnv };
+      if (module !== "node:fs") throw new Error(`Unexpected module: ${module}`);
+      return {
+        readFileSync: (path: string) => {
+          if (path === "/fixture/pipedash.env") return `PIPEDASH_VAULT_PASSWORD=${password}\n`;
+          if (path !== "deploy/docker-compose.yml") throw new Error(`Unexpected path: ${path}`);
+          return JSON.stringify({
+            services: {
+              pipedash: { deploy: { labels: [`traefik.http.routers.pipedash.rule=${rule}`] } },
+            },
+          });
+        },
+      };
+    },
+    process: {
+      env: {
+        PIPEDASH_ENV_FILE: "/fixture/pipedash.env",
+        PIPEDASH_URL: "https://pipedash.dofek.fit",
+      },
+    },
+    fetch: async (url: string, options?: { headers?: Record<string, string> }) => {
+      requests.push({ url, headers: options?.headers });
+      return { status: statuses[requests.length - 1] };
+    },
+  });
+  return requests;
+}
 
 export const requestedKafkaImage = `apache/kafka@sha256:${"c".repeat(64)}`;
 export const currentKafkaImage = `apache/kafka:4.4.0@sha256:${"b".repeat(64)}`;
