@@ -11,13 +11,13 @@ import RNSentry
 /// sample buffer, orientation processor, and data watchdog, and exposes
 /// them as Expo functions/events to the JS layer.
 public class WhoopBleModule: Module {
-    private static let deviceErasureCutoffKey = "dofek_device_erasure_cutoff_v1"
+    static let deviceErasureCutoffKey = "dofek_device_erasure_cutoff_v1"
 
     private let moduleQueue = DispatchQueue(label: "com.dofek.whoop-ble.module")
     internal let connectionManager = WhoopBleConnectionManager()
     internal var captureFailure: String?
     internal var captureSuspended = true
-    private var cleanupFailure: String?
+    var cleanupFailure: String?
     internal var uploader: WhoopBleBackgroundUploader {
         get throws { try WhoopBleUploadRuntime.shared() }
     }
@@ -254,30 +254,7 @@ public class WhoopBleModule: Module {
         }.runOnQueue(self.moduleQueue)
 
         AsyncFunction("disableUploads") {
-            var telemetry = WhoopBleCleanupTelemetry()
-            telemetry.record("ble_suspend")
-            self.connectionManager.syncOnBleQueue {
-                self.captureSuspended = true
-                self.watchdog.stop()
-            }
-            telemetry.record("disconnect")
-            self.connectionManager.disconnect()
-            do {
-                telemetry.record("uploader_bootstrap")
-                let uploader = try self.uploader
-                telemetry.record("uploader_disable")
-                let cutoff = UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date
-                try uploader.disable(cutoff: cutoff) { nextStage in
-                    telemetry.record(nextStage.name, attributes: nextStage.attributes)
-                }
-                telemetry.record("completed")
-                self.cleanupFailure = nil
-            } catch {
-                self.cleanupFailure = error.localizedDescription
-                telemetry.recordFailure()
-                SentrySDK.capture(error: error) { scope in scope.setUser(nil) }
-                throw error
-            }
+            try self.disableUploads()
         }.runOnQueue(self.moduleQueue)
 
         // MARK: - Background reconnection

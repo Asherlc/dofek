@@ -153,6 +153,15 @@ recreation. Creation/checkpoint times describe the current native uploader and
 snapshot. Capture timestamps distinguish phone-observed notifications from the
 strap's latest valid reported heart rate; see the [bridge contract](index.ts).
 
+Upload completion adds a Sentry breadcrumb with the opaque durable batch identity,
+stream, route, outcome stage, HTTP status when present, origin and acknowledgment
+validation, and whether the reservation remains pending or was retired. This lets
+statusless URLSession errors be correlated with their batch and later outcome.
+Breadcrumbs omit credentials, account identifiers, and sample bodies. Validated
+HTTP 5xx outcomes remain in the existing operational counter and are omitted
+from these breadcrumbs. Transport and origin-validation errors remain reportable
+even if the task exposes a raw 5xx status.
+
 Captured samples are committed to [SQLite](ios/WhoopBleSampleStore.swift) before
 scheduling delivery. All streams decoded from one BLE notification commit in one
 transaction; an invalid stream rolls back that notification's samples and counters
@@ -187,7 +196,14 @@ after that commit. The completion log includes SQLite's `busy`, `log`, and
 `checkpointed` frame counts as `checkpointBusy`, `checkpointLogFrames`, and
 `checkpointedFrames`. These values describe only this explicit checkpoint after
 `VACUUM`; they do not measure bytes written by SQLite's automatic checkpoint
-during `COMMIT` or the operating system's per-function disk-write share. The purge
+during `COMMIT` or the operating system's per-function disk-write share. The
+stage logs also include `sqliteCacheWritePages`, the running count of dirty
+SQLite cache pages written to the WAL since `uploader_cancel_tasks`, which marks
+the cleanup after its uploader queue is acquired. Compare adjacent stage values
+to measure writes between stages. It does not measure the later checkpoint's
+main-database writes or physical device bytes; it uses SQLite's
+[`SQLITE_DBSTATUS_CACHE_WRITE`](https://www.sqlite.org/c3ref/c_dbstatus_options.html).
+The purge
 deletes rows with [`secure_delete`](https://www.sqlite.org/pragma.html#pragma_secure_delete)
 set to `FAST`, so SQLite does not rewrite each freed page through the WAL;
 [`VACUUM`](https://www.sqlite.org/lang_vacuum.html) then removes the freed pages
