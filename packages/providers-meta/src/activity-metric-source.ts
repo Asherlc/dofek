@@ -40,6 +40,13 @@ export function activityMetricSourceText(
   return providerLogoType(provider) && redundant ? null : presentation.displayName;
 }
 
+export function activityMetricSourceTriggerText(
+  presentation: ActivityMetricSourcePresentation,
+): string | null {
+  if (z.regexes.guid.test(presentation.displayName.trim())) return null;
+  return activityMetricSourceText(presentation);
+}
+
 export function activityMetricSourcePresentation(
   providerId: string,
   sourceName: string | null,

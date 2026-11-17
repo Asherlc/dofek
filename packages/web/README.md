@@ -204,9 +204,9 @@ as the detail header and stays independent of activity navigation and selection.
 
 ## Activity metric sources
 
-The [source picker](src/components/ActivityMetricSourcePicker.tsx) and its chooser
-display provider logos, short device names where needed, and attribution icons.
-Unknown sources retain identifying text. Complete source descriptions remain in
+The [source chooser](src/components/ActivityMetricSourcePicker.tsx) displays provider
+and attribution icons. The selected source button also shows readable device
+names where needed and omits raw UUIDs. Complete source descriptions remain in
 hover text and accessible names, following the [WAI accessible-name guidance](https://www.w3.org/WAI/ARIA/apg/practices/names-and-descriptions/).
 Both clients consume the same
 [structured presentation](../providers-meta/src/activity-metric-source.ts).

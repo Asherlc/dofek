@@ -2,6 +2,7 @@ import {
   type ActivityMetricSource,
   activityMetricSourcePresentation,
 } from "@dofek/providers/activity-metric-source";
+import { providerSourceLabel } from "@dofek/providers/providers";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { useState } from "react";
 import { Platform, View } from "react-native";
@@ -27,15 +28,12 @@ const cloud: ActivityMetricSource = {
     attribution: { kind: "cloud", label: "via WHOOP Cloud" },
   },
 };
+const bluetoothDeviceId = "A050E4D0-67D0-4F4D-9A43-756F7D343DA1";
+const bluetoothLabel = providerSourceLabel("whoop_ble", bluetoothDeviceId);
 const bluetooth: ActivityMetricSource = {
   id: "whoop-bluetooth",
-  label: "WHOOP (via Bluetooth)",
-  presentation: {
-    displayName: "WHOOP",
-    providerId: "whoop",
-    sourceName: null,
-    attribution: { kind: "bluetooth", label: "via Bluetooth" },
-  },
+  label: bluetoothLabel,
+  presentation: activityMetricSourcePresentation("whoop_ble", bluetoothDeviceId, bluetoothLabel),
 };
 const meta = {
   title: "Activity/ActivityMetricSourcePicker",
