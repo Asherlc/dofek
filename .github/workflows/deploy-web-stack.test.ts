@@ -41,8 +41,8 @@ describe("Pipedash production access verification", () => {
       "https://pipedash.dofek.fit/api/v1/providers",
       "https://pipedash.dofek.fit/api/v1/providers",
     ]);
-    expect(requests[1]?.headers).toBeUndefined();
-    expect(requests[2]?.headers).toEqual({ Authorization: "Bearer fixture-vault-password" });
+    expect(requests[1]?.authorization).toBeNull();
+    expect(requests[2]?.authorization).toBe("Bearer fixture-vault-password");
   });
 
   it("verifies the checked-out release source when the control workflow is newer", async () => {
@@ -68,6 +68,10 @@ describe("Pipedash production access verification", () => {
 
   it("rejects a missing vault password before probing the service", async () => {
     await expect(execute([], "")).rejects.toThrow(/PIPEDASH_VAULT_PASSWORD/);
+  });
+
+  it("rejects an authenticated redirect at the HTTP boundary", async () => {
+    await expect(execute([200, 401, 302])).rejects.toThrow(TypeError);
   });
 });
 

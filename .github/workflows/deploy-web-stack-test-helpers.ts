@@ -6,6 +6,8 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { parseEnv } from "node:util";
 import { runInNewContext } from "node:vm";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
 import { parse } from "yaml";
 
 export async function runPipedashVerificationFixture(
@@ -16,36 +18,56 @@ export async function runPipedashVerificationFixture(
 ) {
   const script = runScript.split("<<'NODE'\n")[1]?.replace(/\nNODE\s*$/, "");
   if (!script) throw new Error("Missing executable Pipedash access verification");
-  const requests: Array<{ url: string; headers?: Record<string, string> }> = [];
-  await runInNewContext(script, {
-    require: (module: string) => {
-      if (module === "yaml") return { parse };
-      if (module === "node:util") return { parseEnv };
-      if (module !== "node:fs") throw new Error(`Unexpected module: ${module}`);
-      return {
-        readFileSync: (path: string) => {
-          if (path === "/fixture/pipedash.env") return `PIPEDASH_VAULT_PASSWORD=${password}\n`;
-          if (path !== "deploy/docker-compose.yml") throw new Error(`Unexpected path: ${path}`);
-          return JSON.stringify({
-            services: {
-              pipedash: { deploy: { labels: [`traefik.http.routers.pipedash.rule=${rule}`] } },
-            },
-          });
-        },
-      };
-    },
-    process: {
-      env: {
-        PIPEDASH_ENV_FILE: "/fixture/pipedash.env",
-        PIPEDASH_URL: "https://pipedash.dofek.fit",
+  const [healthStatus, anonymousStatus, authenticatedStatus] = statuses;
+  const requests: Array<{ url: string; authorization: string | null }> = [];
+  const respond = (request: Request, status: number | undefined) => {
+    requests.push({ url: request.url, authorization: request.headers.get("authorization") });
+    if (status === undefined) throw new Error(`Unexpected Pipedash request: ${request.url}`);
+    return new HttpResponse(null, {
+      status,
+      ...(status === 302 ? { headers: { Location: new URL("/redirected", request.url).href } } : {}),
+    });
+  };
+  const server = setupServer(
+    ...["https://pipedash.dofek.fit", "https://actions.dofek.fit"].flatMap((base) => [
+      http.get(`${base}/api/v1/health`, ({ request }) => respond(request, healthStatus)),
+      http.get(`${base}/api/v1/providers`, ({ request }) =>
+        respond(request, request.headers.has("authorization") ? authenticatedStatus : anonymousStatus),
+      ),
+      http.get(`${base}/redirected`, ({ request }) => respond(request, 200)),
+    ]),
+  );
+  server.listen({ onUnhandledRequest: "error" });
+  try {
+    await runInNewContext(script, {
+      require: (module: string) => {
+        if (module === "yaml") return { parse };
+        if (module === "node:util") return { parseEnv };
+        if (module !== "node:fs") throw new Error(`Unexpected module: ${module}`);
+        return {
+          readFileSync: (path: string) => {
+            if (path === "/fixture/pipedash.env") return `PIPEDASH_VAULT_PASSWORD=${password}\n`;
+            if (path !== "deploy/docker-compose.yml") throw new Error(`Unexpected path: ${path}`);
+            return JSON.stringify({
+              services: {
+                pipedash: { deploy: { labels: [`traefik.http.routers.pipedash.rule=${rule}`] } },
+              },
+            });
+          },
+        };
       },
-    },
-    fetch: async (url: string, options?: { headers?: Record<string, string> }) => {
-      requests.push({ url, headers: options?.headers });
-      return { status: statuses[requests.length - 1] };
-    },
-  });
-  return requests;
+      process: {
+        env: {
+          PIPEDASH_ENV_FILE: "/fixture/pipedash.env",
+          PIPEDASH_URL: "https://pipedash.dofek.fit",
+        },
+      },
+      fetch: globalThis.fetch,
+    });
+    return requests;
+  } finally {
+    server.close();
+  }
 }
 
 export const requestedKafkaImage = `apache/kafka@sha256:${"c".repeat(64)}`;
