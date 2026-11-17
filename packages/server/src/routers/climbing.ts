@@ -35,6 +35,8 @@ import {
 import { ClimbingStrengthsEnrichmentRepository } from "../repositories/climbing-strengths-enrichment-repository.ts";
 import { ClimbingStrengthsRepository } from "../repositories/climbing-strengths-repository.ts";
 import { ClimbingTrainingLogRepository } from "../repositories/climbing-training-log-repository.ts";
+import { climbingVolumeIncreaseSchema } from "../repositories/climbing-volume-increase.ts";
+import { ClimbingVolumeRepository } from "../repositories/climbing-volume-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import { catalogueStrengthTraits } from "../services/climbing-catalogue-traits.ts";
 import { buildClimbingLocationMap } from "../services/climbing-location-map.ts";
@@ -346,6 +348,20 @@ export const climbingRouter = router({
         return (await repository.getVolumeByGrade(input.days, input)).map((row) => row.toDetail());
       });
     }),
+
+  volumeIncrease: protectedProcedure
+    .input(z.void())
+    .output(climbingVolumeIncreaseSchema)
+    .query(({ ctx }) =>
+      runClimbingQuery(() =>
+        new ClimbingVolumeRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+        ).getIncrease(),
+      ),
+    ),
 
   volumeOverTime: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,

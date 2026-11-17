@@ -32,6 +32,15 @@ other recorded attempts; weeks with no known counts stay null, following
 [strength repository](src/repositories/strength-repository.ts) reports unknown
 set or weight totals when a workout or a working set lacks the required data.
 
+The [`climbing.volumeIncrease` query](src/routers/climbing.ts) powers the
+callout next to Climbing Volume on web and iOS. The
+[repository](src/repositories/climbing-volume-repository.ts) counts each
+canonical group with recorded workout bounds once. It compares the last seven
+account-local dates with the weekly average of the previous 28 dates. An
+increase of at least 25 percent and 60 minutes triggers the callout when the
+account has access to the full window and timed workouts in at least two
+baseline weeks. See the [design and evidence](../../docs/superpowers/specs/2026-11-17-climbing-volume-alert-design.md).
+
 The [`training.sportVolume` query](src/routers/training.ts) extends weekly volume
 to the other recorded sports. Its [shared metric definitions](../training/src/sport-volume.ts)
 offer time for every sport, distance and elevation for applicable sports, and
