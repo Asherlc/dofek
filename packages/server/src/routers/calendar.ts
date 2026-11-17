@@ -233,7 +233,6 @@ export const calendarRouter = router({
             message: "Activity search is unavailable in this environment.",
           });
         }
-        await ensureProvidersRegistered();
         const calendar = new ActivitiesCalendarRepository(
           ctx.db,
           ctx.userId,
