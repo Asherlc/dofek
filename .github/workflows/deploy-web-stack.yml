@@ -205,6 +205,7 @@ jobs:
             echo "COLLECTOR_ENV_FILE=$SERVICE_ENV_DIRECTORY/collector.env"
             echo "DATABASE_OPERATIONS_ENV_FILE=$SERVICE_ENV_DIRECTORY/database-operations.env"
             echo "R2_OPERATIONS_ENV_FILE=$SERVICE_ENV_DIRECTORY/r2-operations.env"
+            echo "PIPEDASH_ENV_FILE=$SERVICE_ENV_DIRECTORY/pipedash.env"
             echo "WEB_ENV_FILE=$SERVICE_ENV_DIRECTORY/web.env"
             echo "WEB_PRE_MIGRATION_ENV_FILE=$SERVICE_ENV_DIRECTORY/web-pre-migration.env"
             echo "KAFKA_ENV_FILE=$SERVICE_ENV_DIRECTORY/kafka.env"
@@ -1020,7 +1021,7 @@ jobs:
           fi
 
           wait_deadline_seconds=$((SECONDS + 2100))
-          for service in kafka web worker cdc-health analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation clickhouse databasus; do
+          for service in kafka web worker cdc-health analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation clickhouse databasus pipedash; do
             service_name="${STACK_NAME}_${service}"
             while true; do
               update_state="$(
@@ -1593,6 +1594,30 @@ jobs:
             --experimental-strip-types \
             --enable-source-maps \
             scripts/check-database-backup-freshness.ts
+
+      - name: Verify Pipedash health and authentication
+        if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
+        env:
+          PIPEDASH_URL: https://actions.dofek.fit
+        run: |
+          node <<'NODE'
+          (async () => {
+          const { readFileSync } = require('node:fs');
+          const { parseEnv } = require('node:util');
+          const environment = parseEnv(readFileSync(process.env.PIPEDASH_ENV_FILE, 'utf8'));
+          const password = environment.PIPEDASH_VAULT_PASSWORD;
+          if (!password) throw new Error('PIPEDASH_VAULT_PASSWORD is required');
+          const base = process.env.PIPEDASH_URL;
+          const health = await fetch(base + '/api/v1/health');
+          if (health.status !== 200) throw new Error('Pipedash health failed: HTTP ' + health.status);
+          const anonymous = await fetch(base + '/api/v1/providers');
+          if (anonymous.status !== 401) throw new Error('Pipedash must reject anonymous access: HTTP ' + anonymous.status);
+          const authenticated = await fetch(base + '/api/v1/providers', {
+            headers: { Authorization: 'Bearer ' + password },
+          });
+          if (authenticated.status !== 200) throw new Error('Pipedash authenticated access failed: HTTP ' + authenticated.status);
+          })();
+          NODE
 
       - name: Record Sentry production release
         if: steps.deploy_stack_full.outcome == 'success' && steps.deploy_stack_quiesced.outputs.web_convergence_failed != 'true' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')

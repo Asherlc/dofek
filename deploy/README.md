@@ -32,7 +32,9 @@ infrastructure has been retired.
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
   - **Operational UI state**: Databasus remains enabled because it owns the
     PostgreSQL backup schedule. CloudBeaver and the other optional management
-    UIs are scaled to zero by the Oracle production override.
+    UIs are scaled to zero by the Oracle production override. The explicitly
+    enabled [Pipedash dashboard](pipedash/README.md) uses its own named volume
+    for SQLite state and saved workflow views.
   - **S3 (R2)**: Cloudflare R2 buckets for training data
     (`dofek-training-data`), private direct file imports (`dofek-imports`), web
     build assets (`dofek-web-assets`), OTA updates (`dofek-ota-releases`), Storybook
@@ -1278,6 +1280,13 @@ If a recent body measurement is missing from ClickHouse-backed reads, use:
 - `docs/clickhouse-body-measurement-staleness-runbook.md`
 
 ## Management UIs
+
+Pipedash is the enabled GitHub Actions dashboard at the configured hostname
+`https://actions.dofek.fit`. It uses native password authentication, a dedicated
+Dofek-scoped GitHub token and a persistent SQLite volume. The
+[Pipedash runbook](pipedash/README.md) covers setup, focused views, credentials,
+upgrades and access verification; see the upstream
+[self-hosting guide](https://pipedash.app/docs/deployment/docker).
 
 The base stack defines Portainer, Netdata, Databasus, CloudBeaver, pgAdmin, and
 PeerDB UI services and routes. Databasus remains active because it owns the
