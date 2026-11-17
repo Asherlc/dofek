@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, expect, it, vi } from "vitest";
 import { SportVolumeChart } from "./SportVolumeChart";
 
+const queryState = vi.hoisted(() => ({ isFetching: false }));
 vi.mock("../lib/units", () => ({ useUnitConverter: () => new UnitConverter("metric") }));
 vi.mock("../lib/telemetry", () => ({ captureException: vi.fn() }));
 vi.mock("../lib/trpc", () => ({
@@ -20,14 +21,34 @@ vi.mock("../lib/trpc", () => ({
             weeks: [{ week: "2026-10-19", value: input.metric === "distance" ? null : 90 }],
           },
           isLoading: false,
-          isFetching: false,
+          isFetching: queryState.isFetching,
           error: null,
         }),
       },
     },
   },
 }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  queryState.isFetching = false;
+});
+it("keeps refresh space and the selected metric through fetch cycles", () => {
+  queryState.isFetching = true;
+  const { rerender } = render(<SportVolumeChart days={30} enabled />);
+  fireEvent.click(screen.getByRole("radio", { name: "Distance" }));
+  const status = screen.getByText("Updating volume…");
+  for (const isFetching of [false, true, false]) {
+    queryState.isFetching = isFetching;
+    rerender(<SportVolumeChart days={30} enabled />);
+    expect(status.isConnected).toBe(true);
+    expect(status.style.minHeight).toBe("20px");
+    expect(status.textContent).toBe(isFetching ? "Updating volume…" : "");
+    expect(screen.getByRole("radio", { name: "Distance" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(screen.getByLabelText("2026-10-19: Not recorded")).toBeTruthy();
+  }
+});
 it("offers sport-specific metrics and leaves missing distance unknown", () => {
   render(<SportVolumeChart days={30} enabled />);
   expect(screen.getByText("h:mm per week")).toBeTruthy();

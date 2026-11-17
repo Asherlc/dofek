@@ -76,10 +76,10 @@ func uploaderCutoffBoundaryRows(_ cutoff: Date) -> [[String: Any]] {
 
 final class CleanupStageRecorder {
     private let lock = NSLock()
-    private var stages: [String] = []
+    private var stages: [WhoopCleanupStage] = []
 
-    func append(_ stage: String) { lock.withLock { stages.append(stage) } }
-    var snapshot: [String] { lock.withLock { stages } }
+    func append(_ stage: WhoopCleanupStage) { lock.withLock { stages.append(stage) } }
+    var snapshot: [String] { lock.withLock { stages.map(\.name) } }
 }
 
 final class TestWhoopUploadTransport: WhoopUploadTransport {
@@ -128,9 +128,9 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
         pairedTasks.remove(task.2)
         onCompletion?(task.2, nil, Data(), (attempts[task.2], nil), error)
     }
-    func failOnePath(identity: String) {
+    func failOnePath(identity: String, error: URLError = URLError(.networkConnectionLost)) {
         pairedTasks.remove(identity)
-        onAttemptFailure?(identity, URLError(.networkConnectionLost), attempts[identity])
+        onAttemptFailure?(identity, error, attempts[identity])
     }
 }
 

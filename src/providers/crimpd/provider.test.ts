@@ -331,6 +331,17 @@ describe("Crimpd account connection", () => {
     expect(mocks.capture).not.toHaveBeenCalled();
     expect(mocks.archive).not.toHaveBeenCalled();
   });
+  it("keeps a typed HTTP 5xx download in operational status without reporting it to Sentry", async () => {
+    mocks.load.mockResolvedValue(accountTokens);
+    const { db } = createMockDatabase();
+    const provider = new CrimpdProvider(async () => new Response("unavailable", { status: 503 }));
+
+    await expect(
+      provider.sync(new SyncRun({ db, userId: "owner", window: SyncWindow.full() })),
+    ).rejects.toMatchObject({ statusCode: 503 });
+
+    expect(mocks.capture).not.toHaveBeenCalled();
+  });
   it.each([new Error("archive rejected"), "archive rejected"])(
     "reports import failure and removes its private file",
     async (failure) => {

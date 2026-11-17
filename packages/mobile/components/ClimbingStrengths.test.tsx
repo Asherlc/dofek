@@ -21,6 +21,19 @@ function openData() {
   if (disclosure) fireEvent.click(disclosure);
 }
 
+it("keeps metadata status space and the selected view when enrichment completes", () => {
+  const { rerender } = render(<ClimbingStrengths data={{ ...data, enrichmentPending: true }} />);
+  const status = screen.getByText("Updating catalogue metadata…");
+  fireEvent.click(screen.getByRole("button", { name: "Progress" }));
+  rerender(<ClimbingStrengths data={{ ...data, enrichmentPending: false }} />);
+  expect(status.isConnected).toBe(true);
+  expect(status.style.minHeight).toBe("18px");
+  expect(status.textContent).toBe("");
+  expect(screen.getByRole("button", { name: "Progress" }).getAttribute("aria-selected")).toBe(
+    "true",
+  );
+});
+
 it("explains missing wall angles and keeps the single recorded style directly selectable", () => {
   const panel = data.panels[0];
   if (!panel) throw new Error("Missing fixture");

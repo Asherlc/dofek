@@ -1,8 +1,13 @@
 import { formatDateTime } from "@dofek/format/format";
+import { UnitConverter } from "@dofek/format/units";
+import {
+  activityMetricSourcePreview,
+  defaultActivityMetricSources,
+} from "@dofek/training/fixtures/activity-metric-sources";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { AreaChart, LineChart } from "./ActivityDetailCharts";
+import { ActivityMetricsCharts, AreaChart, LineChart } from "./ActivityDetailCharts";
 
 const scrub = vi.hoisted(() => {
   const callbacks: { onHoverTime?: (timestamp: number | null) => void } = {};
@@ -32,6 +37,173 @@ function expectVisibleDots(container: HTMLElement, count: number) {
 }
 
 describe("ActivityDetailCharts", () => {
+  it("uses the in-window skin temperature measurement time in the accessible reading", () => {
+    const rowRecordedAt = "2026-04-14T10:30:05.000Z";
+    const skinTemperatureRecordedAt = "2026-04-14T10:37:41.000Z";
+    const skinTemperature = activityMetricSourcePreview.find(
+      (metric) => metric.key === "skinTemperature",
+    );
+    if (!skinTemperature) throw new Error("Expected skin temperature fixture");
+    const selectedSource = skinTemperature.sources[0];
+    if (!selectedSource) throw new Error("Expected skin temperature source fixture");
+    render(
+      <ActivityMetricsCharts
+        points={[
+          {
+            recordedAt: rowRecordedAt,
+            heartRate: null,
+            power: null,
+            speed: null,
+            cadence: null,
+            altitude: null,
+            skinTemperature: 32.18,
+            skinTemperatureRecordedAt,
+            lat: null,
+            lng: null,
+          },
+        ]}
+        sourceControls={[
+          {
+            key: "skinTemperature",
+            label: "Skin Temperature",
+            defaultSourceId: defaultActivityMetricSources.skinTemperature,
+            sources: skinTemperature.sources,
+            selectedId: selectedSource.id,
+            onChange: vi.fn(),
+          },
+        ]}
+        serverUrl=""
+        activityWindow={{
+          startedAt: "2026-04-14T10:00:00.000Z",
+          endedAt: "2026-04-14T11:00:00.000Z",
+        }}
+        cadenceLabel="rpm"
+        isClimbingActivity={false}
+        highlightedClimbId={null}
+        onSelectClimb={vi.fn()}
+        hasHr={false}
+        hasPower={false}
+        hasAltitude={false}
+        units={new UnitConverter("metric")}
+        hasGps={false}
+        onHoverIndex={vi.fn()}
+        onHoverTime={vi.fn()}
+        onScrubStart={vi.fn()}
+        onScrubEnd={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "View Skin Temperature data" }));
+    expect(
+      screen.getByLabelText(
+        `Sample 1 · ${formatDateTime(new Date(skinTemperatureRecordedAt))}: 32.2 °C`,
+      ),
+    ).toBeDefined();
+    expect(
+      screen.queryByLabelText(`Sample 1 · ${formatDateTime(new Date(rowRecordedAt))}: 32.2 °C`),
+    ).toBeNull();
+  });
+
+  it("shows the completed source beside a pending chart source selection", () => {
+    const powerMetric = activityMetricSourcePreview.find((metric) => metric.key === "power");
+    expect(powerMetric).toBeDefined();
+    render(
+      <ActivityMetricsCharts
+        points={[
+          {
+            recordedAt: "2026-04-14T10:30:00.000Z",
+            heartRate: null,
+            power: 180,
+            speed: null,
+            cadence: null,
+            altitude: null,
+            skinTemperature: null,
+            skinTemperatureRecordedAt: null,
+            lat: null,
+            lng: null,
+          },
+        ]}
+        sourceControls={[
+          {
+            key: "power",
+            label: "Power",
+            defaultSourceId: defaultActivityMetricSources.power,
+            sources: powerMetric?.sources ?? [],
+            selectedId: "garmin",
+            onChange: vi.fn(),
+          },
+        ]}
+        sourceAttribution={{ power: "Showing previous readings from Wahoo" }}
+        serverUrl=""
+        activityWindow={{
+          startedAt: "2026-04-14T10:00:00.000Z",
+          endedAt: "2026-04-14T11:00:00.000Z",
+        }}
+        cadenceLabel="rpm"
+        isClimbingActivity={false}
+        highlightedClimbId={null}
+        onSelectClimb={vi.fn()}
+        hasHr={false}
+        hasPower
+        hasAltitude={false}
+        units={new UnitConverter("metric")}
+        hasGps={false}
+        onHoverIndex={vi.fn()}
+        onHoverTime={vi.fn()}
+        onScrubStart={vi.fn()}
+        onScrubEnd={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Showing previous readings from Wahoo")).toBeDefined();
+  });
+
+  it.each([
+    ["running", "85 steps/min"],
+    ["cycling", "85 rpm"],
+  ])("labels %s cadence values with its accessible unit", (_activityType, cadenceValue) => {
+    render(
+      <ActivityMetricsCharts
+        points={[
+          {
+            recordedAt: "2026-04-14T10:30:00.000Z",
+            heartRate: null,
+            power: null,
+            speed: null,
+            cadence: 85,
+            altitude: null,
+            skinTemperature: null,
+            skinTemperatureRecordedAt: null,
+            lat: null,
+            lng: null,
+          },
+        ]}
+        sourceControls={[]}
+        serverUrl=""
+        activityWindow={{
+          startedAt: "2026-04-14T10:00:00.000Z",
+          endedAt: "2026-04-14T11:00:00.000Z",
+        }}
+        cadenceLabel={cadenceValue.endsWith("rpm") ? "rpm" : "steps/min"}
+        isClimbingActivity={false}
+        highlightedClimbId={null}
+        onSelectClimb={vi.fn()}
+        hasHr={false}
+        hasPower={false}
+        hasAltitude={false}
+        units={new UnitConverter("metric")}
+        hasGps={false}
+        onHoverIndex={vi.fn()}
+        onHoverTime={vi.fn()}
+        onScrubStart={vi.fn()}
+        onScrubEnd={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "View Cadence data" }));
+    expect(screen.getByText(cadenceValue)).toBeDefined();
+  });
+
   it("retains climbs at activity boundaries outside the HR sample range", () => {
     const { container } = render(
       <LineChart
@@ -203,6 +375,27 @@ describe("ActivityDetailCharts", () => {
 
     const line = container.querySelector('Path[stroke="#ff0000"]');
     expect(line?.getAttribute("d")?.match(/[ML]/g)).toEqual(["M", "L", "L"]);
+  });
+
+  it.each([
+    ["Celsius", 32.18, "32.2 °C"],
+    ["Fahrenheit", 89.924, "89.9 °F"],
+  ])("keeps fractional %s values in ticks and accessible chart rows", (_, value, display) => {
+    const { container } = render(
+      <LineChart
+        data={[{ recordedAt: "2026-10-18T17:30:17Z", value }]}
+        activityWindow={{ startedAt: "2026-10-18T17:00:00Z", endedAt: "2026-10-18T18:00:00Z" }}
+        color="#ff0000"
+        label="Skin Temperature"
+        unit={display.endsWith("°C") ? "°C" : "°F"}
+        precision={1}
+      />,
+    );
+    expect(
+      Array.from(container.querySelectorAll("SvgText"), (element) => element.textContent),
+    ).toContain(display.split(" ")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "View Skin Temperature data" }));
+    expect(screen.getByLabelText(new RegExp(display.replace(" ", "\\s")))).toBeDefined();
   });
 
   it.each([

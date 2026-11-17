@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -11,13 +12,12 @@ import {
   buildTestAnalyticsTableStatement,
   rewriteClickHouseDatabaseNames,
 } from "../routers/clickhouse-integration-test-models.ts";
-import {
-  getActivityHeartRateContext,
-  getActivityMetricSources,
-  getActivityPowerWork,
-  getActivitySourceHrZones,
-} from "./activity-metric-sources-repository.ts";
+import { getActivityHeartRateContext } from "./activity-heart-rate-context.ts";
+import { getActivityMetricSources } from "./activity-metric-sources-repository.ts";
+import { getActivityPowerWork } from "./activity-power-work.ts";
+import { getActivitySourceHrZones } from "./activity-source-hr-zones.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
+import { refreshDailyHealthSensor } from "./daily-health-sensor-test-helpers.ts";
 
 const userId = "00000000-0000-0000-0000-000000000001";
 const activityId = randomUUID();
@@ -28,6 +28,48 @@ const window = {
   endedAt: "2026-10-20T13:00:00.000Z",
   memberActivityIds: [activityId],
 };
+const temperatureTime = "2026-03-29T15:28:11.430Z";
+const temperatureWindow = {
+  activityId: randomUUID(),
+  userId,
+  startedAt: "2026-03-29T15:28:10.000Z",
+  endedAt: "2026-03-29T15:28:12.000Z",
+  memberActivityIds: [],
+};
+const denseTemperatureWindow = {
+  ...temperatureWindow,
+  activityId: randomUUID(),
+  startedAt: "2026-03-29T15:28:10.000Z",
+  endedAt: "2026-03-29T15:29:10.000Z",
+};
+const skinTemperatureFrame = readFileSync(
+  new URL(
+    "../../../mobile/modules/whoop-ble/Tests/fixtures/imu-activation-capture.tsv",
+    import.meta.url,
+  ),
+  "utf8",
+)
+  .split("\n")
+  .map((line) => line.split("\t").at(-1) ?? "")
+  .find((hex) => hex.length === 248 && hex.slice(16, 22) === "2f1280");
+
+function frameWithSourceTime(frame: string, timestamp: string) {
+  const seconds = Math.floor(Date.parse(timestamp) / 1000);
+  const fraction = Math.round(((Date.parse(timestamp) % 1000) * 32768) / 1000);
+  const littleEndian = (value: number, bytes: number) =>
+    Array.from({ length: bytes }, (_, index) =>
+      ((value >>> (index * 8)) & 0xff).toString(16).padStart(2, "0"),
+    ).join("");
+  return `${frame.slice(0, 30)}${littleEndian(seconds, 4)}${littleEndian(fraction, 2)}${frame.slice(42)}`;
+}
+
+function frameWithSkinTemperature(frame: string, temperatureC: number) {
+  const word = Math.round(temperatureC * 100);
+  const encoded = [word & 0xff, word >>> 8]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  return [frame.slice(0, 146), encoded, frame.slice(150)].join("");
+}
 
 describe("activity metric source selection", () => {
   const database = `metric_sources_${randomUUID().replaceAll("-", "")}`;
@@ -124,6 +166,12 @@ describe("activity metric source selection", () => {
     }
     await executeCommand(`INSERT INTO postgres_fitness.user_profile (id, max_hr, resting_hr)
       VALUES ('${userId}', 200, 60)`);
+    await executeCommand(
+      "INSERT INTO postgres_fitness.sensor_provider_priority (provider_id, channel, priority) VALUES ('whoop_ble', 'skin_temperature', 10)",
+    );
+    await executeCommand(
+      "INSERT INTO postgres_fitness.sensor_device_priority (provider_id, source_name_pattern, channel, priority) VALUES ('whoop_ble', 'strap-%', 'skin_temperature', 50), ('whoop_ble', 'strap-b', 'skin_temperature', 1)",
+    );
     store = new ClickHouseActivitySensorStore({
       query: (options) => client.query({ ...options, query: scope(options.query) }),
       command: (options) => client.command({ ...options, query: scope(options.query) }),
@@ -156,6 +204,102 @@ describe("activity metric source selection", () => {
        [(toDateTime64('2026-10-20 12:00:00', 6, 'UTC'), 150, 200, NULL, NULL, NULL, NULL, NULL)],
        1, 0, now64(9))`,
     );
+    if (!skinTemperatureFrame) throw new Error("WHOOP temperature fixture frame is required");
+    await client.insert({
+      table: `${database}.metric_stream`,
+      format: "JSONEachRow",
+      values: [
+        {
+          id: "00000000-0000-0000-0000-000000000101",
+          user_id: userId,
+          provider_id: "whoop_ble",
+          device_id: "strap-a",
+          channel: "sensor_record",
+          scalar: null,
+          recorded_at: "2026-10-20 12:00:00",
+          metadata: JSON.stringify({ frameHex: skinTemperatureFrame }),
+        },
+        {
+          id: "00000000-0000-0000-0000-000000000102",
+          user_id: userId,
+          provider_id: "whoop_ble",
+          device_id: "strap-a",
+          channel: "sensor_record",
+          scalar: null,
+          recorded_at: "2026-10-20 12:00:01",
+          metadata: JSON.stringify({ frameHex: skinTemperatureFrame }),
+        },
+        {
+          id: "00000000-0000-0000-0000-000000000201",
+          user_id: userId,
+          provider_id: "whoop_ble",
+          device_id: "strap-b",
+          channel: "sensor_record",
+          scalar: null,
+          recorded_at: "2026-10-20 12:00:02",
+          metadata: JSON.stringify({
+            frameHex: frameWithSkinTemperature(skinTemperatureFrame, 34.12),
+          }),
+        },
+        {
+          user_id: randomUUID(),
+          provider_id: "whoop_ble",
+          device_id: "other-user-strap",
+          channel: "sensor_record",
+          scalar: null,
+          recorded_at: "2026-10-20 12:00:00",
+          metadata: JSON.stringify({ frameHex: skinTemperatureFrame }),
+        },
+        {
+          user_id: userId,
+          provider_id: "whoop_ble",
+          device_id: "strap-a",
+          channel: "sensor_record",
+          scalar: null,
+          recorded_at: "2026-10-20 12:00:03",
+          metadata: JSON.stringify({
+            frameHex: frameWithSourceTime(skinTemperatureFrame, "2026-03-29T15:28:13.430Z"),
+          }),
+        },
+        {
+          user_id: userId,
+          provider_id: "whoop_ble",
+          device_id: "strap-a",
+          channel: "sensor_record",
+          scalar: null,
+          recorded_at: "2026-10-20 12:00:04",
+          metadata: JSON.stringify({
+            frameHex: frameWithSourceTime(skinTemperatureFrame, "2026-03-29T15:28:40.430Z"),
+          }),
+        },
+      ].map((row) => ({ version: 1, ...row, id: row.id ?? randomUUID() })),
+    });
+    await client.insert({
+      table: `${database}.activity_stream_points`,
+      format: "JSONEachRow",
+      values: [
+        {
+          user_id: userId,
+          activity_id: denseTemperatureWindow.activityId,
+          points: Array.from({ length: 61 }, (_, second) => ({
+            recorded_at: new Date(
+              Date.parse("2026-03-29T15:28:10.000Z") + second * 1_000,
+            ).toISOString(),
+            heart_rate: 120 + second,
+            power: null,
+            speed: null,
+            cadence: null,
+            altitude: null,
+            lat: null,
+            lng: null,
+          })),
+          refresh_version: 1,
+          is_deleted: 0,
+          refreshed_at: "2026-03-29 15:30:00.000000",
+        },
+      ],
+    });
+    await refreshDailyHealthSensor(client, database);
   });
   afterAll(async () => {
     await client?.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
@@ -164,19 +308,112 @@ describe("activity metric source selection", () => {
 
   it("prefers activity-linked HR over standalone recordings and keeps other metric priorities", async () => {
     const metrics = await getActivityMetricSources(store, window);
-    expect(metrics.map((metric) => [metric.key, metric.defaultSourceId])).toEqual([
+    expect(metrics.slice(0, 5).map((metric) => [metric.key, metric.defaultSourceId])).toEqual([
       ["heartRate", "garmin"],
       ["power", "garmin"],
       ["speed", "garmin"],
       ["cadence", "garmin"],
       ["altitude", "garmin"],
     ]);
+    expect(metrics.map((metric) => metric.key)).toEqual([
+      "heartRate",
+      "power",
+      "speed",
+      "cadence",
+      "altitude",
+    ]);
+    expect(metrics.find((metric) => metric.key === "skinTemperature")).toBeUndefined();
     expect(
       metrics.find((metric) => metric.key === "heartRate")?.sources.map((source) => source.id),
     ).toEqual(["garmin", "whoop"]);
     expect(
       metrics.find((metric) => metric.key === "power")?.sources.map((source) => source.id),
     ).toEqual(["garmin", "wahoo"]);
+  });
+  it("discovers decoded BLE temperature sources by device, independent of reception date", async () => {
+    const metrics = await getActivityMetricSources(store, temperatureWindow);
+    const temperature = metrics.find((metric) => metric.key === "skinTemperature");
+    expect(temperature?.defaultSourceId).toBe('["whoop_ble","strap-b"]');
+    expect(temperature?.defaultSourceId).toBe('["whoop_ble","strap-b"]');
+    expect(temperature?.sources.map((source) => source.id)).toEqual(
+      expect.arrayContaining(['["whoop_ble","strap-a"]', '["whoop_ble","strap-b"]']),
+    );
+    expect(temperature?.sources).toHaveLength(2);
+  });
+  it("returns source-selected temperature-only readings at strap time and resolves replays once", async () => {
+    const points = await store.getStream(temperatureWindow, 500, {
+      skinTemperature: '["whoop_ble","strap-a"]',
+    });
+    expect(points).toHaveLength(1);
+    expect(points[0]).toMatchObject({
+      recorded_at: temperatureTime,
+      heart_rate: null,
+      skin_temperature: 32.18,
+      skin_temperature_recorded_at: temperatureTime,
+    });
+    const preferredStrap = await store.getStream(temperatureWindow, 500, {
+      skinTemperature: '["whoop_ble","strap-b"]',
+    });
+    expect(preferredStrap).toHaveLength(1);
+    expect(preferredStrap[0]).toMatchObject({ skin_temperature: 34.12 });
+    const outside = await store.getStream(
+      {
+        ...temperatureWindow,
+        startedAt: "2026-03-29T15:28:12.000Z",
+        endedAt: "2026-03-29T15:28:14.000Z",
+      },
+      500,
+      { skinTemperature: '["whoop_ble","strap-a"]' },
+    );
+    expect(outside.map((point) => point.skin_temperature)).toEqual([32.18]);
+    expect(outside[0]?.skin_temperature_recorded_at).toBe("2026-03-29T15:28:13.430Z");
+  });
+  it("combines selected zero and missing scalar channels with decoded temperature", async () => {
+    const mixedWindow = {
+      ...temperatureWindow,
+      activityId: randomUUID(),
+      startedAt: "2026-03-29T15:28:12.000Z",
+      endedAt: "2026-03-29T15:28:14.000Z",
+    };
+    await executeCommand(`INSERT INTO analytics.sensor_scalar_sample
+      (id, activity_id, user_id, recorded_at, recorded_date, channel, provider_id, scalar, provider_priority, _peerdb_is_deleted, _peerdb_version)
+      VALUES
+      (generateUUIDv4(), NULL, '${userId}', '2026-03-29 15:28:13.430', '2026-03-29', 'heart_rate', 'mixed-hr', 120, 1, 0, 1),
+      (generateUUIDv4(), NULL, '${userId}', '2026-03-29 15:28:13.430', '2026-03-29', 'power', 'zero-power', 0, 1, 0, 1)`);
+
+    const points = await store.getStream(mixedWindow, 500, {
+      heartRate: "mixed-hr",
+      power: "zero-power",
+      speed: "missing-speed",
+      skinTemperature: '["whoop_ble","strap-a"]',
+    });
+
+    expect(points).toHaveLength(1);
+    expect(points[0]).toMatchObject({
+      recorded_at: "2026-03-29T15:28:13.430Z",
+      heart_rate: 120,
+      power: 0,
+      speed: null,
+      skin_temperature: 32.18,
+      skin_temperature_recorded_at: "2026-03-29T15:28:13.430Z",
+    });
+  });
+  it("keeps staggered sparse temperatures at their original times beside dense downsampled HR", async () => {
+    const points = await store.getStream(denseTemperatureWindow, 10, {
+      skinTemperature: '["whoop_ble","strap-a"]',
+    });
+    expect(points).toHaveLength(10);
+    expect(points.some((point) => point.heart_rate !== null)).toBe(true);
+    expect(
+      points.flatMap((point) =>
+        point.skin_temperature != null && point.skin_temperature_recorded_at != null
+          ? [[point.skin_temperature, point.skin_temperature_recorded_at]]
+          : [],
+      ),
+    ).toEqual([
+      [32.18, "2026-03-29T15:28:11.430Z"],
+      [32.18, "2026-03-29T15:28:40.430Z"],
+    ]);
   });
   it("ranks unlinked HR by distinct valid timestamps, then provider priority", async () => {
     const densityWindow = {
@@ -428,9 +665,9 @@ describe("activity metric source selection", () => {
     expect(heartRate?.sources).toEqual([
       {
         id: '["whoop_ble","strap-a"]',
-        label: expect.stringContaining("WHOOP"),
+        label: "WHOOP (Bluetooth) · strap-a",
         presentation: {
-          displayName: "WHOOP",
+          displayName: "strap-a",
           providerId: "whoop_ble",
           sourceName: "strap-a",
           attribution: { kind: "bluetooth", label: "Bluetooth" },

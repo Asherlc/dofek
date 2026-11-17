@@ -260,6 +260,43 @@ describe("sync-provider-execution", () => {
     });
   });
 
+  it("does not report a typed HTTP 5xx from targeted webhook sync before full-sync fallback", async () => {
+    const error = new ProviderServiceUnavailableError({
+      message: "Provider unavailable",
+      providerId: "strava",
+      statusCode: 503,
+      responseBody: "unavailable",
+    });
+    const event: WebhookEvent = {
+      ownerExternalId: "owner-1",
+      eventType: "create",
+      objectType: "activity",
+      objectId: "activity-1",
+    };
+    const sync = vi.fn(async () => ({
+      provider: "strava",
+      recordsSynced: 1,
+      errors: [],
+      duration: 1,
+    }));
+    const provider = Object.assign(createMockProvider({ id: "strava", sync }), {
+      registerWebhook: vi.fn(),
+      syncWebhookEvent: vi.fn().mockRejectedValue(error),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({ providerId: "strava", userId: "user-1", sinceDays: 1 });
+    Object.assign(job.data, { webhookEvent: event });
+
+    await runSyncJob(job, mockDb);
+
+    expect(sync).toHaveBeenCalledOnce();
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "strava",
+      data_type: "sync",
+    });
+  });
+
   it("invalidates user queries after a nonzero WHOOP sync", async () => {
     const provider = createMockProvider({
       id: "whoop",
@@ -654,9 +691,13 @@ describe("sync-provider-execution", () => {
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    await runSyncJob(createMockJob(), mockDb);
+    await runSyncJob(createMockJob({ providerId: "zwift", origin: "scheduled" }), mockDb);
 
     expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ errorCauses: [outage] }),
+    );
     expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
       provider: "zwift",
       data_type: "sync",

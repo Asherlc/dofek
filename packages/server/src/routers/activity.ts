@@ -24,15 +24,13 @@ import type { CyclingThresholdEvidence } from "../contracts/cycling-threshold.ts
 import { selectedChartCustomRangeQuery, selectedChartRangeSchema } from "../lib/chart-range.ts";
 import { endDateSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
+import { getActivityHeartRateContext } from "../repositories/activity-heart-rate-context.ts";
 import {
   activityImagesOutputSchema,
   getOwnedActivityImages,
   listActivityImages,
 } from "../repositories/activity-images-repository.ts";
-import {
-  getActivityHeartRateContext,
-  getActivityPowerWork,
-} from "../repositories/activity-metric-sources-repository.ts";
+import { getActivityPowerWork } from "../repositories/activity-power-work.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { getActivityRoute } from "../repositories/activity-route-repository.ts";
 import { ClimbingActivityLogEntryRepository } from "../repositories/climbing-activity-log-entry-repository.ts";
@@ -130,6 +128,8 @@ export interface StreamPoint {
   altitude: number | null;
   lat: number | null;
   lng: number | null;
+  skinTemperature?: number | null;
+  skinTemperatureRecordedAt?: string | null;
 }
 
 export type ActivityHrZones = import("@dofek/zones/zones").ActivityHrZone[];
@@ -342,7 +342,7 @@ export const activityRouter = router({
 
   metricSources: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "source-inheritance-v5",
+    keyVersion: "source-inheritance-v6",
   })
     .input(
       z.object({ id: z.guid(), responseVersion: z.union([z.literal(1), z.literal(2)]).default(1) }),

@@ -190,7 +190,13 @@ before `BEGIN IMMEDIATE`, and `store_reset_stats`, `store_delete_samples`,
 `store_delete_batches`, `store_clear_binding` and `store_rotate_generation`
 precede the corresponding writes. `store_commit` precedes `COMMIT`;
 `store_completed` establishes that commit returned successfully. `store_vacuum`
-precedes `VACUUM` and a truncating WAL checkpoint after that commit. The purge
+precedes `VACUUM`; `store_wal_checkpoint` and
+`store_wal_checkpoint_completed` bracket the explicit truncating WAL checkpoint
+after that commit. The completion log includes SQLite's `busy`, `log`, and
+`checkpointed` frame counts as `checkpointBusy`, `checkpointLogFrames`, and
+`checkpointedFrames`. These values describe only this explicit checkpoint after
+`VACUUM`; they do not measure bytes written by SQLite's automatic checkpoint
+during `COMMIT` or the operating system's per-function disk-write share. The purge
 deletes rows with [`secure_delete`](https://www.sqlite.org/pragma.html#pragma_secure_delete)
 set to `FAST`, so SQLite does not rewrite each freed page through the WAL;
 [`VACUUM`](https://www.sqlite.org/lang_vacuum.html) then removes the freed pages
@@ -309,6 +315,19 @@ open took 5.85 seconds on the investigation Mac; subsequent diagnostics plus
 unlimited count took 0.04–0.38 ms. These measurements are not device latency
 guarantees; see the [incident evidence](../../../../docs/production-incident-baseline.md#2026-10-30--whoop-recovery-and-queue-diagnostics-corrections).
 Both corrections require a new native iOS build.
+
+Validated HTTP 500–599 upload responses increment the uploader-lifetime
+`http5xxResponseCount` and remain visible in `lastUploadError`; they follow the
+existing retry and durable-queue behavior without creating Sentry exception
+events. The count is included in the existing `capture_snapshot` structured
+OpenTelemetry log through `getDataPathStats()`. It is cumulative for one native
+uploader lifetime, is not persisted, and appears on the next normal diagnostics
+snapshot; repeated snapshots report the same running total and must not be
+summed as separate failures. Older native builds may omit this optional field.
+Transport failures without a known HTTP 5xx response and unexpected validation,
+storage, authentication, or acknowledgment failures continue through Sentry.
+This field uses the standard log record attribute model described by
+OpenTelemetry's [Logs Data Model](https://opentelemetry.io/docs/specs/otel/logs/data-model/).
 
 Upload acknowledgments find their reserved sample rows through a partial index
 on non-null batch identities, rather than scanning the entire queued backlog.

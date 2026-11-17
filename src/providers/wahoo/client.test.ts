@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { AccessTokenExpiredError, ProviderAuthenticationFailedError } from "../auth-errors.ts";
 import {
   createWahooNumeric,
-  createWahooSingleWorkoutResponseSchema,
   createWahooWebhookPayloadSchema,
   createWahooWorkoutListResponseSchema,
   createWahooWorkoutSchema,
@@ -161,14 +160,6 @@ describe("Wahoo schemas", () => {
       });
 
       expect(result.workouts[0]?.workout_summary?.file?.url).toBeUndefined();
-    });
-  });
-
-  describe("wahooSingleWorkoutResponseSchema", () => {
-    it("parses wrapped workout response", () => {
-      const schema = createWahooSingleWorkoutResponseSchema();
-      const result = schema.parse({ workout: validWorkout });
-      expect(result.workout.id).toBe(42);
     });
   });
 

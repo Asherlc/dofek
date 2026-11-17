@@ -254,41 +254,27 @@ public class WhoopBleModule: Module {
         }.runOnQueue(self.moduleQueue)
 
         AsyncFunction("disableUploads") {
-            let operationId = UUID().uuidString
-            let startedAt = ProcessInfo.processInfo.systemUptime
-            var stage = "ble_suspend"
-            func recordStage(_ nextStage: String) {
-                stage = nextStage
-                SentrySDK.logger.info("WHOOP cleanup stage", attributes: [
-                    "operation": "disableUploads", "operationId": operationId, "stage": stage,
-                    "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
-                    "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
-                ])
-            }
-
-            recordStage("ble_suspend")
+            var telemetry = WhoopBleCleanupTelemetry()
+            telemetry.record("ble_suspend")
             self.connectionManager.syncOnBleQueue {
                 self.captureSuspended = true
                 self.watchdog.stop()
             }
-            recordStage("disconnect")
+            telemetry.record("disconnect")
             self.connectionManager.disconnect()
             do {
-                recordStage("uploader_bootstrap")
+                telemetry.record("uploader_bootstrap")
                 let uploader = try self.uploader
-                recordStage("uploader_disable")
+                telemetry.record("uploader_disable")
                 let cutoff = UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date
-                try uploader.disable(cutoff: cutoff, onStage: recordStage)
-                recordStage("completed")
+                try uploader.disable(cutoff: cutoff) { nextStage in
+                    telemetry.record(nextStage.name, attributes: nextStage.attributes)
+                }
+                telemetry.record("completed")
                 self.cleanupFailure = nil
             } catch {
                 self.cleanupFailure = error.localizedDescription
-                SentrySDK.logger.error("WHOOP cleanup failed", attributes: [
-                    "operation": "disableUploads", "operationId": operationId,
-                    "stage": "failed", "failedStage": stage,
-                    "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
-                    "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
-                ])
+                telemetry.recordFailure()
                 SentrySDK.capture(error: error) { scope in scope.setUser(nil) }
                 throw error
             }

@@ -255,11 +255,12 @@ export function CyclingFtpSettings({
             Inclusive 90-day window by default. Ordinary rides may not be maximal; easy-only riding
             can underestimate FTP.
           </Text>
-          {suggestions.isFetching ? (
-            <Text accessibilityRole="text" style={{ color: colors.textSecondary }}>
-              Estimating from recorded activities…
-            </Text>
-          ) : null}
+          <Text
+            accessibilityLiveRegion="polite"
+            style={{ color: colors.textSecondary, minHeight: 20, lineHeight: 20 }}
+          >
+            {suggestions.isFetching ? "Estimating from recorded activities…" : null}
+          </Text>
           {suggestions.error ? (
             <Text accessibilityRole="alert" style={{ color: colors.danger }}>
               {userFacingErrorMessage(suggestions.error)}

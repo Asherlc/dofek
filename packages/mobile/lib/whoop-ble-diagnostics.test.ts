@@ -20,6 +20,7 @@ describe("WhoopBleDiagnostics", () => {
       activeUploadCount: 2,
       blockedUploadStreams: ["imu"],
       lastUploadError: "HTTP 401",
+      http5xxResponseCount: 4,
     });
     new WhoopBleDiagnostics().snapshot(stats, "foreground", "active");
     expect(logger.info).toHaveBeenCalledWith(
@@ -29,6 +30,7 @@ describe("WhoopBleDiagnostics", () => {
         activeUploadCount: 2,
         blockedUploadStreams: "imu",
         lastUploadError: "HTTP 401",
+        http5xxResponseCount: 4,
       }),
     );
   });

@@ -1,9 +1,27 @@
 // @vitest-environment jsdom
-import type { ActivityMetricSource } from "@dofek/providers/activity-metric-source";
+import {
+  type ActivityMetricSource,
+  activityMetricSourcePresentation,
+  activityMetricSourceSchema,
+} from "@dofek/providers/activity-metric-source";
+import { providerSourceLabel } from "@dofek/providers/providers";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActivityMetricSourcePicker } from "./ActivityMetricSourcePicker.tsx";
+
+const whoopBleSourceFor = (deviceId: string) => {
+  const providerId = "whoop_ble";
+  const label = providerSourceLabel(providerId, deviceId);
+  return activityMetricSourceSchema.parse({
+    id: JSON.stringify([providerId, deviceId]),
+    label,
+    presentation: activityMetricSourcePresentation(providerId, deviceId, label),
+  });
+};
+const whoopBleSource = whoopBleSourceFor("A050E4D0-67D0-4F4D-9A43-756F7D343DA1");
+const secondWhoopBleSource = whoopBleSourceFor("B160F5E1-78E1-50A5-AB54-86708E454EB2");
+const whoopBleSources = [whoopBleSource, secondWhoopBleSource];
 
 const sources: ActivityMetricSource[] = [
   {
@@ -26,16 +44,7 @@ const sources: ActivityMetricSource[] = [
       attribution: { kind: "cloud", label: "via WHOOP Cloud" },
     },
   },
-  {
-    id: "bluetooth-recording",
-    label: "WHOOP (Bluetooth)",
-    presentation: {
-      displayName: "WHOOP",
-      providerId: "whoop",
-      sourceName: null,
-      attribution: { kind: "bluetooth", label: "via Bluetooth" },
-    },
-  },
+  ...whoopBleSources,
 ];
 
 it("shows WHOOP with a Peloton delivery badge in the trigger and option", () => {
@@ -93,7 +102,11 @@ describe("ActivityMetricSourcePicker", () => {
     for (const source of sources) {
       const option = screen.getByRole("radio", { name: source.label }).closest("label");
       expect(option?.textContent).toBe(
-        source.id === "watch-recording" ? "Asher’s Apple Watch" : "",
+        source.id === "watch-recording"
+          ? "Asher’s Apple Watch"
+          : whoopBleSources.some((whoopSource) => whoopSource.id === source.id)
+            ? source.presentation.displayName
+            : "",
       );
       expect(
         option?.querySelector(`[title="${source.presentation.attribution?.label}"]`),
@@ -138,17 +151,38 @@ describe("ActivityMetricSourcePicker", () => {
     fireEvent.click(trigger);
     const dialog = screen.getByRole("dialog", { name: "Heart Rate source" });
     const cloud = within(dialog).getByRole("radio", { name: "WHOOP (Cloud)" });
-    const bluetooth = within(dialog).getByRole("radio", {
-      name: "WHOOP (Bluetooth)",
+    const bluetooth = within(dialog).getByRole("radio", { name: whoopBleSource.label });
+    const secondBluetooth = within(dialog).getByRole("radio", {
+      name: secondWhoopBleSource.label,
     });
     expect(cloud).toBeChecked();
     expect(bluetooth).not.toBeChecked();
+    expect(secondBluetooth).not.toBeChecked();
     expect(within(dialog).getByText("Asher’s Apple Watch")).toBeVisible();
+    expect(bluetooth.closest("label")).toHaveTextContent(whoopBleSource.presentation.displayName);
+    expect(secondBluetooth.closest("label")).toHaveTextContent(
+      secondWhoopBleSource.presentation.displayName,
+    );
     await waitFor(() => expect(cloud).toHaveFocus());
     fireEvent.click(bluetooth);
-    expect(screen.getByLabelText("Selected recording")).toHaveTextContent("bluetooth-recording");
-    expect(screen.getByRole("button", { name: /WHOOP \(Bluetooth\)/ }).textContent).toBe("");
+    expect(screen.getByLabelText("Selected recording")).toHaveTextContent(whoopBleSource.id);
+    const bluetoothTrigger = screen.getByRole("button", {
+      name: `Heart Rate source: ${whoopBleSource.label}`,
+    });
+    expect(bluetoothTrigger).toHaveTextContent(whoopBleSource.presentation.displayName);
+    expect(bluetoothTrigger.querySelector('[title="Bluetooth"]')).not.toBeNull();
     await waitFor(() => expect(trigger).toHaveFocus());
+
+    fireEvent.click(bluetoothTrigger);
+    const secondBluetoothOption = screen.getByRole("radio", {
+      name: secondWhoopBleSource.label,
+      checked: false,
+    });
+    fireEvent.click(secondBluetoothOption);
+    expect(screen.getByLabelText("Selected recording")).toHaveTextContent(secondWhoopBleSource.id);
+    expect(
+      screen.getByRole("button", { name: `Heart Rate source: ${secondWhoopBleSource.label}` }),
+    ).toHaveTextContent(secondWhoopBleSource.presentation.displayName);
   });
 
   it.each(["Escape", "Enter"])(
@@ -161,17 +195,27 @@ describe("ActivityMetricSourcePicker", () => {
       const cloud = screen.getByRole("radio", { name: "WHOOP (Cloud)" });
       await waitFor(() => expect(cloud).toHaveFocus());
       fireEvent.keyDown(cloud, { key: "ArrowRight" });
-      const bluetooth = screen.getByRole("radio", { name: "WHOOP (Bluetooth)" });
+      const bluetooth = screen.getByRole("radio", { name: whoopBleSource.label });
       expect(bluetooth).toHaveFocus();
       expect(bluetooth).toBeChecked();
-      expect(screen.getByLabelText("Selected recording")).toHaveTextContent("bluetooth-recording");
+      expect(screen.getByLabelText("Selected recording")).toHaveTextContent(whoopBleSource.id);
       fireEvent.keyDown(bluetooth, { key: "ArrowDown" });
+      const secondBluetooth = screen.getByRole("radio", { name: secondWhoopBleSource.label });
+      expect(secondBluetooth).toHaveFocus();
+      expect(secondBluetooth).toBeChecked();
+      expect(screen.getByLabelText("Selected recording")).toHaveTextContent(
+        secondWhoopBleSource.id,
+      );
+      fireEvent.keyDown(secondBluetooth, { key: "ArrowDown" });
       const watch = screen.getByRole("radio", {
         name: "Asher’s Apple Watch (Apple Health)",
       });
       expect(watch).toHaveFocus();
       expect(watch).toBeChecked();
       fireEvent.keyDown(watch, { key: "ArrowUp" });
+      expect(secondBluetooth).toHaveFocus();
+      expect(secondBluetooth).toBeChecked();
+      fireEvent.keyDown(secondBluetooth, { key: "ArrowUp" });
       expect(bluetooth).toHaveFocus();
       expect(bluetooth).toBeChecked();
       fireEvent.keyDown(bluetooth, { key: "ArrowLeft" });

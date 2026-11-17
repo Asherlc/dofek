@@ -7,36 +7,6 @@ struct WhoopUploadTaskSnapshot {
     let pairedIdentities: Set<String>
 }
 
-struct WhoopUploadOutcome {
-    let batchIdentity: String
-    let stream: String
-    let route: String
-    var stage: String
-    let statusCode: Int?
-    var responseOriginValidated: Bool?
-    var acknowledgmentValidated: Bool
-    var outboxState: String
-
-    var isValidatedHttp5xxRejection: Bool {
-        responseOriginValidated == true && stage == "http_status_rejected" &&
-            statusCode.map { (500..<600).contains($0) } == true
-    }
-
-    var sentryData: [String: Any] {
-        var data: [String: Any] = [
-            "batchIdentity": batchIdentity,
-            "stream": stream,
-            "route": route,
-            "stage": stage,
-            "acknowledgmentValidated": acknowledgmentValidated,
-            "outboxState": outboxState,
-        ]
-        if let statusCode { data["statusCode"] = statusCode }
-        if let responseOriginValidated { data["responseOriginValidated"] = responseOriginValidated }
-        return data
-    }
-}
-
 protocol WhoopUploadTransport: AnyObject {
     var onCompletion: ((String, Int?, Data, (attempt: Int?, responseURL: URL?), Error?) -> Void)? { get set }
     var onAttemptFailure: ((String, Error, Int?) -> Void)? { get set }
@@ -76,6 +46,7 @@ final class WhoopBleBackgroundUploader: NSObject {
     private var completionHandler: (() -> Void)?
     private var finishedEventsPending = false
     private var lastError: String?
+    private var http5xxResponseCount = 0
     private var tokenEpoch = 0
     private var submitted: [String: (epoch: Int, attempt: Int)] = [:]
     private var submissionSequence = 0
@@ -181,17 +152,17 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
-    func disable(cutoff: Date? = nil, onStage: (String) -> Void = { _ in }) throws {
-        onStage("uploader_queue_wait")
+    func disable(cutoff: Date? = nil, onStage: WhoopCleanupStageHandler = { _ in }) throws {
+        onStage(WhoopCleanupStage("uploader_queue_wait"))
         try queue.sync { try disableLocked(cutoff: cutoff, onStage: onStage) }
     }
 
-    private func disableLocked(cutoff: Date? = nil, onStage: (String) -> Void) throws {
+    private func disableLocked(cutoff: Date? = nil, onStage: WhoopCleanupStageHandler) throws {
         token = nil; headers = [:]; blocked.removeAll()
-        onStage("uploader_cancel_tasks")
+        onStage(WhoopCleanupStage("uploader_cancel_tasks"))
         try cancelOwnedTasks()
         if let cutoff {
-            onStage("uploader_advance_erasure_cutoff")
+            onStage(WhoopCleanupStage("uploader_advance_erasure_cutoff"))
             try store.advanceErasureCutoff(to: cutoff)
         }
         active.removeAll()
@@ -203,9 +174,9 @@ final class WhoopBleBackgroundUploader: NSObject {
         lastSubmission.removeAll()
         lastCaptureSchedule = nil
         // Invalidate persisted completion identity even if file cleanup fails.
-        onStage("uploader_store_purge")
+        onStage(WhoopCleanupStage("uploader_store_purge"))
         try store.purge(onStage: onStage)
-        onStage("uploader_remove_bodies")
+        onStage(WhoopCleanupStage("uploader_remove_bodies"))
         try removeBodies()
     }
 
@@ -226,7 +197,8 @@ final class WhoopBleBackgroundUploader: NSObject {
                 "bufferCreatedAt": Self.iso(createdAt), "checkpointAt": Self.iso(now()),
                 "imu": try store.statistics(stream: .imu), "realtime": try store.statistics(stream: .realtime),
                 "sensorRecords": try store.statistics(stream: .sensorRecords),
-                "activeUploadCount": active.count, "blockedUploadStreams": blocked.map(\.rawValue)
+                "activeUploadCount": active.count, "blockedUploadStreams": blocked.map(\.rawValue),
+                "http5xxResponseCount": http5xxResponseCount
             ]
             result["lastUploadError"] = lastError.map { $0 as Any } ?? NSNull()
             return result
@@ -353,6 +325,7 @@ final class WhoopBleBackgroundUploader: NSObject {
             status: status, data: data, responseURL: context.responseURL, error: error)
         var outcome: WhoopUploadOutcome?
         var bodyFileCleanupError: Error?
+        var isKnownHTTP5xx = false
         do {
             guard let batch = try store.pendingBatches().first(where: { self.identity($0) == identity }) else {
                 reportUploadOutcome(WhoopUploadOutcome(
@@ -383,7 +356,11 @@ final class WhoopBleBackgroundUploader: NSObject {
             // Continue full batches only; partial tails wait for capture/lifecycle triggers.
             nextPartial = false
         } catch {
-            reportCompletionFailure(identity: identity, error: error, outcome: &outcome)
+            isKnownHTTP5xx = outcome?.isValidatedHttp5xxRejection == true
+            if isKnownHTTP5xx { http5xxResponseCount += 1 }
+            reportCompletionFailure(
+                identity: identity, error: error, outcome: &outcome,
+                reportToSentry: !isKnownHTTP5xx)
         }
         if let outcome, outcome.stage == "outbox_retired" || outcome.stage == "outbox_already_absent" {
             reportUploadOutcome(outcome)
@@ -394,7 +371,10 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
-    private func record(_ error: Error) { lastError = error.localizedDescription; reportError(error) }
+    private func record(_ error: Error, reportToSentry: Bool = true) {
+        lastError = error.localizedDescription
+        if reportToSentry { reportError(error) }
+    }
     private func identity(_ batch: WhoopStoredBatch) -> String { batch.generation + "." + batch.id }
     private func removeBodies() throws {
         for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
@@ -468,7 +448,12 @@ private extension WhoopBleBackgroundUploader {
         return true
     }
 
-    func reportCompletionFailure(identity: String, error: Error, outcome: inout WhoopUploadOutcome?) {
+    func reportCompletionFailure(
+        identity: String,
+        error: Error,
+        outcome: inout WhoopUploadOutcome?,
+        reportToSentry: Bool = true
+    ) {
         var stateError: Error?
         do {
             let pendingBatch = try store.pendingBatches().first(where: { self.identity($0) == identity })
@@ -482,6 +467,6 @@ private extension WhoopBleBackgroundUploader {
         }
         if let outcome { reportUploadOutcome(outcome) }
         if let stateError { record(stateError) }
-        record(error)
+        record(error, reportToSentry: reportToSentry)
     }
 }

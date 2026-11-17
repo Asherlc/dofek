@@ -15,20 +15,21 @@ private enum HealthKitQuantitySeriesError: LocalizedError {
 }
 
 enum HealthKitQuantitySeriesTransport {
+    static let runningIdentifiers: Set<String> = [
+        HKQuantityTypeIdentifier.runningSpeed.rawValue,
+        HKQuantityTypeIdentifier.runningPower.rawValue,
+        HKQuantityTypeIdentifier.runningStrideLength.rawValue,
+        HKQuantityTypeIdentifier.runningGroundContactTime.rawValue,
+        HKQuantityTypeIdentifier.runningVerticalOscillation.rawValue,
+    ]
+
     /// Running quantities retain every original observation, including condensed samples.
     static func transportSamples(
         _ samples: [HKSample],
         typeIdentifier: String,
         readRunningSeries: ([HKQuantitySample]) async throws -> [HealthKitQuantitySeriesEntry]
     ) async throws -> [[String: Any]] {
-        let runningIdentifiers: Set<String> = [
-            HKQuantityTypeIdentifier.runningSpeed.rawValue,
-            HKQuantityTypeIdentifier.runningPower.rawValue,
-            HKQuantityTypeIdentifier.runningStrideLength.rawValue,
-            HKQuantityTypeIdentifier.runningGroundContactTime.rawValue,
-            HKQuantityTypeIdentifier.runningVerticalOscillation.rawValue,
-        ]
-        guard runningIdentifiers.contains(typeIdentifier) else {
+        guard Self.runningIdentifiers.contains(typeIdentifier) else {
             return samples.compactMap { HealthKitQueries.transportSample($0, typeIdentifier: typeIdentifier) }
         }
         let parents = samples.compactMap { $0 as? HKQuantitySample }

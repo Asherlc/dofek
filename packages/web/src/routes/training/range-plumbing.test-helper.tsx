@@ -20,6 +20,7 @@ const state: {
     isLoading: boolean;
     error: Error | null;
   };
+  dailyMetricsQuery: { data: unknown; isLoading: boolean; error: Error | null };
 } = {
   days: 90,
   queryCalls: [],
@@ -40,6 +41,7 @@ const state: {
     isLoading: false,
     error: null,
   },
+  dailyMetricsQuery: { data: [], isLoading: false, error: null },
 };
 
 export { state };
@@ -84,12 +86,29 @@ vi.mock("../../components/ProgressiveOverloadCards.tsx", () => ({
   ProgressiveOverloadCards: () => <div />,
 }));
 vi.mock("../../components/QueryStatePanel.tsx", () => ({
-  QueryStatePanel: ({ error }: { error?: Error }) => <div>{error?.message}</div>,
+  QueryStatePanel: ({
+    error,
+    message,
+    variant,
+  }: {
+    error?: Error;
+    message?: string;
+    variant?: string;
+  }) => (
+    <div data-testid={variant ? `query-state-${variant}` : undefined}>
+      {message ?? error?.message}
+    </div>
+  ),
 }));
 vi.mock("../../components/SleepAnalyticsChart.tsx", () => ({ SleepAnalyticsChart: () => <div /> }));
 vi.mock("../../components/StrengthVolumeChart.tsx", () => ({ StrengthVolumeChart: () => <div /> }));
 vi.mock("../../components/WorkloadRatioChart.tsx", () => ({ WorkloadRatioChart: () => <div /> }));
 vi.mock("../../components/DofekChart.tsx", () => ({ DofekChart: () => <div /> }));
+vi.mock("../../components/TimeSeriesChart.tsx", () => ({
+  TimeSeriesChart: ({ series }: { series: Array<{ name: string; data: unknown[] }> }) => (
+    <div data-testid="recovery-temperature-series">{JSON.stringify(series)}</div>
+  ),
+}));
 vi.mock("../../components/HeartRateZonesChart.tsx", () => ({
   WeeklyHrZonesChart: () => <div />,
 }));
@@ -102,6 +121,12 @@ vi.mock("../../lib/trpc.ts", () => ({
   trpc: {
     cyclingAdvanced: {},
     dailyMetrics: {
+      list: {
+        useQuery: (input: unknown, options?: unknown) => {
+          state.queryCalls.push({ name: "dailyMetrics.list", input, options });
+          return state.dailyMetricsQuery;
+        },
+      },
       hrvBaseline: { useQuery: recordQuery("dailyMetrics.hrvBaseline") },
     },
     efficiency: {
@@ -178,6 +203,7 @@ export function resetRangePlumbingState() {
   state.days = 90;
   state.queryCalls.length = 0;
   state.trainingVolumeQuery = { data: [], isLoading: false, error: null };
+  state.dailyMetricsQuery = { data: [], isLoading: false, error: null };
   state.trainingHrZonesQuery = {
     data: {
       maxHr: null,

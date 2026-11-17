@@ -13,6 +13,11 @@ on:
         required: false
         type: string
         default: ""
+      recover_failed_deployment_id:
+        description: "Exact failed live server deployment receipt to replace after verifying its source run and live identity. Use only for target web-stack."
+        required: false
+        type: string
+        default: ""
     secrets:
       SENTRY_AUTH_TOKEN:
         required: false
@@ -46,6 +51,10 @@ on:
         description: "Docker image tag to deploy (e.g. sha-abc1234). Skips Docker build when provided."
         required: false
         type: string
+      recover_failed_deployment_id:
+        description: "Exact failed live server deployment receipt to replace after verifying its source run and live identity. Use only for target web-stack."
+        required: false
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -70,10 +79,16 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF: ${{ github.ref }}
           EVENT_SHA: ${{ github.sha }}
+          TARGET: ${{ inputs.target }}
+          RECOVER_FAILED_DEPLOYMENT_ID: ${{ inputs.recover_failed_deployment_id }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REF" != "refs/heads/main" ]; then
             echo "::error::Dispatch Deploy from main, then select an immutable source with image_tag when needed."
+            exit 1
+          fi
+          if [ -n "$RECOVER_FAILED_DEPLOYMENT_ID" ] && { [ "$EVENT_NAME" != "workflow_dispatch" ] || [ "$TARGET" != "web-stack" ] || [[ ! "$RECOVER_FAILED_DEPLOYMENT_ID" =~ ^[1-9][0-9]*$ ]]; }; then
+            echo "::error::Failed server receipt recovery requires a positive exact deployment ID on a manual web-stack dispatch."
             exit 1
           fi
           if [[ ! "$EVENT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -236,6 +251,7 @@ jobs:
       automatic_commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       image_tag: ${{ inputs.image_tag }}
       image_ref: ${{ needs.resolve-source.outputs.image_ref || needs.docker.outputs.image_ref }}
+      recover_failed_deployment_id: ${{ inputs.recover_failed_deployment_id }}
       ssh_user: ubuntu
       stack_override: deploy/stack.oracle.yml
       public_url: https://dofek.fit
