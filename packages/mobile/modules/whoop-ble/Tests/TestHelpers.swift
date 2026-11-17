@@ -21,6 +21,8 @@ final class TestWhoopCentralManager: WhoopBleCentralManaging {
 extension WhoopBleBackgroundUploaderTests {
     func setup(
         reportError: @escaping (Error) -> Void = { _ in },
+        reportUploadOutcome: @escaping (WhoopUploadOutcome) -> Void = { _ in },
+        removeBodyFile: @escaping (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) },
         now: @escaping () -> Date = Date.init
     ) throws -> (WhoopBleBackgroundUploader, WhoopBleSampleStore, TestWhoopUploadTransport) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -29,7 +31,7 @@ extension WhoopBleBackgroundUploaderTests {
         let transport = TestWhoopUploadTransport()
         let uploader = try WhoopBleBackgroundUploader(
             store: store, directory: directory.appendingPathComponent("bodies"), transport: transport,
-            reportError: reportError, now: now
+            reportError: reportError, reportUploadOutcome: reportUploadOutcome, removeBodyFile: removeBodyFile, now: now
         )
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "secret", headers: [:])
         return (uploader, store, transport)
@@ -74,10 +76,10 @@ func uploaderCutoffBoundaryRows(_ cutoff: Date) -> [[String: Any]] {
 
 final class CleanupStageRecorder {
     private let lock = NSLock()
-    private var stages: [String] = []
+    private var stages: [WhoopCleanupStage] = []
 
-    func append(_ stage: String) { lock.withLock { stages.append(stage) } }
-    var snapshot: [String] { lock.withLock { stages } }
+    func append(_ stage: WhoopCleanupStage) { lock.withLock { stages.append(stage) } }
+    var snapshot: [String] { lock.withLock { stages.map(\.name) } }
 }
 
 final class TestWhoopUploadTransport: WhoopUploadTransport {
@@ -113,16 +115,27 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
         let cancel = { self.tasks.removeAll { $0 == identity }; self.pairedTasks.remove(identity); self.attempts[identity] = nil }
         if delayCancellation { delayedCancellations.append(cancel) } else { cancel() }
     }
-    func complete(_ index: Int, status: Int = 200, body: String = "{\"result\":{\"data\":{\"inserted\":0}}}") {
+    func complete(
+        _ index: Int,
+        status: Int = 200,
+        body: String = "{\"result\":{\"data\":{\"inserted\":0}}}",
+        responseURL: URL? = nil
+    ) {
         let task = requests[index]
         guard requests.last(where: { $0.2 == task.2 })?.0 == task.0 else { return }
         tasks.removeAll { $0 == task.2 }
         pairedTasks.remove(task.2)
-        onCompletion?(task.2, status, Data(body.utf8), (attempts[task.2], task.0.url), nil)
+        onCompletion?(task.2, status, Data(body.utf8), (attempts[task.2], responseURL ?? task.0.url), nil)
     }
-    func failOnePath(identity: String) {
+    func fail(_ index: Int, error: Error = URLError(.unknown)) {
+        let task = requests[index]
+        tasks.removeAll { $0 == task.2 }
+        pairedTasks.remove(task.2)
+        onCompletion?(task.2, nil, Data(), (attempts[task.2], nil), error)
+    }
+    func failOnePath(identity: String, error: URLError = URLError(.networkConnectionLost)) {
         pairedTasks.remove(identity)
-        onAttemptFailure?(identity, URLError(.networkConnectionLost), attempts[identity])
+        onAttemptFailure?(identity, error, attempts[identity])
     }
 }
 

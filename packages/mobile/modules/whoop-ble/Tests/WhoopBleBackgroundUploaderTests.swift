@@ -32,7 +32,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
             do {
                 try uploader.disable { stage in
                     stages.append(stage)
-                    if stage == "uploader_queue_wait" { waiting.fulfill() }
+                    if stage.name == "uploader_queue_wait" { waiting.fulfill() }
                 }
             } catch { XCTFail("Unexpected cleanup error: \(error)") }
             cleaned.fulfill()
@@ -47,7 +47,8 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
             "uploader_queue_wait", "uploader_cancel_tasks", "uploader_store_purge",
             "store_lock_wait", "store_begin", "store_reset_stats", "store_delete_samples",
             "store_delete_batches", "store_clear_binding", "store_rotate_generation",
-            "store_commit", "store_completed", "store_vacuum", "uploader_remove_bodies"
+            "store_commit", "store_completed", "store_vacuum", "store_wal_checkpoint",
+            "store_wal_checkpoint_completed", "uploader_remove_bodies"
         ])
         XCTAssertNil(try store.binding)
         XCTAssertEqual(try store.queuedCount(stream: .realtime), 0)
@@ -215,12 +216,15 @@ extension WhoopBleBackgroundUploaderTests {
 
     func testLiveFailureRetainsFallbackAndUsesExistingRetryBackoff() throws {
         var now = Date(timeIntervalSince1970: 1_800_000_000)
-        let (uploader, store, transport) = try setup(now: { now })
+        var errors: [Error] = []
+        let (uploader, store, transport) = try setup(reportError: { errors.append($0) }, now: { now })
         try uploader.append(deviceId: "a", samplesByStream: [.realtime: Array(repeating: rows[0], count: 500)])
         try settle(uploader)
         let identity = try XCTUnwrap(transport.requests.first?.2)
         transport.failOnePath(identity: identity)
         try settle(uploader)
+        XCTAssertEqual(errors.count, 1, "A networkConnectionLost failure without HTTP status remains captured")
+        XCTAssertEqual(try uploader.diagnostics()["http5xxResponseCount"] as? Int, 0)
         XCTAssertTrue(transport.tasks.contains(identity))
         XCTAssertNotNil(try uploader.diagnostics()["lastUploadError"] as? String)
         now.addTimeInterval(5)
@@ -420,7 +424,7 @@ extension WhoopBleBackgroundUploaderTests {
         try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
         try uploader.flush(); try settle(uploader)
         let errorsAfterFailure = errors.count
-        XCTAssertEqual(errorsAfterFailure, 2)
+        XCTAssertEqual(errorsAfterFailure, 1)
         clock = clock.addingTimeInterval(5)
         try uploader.append(deviceId: "a", samplesByStream: [.realtime: Array(repeating: rows[0], count: 500)])
         try settle(uploader)

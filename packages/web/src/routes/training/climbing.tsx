@@ -60,15 +60,15 @@ export function ClimbingTab() {
       <div className="mb-6">
         <ClimbingFilters value={filters} onChange={setFilters} />
       </div>
-      {gradeProgression.isFetching ||
-      volumeByGrade.isFetching ||
-      volumeOverTime.isFetching ||
-      strengths.isFetching ||
-      locationMap.isFetching ? (
-        <p role="status" className="mb-3 text-xs text-muted">
-          Updating climbing…
-        </p>
-      ) : null}
+      <p role="status" className="mb-3 min-h-4 text-xs text-muted">
+        {gradeProgression.isFetching ||
+        volumeByGrade.isFetching ||
+        volumeOverTime.isFetching ||
+        strengths.isFetching ||
+        locationMap.isFetching
+          ? "Updating climbing…"
+          : null}
+      </p>
       <div className="grid grid-cols-1 gap-6">
         <Section title="Climbing Volume">
           {volumeOverTime.error ? (

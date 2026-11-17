@@ -464,6 +464,21 @@ describe("StrainScreen", () => {
     });
   });
 
+  it("keeps the climbing refresh status space through polling cycles", async () => {
+    mockStrengthsState.isFetching = true;
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { rerender } = render(<StrainScreen />);
+    const status = screen.getByText("Updating climbing strengths…");
+    for (const isFetching of [false, true, false]) {
+      mockStrengthsState.isFetching = isFetching;
+      rerender(<StrainScreen />);
+      expect(status.isConnected).toBe(true);
+      expect(status.style.minHeight).toBe("50px");
+      expect(status.textContent).toBe(isFetching ? "Updating climbing strengths…" : "");
+      expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
+    }
+  });
+
   it("keeps cached strengths visible with an updating indicator while a new population loads", async () => {
     mockStrengthsState.isFetching = true;
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");

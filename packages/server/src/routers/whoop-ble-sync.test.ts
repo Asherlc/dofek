@@ -115,6 +115,29 @@ describe("whoopBleSyncRouter", () => {
       ]);
     });
 
+    it("correlates uploads by durable batch and buffer identities", async () => {
+      const telemetry = {
+        batchId: "2f68d814-1f9a-4d98-83a0-1a22aef2a166",
+        bufferInstanceId: "c30c3b57-3f52-4e2a-9a9e-c2f4b2a3d0e5",
+      };
+
+      await whoopBleSyncRouter.createCaller(ctx).pushSensorRecords({
+        deviceId: "strap-a",
+        samples: [sample],
+        telemetry,
+      });
+
+      expect(logger.info).toHaveBeenCalledWith(
+        "[sensor-upload] upload_received",
+        expect.objectContaining({
+          stream: "sensorRecords",
+          ...telemetry,
+          inputSampleCount: 1,
+          acceptedSampleCount: 1,
+        }),
+      );
+    });
+
     it.each([0, 299_999, 300_000])(
       "accepts receipt clocks within the tolerance: %i ms",
       async (offset) => {

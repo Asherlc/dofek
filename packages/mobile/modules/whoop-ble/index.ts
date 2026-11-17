@@ -192,6 +192,7 @@ const WhoopDataPathStatsSchema = z.object({
     activeUploadCount: DiagnosticCountSchema,
     blockedUploadStreams: z.array(z.enum(["imu", "realtime", "sensorRecords"])),
     lastUploadError: z.string().nullable(),
+    http5xxResponseCount: DiagnosticCountSchema.optional(),
   }),
 });
 

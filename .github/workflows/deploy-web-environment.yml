@@ -134,19 +134,7 @@ on:
         type: string
         default: ""
     secrets:
-      DEPLOY_SSH_KEY:
-        required: false
-      GHCR_TOKEN:
-        required: false
-      SENTRY_AUTH_TOKEN:
-        required: false
-      TF_API_TOKEN:
-        required: false
-      CLOUDFLARE_API_TOKEN:
-        required: false
       CLOUDFLARE_TERRAFORM_R2_API_TOKEN:
-        required: false
-      CLOUDFLARE_ACCOUNT_ID:
         required: false
 
 permissions:
@@ -204,12 +192,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Load credentials through Infisical OIDC
+        if: inputs.apply_infrastructure || inputs.server_host != '' || vars.ORACLE_SERVER_HOST != ''
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: DEPLOY_SSH_KEY
+
       - name: Setup SSH for live server identity
         if: inputs.apply_infrastructure || inputs.server_host != '' || vars.ORACLE_SERVER_HOST != ''
         uses: ./.github/actions/setup-ssh-host
         with:
           host: ${{ inputs.server_host != '' && inputs.server_host || vars.ORACLE_SERVER_HOST }}
-          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+          private_key: ${{ env.DEPLOY_SSH_KEY }}
 
       - name: Resolve and validate immutable server image before production changes
         id: image
@@ -445,10 +439,7 @@ jobs:
       commit_sha: ${{ inputs.automatic_commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
     secrets:
-      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   deploy-web-stack:
     name: Deploy Web Stack
@@ -476,10 +467,6 @@ jobs:
       peerdb_public_url: ${{ inputs.peerdb_public_url }}
       peerdb_host_rule: ${{ inputs.peerdb_host_rule }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets:
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   finalize-server-receipt:
     name: Finalize verified server receipt
@@ -493,6 +480,7 @@ jobs:
     permissions:
       contents: read
       deployments: write
+      id-token: write
     env:
       SOURCE_SHA: ${{ needs.check.outputs.source_sha }}
       IMAGE_REF: ${{ needs.check.outputs.image_ref }}
@@ -512,10 +500,15 @@ jobs:
           persist-credentials: false
           ref: ${{ needs.check.outputs.source_sha }}
       - uses: ./.github/actions/setup-node-pnpm
+      - name: Load credentials through Infisical OIDC
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: DEPLOY_SSH_KEY
+
       - uses: ./.github/actions/setup-ssh-host
         with:
           host: ${{ needs.terraform.outputs.server_host || inputs.server_host || vars.ORACLE_SERVER_HOST }}
-          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+          private_key: ${{ env.DEPLOY_SSH_KEY }}
       - name: Verify live web and worker identity before finalizing
         id: verify-live
         env:

@@ -1,5 +1,11 @@
 # dofek-mobile
 
+The [sleep-stage chart](components/charts/Hypnogram.tsx) presents four labeled
+lanes with solid recorded intervals and blank gaps, matching the web chart. Tap
+a block or an interval in View chart data to inspect its stage, start, end, and
+server-computed duration. The persisted-query contract invalidates older sleep
+responses that lack interval durations.
+
 The mobile app for Dofek. Built with Expo and React Native, with native Swift modules for HealthKit and WHOOP BLE synchronization.
 
 The [Today route](<app/(tabs)/index.tsx>) retains recorded sleep and processing

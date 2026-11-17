@@ -17,6 +17,7 @@
   "files": {
     "ignoreUnknown": true,
     "includes": [
+      ".github/actions/**/*.test.ts",
       "src/**",
       "packages/*/src/**",
       "packages/zepp/src/**",

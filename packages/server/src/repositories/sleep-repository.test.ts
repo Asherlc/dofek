@@ -107,6 +107,15 @@ describe("SleepRepository", () => {
   });
 
   describe("getStages", () => {
+    it.each([
+      ["2026-11-15T23:30:00Z", "2026-11-16T00:30:30Z", 3630],
+      ["2026-11-01T01:59:45-07:00", "2026-11-01T01:00:00-08:00", 15],
+    ])("supplies elapsed seconds for %s to %s", async (started_at, ended_at, expected) => {
+      const { repo } = makeRepository({ postgresRows: [{ stage: "awake", started_at, ended_at }] });
+      const result = await repo.getStages("00000000-0000-0000-0000-000000000001");
+      expect(result[0]).toMatchObject({ duration_seconds: expected });
+    });
+
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository();
       expect(await repo.getStages("00000000-0000-0000-0000-000000000001")).toEqual([]);
@@ -204,7 +213,12 @@ describe("SleepRepository", () => {
       await expect(repo.getStagesByDate()).resolves.toEqual({
         date: "2026-03-27",
         stages: [
-          { stage: "deep", started_at: "2026-03-27T23:30:00Z", ended_at: "2026-03-28T00:15:00Z" },
+          {
+            stage: "deep",
+            started_at: "2026-03-27T23:30:00Z",
+            ended_at: "2026-03-28T00:15:00Z",
+            duration_seconds: 2700,
+          },
         ],
       });
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";

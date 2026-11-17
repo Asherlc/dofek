@@ -24,9 +24,13 @@ struct WhoopUploadError: LocalizedError {
 /// Native owner of the durable outbox. React and the Expo module are clients of this service.
 final class WhoopBleBackgroundUploader: NSObject {
     private let store: WhoopBleSampleStore
+
+    var sqliteCacheWritePages: Int? { store.cacheWritePages }
     private let directory: URL
     private let transport: WhoopUploadTransport
     private let reportError: (Error) -> Void
+    private let reportUploadOutcome: (WhoopUploadOutcome) -> Void
+    private let removeBodyFile: (URL) throws -> Void
     private let now: () -> Date
     private let queue = DispatchQueue(label: "app.dofek.whoop-ble.upload")
     private var token: String?
@@ -44,6 +48,7 @@ final class WhoopBleBackgroundUploader: NSObject {
     private var completionHandler: (() -> Void)?
     private var finishedEventsPending = false
     private var lastError: String?
+    private var http5xxResponseCount = 0
     private var tokenEpoch = 0
     private var submitted: [String: (epoch: Int, attempt: Int)] = [:]
     private var submissionSequence = 0
@@ -52,8 +57,13 @@ final class WhoopBleBackgroundUploader: NSObject {
     private let createdAt = Date()
 
     init(store: WhoopBleSampleStore, directory: URL, transport: WhoopUploadTransport,
-         reportError: @escaping (Error) -> Void, now: @escaping () -> Date = Date.init) throws {
+         reportError: @escaping (Error) -> Void,
+         reportUploadOutcome: @escaping (WhoopUploadOutcome) -> Void = { _ in },
+         removeBodyFile: @escaping (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) },
+         now: @escaping () -> Date = Date.init) throws {
         self.store = store; self.directory = directory; self.transport = transport; self.reportError = reportError
+        self.reportUploadOutcome = reportUploadOutcome
+        self.removeBodyFile = removeBodyFile
         self.now = now
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var directory = directory
@@ -74,6 +84,10 @@ final class WhoopBleBackgroundUploader: NSObject {
                     guard let batch = try self.store.pendingBatches().first(where: { self.identity($0) == identity }) else { return }
                     self.pairedActive.remove(identity)
                     self.retryAfter[batch.stream] = self.now().addingTimeInterval(30)
+                    self.reportUploadOutcome(WhoopUploadOutcome(
+                        batchIdentity: identity, stream: batch.stream.rawValue, route: batch.stream.route,
+                        stage: "path_failed_fallback_active", statusCode: nil,
+                        responseOriginValidated: nil, acknowledgmentValidated: false, outboxState: "pending"))
                     self.record(error)
                 } catch { self.record(error) }
             }
@@ -140,17 +154,17 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
-    func disable(cutoff: Date? = nil, onStage: (String) -> Void = { _ in }) throws {
-        onStage("uploader_queue_wait")
+    func disable(cutoff: Date? = nil, onStage: WhoopCleanupStageHandler = { _ in }) throws {
+        onStage(WhoopCleanupStage("uploader_queue_wait"))
         try queue.sync { try disableLocked(cutoff: cutoff, onStage: onStage) }
     }
 
-    private func disableLocked(cutoff: Date? = nil, onStage: (String) -> Void) throws {
+    private func disableLocked(cutoff: Date? = nil, onStage: WhoopCleanupStageHandler) throws {
         token = nil; headers = [:]; blocked.removeAll()
-        onStage("uploader_cancel_tasks")
+        onStage(WhoopCleanupStage("uploader_cancel_tasks"))
         try cancelOwnedTasks()
         if let cutoff {
-            onStage("uploader_advance_erasure_cutoff")
+            onStage(WhoopCleanupStage("uploader_advance_erasure_cutoff"))
             try store.advanceErasureCutoff(to: cutoff)
         }
         active.removeAll()
@@ -162,9 +176,9 @@ final class WhoopBleBackgroundUploader: NSObject {
         lastSubmission.removeAll()
         lastCaptureSchedule = nil
         // Invalidate persisted completion identity even if file cleanup fails.
-        onStage("uploader_store_purge")
+        onStage(WhoopCleanupStage("uploader_store_purge"))
         try store.purge(onStage: onStage)
-        onStage("uploader_remove_bodies")
+        onStage(WhoopCleanupStage("uploader_remove_bodies"))
         try removeBodies()
     }
 
@@ -185,7 +199,8 @@ final class WhoopBleBackgroundUploader: NSObject {
                 "bufferCreatedAt": Self.iso(createdAt), "checkpointAt": Self.iso(now()),
                 "imu": try store.statistics(stream: .imu), "realtime": try store.statistics(stream: .realtime),
                 "sensorRecords": try store.statistics(stream: .sensorRecords),
-                "activeUploadCount": active.count, "blockedUploadStreams": blocked.map(\.rawValue)
+                "activeUploadCount": active.count, "blockedUploadStreams": blocked.map(\.rawValue),
+                "http5xxResponseCount": http5xxResponseCount
             ]
             result["lastUploadError"] = lastError.map { $0 as Any } ?? NSNull()
             return result
@@ -302,63 +317,66 @@ final class WhoopBleBackgroundUploader: NSObject {
         guard !isSuperseded(identity, attempt: context.attempt) else { return }
         var nextPartial: Bool?
         defer {
+            submitted.removeValue(forKey: identity)
             transport.cancel(identity: identity)
             if let partial = nextPartial { schedule(partial: partial) }
         }
         active.remove(identity)
         pairedActive.remove(identity)
-        let usedEpoch = submitted.removeValue(forKey: identity)?.epoch
+        let response = WhoopUploadResponse(
+            status: status, data: data, responseURL: context.responseURL, error: error)
+        var outcome: WhoopUploadOutcome?
+        var bodyFileCleanupError: Error?
+        var isKnownHTTP5xx = false
         do {
-            guard let batch = try store.pendingBatches().first(where: { self.identity($0) == identity }) else { return }
-            if let error { throw error }
-            guard let url = context.responseURL, try Self.validatedOrigin(url.originString) == batch.binding.serverURL else {
-                blocked.insert(batch.stream)
-                throw WhoopUploadError(message: "WHOOP upload response changed origin")
+            guard let batch = try store.pendingBatches().first(where: { self.identity($0) == identity }) else {
+                reportUploadOutcome(WhoopUploadOutcome(
+                    batchIdentity: identity, stream: "unknown", route: "unknown", stage: "batch_not_found",
+                    statusCode: status, responseOriginValidated: nil,
+                    acknowledgmentValidated: false, outboxState: "absent"))
+                return
             }
-            guard status == 200 else {
-                if let status, (400..<500).contains(status), status != 408, status != 429 {
-                    if status == 401 || status == 403, token != nil, usedEpoch != tokenEpoch,
-                       authRetriedEpoch[identity] != tokenEpoch {
-                        authRetriedEpoch[identity] = tokenEpoch
-                        record(WhoopUploadError(message: "WHOOP upload used an expired session token"))
-                        nextPartial = true
-                        return
-                    }
-                    blocked.insert(batch.stream)
-                }
-                throw WhoopUploadError(message: "WHOOP \(batch.stream.rawValue) upload returned HTTP \(status ?? 0)")
-            }
-            guard data.count <= 65_536,
-                  let response = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let result = response["result"] as? [String: Any],
-                  let value = result["data"] as? [String: Any],
-                  let inserted = value["inserted"] as? NSNumber,
-                  CFGetTypeID(inserted) != CFBooleanGetTypeID(),
-                  inserted.doubleValue.isFinite, inserted.doubleValue >= 0,
-                  inserted.doubleValue.rounded() == inserted.doubleValue else {
-                blocked.insert(batch.stream)
-                throw WhoopUploadError(message: "WHOOP upload returned an invalid acknowledgment")
-            }
-            _ = try store.acknowledge(id: batch.id, generation: batch.generation)
+            outcome = WhoopUploadOutcome(
+                batchIdentity: identity, stream: batch.stream.rawValue, route: batch.stream.route,
+                stage: error == nil ? "response_received" : "transport_error", statusCode: status,
+                responseOriginValidated: nil, acknowledgmentValidated: false, outboxState: "pending")
+            guard try validateResponse(
+                identity: identity, batch: batch, response: response,
+                outcome: &outcome, nextPartial: &nextPartial) else { return }
+            let retired = try store.acknowledge(id: batch.id, generation: batch.generation)
+            outcome?.stage = retired ? "outbox_retired" : "outbox_already_absent"
+            outcome?.outboxState = retired ? "retired" : "absent"
             authRetriedEpoch[identity] = nil
             let file = directory.appendingPathComponent(identity + ".json")
             if FileManager.default.fileExists(atPath: file.path) {
-                do { try FileManager.default.removeItem(at: file) } catch { record(error) }
+                do { try removeBodyFile(file) } catch {
+                    outcome?.stage = "outbox_retired_cleanup_failed"
+                    bodyFileCleanupError = error
+                }
             }
             retryAfter[batch.stream] = nil
             // Continue full batches only; partial tails wait for capture/lifecycle triggers.
             nextPartial = false
         } catch {
-            do {
-                if let batch = try store.pendingBatches().first(where: { self.identity($0) == identity }) {
-                    retryAfter[batch.stream] = now().addingTimeInterval(30)
-                }
-            } catch { record(error) }
-            record(error)
+            isKnownHTTP5xx = outcome?.isValidatedHttp5xxRejection == true
+            if isKnownHTTP5xx { http5xxResponseCount += 1 }
+            reportCompletionFailure(
+                identity: identity, error: error, outcome: &outcome,
+                reportToSentry: !isKnownHTTP5xx)
+        }
+        if let outcome, outcome.stage == "outbox_retired" || outcome.stage == "outbox_already_absent" {
+            reportUploadOutcome(outcome)
+        }
+        if let bodyFileCleanupError {
+            if let outcome { reportUploadOutcome(outcome) }
+            record(bodyFileCleanupError)
         }
     }
 
-    private func record(_ error: Error) { lastError = error.localizedDescription; reportError(error) }
+    private func record(_ error: Error, reportToSentry: Bool = true) {
+        lastError = error.localizedDescription
+        if reportToSentry { reportError(error) }
+    }
     private func identity(_ batch: WhoopStoredBatch) -> String { batch.generation + "." + batch.id }
     private func removeBodies() throws {
         for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
@@ -381,10 +399,87 @@ final class WhoopBleBackgroundUploader: NSObject {
     }
 }
 
-private extension URL {
-    var originString: String {
-        guard var parts = URLComponents(url: self, resolvingAgainstBaseURL: false) else { return "" }
-        parts.path = ""; parts.query = nil; parts.fragment = nil
-        return parts.string ?? ""
+private extension WhoopBleBackgroundUploader {
+    func validateResponse(
+        identity: String,
+        batch: WhoopStoredBatch,
+        response: WhoopUploadResponse,
+        outcome: inout WhoopUploadOutcome?,
+        nextPartial: inout Bool?
+    ) throws -> Bool {
+        if let error = response.error { throw error }
+        let validatedResponseOrigin: String?
+        if let responseOrigin = response.originString {
+            validatedResponseOrigin = try? Self.validatedOrigin(responseOrigin)
+        } else {
+            validatedResponseOrigin = nil
+        }
+        guard validatedResponseOrigin == batch.binding.serverURL else {
+            outcome?.stage = "response_origin_rejected"
+            outcome?.responseOriginValidated = false
+            blocked.insert(batch.stream)
+            throw WhoopUploadError(message: "WHOOP upload response changed origin")
+        }
+        outcome?.responseOriginValidated = true
+        guard response.status == 200 else {
+            outcome?.stage = "http_status_rejected"
+            if let status = response.status, (400..<500).contains(status), status != 408, status != 429 {
+                if status == 401 || status == 403, token != nil,
+                   submitted[identity]?.epoch != tokenEpoch,
+                   authRetriedEpoch[identity] != tokenEpoch {
+                    authRetriedEpoch[identity] = tokenEpoch
+                    if let outcome { reportUploadOutcome(outcome) }
+                    record(WhoopUploadError(message: "WHOOP upload used an expired session token"))
+                    nextPartial = true
+                    return false
+                }
+                blocked.insert(batch.stream)
+            }
+            throw WhoopUploadError(
+                message: "WHOOP \(batch.stream.rawValue) upload returned HTTP \(response.status ?? 0)")
+        }
+        let json: Any?
+        if response.data.count <= 65_536 {
+            json = try? JSONSerialization.jsonObject(with: response.data)
+        } else {
+            json = nil
+        }
+        guard response.data.count <= 65_536,
+              let json = json as? [String: Any],
+              let result = json["result"] as? [String: Any],
+              let value = result["data"] as? [String: Any],
+              let inserted = value["inserted"] as? NSNumber,
+              CFGetTypeID(inserted) != CFBooleanGetTypeID(),
+              inserted.doubleValue.isFinite, inserted.doubleValue >= 0,
+              inserted.doubleValue.rounded() == inserted.doubleValue else {
+            outcome?.stage = "acknowledgment_invalid"
+            blocked.insert(batch.stream)
+            throw WhoopUploadError(message: "WHOOP upload returned an invalid acknowledgment")
+        }
+        outcome?.stage = "acknowledgment_validated"
+        outcome?.acknowledgmentValidated = true
+        return true
+    }
+
+    func reportCompletionFailure(
+        identity: String,
+        error: Error,
+        outcome: inout WhoopUploadOutcome?,
+        reportToSentry: Bool = true
+    ) {
+        var stateError: Error?
+        do {
+            let pendingBatch = try store.pendingBatches().first(where: { self.identity($0) == identity })
+            outcome?.outboxState = pendingBatch == nil ? "absent" : "pending"
+            if let batch = pendingBatch {
+                retryAfter[batch.stream] = now().addingTimeInterval(30)
+            }
+        } catch {
+            outcome?.outboxState = "unknown"
+            stateError = error
+        }
+        if let outcome { reportUploadOutcome(outcome) }
+        if let stateError { record(stateError) }
+        record(error, reportToSentry: reportToSentry)
     }
 }

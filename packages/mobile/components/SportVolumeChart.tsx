@@ -104,11 +104,12 @@ export function SportVolumeChart({ days, enabled }: { days: number | null; enabl
       </View>
       {query.error ? <QueryStatePanel variant="error" message={query.error.message} /> : null}
       {query.isLoading && !data ? <QueryStatePanel variant="loading" /> : null}
-      {query.isFetching && data ? (
-        <Text accessibilityLiveRegion="polite" style={styles.text}>
-          Updating volume…
-        </Text>
-      ) : null}
+      <Text
+        accessibilityLiveRegion="polite"
+        style={[styles.text, { minHeight: 20, lineHeight: 20 }]}
+      >
+        {query.isFetching && data ? "Updating volume…" : null}
+      </Text>
       {data ? (
         data.weeks.length ? (
           <>

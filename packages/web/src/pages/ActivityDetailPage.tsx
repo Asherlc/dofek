@@ -249,16 +249,17 @@ export function ActivityDetailPage() {
         hasCadence ||
         sourceControls.some((metric) => metric.key !== "altitude")) && (
         <Section title="Performance">
-          {sourceControls.length > 0 &&
-            (stream.isFetching ||
+          {sourceControls.length > 0 && (
+            <p role="status" className="mb-2 min-h-4 text-xs text-muted">
+              {stream.isFetching ||
               heartRateContext.isFetching ||
               hrZones.isFetching ||
               powerZones.isFetching ||
-              powerWork.isFetching) && (
-              <p role="status" className="mb-2 text-xs text-muted">
-                Updating metrics…
-              </p>
-            )}
+              powerWork.isFetching
+                ? "Updating metrics…"
+                : null}
+            </p>
+          )}
           <MetricsChart
             heartRateContext={isClimbingActivity ? heartRateContext.data : undefined}
             activityWindow={activity}

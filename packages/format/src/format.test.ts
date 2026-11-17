@@ -302,6 +302,21 @@ describe("formatDurationRange", () => {
 });
 
 describe("formatDurationSeconds", () => {
+  it.each([
+    [75, "1m 15s"],
+    [3585, "59m 45s"],
+    [5410, "1h 30m 10s"],
+    [60, "1m 0s"],
+  ])("preserves seconds for exact duration %s", (seconds, expected) => {
+    expect(formatDurationSeconds(Number(seconds), { precision: "second" })).toBe(expected);
+  });
+
+  it("preserves seconds in exact time labels", () => {
+    expect(
+      formatTimeOnly("2026-11-15T23:00:15Z", { locale: "en-US", timeZone: "UTC", seconds: true }),
+    ).toBe("11:00:15 PM");
+  });
+
   it("formats short durations as seconds", () => {
     expect(formatDurationSeconds(12)).toBe("12s");
     expect(formatDurationSeconds(1.24)).toBe("1.2s");

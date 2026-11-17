@@ -35934,6 +35934,48 @@ Integration shard 1 subsequently reported one remaining case: `healthspan.integr
 - **Read-only health snapshot:** November11 at20:59UTC, public health returned200/statusok; core containers and CDC health checks were healthy, with web2/2. Data-disk availability was30,315,843,584bytes (28.23GiB), above the unchanged15GiB admission threshold. Recent Axiom logs still showed the separate theCrag HTTP400 access denial; service availability does not establish complete provider recovery. No additional storage capacity is indicated by this snapshot.
 - **Release boundary / retrospective:** Merge follows the existing automatic current-main CI/release workflow; disk-directory provisioning and OCI planning are no longer prerequisites. Preserve the canonical drain, migration and CDC gates, and coordinate the paused Strava queue before worker interruption. Native runtime checks and review made the restricted log contract concrete; use the [observability runbook](axiom-observability-runbook.md) for future failures and retain response/router evidence at the first failed health check. No timeout, retry, sampler or custom validation machinery was added.
 
+## 2026-11-16 — Peloton null summaries reject a full-history graph response
+
+- **Symptoms / impact:** During the user-authorized SERVER-7Y provider pass,
+  Peloton processed 604 workouts and 238,440 metric-stream records. The parent
+  BullMQ job completed at 21:55:42.701 UTC, but its provider result and matching
+  manual `fitness.sync_log` row at 21:55:42.673 UTC explicitly reported an error.
+  Queue completion did not establish successful full-history ingestion; no
+  later provider was admitted.
+- **Evidence / cause:** The first fatal worker line at 21:55:42.648 UTC was
+  `Peloton returned an invalid performance-graph response`. One authorized
+  read-only GET of the exact failed graph at 22:03:44.800 UTC returned HTTP 200
+  JSON. Schema validation rejected six `null` values at
+  `average_summaries[0..3].value` and `summaries[0..1].value`, where the
+  [summary schema](../packages/peloton-client/src/types.ts) required numbers.
+  Output, cadence, resistance and speed each had an empty values array.
+  The [metric parser](../packages/peloton-client/src/parsing.ts) consumes those
+  arrays and does not ingest summary aggregates. The response inspection used
+  existing credentials without refresh/save or retries; its raw body is retained
+  privately with mode `0600`, and shared evidence contains only status, schema
+  paths, types and counts.
+- **Direct correction / validation:** Accept `number | null` for summary
+  values while retaining validation of other types. A sanitized schema regression
+  failed before the correction because it expected a number and received null.
+  Numeric summaries and empty metric arrays remain unchanged; strings, objects,
+  arrays, booleans and missing summary values remain invalid. Missing values
+  are never converted to zeros, and no sensor samples are invented.
+  All 174 focused package/provider tests passed, as did full lint, workspace
+  typechecks and the full unit/mobile tier (24,789 passed, 19 skipped). Offline
+  replay of the retained response passed without another upstream request.
+- **Production status / remaining risk:** This local parser correction is not
+  deployed. The full pass remains incomplete; no retry, merge or release was
+  performed for this correction. Empty upstream metric arrays remain unavailable
+  data. The separate historical SERVER-7Y disk-growth cause remains unknown,
+  and its correct 15 GiB fail-fast guard is retained. The accepted incomplete
+  Wahoo source was not fetched or imported again.
+- **Retrospective / proposed guidance:** Comparing the queue state with the
+  manual sync result prevented a false success claim. A single targeted response
+  identified the schema mismatch without replaying the full provider. Proposed
+  provider-runbook addition: “When an HTTP 200 response fails validation, retain
+  a private payload and share schema paths/types before changing the boundary.”
+  No retry, timeout, suppression or fallback was introduced.
+
 ## 2026-11-02 — theCrag scheduled sync warning after upstream gateway failures
 
 - **Symptoms / impact:** The connection-attention email arrived at 20:01 Pacific (November 3, 04:01 UTC). Two automatic logbook syncs failed, delaying new climbing data. Read-only `fitness.sync_log` inspection confirmed successful scheduled imports through 03:01:40 UTC, then errors at 03:31:49 and 04:01:20 UTC.
@@ -38835,12 +38877,27 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Direct fix / validation:** Applied that existing URL convention in the chart stories. Set `precision={1}` for the skin-temperature preview and `precision: 1` on the skin-temperature story args so those demos match the production chart's existing precision. The actual pending story render test first failed with the recorded ReferenceError, then passed after the fixture fix. The affected mobile chart and source-picker suites passed 37/37 tests; full lint and recursive workspace typechecks passed. The lead owns the embedded-browser check on the successor preview; this local correction does not claim that browser audit.
 - **Remaining risk / follow-up:** Confirm the pending story on the actual successor preview in Paseo's embedded browser. No production chart code was changed.
 
+## 2026-11-16 — Native WHOOP HTTP 5xx alert classification
+
+- **Symptoms / impact:** Native WHOOP upload responses with a known HTTP 500–599 status were routed through the uploader's Sentry exception callback. This would alert on an operational server response. The currently investigated MOBILE-2K -1005 event has no HTTP 5xx status evidence; no historical 5xx delivery or data-loss impact is claimed here.
+- **Evidence / root cause:** In WhoopBleBackgroundUploader.completed, after final response-origin validation, status != 200 creates a WhoopUploadError; the shared catch preserves retryAfter and calls record(error), which updates lastError and invokes the native Sentry reporter. The status is structurally available as an integer, so this classification does not rely on error text.
+- **Direct fix / validation:** Count validated 500–599 responses in an uploader-lifetime in-memory counter exposed through existing buffer diagnostics and the existing capture_snapshot structured OpenTelemetry log. For only the explicit known-5xx branch, retain lastError and existing retry/outbox handling while skipping the Sentry exception callback. Other status codes, statusless transport errors, response-origin violations, and parse/storage/auth/acknowledgment defects retain Sentry reporting. [Native uploader status tests](../packages/mobile/modules/whoop-ble/Tests/WhoopBleHTTPStatusTests.swift), [mobile diagnostics tests](../packages/mobile/lib/whoop-ble-diagnostics.test.ts), and [bridge compatibility tests](../packages/mobile/modules/whoop-ble/index.test.ts) cover status boundaries, retry/reservation behavior, lastError, and older native payloads. The completed [Swift Tests job](https://github.com/Asherlc/dofek/actions/runs/43915912682/job/133470999301) passed on the same source revision; hosted validation is recorded in [PR #3359](https://github.com/Asherlc/dofek/pull/3359).
+- **Remaining risk / acceptance:** The count is cumulative for one uploader lifetime, resets when that object is recreated, and is surfaced on the next existing snapshot; it is neither persisted nor an event delta. Repeated snapshots must not be summed as unique failures. The historical -1005 task/batch/validated-ACK/outbox-retirement binding remains unresolved. No Sentry issue was resolved and no build was distributed.
+- **Retrospective / sources:** The explicit status branch provided a safe classification boundary; no message matching or instrumentation framework was needed. The existing structured logger follows the [OpenTelemetry Logs Data Model](https://opentelemetry.io/docs/specs/otel/logs/data-model/), where additional log attributes carry event-specific data. Native changes require a new iOS build per Expo's [native development workflow](https://docs.expo.dev/workflow/customizing/).
 ## 2026-11-16 — CDC repair release blocked by an unresolved live receipt
 
 - **Symptoms / impact:** The automatic main release for `11a58aaff99d73bf9c9efc63673128a34359637d` stopped before production changes because deployment receipt `7828786739` remained `PENDING`. The preceding server deploy had applied migrations and updated web/worker, but failed the PeerDB CDC canary before restoring `analytics-worker`, the three metric-stream ClickHouse sinks, and `processing-reconciliation`. Read-only Swarm inspection later confirmed web and worker still running source `420e3d51e38984953bc9bfa954f0965a8c94d03a` on digest `sha256:cf0b27592bc81a1e89227a8d0cf32a624357e8a91a75e4ea272ea72d0fbba111`; the five processing services remained quiesced.
 - **Evidence / root cause:** Original run [43896633737](https://github.com/Asherlc/dofek/actions/runs/43896633737) failed job `Deploy Server Production / Deploy Web Stack / Deploy Web Stack` at `Verify PeerDB CDC causal markers`, with first fatal `PeerDB deployment canary did not arrive: dofek_fitness_raw_analytics`. The release image predated forward migration 0115 and therefore did not restore the nullable `user_profile.ftp` mirror field required by PeerDB's retained source projection. Automatic release [43909276044](https://github.com/Asherlc/dofek/actions/runs/43909276044) then failed its admission guard with `unresolved server publication 7828786739 (PENDING)` before Terraform or stack mutation. The existing guard rejects unresolved receipts before reading live task identity; it has no recovery path for a verified descendant replacing the exact failed live candidate.
 - **Direct mitigation / validation:** No production receipt, schema, or service state was changed manually. The canonical `Deploy` workflow now supports a bounded recovery path that requires the exact sole pending receipt, a completed failed originating run and target job, matching live web/worker source and immutable digest, a strict descendant image, and the latest verified success as ancestry baseline. It preserves every normal deployment gate, finalizes the replacement as successful only after full live verification, and marks the old receipt inactive only after the old image is no longer live. Focused workflow tests passed 25/25, including selected-attempt and ordered receipt-finalization/retry cases; full `pnpm lint`, recursive typecheck, and actionlint passed locally. Hosted checks for the recovery PR remain pending.
 - **Remaining risk / follow-up:** Production remains on the older app image, the FTP mirror fix is not deployed, and processing consumers remain quiesced. After this recovery change passes review and CI, run the canonical `Deploy` workflow with the exact immutable fixed image and receipt ID `7828786739`. Verify migration 0115, nullable mirror column and retained row, CDC cursor/backlog progress beyond batch 8558/8559, analytics-worker readiness, and full service convergence. Keep Sentry open until the production behavior is verified. If the recovery deploy fails, preserve unresolved receipts and retry only failed jobs in that same run; do not mark a live receipt inactive.
+
+## 2026-11-16 — Climbing page jumps during catalogue refresh
+
+- **Symptoms / impact:** The user reported `/training/climbing` jumping every second or two while data refreshed, interrupting chart reading.
+- **Evidence / root cause:** The [web route](../packages/web/src/routes/training/climbing.tsx) polls `climbing.strengths` every 1500 ms while `enrichmentPending` is true. Its `isFetching` status paragraph was inserted above the chart grid during each request and removed on completion. The [mobile Training route](../packages/mobile/app/(tabs)/strain.tsx) similarly inserted and removed a padded status above strengths. Both regression tests reproduced the status element leaving the layout after a request completed. Axiom access worked (11,717 log events in the preceding two-hour window, latest `2026-11-16T21:53:35.329Z`), but that window contained no matching `climbing.strengths` log entries; no production request cadence or backend failure is claimed.
+- **Direct fix / validation:** Both routes retain a minimum-height status element and update only its text, preserving space during background refreshes. Pending-only polling and cached-data/error handling remain unchanged. The affected route and climbing component suites passed 155/155 tests after the two regression tests first failed against the previous rendering behavior. Full lint and recursive workspace typechecks passed. Separate self-review confirmed the diff is confined to status layout and regression coverage.
+- **Expanded audit / fix:** The same conditional status insertion existed in [web weekly volume](../packages/web/src/components/SportVolumeChart.tsx), [mobile weekly volume](../packages/mobile/components/SportVolumeChart.tsx), both activity performance screens, [mobile route comparison](../packages/mobile/components/RouteComparisonCard.tsx), both cycling FTP estimate panels, and both climbing strengths metadata notices. These now retain status space too. Every changed component/route reproduced the removal regression before the fix; all 248 affected tests passed afterward, together with full lint and recursive workspace typechecks. Separate whole-change self-review found no material issues.
+- **Browser validation / remaining risk:** The embedded browser became available during the expanded fix. Paired Storybook checks confirmed identical following-content positions for mobile route comparison and weekly volume during idle/refreshing states, and for web climbing strengths during pending/completed metadata states. Mobile checks used React Native Web previews, not native iOS execution. Verify the deployed page while catalogue enrichment is pending. This branch has not been deployed; no retries, timeouts, or other resilience settings were changed.
 
 ## 2026-11-16 — CDC publication recovery and Strava operation reconciliation (SERVER-7H)
 
@@ -38914,3 +38971,11 @@ Local qualification and CI are separate from production throughput acceptance. T
   trigger's global worker effects and preserve its exact row guard. Inspect
   stock publication receipts and job-level state when a run-level status says
   queued: this release showed queued while its stack job was active.
+
+## 2026-11-16 — Infisical GitHub sync exceeds the repository secret limit
+
+- **Symptoms / impact:** `dofek-github-sync` reported `GitHub does not support storing more than 100 Actions secrets at the repository level.` Its displayed last-synced timestamp was November 15 at 20:41 Pacific. Subsequent credential synchronization was unreliable; no production outage was established.
+- **Evidence / root cause:** A names-only production export contained 101 keys, while `gh secret list --repo Asherlc/dofek --json name` returned 100 repository secrets. `PIPEDASH_VAULT_PASSWORD` existed only in Infisical. The sync mirrored Production `/` into repository Actions secrets, exceeding [GitHub's 100-secret repository limit](https://docs.github.com/en/actions/reference/security/secrets#limits-for-secrets).
+- **Direct fix:** Finish the existing OIDC migration for the ten remaining repository credentials. Reusable workflows fetch their own allowlisted keys; callers grant OIDC permission without forwarding repository secret copies. Preserve the independently managed Terraform environment token and its explicit reusable-workflow pass-through as [required by GitHub](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow). The ARM64 Docker builder loads the matching CLI artifact from the workflow revision before checking out the requested source, so older source commits do not reintroduce the AMD64-only installer.
+- **Validation / remaining risk:** Names-only inventory confirmed the required Infisical keys and the separate Terraform environment token. The installer regression reproduced the AMD64-only download on ARM64 before the fix. Local validation passed actionlint, lint, recursive typechecks, 128 focused tests, and a broader changed-test run (24,876 passed, 19 skipped). The [hosted Storybook job](https://github.com/Asherlc/dofek/actions/runs/44001328448/job/133766728307) fetched credentials through OIDC and uploaded both previews. Broader CI, merge, sync disablement, and removal of obsolete repository copies are pending; keep the mirror copies until the [retirement procedure](../deploy/README.md#production-secrets) is satisfied.
+- **Retrospective / follow-up:** Comparing source and destination names established the limit without exposing values. Keep new workflow credentials in Infisical and load them through the existing OIDC action. No additional retries or timeouts are needed for a fixed capacity limit.

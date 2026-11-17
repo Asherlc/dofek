@@ -83,5 +83,6 @@ export const DistanceSelected: Story = {
     const metric = within(canvasElement).getByRole("combobox", { name: "Volume metric" });
     await userEvent.selectOptions(metric, "distance");
     await expect(metric).toHaveValue("distance");
+    await expect(within(canvasElement).getByRole("status")).toHaveClass("min-h-4");
   },
 };

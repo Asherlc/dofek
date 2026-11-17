@@ -166,6 +166,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
        (needs.detect-changes.outputs.docker_server == 'true' ||
@@ -177,8 +178,6 @@ jobs:
     uses: ./.github/workflows/build-docker.yml
     with:
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
-    secrets:
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   build-ota:
     name: Validate OTA Build
@@ -248,10 +247,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     uses: ./.github/workflows/storybook-preview.yml
-    secrets:
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
 
   # Signed archives are build artifacts; production publication belongs to Release Production.
 

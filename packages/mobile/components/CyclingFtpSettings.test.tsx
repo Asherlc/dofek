@@ -365,6 +365,22 @@ describe("CyclingFtpSettings", () => {
     expect(inputValue()).toBe("230");
   });
 
+  it("keeps estimate status space through fetch cycles with cached suggestions", async () => {
+    const { CyclingFtpSettings } = await import("./CyclingFtpSettings");
+    mocks.suggestions.isFetching = true;
+    const { rerender } = render(<CyclingFtpSettings />);
+    fireEvent.click(screen.getByRole("button", { name: "Estimate" }));
+    const status = screen.getByText("Estimating from recorded activities…");
+    for (const isFetching of [false, true, false]) {
+      mocks.suggestions.isFetching = isFetching;
+      rerender(<CyclingFtpSettings />);
+      expect(status.isConnected).toBe(true);
+      expect(status.style.minHeight).toBe("20px");
+      expect(status.textContent).toBe(isFetching ? "Estimating from recorded activities…" : "");
+      expect(screen.getByText("Reference curves")).toBeTruthy();
+    }
+  });
+
   it("keeps cached suggestions visible beside a refresh error", async () => {
     const { CyclingFtpSettings } = await import("./CyclingFtpSettings");
     const { rerender } = render(<CyclingFtpSettings />);

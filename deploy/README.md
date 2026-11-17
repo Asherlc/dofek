@@ -313,6 +313,39 @@ Required app, database, ClickHouse, PeerDB, export, and mobile pipeline keys are
 listed in the deploy steps and mobile CI sections below. Missing required keys
 must fail the workflow before rollout.
 
+CI credentials also come directly from Infisical through
+[the shared OIDC action](../.github/actions/load-infisical-secrets/action.yml),
+which masks each selected value before exporting it to subsequent steps.
+Each consuming job and its reusable-workflow callers require
+`id-token: write`; reusable workflows load their own credentials rather than
+accepting copies of repository secrets. See
+[GitHub OIDC](https://docs.github.com/en/actions/concepts/security/openid-connect)
+and [Infisical OIDC authentication](https://infisical.com/docs/documentation/platform/identities/oidc-auth).
+The separately managed `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` remains in the
+GitHub `terraform` environment, and `GITHUB_TOKEN` is provided by GitHub.
+Neither belongs to the production-root secret sync. Keep explicit
+`CLOUDFLARE_TERRAFORM_R2_API_TOKEN` declarations and pass-through at every
+reusable-workflow layer leading to Terraform: GitHub requires callers to
+pass an environment secret even when its value exists only in the called
+job's environment. See
+[reusable workflow environment secrets](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow).
+GitHub also documents
+[environment secrets](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)
+and [automatic token authentication](https://docs.github.com/en/actions/concepts/security/github_token).
+
+Do not mirror the entire production root into GitHub: repositories have a
+[100-secret limit](https://docs.github.com/en/actions/reference/security/secrets#limits-for-secrets).
+To retire an existing mirror, first merge the OIDC consumers, verify their
+hosted credential-loading steps, and let runs using the old workflows finish.
+Then disable the Infisical GitHub sync before deleting its repository copies
+with `gh secret delete <name> --repo Asherlc/dofek`. Compare names from
+`gh secret list --repo Asherlc/dofek --json name` with a names-only Infisical
+inventory, and delete only confirmed mirror-owned keys. Preserve Infisical
+source secrets and the `terraform` environment secret. Historical workflow
+reruns can still reference the removed copies; use the current workflow's
+dispatch entry point when deploying an older source revision. Infisical
+documents [GitHub sync settings](https://infisical.com/docs/integrations/secret-syncs/github).
+
 The renderer also creates `web-pre-migration.env` for the canonical dependency
 apply, which can still run the previously deployed web image. This artifact
 contains the normal web environment plus `METRIC_STREAM_TOPIC` derived strictly
@@ -326,7 +359,7 @@ in Infisical. See the [renderer](../scripts/deploy-service-environment.ts) and
 [command-prefixed environment assignments](https://www.gnu.org/software/bash/manual/html_node/Environment.html).
 
 The web image build and post-rollout Sentry release step also require the
-GitHub Actions `SENTRY_AUTH_TOKEN` secret already used for browser source-map
+Infisical Production `SENTRY_AUTH_TOKEN` secret already used for browser source-map
 uploads. The token must be able to manage releases for both `dofek-web` and
 `dofek-server`; Sentry documents `org:ci` as the scope intended for CI release
 and deployment workflows:

@@ -2,15 +2,11 @@ name: Reusable / Storybook Preview
 
 on:
   workflow_call:
-    secrets:
-      R2_ACCESS_KEY_ID:
-        required: true
-      R2_SECRET_ACCESS_KEY:
-        required: true
 
 permissions:
   contents: read
   pull-requests: write
+  id-token: write
 
 jobs:
   deploy:
@@ -20,6 +16,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+      - name: Load credentials through Infisical OIDC
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY
+
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: storybook-build
@@ -32,15 +34,15 @@ jobs:
         id: preview
         env:
           R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCESS_KEY_ID: ${{ env.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ env.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: dofek-storybook
         run: |
           set -euo pipefail
 
           if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping Storybook preview for forked PR (repository secrets are unavailable)."
+            echo "Skipping Storybook preview for forked PR (production credentials are unavailable)."
             exit 0
           fi
 
@@ -51,7 +53,7 @@ jobs:
           [ -n "${R2_BUCKET:-}" ] || missing+=("R2_BUCKET")
 
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::Storybook preview missing required GitHub secrets: ${missing[*]}"
+            echo "::error::Storybook preview missing required Infisical secrets: ${missing[*]}"
             exit 1
           fi
 
@@ -76,11 +78,11 @@ jobs:
         if: steps.preview.outputs.ready == 'true'
         env:
           R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCESS_KEY_ID: ${{ env.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ env.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: dofek-storybook
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ env.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
         run: |
           set -euo pipefail
@@ -94,11 +96,11 @@ jobs:
         if: steps.preview.outputs.ready == 'true'
         env:
           R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCESS_KEY_ID: ${{ env.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ env.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: dofek-storybook
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ env.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
         run: |
           set -euo pipefail

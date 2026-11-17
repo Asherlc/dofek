@@ -15,6 +15,11 @@ see the [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-sco
 The [sleep.stagesByDate query](src/routers/sleep.ts) returns the latest recorded
 night by default or the stages for one exact sleep date, using the existing
 overlapping-session selection in the [sleep repository](src/repositories/sleep-repository.ts).
+Parsed sleep-stage responses include elapsed `duration_seconds` for interval
+details on both clients. The repository derives it from the recorded timestamps;
+no additional duration is stored.
+The stage endpoints apply the same response schema to cache hits, so retained
+responses also include duration seconds after deployment.
 
 The [climbing](src/routers/climbing.ts) and [strength](src/routers/strength.ts)
 weekly volume queries provide the charts with attempt counts, working sets,

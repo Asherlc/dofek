@@ -16,6 +16,16 @@ vi.mock("./DofekChart.tsx", () => ({
 }));
 
 afterEach(cleanup);
+it("keeps metadata status space and the selected view when enrichment completes", () => {
+  const { rerender } = render(<ClimbingStrengths data={{ ...fixture, enrichmentPending: true }} />);
+  const status = screen.getByText("Updating catalogue metadata…");
+  fireEvent.click(screen.getByRole("button", { name: "Progress" }));
+  rerender(<ClimbingStrengths data={{ ...fixture, enrichmentPending: false }} />);
+  expect(status).toBeInTheDocument();
+  expect(status).toHaveClass("min-h-4");
+  expect(status).toBeEmptyDOMElement();
+  expect(screen.getByRole("button", { name: "Progress" })).toHaveAttribute("aria-pressed", "true");
+});
 it("keeps the small-sample explanation after opening a style's climbs", () => {
   render(<ClimbingStrengths data={climbingStrengthsSingleClimbFixture} />);
   fireEvent.click(screen.getByRole("button", { name: /Slab ·/ }));
