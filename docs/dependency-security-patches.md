@@ -31,6 +31,21 @@ failures also fail installation under [pnpm v11](https://pnpm.io/cli/patch#allow
 When adopting published upstream fixes, verify the regressions against those
 releases and remove the corresponding patch and advisory exception together.
 
+## Expo tooling and picomatch ReDoS advisory
+
+The production dependency audit currently reaches `picomatch@4.0.7` through
+Expo CLI/config tooling. The [advisory](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)
+describes ReDoS when attacker-controlled repeated extglob patterns reach the
+matcher. The npm registry currently lists 4.0.7 as the latest release and has
+no published patched release ([package versions](https://www.npmjs.com/package/picomatch?activeTab=versions)).
+
+The repository has no direct picomatch imports in mobile or server source, and
+the exported iOS JavaScript bundle did not contain picomatch or tinyglobby code.
+This does not rule out build-time denial of service if untrusted patterns reach
+Expo tooling. The audit exception is scoped to this advisory only so the
+required audit remains active for other findings. Remove the exception and
+update the lockfile when an upstream fix is published.
+
 ## Published node-forge security release
 
 The workspace pins node-forge to 1.4.2. Its [upstream changelog](https://github.com/digitalbazaar/forge/blob/v1.4.2/CHANGELOG.md)

@@ -41,6 +41,7 @@ audit:
   ignore:
     - GHSA-w3rx-r6r6-pgpr
     - GHSA-5p2g-fcmc-qvqq
+    - GHSA-fc5q-39xc-vjpf
     # Backported fix; CI runs check:dependency-security before auditing.
     # See docs/dependency-security-patches.md for source and validation.
     - GHSA-vfj7-8cjw-p6xm
