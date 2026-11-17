@@ -579,6 +579,9 @@ into safe telemetry and presents a readable sign-in error, while preserving
 server error messages and silent user cancellation. See the
 [JavaScript diagnostic boundary](./lib/apple-auth-diagnostics.ts) and
 [Expo Apple authentication behavior](https://docs.expo.dev/versions/latest/sdk/apple-authentication/).
+Validated diagnostic fields are also [Sentry tags](https://docs.sentry.io/product/issues/issue-details/),
+which are indexed and searchable for event filtering; raw native messages and
+`userInfo` remain excluded.
 These diagnostics do not establish the cause of historical Apple failures;
 device sign-in validation remains separate from helper tests and archive validation.
 

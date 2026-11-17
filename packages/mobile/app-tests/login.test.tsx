@@ -703,27 +703,43 @@ describe("LoginScreen", () => {
       data: [],
       nativeApple: true,
     });
-    mockStartNativeAppleSignIn.mockRejectedValue(
-      Object.assign(
-        new Error(
-          "private-token [dofek.apple-auth domain=com.apple.AuthenticationServices.AuthorizationError code=1000 underlyingDomain=AKAuthenticationError underlyingCode=-7026]",
-        ),
-        { code: "ERR_REQUEST_UNKNOWN" },
+    const nativeError = Object.assign(
+      new Error(
+        "private-token [dofek.apple-auth domain=com.apple.AuthenticationServices.AuthorizationError code=1000 underlyingDomain=AKAuthenticationError underlyingCode=-7026]",
       ),
+      { code: "ERR_REQUEST_UNKNOWN" },
     );
+    mockStartNativeAppleSignIn.mockRejectedValue(nativeError);
     render(<LoginScreen />);
     fireEvent.click(await screen.findByText("AppleAuthenticationButton"));
     expect(
       await screen.findByText("Apple could not complete sign-in. Please try again."),
     ).toBeTruthy();
     expect(screen.queryByText(/dofek\.apple-auth|private-token/)).toBeNull();
-    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
-      source: "login-screen-handle-login",
-      appleCode: "ERR_REQUEST_UNKNOWN",
-      nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
-      nativeCode: 1000,
-      underlyingDomain: "AKAuthenticationError",
-      underlyingCode: -7026,
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      {
+        source: "login-screen-handle-login",
+        appleCode: "ERR_REQUEST_UNKNOWN",
+        nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
+        nativeCode: 1000,
+        underlyingDomain: "AKAuthenticationError",
+        underlyingCode: -7026,
+      },
+      {
+        tags: {
+          appleCode: "ERR_REQUEST_UNKNOWN",
+          nativeDomain: "com.apple.AuthenticationServices.AuthorizationError",
+          nativeCode: "1000",
+          underlyingDomain: "AKAuthenticationError",
+          underlyingCode: "-7026",
+        },
+      },
+    );
+    const capturedError = mockCaptureException.mock.calls[0]?.[0];
+    expect(capturedError).not.toBe(nativeError);
+    expect(capturedError).toMatchObject({
+      message: "Apple could not complete sign-in. Please try again.",
     });
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain("private-token");
     expect(screen.getByText("AppleAuthenticationButton")).toBeTruthy();

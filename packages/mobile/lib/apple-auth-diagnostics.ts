@@ -22,6 +22,7 @@ export function appleSignInDiagnostic(error: unknown):
   | {
       error: Error;
       context: Record<string, string | number>;
+      tags: Record<string, string>;
     }
   | undefined {
   if (
@@ -57,5 +58,8 @@ export function appleSignInDiagnostic(error: unknown):
       }
     }
   }
-  return { error: new Error(message), context };
+  const tags = Object.fromEntries(
+    Object.entries(context).map(([key, value]) => [key, String(value)]),
+  );
+  return { error: new Error(message), context, tags };
 }

@@ -109,10 +109,16 @@ export default function LoginScreen() {
     } catch (err: unknown) {
       const diagnostic = providerId === "apple" ? appleSignInDiagnostic(err) : undefined;
       const reportedError = diagnostic?.error ?? err;
-      captureException(reportedError, {
-        source: "login-screen-handle-login",
-        ...diagnostic?.context,
-      });
+      captureException(
+        reportedError,
+        {
+          source: "login-screen-handle-login",
+          ...diagnostic?.context,
+        },
+        {
+          ...(diagnostic ? { tags: diagnostic.tags } : {}),
+        },
+      );
       setError(userFacingErrorMessage(reportedError, "Login failed"));
     } finally {
       setLoggingIn(false);
