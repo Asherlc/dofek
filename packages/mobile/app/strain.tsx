@@ -17,33 +17,34 @@ import {
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
-import { ClimbingFilters } from "../../components/ClimbingFilters";
-import { ClimbingLocationMapCard } from "../../components/ClimbingLocationMapCard";
-import { ClimbingStrengths } from "../../components/ClimbingStrengths";
-import { ClimbingTrainingCard } from "../../components/ClimbingTrainingCard";
-import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
-import { DaySelector } from "../../components/DaySelector";
-import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
-import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
-import { QueryStatePanel } from "../../components/QueryStatePanel";
-import { RouteComparisonCard } from "../../components/RouteComparisonCard";
-import { RunningTrainingCard } from "../../components/RunningTrainingCard";
-import { SportVolumeChart } from "../../components/SportVolumeChart";
-import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState";
-import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
-import { TrainingVolumeChart } from "../../components/TrainingVolumeChart";
-import { isTransientNetworkError } from "../../lib/query-client";
-import { safeParseData, safeParseRows } from "../../lib/safe-parse";
-import { captureException } from "../../lib/telemetry";
-import { trpc } from "../../lib/trpc";
-import { useUnitConverter } from "../../lib/units";
-import { useProcessingStatus } from "../../lib/useProcessingStatus";
-import { useRefresh } from "../../lib/useRefresh";
-import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
-import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
-import { colors } from "../../theme";
-import { WeeklyVolumeRowSchema } from "../../types/api";
+import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { ClimbingFilters } from "../components/ClimbingFilters";
+import { ClimbingLocationMapCard } from "../components/ClimbingLocationMapCard";
+import { ClimbingStrengths } from "../components/ClimbingStrengths";
+import { ClimbingTrainingCard } from "../components/ClimbingTrainingCard";
+import { VerticalAscentChart } from "../components/charts/VerticalAscentChart";
+import { DaySelector } from "../components/DaySelector";
+import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget";
+import { ProgressiveOverloadCards } from "../components/ProgressiveOverloadCards";
+import { QueryStatePanel } from "../components/QueryStatePanel";
+import { RouteComparisonCard } from "../components/RouteComparisonCard";
+import { RunningTrainingCard } from "../components/RunningTrainingCard";
+import { SportVolumeChart } from "../components/SportVolumeChart";
+import { TrainingChartEmptyState } from "../components/TrainingChartEmptyState";
+import { TrainingDistributionCards } from "../components/TrainingDistributionCards";
+import { TrainingVolumeChart } from "../components/TrainingVolumeChart";
+import { isTransientNetworkError } from "../lib/query-client";
+import { safeParseData, safeParseRows } from "../lib/safe-parse";
+import { captureException } from "../lib/telemetry";
+import type { TrainingSection } from "../lib/training-sections";
+import { trpc } from "../lib/trpc";
+import { useUnitConverter } from "../lib/units";
+import { useProcessingStatus } from "../lib/useProcessingStatus";
+import { useRefresh } from "../lib/useRefresh";
+import { useTimeRangePreference } from "../lib/useTimeRangePreference";
+import { useTodayQueryDate } from "../lib/useTodayQueryDate";
+import { colors } from "../theme";
+import { WeeklyVolumeRowSchema } from "../types/api";
 
 const reportedTrainingErrors = new WeakSet<object>();
 
@@ -62,6 +63,13 @@ function useReportQueryError(query: { isError: boolean; error: object | null }) 
 }
 
 export default function StrainScreen() {
+  return <TrainingAnalysis />;
+}
+
+export function TrainingAnalysis({ section }: { section?: TrainingSection }) {
+  const show = (target: TrainingSection) => section == null || section === target;
+  const showLoad = show("overview") || show("recovery");
+  const showTrainingData = showLoad || show("cycling") || show("strength") || show("climbing");
   const [climbingFilters, setClimbingFilters] = useState<ClimbingFilterValues>({});
   const [strengthsAllTime, setStrengthsAllTime] = useState(false);
   const [includeAreaMetadata, setIncludeAreaMetadata] = useState(true);
@@ -79,14 +87,14 @@ export default function StrainScreen() {
   const trainingQuery = trpc.mobileDashboard.trainingV2.useQuery(
     { days, endDate, ...(Object.keys(climbingFilters).length ? { climbingFilters } : {}) },
     {
-      enabled: isHydrated,
+      enabled: isHydrated && showTrainingData,
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
   const runningQuery = trpc.running.dynamicsV2.useQuery(
     { days, responseVersion: 2 },
     {
-      enabled: isHydrated,
+      enabled: isHydrated && show("running"),
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
@@ -100,7 +108,7 @@ export default function StrainScreen() {
       includeAreaMetadata,
     },
     {
-      enabled: isHydrated,
+      enabled: isHydrated && show("climbing"),
       refetchInterval: (query) => (query.state.data?.enrichmentPending ? 1500 : false),
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
@@ -115,21 +123,21 @@ export default function StrainScreen() {
   const climbingLocationMapQuery = trpc.climbing.locationMap.useQuery(
     { days, ...climbingFilters },
     {
-      enabled: isHydrated,
+      enabled: isHydrated && show("climbing"),
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
   const climbingVolumeQuery = trpc.climbing.volumeOverTime.useQuery(
     { days, ...climbingFilters },
     {
-      enabled: isHydrated,
+      enabled: isHydrated && show("climbing"),
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
   const strengthVolumeQuery = trpc.strength.volumeOverTime.useQuery(
     { days },
     {
-      enabled: isHydrated,
+      enabled: isHydrated && show("strength"),
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
@@ -138,14 +146,14 @@ export default function StrainScreen() {
   const hrZonesQuery = trpc.training.hrZones.useQuery(
     { days },
     {
-      enabled: isHydrated,
+      enabled: isHydrated && show("endurance"),
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
   const polarizationQuery = trpc.efficiency.polarizationTrend.useQuery(
     { days },
     {
-      enabled: isHydrated,
+      enabled: isHydrated && show("endurance"),
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
@@ -243,181 +251,221 @@ export default function StrainScreen() {
         loading={processingStatus.isLoading}
       />
 
-      {isLoading ? (
-        <QueryStatePanel variant="loading" minHeight={200} />
-      ) : shouldShowTrainingQueryError ? (
-        <QueryStatePanel
-          variant="error"
-          title="Could not load training data"
-          message={
-            trainingQuery.error
-              ? userFacingErrorMessage(
-                  trainingQuery.error,
-                  "Training data could not be loaded. Please try again.",
-                )
+      {showTrainingData &&
+        (isLoading ? (
+          <QueryStatePanel variant="loading" minHeight={200} />
+        ) : shouldShowTrainingQueryError ? (
+          <QueryStatePanel
+            variant="error"
+            title="Could not load training data"
+            message={
+              trainingQuery.error
+                ? userFacingErrorMessage(
+                    trainingQuery.error,
+                    "Training data could not be loaded. Please try again.",
+                  )
+                : undefined
+            }
+          />
+        ) : (
+          <>
+            {showLoad ? (
+              <View style={styles.card}>
+                <ChartTitleWithTooltip
+                  title="Training Load"
+                  description={
+                    workloadResult == null
+                      ? "Daily training load and recent-versus-baseline comparison."
+                      : `Technical name: ${TRAINING_TERMINOLOGY.workloadRatio.technicalName}. ${TRAINING_TERMINOLOGY.workloadRatio.details}`
+                  }
+                  textStyle={styles.cardTitle}
+                />
+                <View style={styles.loadGrid}>
+                  <View style={styles.loadItem}>
+                    <Text style={styles.loadValue}>{formatTrainingLoad(acuteLoad)}</Text>
+                    <Text style={styles.loadLabel}>{recentLoadLabel}</Text>
+                  </View>
+                  <View style={styles.loadItem}>
+                    <Text style={styles.loadValue}>{formatTrainingLoad(chronicLoad)}</Text>
+                    <Text style={styles.loadLabel}>{baselineLoadLabel}</Text>
+                  </View>
+                  <View style={styles.loadItem}>
+                    <Text style={styles.loadValue}>
+                      {workloadRatio != null ? formatNumber(workloadRatio, 2) : "--"}
+                    </Text>
+                    <Text style={styles.loadLabel}>
+                      {workloadResult == null ? "Ratio" : workloadResult.context.label}
+                    </Text>
+                  </View>
+                </View>
+                {workloadResult == null ? null : (
+                  <Text style={styles.ratioHint}>{workloadResult.context.description}</Text>
+                )}
+              </View>
+            ) : null}
+
+            {show("cycling") ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Vertical Ascent Rate</Text>
+                {verticalAscentAvailability?.status === "available" ? (
+                  <VerticalAscentChart data={verticalAscent} units={units} />
+                ) : verticalAscentAvailability ? (
+                  <TrainingChartEmptyState availability={verticalAscentAvailability} />
+                ) : (
+                  <Text style={styles.emptyChartText}>
+                    No activities with altitude data available
+                  </Text>
+                )}
+              </View>
+            ) : null}
+
+            {show("strength") ? (
+              <ProgressiveOverloadCards
+                exercises={trainingData?.progressiveOverload ?? []}
+                loading={trainingQuery.isLoading && trainingData == null}
+                units={units}
+              />
+            ) : null}
+          </>
+        ))}
+
+      {show("overview") ||
+      show("endurance") ||
+      show("cycling") ||
+      show("running") ||
+      show("hiking") ? (
+        <SportVolumeChart
+          days={days}
+          enabled={isHydrated}
+          initialSport={
+            section === "cycling" || section === "running" || section === "hiking"
+              ? section
               : undefined
           }
         />
-      ) : (
+      ) : null}
+      {show("hiking") ? <RouteComparisonCard days={days} enabled={isHydrated} /> : null}
+      {show("climbing") ? (
         <>
-          {/* Workload breakdown */}
-          <View style={styles.card}>
-            <ChartTitleWithTooltip
-              title="Training Load"
-              description={
-                workloadResult == null
-                  ? "Daily training load and recent-versus-baseline comparison."
-                  : `Technical name: ${TRAINING_TERMINOLOGY.workloadRatio.technicalName}. ${TRAINING_TERMINOLOGY.workloadRatio.details}`
-              }
-              textStyle={styles.cardTitle}
-            />
-            <View style={styles.loadGrid}>
-              <View style={styles.loadItem}>
-                <Text style={styles.loadValue}>{formatTrainingLoad(acuteLoad)}</Text>
-                <Text style={styles.loadLabel}>{recentLoadLabel}</Text>
+          <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
+          {climbingVolumeQuery.error ? (
+            <QueryStatePanel variant="error" message={climbingVolumeQuery.error.message} />
+          ) : null}
+          {climbingVolumeQuery.isLoading && !climbingVolumeQuery.data ? (
+            <QueryStatePanel variant="loading" />
+          ) : null}
+          {climbingVolumeQuery.data ? (
+            <TrainingVolumeChart sport="climbing" data={climbingVolumeQuery.data} />
+          ) : null}
+        </>
+      ) : null}
+      {show("strength") ? (
+        <>
+          {strengthVolumeQuery.error ? (
+            <QueryStatePanel variant="error" message={strengthVolumeQuery.error.message} />
+          ) : null}
+          {strengthVolumeQuery.isLoading && !strengthVolumeQuery.data ? (
+            <QueryStatePanel variant="loading" />
+          ) : null}
+          {strengthVolumeQuery.data ? (
+            <TrainingVolumeChart sport="strength" data={strengthVolumeQuery.data} />
+          ) : null}
+        </>
+      ) : null}
+      {show("climbing") ? (
+        <>
+          <Text
+            accessibilityLiveRegion="polite"
+            style={[styles.emptyChartText, { minHeight: 50, lineHeight: 18 }]}
+          >
+            {climbingStrengths.data && climbingStrengthsQuery.isFetching
+              ? "Updating climbing strengths…"
+              : null}
+          </Text>
+          <ClimbingStrengths
+            data={climbingStrengths.data}
+            includeAreaMetadata={includeAreaMetadata}
+            onIncludeAreaMetadataChange={setIncludeAreaMetadata}
+            rangeControl={
+              <View
+                accessibilityRole="radiogroup"
+                accessibilityLabel="Climbing strengths period"
+                style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+              >
+                {[
+                  { label: `${days} days`, allTime: false },
+                  { label: "All time", allTime: true },
+                ].map((option) => (
+                  <TouchableOpacity
+                    key={option.label}
+                    accessibilityRole="radio"
+                    accessibilityLabel={option.label}
+                    accessibilityState={{ checked: strengthsAllTime === option.allTime }}
+                    onPress={() => setStrengthsAllTime(option.allTime)}
+                    style={{
+                      minHeight: 44,
+                      justifyContent: "center",
+                      paddingHorizontal: 12,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor:
+                        strengthsAllTime === option.allTime
+                          ? colors.accent
+                          : colors.surfaceSecondary,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color:
+                          strengthsAllTime === option.allTime
+                            ? colors.accent
+                            : colors.textSecondary,
+                      }}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-              <View style={styles.loadItem}>
-                <Text style={styles.loadValue}>{formatTrainingLoad(chronicLoad)}</Text>
-                <Text style={styles.loadLabel}>{baselineLoadLabel}</Text>
-              </View>
-              <View style={styles.loadItem}>
-                <Text style={styles.loadValue}>
-                  {workloadRatio != null ? formatNumber(workloadRatio, 2) : "--"}
-                </Text>
-                <Text style={styles.loadLabel}>
-                  {workloadResult == null ? "Ratio" : workloadResult.context.label}
-                </Text>
-              </View>
-            </View>
-            {workloadResult == null ? null : (
-              <Text style={styles.ratioHint}>{workloadResult.context.description}</Text>
-            )}
-          </View>
-
-          {/* Vertical Ascent Rate */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Vertical Ascent Rate</Text>
-            {verticalAscentAvailability?.status === "available" ? (
-              <VerticalAscentChart data={verticalAscent} units={units} />
-            ) : verticalAscentAvailability ? (
-              <TrainingChartEmptyState availability={verticalAscentAvailability} />
-            ) : (
-              <Text style={styles.emptyChartText}>No activities with altitude data available</Text>
-            )}
-          </View>
-
-          <ProgressiveOverloadCards
-            exercises={trainingData?.progressiveOverload ?? []}
-            loading={trainingQuery.isLoading && trainingData == null}
-            units={units}
+            }
+            loading={climbingStrengthsQuery.isLoading}
+            error={
+              climbingStrengthsQuery.error ??
+              (climbingStrengths.error
+                ? {
+                    message:
+                      "Climbing strengths data could not be read. Pull to refresh to reload it.",
+                  }
+                : null)
+            }
+          />
+          <ClimbingLocationMapCard
+            data={climbingLocationMapQuery.data}
+            loading={climbingLocationMapQuery.isLoading}
+            error={climbingLocationMapQuery.error}
           />
         </>
-      )}
-
-      <SportVolumeChart days={days} enabled={isHydrated} />
-      <RouteComparisonCard days={days} enabled={isHydrated} />
-      <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
-      {climbingVolumeQuery.error ? (
-        <QueryStatePanel variant="error" message={climbingVolumeQuery.error.message} />
       ) : null}
-      {climbingVolumeQuery.isLoading && !climbingVolumeQuery.data ? (
-        <QueryStatePanel variant="loading" />
+      {show("running") ? (
+        <RunningTrainingCard
+          units={units}
+          data={isHydrated ? runningQuery.data : undefined}
+          loading={!isHydrated || runningQuery.isLoading}
+          error={runningQuery.error}
+          onRetry={() => {
+            void runningQuery.refetch();
+          }}
+          onOpenActivity={(id) => router.push(`/activity/${id}`)}
+        />
       ) : null}
-      {climbingVolumeQuery.data ? (
-        <TrainingVolumeChart sport="climbing" data={climbingVolumeQuery.data} />
-      ) : null}
-      {strengthVolumeQuery.error ? (
-        <QueryStatePanel variant="error" message={strengthVolumeQuery.error.message} />
-      ) : null}
-      {strengthVolumeQuery.isLoading && !strengthVolumeQuery.data ? (
-        <QueryStatePanel variant="loading" />
-      ) : null}
-      {strengthVolumeQuery.data ? (
-        <TrainingVolumeChart sport="strength" data={strengthVolumeQuery.data} />
-      ) : null}
-      <Text
-        accessibilityLiveRegion="polite"
-        style={[styles.emptyChartText, { minHeight: 50, lineHeight: 18 }]}
-      >
-        {climbingStrengths.data && climbingStrengthsQuery.isFetching
-          ? "Updating climbing strengths…"
-          : null}
-      </Text>
-      <ClimbingStrengths
-        data={climbingStrengths.data}
-        includeAreaMetadata={includeAreaMetadata}
-        onIncludeAreaMetadataChange={setIncludeAreaMetadata}
-        rangeControl={
-          <View
-            accessibilityRole="radiogroup"
-            accessibilityLabel="Climbing strengths period"
-            style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
-          >
-            {[
-              { label: `${days} days`, allTime: false },
-              { label: "All time", allTime: true },
-            ].map((option) => (
-              <TouchableOpacity
-                key={option.label}
-                accessibilityRole="radio"
-                accessibilityLabel={option.label}
-                accessibilityState={{ checked: strengthsAllTime === option.allTime }}
-                onPress={() => setStrengthsAllTime(option.allTime)}
-                style={{
-                  minHeight: 44,
-                  justifyContent: "center",
-                  paddingHorizontal: 12,
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor:
-                    strengthsAllTime === option.allTime ? colors.accent : colors.surfaceSecondary,
-                }}
-              >
-                <Text
-                  style={{
-                    color:
-                      strengthsAllTime === option.allTime ? colors.accent : colors.textSecondary,
-                  }}
-                >
-                  {option.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        }
-        loading={climbingStrengthsQuery.isLoading}
-        error={
-          climbingStrengthsQuery.error ??
-          (climbingStrengths.error
-            ? {
-                message: "Climbing strengths data could not be read. Pull to refresh to reload it.",
-              }
-            : null)
-        }
-      />
-      <ClimbingLocationMapCard
-        data={climbingLocationMapQuery.data}
-        loading={climbingLocationMapQuery.isLoading}
-        error={climbingLocationMapQuery.error}
-      />
-      <RunningTrainingCard
-        units={units}
-        data={isHydrated ? runningQuery.data : undefined}
-        loading={!isHydrated || runningQuery.isLoading}
-        error={runningQuery.error}
-        onRetry={() => {
-          void runningQuery.refetch();
-        }}
-        onOpenActivity={(id) => router.push(`/activity/${id}`)}
-      />
-      {shouldShowClimbingSection && !isLoading ? (
+      {show("climbing") && shouldShowClimbingSection && !isLoading ? (
         <ClimbingTrainingCard
           data={trainingData?.climbing}
           loading={trainingQuery.isLoading && trainingData == null}
         />
       ) : null}
 
-      {!isLoading && !shouldShowTrainingQueryError && (
+      {show("overview") && !isLoading && !shouldShowTrainingQueryError && (
         <>
           {/* Weekly volume summary */}
           {weeklyVolumeParsed.error && (
@@ -462,30 +510,34 @@ export default function StrainScreen() {
         </>
       )}
 
-      {hrZonesQuery.isError ? (
-        <QueryStatePanel
-          variant="error"
-          title="Could not load intensity distribution"
-          message={hrZonesQuery.error.message}
-        />
-      ) : hrZonesQuery.isLoading && hrZonesQuery.data == null ? (
-        <QueryStatePanel variant="loading" minHeight={120} />
-      ) : null}
+      {show("endurance") ? (
+        <>
+          {hrZonesQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              title="Could not load intensity distribution"
+              message={hrZonesQuery.error.message}
+            />
+          ) : hrZonesQuery.isLoading && hrZonesQuery.data == null ? (
+            <QueryStatePanel variant="loading" minHeight={120} />
+          ) : null}
 
-      {polarizationQuery.isError ? (
-        <QueryStatePanel
-          variant="error"
-          title={`Could not load ${TRAINING_TERMINOLOGY.polarization.plainLabel.toLowerCase()}`}
-          message={polarizationQuery.error.message}
-        />
-      ) : polarizationQuery.isLoading && polarizationQuery.data == null ? (
-        <QueryStatePanel variant="loading" minHeight={120} />
-      ) : null}
+          {polarizationQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              title={`Could not load ${TRAINING_TERMINOLOGY.polarization.plainLabel.toLowerCase()}`}
+              message={polarizationQuery.error.message}
+            />
+          ) : polarizationQuery.isLoading && polarizationQuery.data == null ? (
+            <QueryStatePanel variant="loading" minHeight={120} />
+          ) : null}
 
-      <TrainingDistributionCards
-        intensityDistribution={hrZonesQuery.data?.intensityDistribution ?? null}
-        polarization={polarizationQuery.data ?? null}
-      />
+          <TrainingDistributionCards
+            intensityDistribution={hrZonesQuery.data?.intensityDistribution ?? null}
+            polarization={polarizationQuery.data ?? null}
+          />
+        </>
+      ) : null}
     </ScrollView>
   );
 }

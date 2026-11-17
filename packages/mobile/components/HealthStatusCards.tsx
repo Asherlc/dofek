@@ -8,6 +8,7 @@ import { colors, radius, spacing } from "../theme";
 
 interface HealthStatusCardsProps {
   metrics: HealthStatusMetric[];
+  compact?: boolean;
   formatValue?: (metric: HealthStatusMetric) => string;
   formatComparisonValue?: (metric: HealthStatusMetric, value: number) => string;
 }
@@ -40,6 +41,7 @@ function statusSymbol(status: HealthStatusMetric["statusToken"]): string {
 
 export function HealthStatusCards({
   metrics,
+  compact = false,
   formatValue,
   formatComparisonValue,
 }: HealthStatusCardsProps) {
@@ -48,8 +50,8 @@ export function HealthStatusCards({
   if (metrics.length === 0) return null;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>HEALTH STATUS</Text>
+    <View style={[styles.container, compact && styles.compactGrid]}>
+      {compact ? null : <Text style={styles.heading}>HEALTH STATUS</Text>}
       {metrics.map((metric) => {
         const baseline = metric.baselineText;
         const provenance = metric.provenance;
@@ -57,7 +59,7 @@ export function HealthStatusCards({
         const blocked = metric.baselineProgress.blocker !== null;
         const interpretation = formatHealthStatusLabel(metric);
         return (
-          <View key={metric.metric} style={styles.card}>
+          <View key={metric.metric} style={[styles.card, compact && styles.compactCard]}>
             <View style={styles.titleRow}>
               <Text
                 accessibilityLabel={`${metric.statusLabel} status`}
@@ -149,6 +151,14 @@ export function HealthStatusCards({
 }
 
 const styles = StyleSheet.create({
+  compactGrid: { flexDirection: "row", flexWrap: "wrap" },
+  compactCard: {
+    flexBasis: "46%",
+    flexGrow: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+  },
   container: {
     gap: spacing.sm,
   },

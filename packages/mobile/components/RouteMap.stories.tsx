@@ -58,6 +58,10 @@ export const CompactRecordedRoute: Story = {
   args: { ...OutAndBack.args, compact: true },
 };
 
+export const PerformanceRoutePosition: Story = {
+  args: { ...OutAndBack.args, height: 180, hoveredPosition: { lat: 37.778, lng: -122.416 } },
+};
+
 /** Some points missing GPS coordinates (should be filtered out). */
 export const SparseGps: Story = {
   args: {

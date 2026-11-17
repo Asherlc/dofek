@@ -491,6 +491,8 @@ describe("ActivitiesScreen", () => {
     expect(calendarDataOptions?.placeholderData?.([])).toBeUndefined();
     const previousCalendarData = [{ date: "2026-03-10" }];
     expect(calendarDataOptions?.placeholderData?.(previousCalendarData)).toBe(previousCalendarData);
+    expect(screen.queryByText("Training time (minutes per day)")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Training time/ }));
     expect(screen.getByText("Training time (minutes per day)")).toBeTruthy();
     expect(screen.getByRole("button", { name: /72 min/ })).toBeTruthy();
   });
@@ -545,10 +547,45 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^Training time/ }));
     expect(screen.getByText("12")).toBeDefined();
     expect(screen.getByText("10h 15m")).toBeDefined();
     expect(screen.getByText("42.3 km")).toBeDefined();
     expect(screen.getByText("520 m")).toBeDefined();
+  });
+
+  it("waits for matching training totals after a sport change", () => {
+    const overview = emptyActivityOverviewQuery();
+    const previousTotals = {
+      activityCount: 12,
+      totalMinutes: 615,
+      totalDistanceMeters: null,
+      totalDistanceState: { status: "missing", reason: "No distance recorded" },
+      totalElevationGainM: null,
+      totalElevationState: { status: "missing", reason: "No elevation recorded" },
+      activityTypes: ["running"],
+    } satisfies NonNullable<MockOverviewQuery["data"]>;
+    mockOverviewQuery = {
+      ...overview,
+      data: previousTotals,
+    };
+    const { rerender } = render(<ActivitiesScreen />);
+    const trainingTime = () => screen.getByRole("button", { name: /^Training time/ });
+    expect(trainingTime().textContent).toContain("12 activities");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Sport,/ }));
+    mockOverviewQuery = { ...mockOverviewQuery, isPlaceholderData: true };
+    fireEvent.click(screen.getByText("Running"));
+    expect(trainingTime().textContent).toContain("Updating");
+    expect(trainingTime().textContent).not.toContain("12 activities");
+
+    mockOverviewQuery = {
+      ...mockOverviewQuery,
+      data: { ...previousTotals, activityCount: 1, totalMinutes: 60 },
+      isPlaceholderData: false,
+    };
+    rerender(<ActivitiesScreen />);
+    expect(trainingTime().textContent).toContain("1 activity");
   });
 
   it("renders server-computed changes from the previous comparable period", () => {
@@ -584,6 +621,7 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^Training time/ }));
     expect(screen.getByText("1 more vs previous 4 weeks")).toBeDefined();
     expect(screen.getByText("1h 30m less vs previous 4 weeks")).toBeDefined();
     expect(screen.getByText("No change vs previous 4 weeks")).toBeDefined();
@@ -612,6 +650,7 @@ describe("ActivitiesScreen", () => {
 
     const { rerender } = render(<ActivitiesScreen />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^Training time/ }));
     expect(screen.getByText("Distance not recorded")).toBeDefined();
     expect(screen.getByText("Elevation unavailable")).toBeDefined();
     expect(screen.queryByText("0.0 km")).toBeNull();
@@ -665,6 +704,7 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^Training time/ }));
     expect(screen.getByText("12.5 km")).toBeDefined();
     expect(screen.getByText("180 m")).toBeDefined();
     expect(screen.getByText("2.5 km more vs previous 4 weeks")).toBeDefined();
@@ -692,6 +732,7 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByRole("button", { name: /^Sport,/ }));
     fireEvent.click(screen.getByText("Running"));
 
     expect(weekListInput).toEqual({
@@ -982,6 +1023,7 @@ describe("ActivitiesScreen", () => {
     render(<ActivitiesScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Trainer Ride,/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sport,/ }));
     fireEvent.click(screen.getByText("Running"));
 
     expect(screen.queryByText("1 activity selected")).toBeNull();
@@ -994,6 +1036,7 @@ describe("ActivitiesScreen", () => {
     render(<ActivitiesScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Trainer Ride,/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Date range/ }));
     fireEvent.click(screen.getByText("8 weeks"));
 
     expect(screen.queryByText("1 activity selected")).toBeNull();
@@ -1051,6 +1094,7 @@ describe("ActivitiesScreen", () => {
       </QueryClientProvider>,
     );
     await screen.findByText("Previous Range Ride");
+    fireEvent.click(screen.getByRole("button", { name: /^Date range/ }));
     fireEvent.click(screen.getByText("8 weeks"));
     await screen.findByText("Selected range is unavailable.");
     expect(screen.queryByText("Previous Range Ride")).toBeNull();

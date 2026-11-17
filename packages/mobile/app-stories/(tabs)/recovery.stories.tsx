@@ -5,7 +5,7 @@ import { mobileRecoveryFixtureSchema } from "dofek-server/mobile-dashboard-contr
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
-import RecoveryScreen from "../../app/(tabs)/recovery";
+import RecoveryScreen from "../../app/recovery";
 import { createFixtureDates } from "../../app-fixtures/(tabs)/fixture-dates";
 import {
   createProcessingStatusStoryLink,

@@ -32,7 +32,6 @@ import {
   Platform,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -44,6 +43,7 @@ import { ActivityOverview } from "../../components/ActivityOverview";
 import { ActivityPhotoPreview } from "../../components/ActivityPhotoPreview";
 import { ActivitySourceDisclosure } from "../../components/ActivitySourceDisclosure";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
+import { styles } from "../../components/activities.styles";
 import { PaginationControls } from "../../components/PaginationControls";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
@@ -51,7 +51,7 @@ import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
-import { colors, radius, spacing } from "../../theme";
+import { colors } from "../../theme";
 
 const DEFAULT_WEEKS = 4;
 const ACTIVITY_PAGE_SIZE = 20;
@@ -176,6 +176,7 @@ export default function ActivitiesScreen() {
   const endDate = useMemo(() => formatDateYmd(), []);
   const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
+  const [trainingTimeExpanded, setTrainingTimeExpanded] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedActivities, setSelectedActivities] = useState<Map<string, string>>(new Map());
   const selectedActivityIds = new Set(selectedActivities.keys());
@@ -210,6 +211,7 @@ export default function ActivitiesScreen() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  const trainingTotals = overviewQuery.isPlaceholderData ? undefined : overviewQuery.data;
   useEffect(() => {
     if (query.data && !query.isPlaceholderData && !query.isError) {
       lastSuccessfulInput.current = { rangeKey, input: pageInput };
@@ -367,41 +369,60 @@ export default function ActivitiesScreen() {
         <QueryStatePanel variant="error" message={userFacingErrorMessage(bulkDelete.error)} />
       ) : null}
 
-      {overviewQuery.isLoading && !overviewQuery.data ? (
-        <QueryStatePanel variant="loading" minHeight={100} />
-      ) : overviewQuery.isError && !overviewQuery.data ? (
-        <QueryStatePanel variant="error" message={userFacingErrorMessage(overviewQuery.error)} />
-      ) : (
-        <>
-          {overviewQuery.isError ? (
-            <QueryStatePanel
-              variant="error"
-              message={userFacingErrorMessage(overviewQuery.error)}
-              minHeight={72}
-              style={styles.backgroundErrorPanel}
-            />
+      <View style={styles.trainingSummary}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          aria-expanded={trainingTimeExpanded}
+          accessibilityState={{ expanded: trainingTimeExpanded }}
+          onPress={() => setTrainingTimeExpanded((expanded) => !expanded)}
+          style={styles.summaryButton}
+        >
+          <Text style={styles.summaryTitle}>Training time</Text>
+          {overviewQuery.isPlaceholderData ? (
+            <Text style={styles.summaryMeta}>
+              {overviewQuery.isPaused ? "Waiting for a connection" : "Updating…"}
+            </Text>
+          ) : trainingTotals ? (
+            <Text style={styles.summaryMeta}>
+              {trainingTotals.activityCount}{" "}
+              {trainingTotals.activityCount === 1 ? "activity" : "activities"} ·{" "}
+              {formatDurationMinutes(trainingTotals.totalMinutes)}
+            </Text>
           ) : null}
-          <ActivityOverview overview={overviewQuery.data} units={units} />
-        </>
-      )}
+          <Text style={styles.summaryMeta} aria-hidden>
+            {trainingTimeExpanded ? "⌃" : "⌄"}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-      {calendarQuery.isLoading && !calendarQuery.data ? (
-        <QueryStatePanel variant="loading" minHeight={180} />
-      ) : calendarQuery.isError && !calendarQuery.data ? (
-        <QueryStatePanel variant="error" message={userFacingErrorMessage(calendarQuery.error)} />
-      ) : (
+      {overviewQuery.isLoading && !overviewQuery.data ? (
+        <QueryStatePanel variant="loading" minHeight={60} />
+      ) : overviewQuery.isError ? (
+        <QueryStatePanel
+          variant="error"
+          message={userFacingErrorMessage(overviewQuery.error)}
+          minHeight={72}
+        />
+      ) : null}
+
+      {trainingTimeExpanded ? (
         <>
+          {trainingTotals ? <ActivityOverview overview={trainingTotals} units={units} /> : null}
+          {calendarQuery.isLoading && !calendarQuery.data ? (
+            <QueryStatePanel variant="loading" minHeight={180} />
+          ) : null}
           {calendarQuery.isError ? (
             <QueryStatePanel
               variant="error"
               message={userFacingErrorMessage(calendarQuery.error)}
               minHeight={72}
-              style={styles.backgroundErrorPanel}
             />
           ) : null}
-          <ActivityHeatmap data={calendarQuery.data ?? []} />
+          {calendarQuery.data || (!calendarQuery.isLoading && !calendarQuery.isError) ? (
+            <ActivityHeatmap data={calendarQuery.data ?? []} />
+          ) : null}
         </>
-      )}
+      ) : null}
 
       {query.isLoading && !pageData ? (
         <QueryStatePanel variant="loading" minHeight={200} />
@@ -606,6 +627,13 @@ function ActivityControls({
     selectedCount === 1 ? "activity" : "activities"
   } selected`;
 
+  const [openFilter, setOpenFilter] = useState<"range" | "sport">();
+  const selectedRange = DATE_RANGE_OPTIONS.find((option) => option.value === weeks);
+  const selectedSport =
+    activityType === ALL_ACTIVITY_TYPES ? "All activities" : formatActivityTypeLabel(activityType);
+  const toggleFilter = (filter: "range" | "sport") =>
+    setOpenFilter((current) => (current === filter ? undefined : filter));
+
   useEffect(() => {
     if (selectMode && Platform.OS === "ios") {
       AccessibilityInfo.announceForAccessibility(selectedCountLabel);
@@ -690,70 +718,66 @@ function ActivityControls({
           </TouchableOpacity>
         </View>
       ) : null}
-      <View style={styles.chipRow}>
-        {DATE_RANGE_OPTIONS.map((option) => (
-          <TouchableOpacity
-            key={option.value}
-            style={[styles.filterChip, weeks === option.value ? styles.filterChipSelected : null]}
-            onPress={() => onWeeksChange(option.value)}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={option.label}
-            accessibilityState={{ selected: weeks === option.value }}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                weeks === option.value ? styles.filterChipTextSelected : null,
-              ]}
-            >
-              {option.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      <View style={styles.chipRow}>
+      <View style={styles.filterRow}>
         <TouchableOpacity
-          style={[
-            styles.filterChip,
-            activityType === ALL_ACTIVITY_TYPES ? styles.filterChipSelected : null,
-          ]}
-          onPress={() => onActivityTypeChange(ALL_ACTIVITY_TYPES)}
-          activeOpacity={0.7}
+          style={[styles.filterChip, styles.filterButton]}
+          onPress={() => toggleFilter("range")}
           accessibilityRole="button"
-          accessibilityLabel="All activities"
-          accessibilityState={{ selected: activityType === ALL_ACTIVITY_TYPES }}
+          accessibilityLabel={`Date range, ${selectedRange?.label ?? weeks}`}
+          accessibilityState={{ expanded: openFilter === "range" }}
         >
-          <Text
-            style={[
-              styles.filterChipText,
-              activityType === ALL_ACTIVITY_TYPES ? styles.filterChipTextSelected : null,
-            ]}
-          >
-            All activities
-          </Text>
+          <Text style={styles.filterChipText}>{selectedRange?.label} ⌄</Text>
         </TouchableOpacity>
-        {activityTypes.map((type) => (
-          <TouchableOpacity
-            key={type}
-            style={[styles.filterChip, activityType === type ? styles.filterChipSelected : null]}
-            onPress={() => onActivityTypeChange(type)}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={formatActivityTypeLabel(type)}
-            accessibilityState={{ selected: activityType === type }}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                activityType === type ? styles.filterChipTextSelected : null,
-              ]}
-            >
-              {formatActivityTypeLabel(type)}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        <TouchableOpacity
+          style={[styles.filterChip, styles.filterButton]}
+          onPress={() => toggleFilter("sport")}
+          accessibilityRole="button"
+          accessibilityLabel={`Sport, ${selectedSport}`}
+          accessibilityState={{ expanded: openFilter === "sport" }}
+        >
+          <Text style={styles.filterChipText}>{selectedSport} ⌄</Text>
+        </TouchableOpacity>
       </View>
+      {openFilter === "range" ? (
+        <View style={styles.chipRow}>
+          {DATE_RANGE_OPTIONS.map(({ value, label }) => (
+            <TouchableOpacity
+              key={value}
+              style={styles.filterChip}
+              accessibilityRole="button"
+              accessibilityState={{ selected: weeks === value }}
+              onPress={() => {
+                onWeeksChange(value);
+                setOpenFilter(undefined);
+              }}
+            >
+              <Text style={[styles.filterChipText, weeks === value && styles.filterCurrent]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+      {openFilter === "sport" ? (
+        <View style={styles.chipRow}>
+          {[ALL_ACTIVITY_TYPES, ...activityTypes].map((type) => (
+            <TouchableOpacity
+              key={type}
+              style={styles.filterChip}
+              accessibilityRole="button"
+              accessibilityState={{ selected: activityType === type }}
+              onPress={() => {
+                onActivityTypeChange(type);
+                setOpenFilter(undefined);
+              }}
+            >
+              <Text style={[styles.filterChipText, activityType === type && styles.filterCurrent]}>
+                {type === ALL_ACTIVITY_TYPES ? "All activities" : formatActivityTypeLabel(type)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -765,203 +789,3 @@ function formatDayHeader(dateStr: string): string {
   if (isYesterday(date)) return "Yesterday";
   return formatDateForDisplay(date);
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  backgroundErrorPanel: {
-    marginBottom: spacing.md,
-  },
-  controlsPanel: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  controlsHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: spacing.sm,
-  },
-  selectButton: {
-    borderColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  selectButtonText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  selectionGuidance: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  bulkActionRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  selectedCount: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  deleteSelectionButton: {
-    backgroundColor: colors.danger,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  deleteSelectionButtonText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  cancelSelectionButton: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  cancelSelectionButtonText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  disabledAction: {
-    opacity: 0.5,
-  },
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.xs,
-  },
-  filterChip: {
-    borderColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  filterChipSelected: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  filterChipText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  filterChipTextSelected: {
-    color: "#fff",
-  },
-  daySection: {
-    gap: spacing.sm,
-  },
-  dayHeaderRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  dayHeader: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  dayHeaderRule: {
-    backgroundColor: colors.surfaceSecondary,
-    flex: 1,
-    height: 1,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    overflow: "hidden",
-  },
-  cardSelected: {
-    borderColor: colors.accent,
-    borderWidth: 1,
-  },
-  cardAction: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-  },
-  cardContent: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.sm,
-  },
-  cardMain: {
-    flex: 1,
-    minWidth: 0,
-    padding: spacing.xs,
-  },
-  titleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.xs,
-  },
-  activityName: {
-    color: colors.text,
-    flex: 1,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  typePill: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.sm,
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "600",
-    overflow: "hidden",
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-  },
-  selectionPill: {
-    borderColor: colors.surfaceSecondary,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "600",
-    overflow: "hidden",
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-  },
-  selectionPillSelected: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-    color: "#fff",
-  },
-  activityMeta: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    flexWrap: "wrap",
-  },
-  mapPanel: {
-    paddingHorizontal: spacing.sm,
-    paddingBottom: spacing.sm,
-  },
-});

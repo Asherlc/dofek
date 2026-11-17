@@ -74,6 +74,8 @@ type Story = StoryObj<typeof meta>;
 
 export const Complete: Story = {};
 
+export const Compact: Story = { args: { compact: true } };
+
 export const InsufficientData: Story = {
   args: {
     metrics: [

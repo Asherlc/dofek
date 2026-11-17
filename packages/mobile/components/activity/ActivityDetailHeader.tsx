@@ -3,7 +3,7 @@ import { formatRecordLocalTime, formatRecordLocalTimeRange } from "@dofek/format
 import { providerLabel } from "@dofek/providers/providers";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityDetail } from "dofek-server/types";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { Text, View } from "react-native";
 import { ActivityImages } from "../ActivityImages";
 import { ActivitySourceDisclosure } from "../ActivitySourceDisclosure";
@@ -14,8 +14,12 @@ import { styles } from "./styles";
 export function ActivityDetailHeader({
   activity,
   photos,
+  actions,
+  showLineage = true,
   ...hardwareProps
 }: {
+  actions?: ReactNode;
+  showLineage?: boolean;
   photos?: Omit<ComponentProps<typeof ActivityImages>, "heading">;
   activity: Pick<
     ActivityDetail,
@@ -43,55 +47,55 @@ export function ActivityDetailHeader({
     viewerTimezone,
   );
 
-  const heading = (
-    <ActivitySourceDisclosure
-      tree={activity.sourceTree}
-      {...hardwareProps}
-      heading={
-        <View style={styles.header}>
-          <View style={styles.headerRow}>
-            {!photos?.images.length && (
-              <ActivityTypeIcon activityType={activity.activityType} size={48} />
-            )}
-            <View style={styles.headerText}>
-              <Text style={styles.name}>
-                {activity.name ??
-                  formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
-              </Text>
-              <View style={styles.typeBadge}>
-                <Text style={styles.typeBadgeText}>
-                  {formatActivityTypeLabel(activity.activityType)}
-                </Text>
-              </View>
-            </View>
-          </View>
-          <Text style={styles.dateTime}>
-            {formatDateLong(activity.displayedDate, { timeZone: "UTC" })}
-            {" at "}
-            {localStartTime === "--" ? "Local time unavailable" : localStartTime}
+  const identity = (
+    <View style={styles.header}>
+      <View style={styles.headerRow}>
+        {!photos?.images.length && (
+          <ActivityTypeIcon activityType={activity.activityType} size={48} />
+        )}
+        <View style={styles.headerText}>
+          <Text style={styles.name}>
+            {activity.name ??
+              formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
           </Text>
-          {activity.climbingLogSessions.length > 0 ? (
-            <View style={{ gap: 4, marginTop: 8 }}>
-              {activity.climbingLogSessions.map((session) => {
-                const window = formatRecordLocalTimeRange(
-                  session.firstLoggedAt,
-                  session.lastLoggedAt,
-                  activity.localTimeContext,
-                  undefined,
-                  viewerTimezone,
-                );
-                const label = `${providerLabel(session.providerId)} · Logged climbs · ${window}`;
-                return (
-                  <Text key={session.id} accessibilityLabel={label} style={styles.dateTime}>
-                    {label}
-                  </Text>
-                );
-              })}
-            </View>
-          ) : null}
+          <View style={styles.typeBadge}>
+            <Text style={styles.typeBadgeText}>
+              {formatActivityTypeLabel(activity.activityType)}
+            </Text>
+          </View>
         </View>
-      }
-    />
+        {actions}
+      </View>
+      <Text style={styles.dateTime}>
+        {formatDateLong(activity.displayedDate, { timeZone: "UTC" })}
+        {" at "}
+        {localStartTime === "--" ? "Local time unavailable" : localStartTime}
+      </Text>
+      {activity.climbingLogSessions.length > 0 ? (
+        <View style={{ gap: 4, marginTop: 8 }}>
+          {activity.climbingLogSessions.map((session) => {
+            const window = formatRecordLocalTimeRange(
+              session.firstLoggedAt,
+              session.lastLoggedAt,
+              activity.localTimeContext,
+              undefined,
+              viewerTimezone,
+            );
+            const label = `${providerLabel(session.providerId)} · Logged climbs · ${window}`;
+            return (
+              <Text key={session.id} accessibilityLabel={label} style={styles.dateTime}>
+                {label}
+              </Text>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
+  );
+  const heading = showLineage ? (
+    <ActivitySourceDisclosure tree={activity.sourceTree} {...hardwareProps} heading={identity} />
+  ) : (
+    identity
   );
 
   return (

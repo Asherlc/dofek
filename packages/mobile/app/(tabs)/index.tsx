@@ -6,20 +6,28 @@ import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } 
 import Animated, { Easing, FadeInUp } from "react-native-reanimated";
 import { Card } from "../../components/Card";
 import { SleepBar } from "../../components/charts/SleepBar";
+import { OverviewEvidence, overviewDays } from "../../components/OverviewEvidence";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProviderGuide } from "../../components/ProviderGuide";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { trpc } from "../../lib/trpc";
+import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useProviderGuide } from "../../lib/useProviderGuide";
 import { useRefresh } from "../../lib/useRefresh";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors, duration } from "../../theme";
 
-export default function TodayScreen() {
+export default function OverviewScreen() {
   const router = useRouter();
+  const units = useUnitConverter();
   const providerGuide = useProviderGuide();
   const endDate = useTodayQueryDate();
+  const overviewInput = { days: overviewDays, endDate };
+  const overviewOptions = { placeholderData: <Data,>(previous: Data | undefined) => previous };
+  const insightsQuery = trpc.insights.compute.useQuery(overviewInput, overviewOptions);
+  const trendsQuery = trpc.dailyMetrics.trends.useQuery(overviewInput, overviewOptions);
+  const heartRateQuery = trpc.dailyMetrics.hrvBaseline.useQuery(overviewInput, overviewOptions);
 
   // Consolidated dashboard data fetch
   const dashboardQuery = trpc.mobileDashboard.dashboardV2.useQuery(
@@ -50,23 +58,15 @@ export default function TodayScreen() {
     refresh: async () => {
       await Promise.all([
         dashboardQuery.refetch(),
+        insightsQuery.refetch(),
+        trendsQuery.refetch(),
+        heartRateQuery.refetch(),
         anomalyQuery.refetch(),
         processingStatusQuery.refetch(),
       ]);
     },
     invalidate: null,
   });
-
-  if (isError) {
-    return (
-      <View style={styles.container}>
-        <QueryStatePanel
-          variant="error"
-          message={getQueryErrorMessage(dashboardQuery.error, "Failed to load dashboard.")}
-        />
-      </View>
-    );
-  }
 
   return (
     <ScrollView
@@ -80,6 +80,9 @@ export default function TodayScreen() {
         />
       }
     >
+      <Text accessibilityRole="header" style={styles.heading}>
+        Overview
+      </Text>
       {/* Provider guide — shown to new users with no connected providers */}
       {providerGuide.showProviderGuide && (
         <ProviderGuide onDismiss={providerGuide.dismiss} providers={providerGuide.providers} />
@@ -99,6 +102,24 @@ export default function TodayScreen() {
         error={processingStatusQuery.error}
         loading={processingStatusQuery.isLoading}
       />
+
+      <OverviewEvidence
+        endDate={endDate}
+        insights={insightsQuery}
+        trends={trendsQuery}
+        heartRate={heartRateQuery}
+        units={units}
+        openBody={() => router.push("/body")}
+        openHeartRate={() => router.push({ pathname: "/body", params: { section: "heart-rate" } })}
+        openCorrelation={() => router.push("/correlation")}
+      />
+
+      {isError ? (
+        <QueryStatePanel
+          variant="error"
+          message={getQueryErrorMessage(dashboardQuery.error, "Failed to load dashboard.")}
+        />
+      ) : null}
 
       {hasBackgroundError ? (
         <QueryStatePanel
@@ -130,7 +151,7 @@ export default function TodayScreen() {
           .duration(duration.slow)
           .easing(Easing.bezier(0.16, 1, 0.3, 1))}
       >
-        {isLoading ? (
+        {isError ? null : isLoading ? (
           <Card title="Last Night">
             <QueryStatePanel variant="loading" minHeight={120} />
           </Card>
@@ -169,7 +190,11 @@ export default function TodayScreen() {
           </TouchableOpacity>
         ) : (
           <Card title="Last Night">
-            <Text style={styles.noDataText}>No sleep data</Text>
+            <Text style={styles.noDataText}>
+              {dashboardQuery.isPaused && dashboardData == null
+                ? "Waiting for a connection"
+                : "No sleep data"}
+            </Text>
           </Card>
         )}
       </Animated.View>
@@ -178,6 +203,7 @@ export default function TodayScreen() {
 }
 
 const styles = StyleSheet.create({
+  heading: { color: colors.text, fontSize: 30, fontWeight: "700", letterSpacing: -0.8 },
   container: {
     flex: 1,
     backgroundColor: colors.background,

@@ -29,9 +29,22 @@ vi.mock("@expo/vector-icons", () => ({
 
 vi.mock("expo-router", () => ({
   Tabs: Object.assign(
-    ({ screenOptions }: { screenOptions: { headerRight?: () => ReactNode } }) =>
-      screenOptions.headerRight?.(),
-    { Screen: () => null },
+    ({
+      children,
+      screenOptions,
+    }: {
+      children: ReactNode;
+      screenOptions: { headerRight?: () => ReactNode };
+    }) => (
+      <>
+        {screenOptions.headerRight?.()}
+        {children}
+      </>
+    ),
+    {
+      Screen: ({ options }: { options: { title?: string; href?: null } }) =>
+        options.href === null ? null : <span data-testid="visible-tab">{options.title}</span>,
+    },
   ),
   useRouter: () => ({ push: mockPush }),
 }));
@@ -50,14 +63,12 @@ vi.mock("../../lib/useProcessingAlerts", () => ({
 
 describe("tab layout selected state", () => {
   it("uses filled icons for focused tabs and outline icons for unfocused tabs", () => {
-    expect(getTabIconName("index", true)).toBe("today");
-    expect(getTabIconName("index", false)).toBe("today-outline");
-    expect(getTabIconName("recovery", true)).toBe("pulse");
-    expect(getTabIconName("recovery", false)).toBe("pulse-outline");
-    expect(getTabIconName("strain", true)).toBe("barbell");
-    expect(getTabIconName("strain", false)).toBe("barbell-outline");
-    expect(getTabIconName("food", true)).toBe("nutrition");
-    expect(getTabIconName("food", false)).toBe("nutrition-outline");
+    expect(getTabIconName("index", true)).toBe("home");
+    expect(getTabIconName("index", false)).toBe("home-outline");
+    expect(getTabIconName("training", true)).toBe("barbell");
+    expect(getTabIconName("training", false)).toBe("barbell-outline");
+    expect(getTabIconName("sleep-overview", true)).toBe("moon");
+    expect(getTabIconName("sleep-overview", false)).toBe("moon-outline");
   });
 
   it("uses an accent-tinted background for the selected tab", () => {
@@ -87,11 +98,15 @@ describe("tab layout selected state", () => {
     expect(mockPush).toHaveBeenCalledWith("/alerts");
   });
 
-  it("opens Settings from the global tab header", () => {
+  it("registers the same five primary tabs in the approved order", () => {
     render(<TabsLayout />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-
-    expect(mockPush).toHaveBeenCalledWith("/settings");
+    expect(screen.getAllByTestId("visible-tab").map((tab) => tab.textContent)).toEqual([
+      "Overview",
+      "Training",
+      "Activities",
+      "Sleep",
+      "More",
+    ]);
   });
 });

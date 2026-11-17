@@ -8,7 +8,7 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { z } from "zod";
-import StrainScreen from "../../app/(tabs)/strain";
+import StrainScreen from "../../app/strain";
 import { createFixtureDates, type FixtureDates } from "../../app-fixtures/(tabs)/fixture-dates";
 import {
   createProcessingStatusStoryLink,

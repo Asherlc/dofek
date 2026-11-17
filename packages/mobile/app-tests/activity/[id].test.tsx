@@ -49,6 +49,7 @@ import {
   defaultObserver,
   getPlaceholderData,
   getQueryEnabledFlag,
+  mockGarminHeartRateFailure,
   resetActivityDetailMocks,
   routeMocks,
 } from "../../components/activity/activity-detail-test-helpers";
@@ -153,13 +154,37 @@ beforeEach(() => {
   });
 });
 
+function openPerformance(metric?: string) {
+  fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
+  if (metric) {
+    const metricTab = screen.queryByRole("tab", { name: metric });
+    if (metricTab) fireEvent.click(metricTab);
+  }
+}
+
 describe("ActivityDetailScreen", () => {
+  it("opens chart performance separately from the workout overview and puts record actions near the header", () => {
+    renderActivityDetail();
+    expect(screen.queryByRole("button", { name: "View Heart Rate data" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
+    expect(screen.getByRole("button", { name: "View Heart Rate data" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "View Power data" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Power" }));
+    expect(screen.getByRole("button", { name: "View Power data" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "View Heart Rate data" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Activity actions" }));
+    expect(screen.getByRole("button", { name: "Export Activity" })).toBeTruthy();
+    const recompute = screen.getByRole("button", { name: "Recompute activity" });
+    fireEvent.click(screen.getByRole("button", { name: "Activity actions" }));
+    expect(recompute.isConnected).toBe(true);
+  });
+
   it("shows Kilter's logged window and keeps point-only duration unknown beside Kaya climbs", async () => {
     mocks.byIdQuery.mockReturnValue(defaultObserver(kilterClimbingActivity));
     mocks.climbingEntriesQuery.mockReturnValue(defaultObserver(kilterAndKayaClimbingEntries));
 
     renderActivityDetail();
-
     expect(getQueryEnabledFlag(mocks.climbingEntriesQuery.mock.calls[0]?.[1])).toBe(true);
     expect(screen.getByText("Climbs")).toBeTruthy();
     expect(screen.getByText("Kilter Board · Logged climbs · 3:02 AM")).toBeTruthy();
@@ -175,6 +200,7 @@ describe("ActivityDetailScreen", () => {
     mocks.byIdQuery.mockReturnValue(defaultObserver(climbingActivity));
     mocks.heartRateContextQuery.mockReturnValue(defaultObserver(surroundingClimbingHeartRate));
     renderActivityDetail();
+    openPerformance();
     fireEvent.click(await screen.findByRole("button", { name: "View Heart Rate data" }));
     expect(screen.getByText("91 bpm")).toBeDefined();
     expect(screen.getByText("92 bpm")).toBeDefined();
@@ -227,7 +253,6 @@ describe("ActivityDetailScreen", () => {
       );
 
       renderActivityDetail();
-
       expect(screen.queryByText("Climbs")).toBeNull();
       expect(screen.queryByText("Attached Boulder")).toBeNull();
       expect(screen.queryByText("Ridge traverse")).toBeNull();
@@ -261,7 +286,7 @@ describe("ActivityDetailScreen", () => {
     mocks.routeQuery.mockReturnValue(defaultObserver(processingRoute));
 
     const view = renderActivityDetail();
-
+    fireEvent.click(screen.getByRole("button", { name: "Activity actions" }));
     expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Export Activity" }));
     expect(
@@ -269,7 +294,6 @@ describe("ActivityDetailScreen", () => {
     ).toBe(true);
     mocks.routeQuery.mockReturnValue(defaultObserver(readyActivityRoute));
     view.rerender(<ActivityDetailScreen />);
-
     expect(screen.getByText("Route ends at 37.9")).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Export as GPS track (GPX)" }).hasAttribute("disabled"),
@@ -323,7 +347,6 @@ describe("ActivityDetailScreen", () => {
     mocks.entrySuggestionsQuery.mockReturnValue(defaultObserver([climbingMapRecords.suggested]));
 
     renderActivityDetail();
-
     expect(screen.queryAllByText("Route ends at none")).toHaveLength(
       state.startsWith("cached") ? 0 : 1,
     );
@@ -390,6 +413,7 @@ describe("ActivityDetailScreen", () => {
 
   it("invalidates Activities screen queries after deleting an activity", async () => {
     renderActivityDetail();
+    fireEvent.click(screen.getByRole("button", { name: "Activity actions" }));
 
     fireEvent.click(screen.getByLabelText("Delete Activity"));
     const deleteAction = activityAlert.mock.calls.at(-1)?.[2]?.[1];
@@ -521,7 +545,6 @@ describe("ActivityDetailScreen", () => {
     );
 
     renderActivityDetail();
-
     expect(screen.getByLabelText("Session perceived exertion")).toBeTruthy();
     expect(screen.getByText("7/10")).toBeTruthy();
   });
@@ -605,6 +628,7 @@ describe("ActivityDetailScreen", () => {
         defaultObserver([{ ...streamPointsWithHrAndPower[0], cadence: 85 }]),
       );
       renderActivityDetail();
+      openPerformance("Cadence");
       fireEvent.click(screen.getByRole("button", { name: "View Cadence data" }));
       expect(screen.getAllByText(`85 ${unit}`).length).toBeGreaterThan(0);
     },
@@ -630,7 +654,6 @@ describe("ActivityDetailScreen", () => {
 
   it("omits output when the server has no measured work", async () => {
     renderActivityDetail();
-
     expect(screen.queryByText("Energy Output")).toBeNull();
     expect(screen.queryByText("Partial power data")).toBeNull();
   });
@@ -684,7 +707,6 @@ describe("ActivityDetailScreen", () => {
       defaultObserver({ ...baseCyclingActivity, id: nextActivityId, name: "Evening Ride" }),
     );
     view.rerender(<ActivityDetailScreen />);
-
     expect(screen.getByText("Evening Ride")).toBeTruthy();
     expect(screen.queryByText("720 kJ")).toBeNull();
   });
@@ -697,15 +719,14 @@ describe("ActivityDetailScreen", () => {
     });
 
     renderActivityDetail();
-
     expect(screen.getByText("Activity detail is temporarily unavailable")).toBeTruthy();
   });
 
   it("uses layman-readable accessible names for activity export formats", async () => {
     renderActivityDetail();
+    fireEvent.click(screen.getByRole("button", { name: "Activity actions" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Export Activity" }));
-
     expect(screen.getByRole("button", { name: "Export as GPS track (GPX)" })).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Export as Training Center data (TCX)" }),
@@ -720,7 +741,7 @@ describe("ActivityDetailScreen", () => {
 
   it("shows an empty state when heart rate zones are unavailable for an activity with heart rate", async () => {
     renderActivityDetail();
-
+    openPerformance();
     expect(screen.getByText("No heart rate zone data")).toBeTruthy();
   });
 
@@ -728,7 +749,7 @@ describe("ActivityDetailScreen", () => {
     mocks.hrZonesQuery.mockReturnValue({ data: [], isLoading: true, error: null });
 
     renderActivityDetail();
-
+    openPerformance();
     expect(screen.getByTestId("loading")).toBeTruthy();
     expect(screen.queryByText("No heart rate zone data")).toBeNull();
   });
@@ -741,7 +762,7 @@ describe("ActivityDetailScreen", () => {
     mocks.hrZonesQuery.mockReturnValue({ data: [], isLoading: true, error: null });
 
     renderActivityDetail();
-
+    openPerformance();
     expect(screen.queryByText("Heart Rate Zones")).toBeNull();
     expect(screen.queryByText("No heart rate zone data")).toBeNull();
   });
@@ -754,7 +775,7 @@ describe("ActivityDetailScreen", () => {
     });
 
     renderActivityDetail();
-
+    openPerformance();
     expect(screen.getByText("Unable to load heart rate zones")).toBeTruthy();
     expect(screen.queryByText("No heart rate zone data")).toBeNull();
   });
@@ -766,6 +787,7 @@ describe("ActivityDetailScreen", () => {
     });
     mocks.powerZonesQuery.mockReturnValue(defaultObserver(unconfiguredCyclingPowerZones));
     renderActivityDetail();
+    openPerformance("Power");
     fireEvent.click(screen.getByRole("link", { name: "Set cycling FTP for this activity date" }));
     expect(mocks.routerPush).toHaveBeenCalledWith(
       "/settings?tab=models-units&section=cycling-ftp&date=2026-05-15",
@@ -780,6 +802,7 @@ describe("ActivityDetailScreen", () => {
       error: null,
     });
     const loading = renderActivityDetail();
+    openPerformance("Power");
     expect(
       screen.queryByRole("link", { name: "Set cycling FTP for this activity date" }),
     ).toBeNull();
@@ -790,6 +813,7 @@ describe("ActivityDetailScreen", () => {
       isFetching: true,
     });
     const refreshing = renderActivityDetail();
+    openPerformance("Power");
     expect(
       screen.queryByRole("link", { name: "Set cycling FTP for this activity date" }),
     ).toBeNull();
@@ -800,6 +824,7 @@ describe("ActivityDetailScreen", () => {
       error: new Error("Power zones failed to refresh"),
     });
     const failed = renderActivityDetail();
+    openPerformance("Power");
     expect(
       screen.queryByRole("link", { name: "Set cycling FTP for this activity date" }),
     ).toBeNull();
@@ -811,6 +836,7 @@ describe("ActivityDetailScreen", () => {
     });
     mocks.powerZonesQuery.mockReturnValue(defaultObserver(null));
     renderActivityDetail();
+    openPerformance();
     expect(
       screen.queryByRole("link", { name: "Set cycling FTP for this activity date" }),
     ).toBeNull();
@@ -819,10 +845,13 @@ describe("ActivityDetailScreen", () => {
   it("renders without crashing for non-cycling workouts with heart rate data but no power", async () => {
     mocks.byIdQuery.mockReturnValue(defaultObserver(yogaActivity));
     mocks.streamQuery.mockReturnValue(defaultObserver(heartRateOnlyStreamPoints));
-
+    mocks.metricSourcesQuery.mockReturnValue(
+      defaultObserver(activityDetailMetricSources.filter((source) => source.key === "heartRate")),
+    );
     renderActivityDetail();
+    openPerformance();
     expect(screen.getByText("Yoga Session")).toBeTruthy();
-    expect(screen.getByText("Heart Rate")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View Heart Rate data" })).toBeTruthy();
     const enabled = getQueryEnabledFlag(mocks.powerZonesQuery.mock.calls[0]?.[1]);
     expect(enabled).toBe(false);
   });
@@ -852,7 +881,6 @@ describe("ActivityDetailScreen", () => {
     renderActivityDetail();
 
     fireEvent.click(screen.getByRole("button", { name: "Restore activity" }));
-
     expect(mocks.restoreProviderAbsentMutate).toHaveBeenCalledWith({ ids: [canonicalActivityId] });
     expect(mocks.activityInvalidate).toHaveBeenCalledWith();
   });
@@ -869,59 +897,30 @@ it("switches the visible power-work reading with its selected source", async () 
       workBySource[input.powerSourceId === "garmin" ? "garmin" : "wahoo"],
   );
   renderActivityDetail();
-  expect(screen.getByText("Heart Rate")).toBeTruthy();
-  expect(screen.getByText("Power")).toBeTruthy();
   expect(getQueryEnabledFlag(mocks.powerZonesQuery.mock.calls[0]?.[1])).toBe(true);
   expect(screen.getByText("720 kJ")).toBeTruthy();
+  openPerformance("Power");
   fireEvent.click(screen.getByRole("button", { name: "Power source: Wahoo" }));
   fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
-  expect(screen.getByText("810 kJ")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Power source: Garmin" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+  expect(screen.getByText("810 kJ")).toBeTruthy();
 });
 
 it("keeps mobile pickers available after a source read fails", async () => {
   mocks.metricSourcesQuery.mockReturnValue(
     defaultObserver(activityDetailMetricSources.filter((source) => source.key === "heartRate")),
   );
-  const originalStream = mocks.streamQuery.getMockImplementation();
-  let garminReadFailed = false;
-  mocks.streamQuery.mockImplementation((input?: unknown, options?: unknown) => {
-    if (
-      input &&
-      typeof input === "object" &&
-      "sources" in input &&
-      input.sources &&
-      typeof input.sources === "object" &&
-      "heartRate" in input.sources &&
-      input.sources.heartRate === "garmin"
-    ) {
-      if (!garminReadFailed) {
-        return {
-          data: streamPointsWithHrAndPower,
-          error: null,
-          isLoading: false,
-          isFetching: true,
-          isPlaceholderData: true,
-        };
-      }
-      return {
-        data: undefined,
-        error: new Error("Garmin samples could not be read"),
-        isLoading: false,
-        isFetching: false,
-        isPlaceholderData: false,
-      };
-    }
-    return originalStream?.(input, options) ?? defaultObserver([]);
-  });
+  const failGarminRead = mockGarminHeartRateFailure(streamPointsWithHrAndPower);
   const routeView = renderActivityDetail();
+  openPerformance();
   fireEvent.click(screen.getByRole("button", { name: "Heart Rate source: WHOOP" }));
   fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
   expect(screen.getByRole("button", { name: "Heart Rate source: Garmin" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "View Heart Rate data" }));
   expect(screen.getByText("140 bpm")).toBeTruthy();
   expect(screen.getByText("Showing previous readings from WHOOP")).toBeTruthy();
-  garminReadFailed = true;
+  failGarminRead();
   routeView.rerender(<ActivityDetailScreen />);
   fireEvent.click(screen.getByRole("button", { name: "Heart Rate source: Garmin" }));
   fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
@@ -950,6 +949,7 @@ it.each([false, true])(
       isLoading: false,
     }));
     renderActivityDetail();
+    openPerformance("Power");
     expect(screen.getByText(/FTP: 250 W/).textContent).toContain("effective 2026-02-01");
     expect(
       screen.queryByRole("link", { name: "Set cycling FTP for this activity date" }),
@@ -973,13 +973,13 @@ it("keeps sparse temperature charts on the activity timeline and supports GPS ho
   mocks.metricSourcesQuery.mockReturnValue(defaultObserver(activityDetailMetricSources));
   mocks.streamQuery.mockReturnValue(defaultObserver(sparseTemperatureStreamPoints));
   const view = renderActivityDetail();
+  openPerformance("Skin Temperature");
 
   fireEvent.click(screen.getByRole("button", { name: "View Skin Temperature data" }));
   expect(screen.getByText("89.9 °F")).toBeTruthy();
   expect(mocks.streamQuery.mock.calls.at(-1)?.[0]).toMatchObject({
     sources: { skinTemperature: '["whoop_ble","strap-a"]' },
   });
-
   expect(chartScrub.startedAt).toBe(Date.parse(baseCyclingActivity.startedAt));
   expect(chartScrub.endedAt).toBe(Date.parse(baseCyclingActivity.endedAt));
   expect(chartScrub.onHoverTime).toBeDefined();
@@ -990,7 +990,8 @@ it("keeps sparse temperature charts on the activity timeline and supports GPS ho
     view.container.querySelector("[data-scroll-enabled]")?.getAttribute("data-scroll-enabled"),
   ).toBe("false");
   act(() => chartScrub.onHoverTime?.(Date.parse("2026-04-14T10:30:00.000Z")));
-  const mapProps = vi.mocked(RouteMap).mock.calls.at(-1)?.[0];
+  const [mapProps] = vi.mocked(RouteMap).mock.lastCall ?? [];
+  expect(mapProps?.compact).toBeFalsy();
   expect(mapProps?.hoveredPosition).toEqual({ lat: 2, lng: -122 });
   act(() => chartScrub.onScrubEnd?.());
   expect(

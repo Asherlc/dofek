@@ -73,6 +73,7 @@ type ActivityMetricControl = ActivityMetricSources[number] & {
 export function ActivityMetricsCharts({
   points,
   sourceControls,
+  visibleMetric,
   sourceAttribution = {},
   serverUrl,
   activityWindow,
@@ -94,6 +95,7 @@ export function ActivityMetricsCharts({
 }: {
   points: StreamPoint[];
   sourceControls: ActivityMetricControl[];
+  visibleMetric?: ActivityMetric;
   sourceAttribution?: Partial<Record<ActivityMetric, string>>;
   serverUrl: string;
   activityWindow: ActivityChartWindow;
@@ -113,6 +115,8 @@ export function ActivityMetricsCharts({
   onScrubStart: () => void;
   onScrubEnd: () => void;
 }) {
+  const visible = (metric: ActivityMetric) => visibleMetric == null || visibleMetric === metric;
+  const visibleControls = sourceControls.filter((metric) => visible(metric.key));
   const sourcePicker = (metric: ActivityMetricControl, showLabel: boolean, hasData: boolean) => (
     <View key={metric.key}>
       <ActivityMetricSourcePicker
@@ -136,10 +140,10 @@ export function ActivityMetricsCharts({
   const scrub = hasGps ? { onScrubStart, onScrubEnd } : {};
   return (
     <>
-      {sourceControls
+      {visibleControls
         .filter((metric) => metric.key === "heartRate")
         .map((metric) => sourcePicker(metric, true, hasHr))}
-      {hasHr && (
+      {visible("heartRate") && hasHr && (
         <>
           <LineChart
             highlightedClimbId={highlightedClimbId}
@@ -168,10 +172,10 @@ export function ActivityMetricsCharts({
           )}
         </>
       )}
-      {sourceControls
+      {visibleControls
         .filter((metric) => metric.key === "power")
         .map((metric) => sourcePicker(metric, true, hasPower))}
-      {hasPower && (
+      {visible("power") && hasPower && (
         <LineChart
           data={points.map((point) => ({ recordedAt: point.recordedAt, value: point.power }))}
           color={CHART_COLORS.power}
@@ -181,7 +185,7 @@ export function ActivityMetricsCharts({
           {...scrub}
         />
       )}
-      {sourceControls
+      {visibleControls
         .filter((metric) => metric.key === "speed")
         .map((metric) =>
           sourcePicker(
@@ -190,7 +194,7 @@ export function ActivityMetricsCharts({
             points.some((point) => point.speed != null),
           ),
         )}
-      {points.some((point) => point.speed != null) && (
+      {visible("speed") && points.some((point) => point.speed != null) && (
         <LineChart
           data={points.map((point) => ({
             recordedAt: point.recordedAt,
@@ -203,7 +207,7 @@ export function ActivityMetricsCharts({
           {...scrub}
         />
       )}
-      {sourceControls
+      {visibleControls
         .filter((metric) => metric.key === "cadence")
         .map((metric) =>
           sourcePicker(
@@ -212,7 +216,7 @@ export function ActivityMetricsCharts({
             points.some((point) => point.cadence != null),
           ),
         )}
-      {points.some((point) => point.cadence != null) && (
+      {visible("cadence") && points.some((point) => point.cadence != null) && (
         <LineChart
           data={points.map((point) => ({ recordedAt: point.recordedAt, value: point.cadence }))}
           color={CHART_COLORS.cadence}
@@ -222,7 +226,7 @@ export function ActivityMetricsCharts({
           {...scrub}
         />
       )}
-      {sourceControls
+      {visibleControls
         .filter((metric) => metric.key === "skinTemperature")
         .map((metric) =>
           sourcePicker(
@@ -231,7 +235,7 @@ export function ActivityMetricsCharts({
             points.some((point) => point.skinTemperature != null),
           ),
         )}
-      {points.some((point) => point.skinTemperature != null) && (
+      {visible("skinTemperature") && points.some((point) => point.skinTemperature != null) && (
         <LineChart
           data={points.flatMap((point) =>
             point.skinTemperature != null && point.skinTemperatureRecordedAt != null
@@ -252,10 +256,10 @@ export function ActivityMetricsCharts({
           {...scrub}
         />
       )}
-      {sourceControls
+      {visibleControls
         .filter((metric) => metric.key === "altitude")
         .map((metric) => sourcePicker(metric, false, hasAltitude))}
-      {hasAltitude && (
+      {visible("altitude") && hasAltitude && (
         <AreaChart
           data={points.map((point) => ({
             recordedAt: point.recordedAt,

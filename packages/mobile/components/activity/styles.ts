@@ -32,6 +32,10 @@ export const statsStyles = StyleSheet.create({
 });
 
 export const styles = StyleSheet.create({
+  actionsTrigger: { minHeight: 44, minWidth: 44, alignItems: "center", justifyContent: "center" },
+  actionsLabel: { fontSize: 26, color: colors.accent },
+  actionsList: { gap: 8 },
+  actionsHidden: { display: "none" },
   container: {
     flex: 1,
     backgroundColor: colors.background,

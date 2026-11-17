@@ -1,11 +1,11 @@
 import { colors } from "../theme";
 
 const tabIconNames = {
-  index: { focused: "today", unfocused: "today-outline" },
-  recovery: { focused: "pulse", unfocused: "pulse-outline" },
-  strain: { focused: "barbell", unfocused: "barbell-outline" },
+  index: { focused: "home", unfocused: "home-outline" },
+  training: { focused: "barbell", unfocused: "barbell-outline" },
   activities: { focused: "map", unfocused: "map-outline" },
-  food: { focused: "nutrition", unfocused: "nutrition-outline" },
+  "sleep-overview": { focused: "moon", unfocused: "moon-outline" },
+  more: { focused: "ellipsis-horizontal-circle", unfocused: "ellipsis-horizontal" },
 } as const;
 
 export type TabRouteName = keyof typeof tabIconNames;

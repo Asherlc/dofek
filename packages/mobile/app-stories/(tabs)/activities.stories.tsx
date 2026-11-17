@@ -513,6 +513,14 @@ export const Default: Story = {
   play: async ({ canvasElement }) => checkFullWidthMap(canvasElement, "Morning Ride"),
 };
 
+export const TrainingTimeExpanded: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: /^Training time/ }));
+    await expect(canvas.getByText("Training time (minutes per day)")).toBeVisible();
+  },
+};
+
 export const SelectionMode: Story = {
   parameters: { originProvider: "whoop" },
   play: async ({ canvasElement, userEvent }) => {

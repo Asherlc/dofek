@@ -20,7 +20,7 @@ function formatDisplayDate(dateString: string): string {
   return `${month}/${day}/${year}`;
 }
 
-export default function DailyHeartRateScreen() {
+export default function DailyHeartRateScreen({ embedded = false }: { embedded?: boolean } = {}) {
   const [date, setDate] = useState(() => formatDateYmd());
   const today = useTodayQueryDate();
 
@@ -43,7 +43,9 @@ export default function DailyHeartRateScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ ...rootStackScreenOptions, title: "Heart Rate by Source" }} />
+      {embedded ? null : (
+        <Stack.Screen options={{ ...rootStackScreenOptions, title: "Heart Rate by Source" }} />
+      )}
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* Date Navigator */}
         <View style={styles.dateNav}>
