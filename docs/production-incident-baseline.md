@@ -39051,3 +39051,36 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Approved exception / remaining risk:** The user declined a patch and explicitly approved a single advisory exception for GHSA-fc5q-39xc-vjpf. This accepts the unresolved ReDoS risk to unblock CI and the canonical release; it does not repair or mitigate picomatch. All other audit findings and existing dependency-security regressions retain enforcement. Production input reachability is unverified. See the [risk acceptance and removal criteria](dependency-security-patches.md#accepted-picomatch-advisory-exception). No manual server change was applied.
 - **Local validation:** The production audit reproduced the high-severity failure before the exception, then exited successfully with exactly one high finding ignored. Frozen installation, existing dependency-security regressions, full lint and recursive workspace typechecks passed. No package version, lockfile or runtime patch changed; hosted checks and release verification remain pending.
 - **Follow-up / retrospective:** Validate the exception and repeat the canonical release only after review and merge approval. Adopt a published fixed release across every affected production dependency path and remove the exception after exploit and compatibility verification. A green audit is a point-in-time result and, with this exception, does not establish picomatch safety. Verify that a recommended patched version is actually published before selecting an upgrade. No retry or timeout tuning can repair a vulnerable dependency.
+
+## 2026-11-17 — Pipedash hostname change blocked by mismatched release revisions
+
+- **Symptoms and impact.** [PR #3387](https://github.com/Asherlc/dofek/pull/3387)
+  merged as `4b3e596c` to move Pipedash to `pipedash.dofek.fit`. An earlier
+  automatic server rollout failed its final Pipedash check. Its pending
+  receipt `7866654393` blocked the [rename release's admission](https://github.com/Asherlc/dofek/actions/runs/44180627975/job/134383772120).
+  The old dashboard served requests until the DNS cutover. The new dashboard
+  returned 404 while the new route was being installed.
+- **Root cause and evidence.** [The failed job](https://github.com/Asherlc/dofek/actions/runs/44179111488/job/134379933047)
+  ran **Verify Pipedash health and authentication** with the hardcoded host
+  from control revision `e0ed27f2`. The deployed source `649e8c6e` still defined
+  `actions.dofek.fit`. The first fatal error was
+  `getaddrinfo ENOTFOUND pipedash.dofek.fit`. [PR #3388](https://github.com/Asherlc/dofek/pull/3388)
+  makes the check use the router from the deployed source. The mixed revision
+  regression failed before the change, and 132 focused workflow tests passed
+  after it, along with actionlint, lint, and recursive typechecks.
+- **Recovery.** Read-only checks confirmed that every live web and worker task
+  matched the failed receipt. The guarded [recovery](https://github.com/Asherlc/dofek/actions/runs/44185571665/attempts/2)
+  selected its validated descendant `4b3e596c`. Attempt 1 stopped before admission:
+  GHCR returned HTTP 403 while downloading a cache layer after a registry
+  authorizer timeout. An authenticated read of the same layer then returned
+  HTTP 200 and its expected digest. Attempt 2 reran the failed scan and passed.
+  The [Terraform apply](https://github.com/Asherlc/dofek/actions/runs/44190141767)
+  renamed the one existing DNS record after guarded admission.
+- **Verification and retrospective.** Recovery verified the stack, CDC,
+  dashboard health, and access controls. Receipt `7868022809` recorded success
+  at 22:53:23 UTC, and `7866654393` became inactive one second later. The new
+  hostname served the original saved views and all 40 Dofek workflows, with
+  anonymous and incorrect-password requests receiving HTTP 401. Deployment
+  checks whose target varies by source should read the checked-out target
+  configuration. Keep exact-source health checks and guarded receipt recovery
+  in the release runbook. No retry or timeout settings changed.
