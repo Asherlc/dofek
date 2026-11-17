@@ -1,5 +1,34 @@
 # Production Incident Baseline
 
+## 2026-11-17 — Kaya and OpenBeta failures interrupt climbing catalogue refresh
+
+- **Symptoms / impact:** A production background refresh failed at 19:46:33
+  UTC with both Kaya and OpenBeta errors. The failure affected optional
+  catalogue enrichment. The worker had one attempt per refresh, and the
+  service cached an error with any successful results from the same search,
+  or preserved the existing cached results when no source succeeded. Sentry
+  recorded no user identity for this event, so user impact is unquantified.
+  [Sentry event](https://east-bay-software.sentry.io/issues/7853079286/events/e29c243a97374bfa8c12ed40362e71ab/)
+  · [Deployed refresh code](https://github.com/Asherlc/dofek/blob/970b1117b48b7a059b957399536f1b2e89140784/src/climbing-catalogue.ts#L54-L112)
+  · [Queue settings](https://github.com/Asherlc/dofek/blob/970b1117b48b7a059b957399536f1b2e89140784/src/jobs/queues.ts#L755-L770)
+- **Evidence / cause:** OpenBeta's GraphQL climb-detail request returned HTTP
+  `502`. Kaya returned HTTP `200` for the public search requests in the
+  breadcrumbs, and the adapter threw `Kaya catalogue returned an invalid or
+  rejected search response; retry later.` That branch handles both an invalid
+  response shape and a GraphQL error. The event does not distinguish them.
+  Axiom `dofek-logs` recorded seven `Job failed` entries involving OpenBeta
+  `502` from 19:46:33 through 19:50:12 UTC, including the combined failure.
+  The causes inside the providers remain unresolved.
+  [Kaya response check](https://github.com/Asherlc/dofek/blob/970b1117b48b7a059b957399536f1b2e89140784/packages/climbing-catalogue/src/kaya.ts#L354-L367)
+- **Mitigation / validation:** A read-only OpenBeta GraphQL health query
+  returned HTTP `200` from the workstation. Recovery of the affected
+  climb-detail request and completion of the failed refresh remain unverified.
+  The investigation made no production changes or manual retries.
+- **Retrospective / follow-up:** The Sentry event and worker logs confirmed
+  the provider failures and their scope. If Kaya public search failures recur,
+  distinguish GraphQL error responses from response schema failures in
+  telemetry without recording query text, response bodies, or credentials.
+
 ## 2026-11-16 — HealthKit permission request interrupted by backgrounding
 
 - **Symptoms / impact:** DOFEK-MOBILE-2P recorded one failed Apple Health Connect
