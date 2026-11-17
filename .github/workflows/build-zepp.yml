@@ -1,4 +1,4 @@
-name: Build Zepp
+name: Reusable / Build Zepp
 
 on:
   workflow_call:

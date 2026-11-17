@@ -115,6 +115,24 @@ export class WhoopBleDiagnostics {
               buffers.reservationWriteSummary.measurementFailureCount,
           }
         : {}),
+      ...(buffers.lastUploadOutcome
+        ? {
+            uploadOutcomeStage: buffers.lastUploadOutcome.stage,
+            uploadOutcomeAt: buffers.lastUploadOutcome.occurredAt,
+            uploadBatchIdentity: buffers.lastUploadOutcome.batchIdentity,
+            uploadStream: buffers.lastUploadOutcome.stream,
+            uploadRoute: buffers.lastUploadOutcome.route,
+            uploadBatchSampleCount: buffers.lastUploadOutcome.batchSampleCount,
+            uploadAttempt: buffers.lastUploadOutcome.attempt,
+            uploadTaskIdentifier: buffers.lastUploadOutcome.taskIdentifier,
+            uploadTransportPath: buffers.lastUploadOutcome.transportPath,
+            uploadHttpStatus: buffers.lastUploadOutcome.statusCode,
+            uploadResponseOriginValidated: buffers.lastUploadOutcome.responseOriginValidated,
+            uploadAcknowledgmentValidated: buffers.lastUploadOutcome.acknowledgmentValidated,
+            uploadOutboxState: buffers.lastUploadOutcome.outboxState,
+            uploadSiblingTaskPending: buffers.lastUploadOutcome.siblingTaskPending,
+          }
+        : {}),
       http5xxResponseCount: buffers.http5xxResponseCount,
     });
   }

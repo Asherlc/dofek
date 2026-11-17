@@ -1,4 +1,4 @@
-name: Database Backup Freshness
+name: Maintenance / Backup freshness
 
 on:
   schedule:

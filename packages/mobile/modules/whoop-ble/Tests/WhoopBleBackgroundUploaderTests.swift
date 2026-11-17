@@ -325,7 +325,7 @@ extension WhoopBleBackgroundUploaderTests {
         let identity = batch.generation + "." + batch.id
         try settle(uploader)
         transport.tasks = []
-        transport.onCompletion?(identity, 401, Data(), (nil, URL(string: "https://example.com/api/trpc/whoopBleSync.pushRealtimeData")), nil)
+        transport.onCompletion?(identity, 401, Data(), (nil, URL(string: "https://example.com/api/trpc/whoopBleSync.pushRealtimeData"), nil, nil), nil)
         try settle(uploader)
         XCTAssertTrue(transport.requests.isEmpty)
         XCTAssertEqual(try uploader.diagnostics()["blockedUploadStreams"] as? [String], ["realtime"])
@@ -484,7 +484,7 @@ extension WhoopBleBackgroundUploaderTests {
         let identity = try XCTUnwrap(transport.requests.first?.2)
         transport.tasks.removeAll()
         transport.onCompletion?(identity, 200, Data("{\"result\":{\"data\":{\"inserted\":1}}}".utf8),
-                                (transport.attempts[identity], URL(string: "https://other.example/api/trpc/whoopBleSync.pushRealtimeData")), nil)
+                                (transport.attempts[identity], URL(string: "https://other.example/api/trpc/whoopBleSync.pushRealtimeData"), nil, nil), nil)
         try settle(uploader)
         XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
         XCTAssertEqual(try store.pendingBatches().count, 1)

@@ -1,4 +1,4 @@
-name: Build Docker ML
+name: Build / ML image
 
 on:
   workflow_call:

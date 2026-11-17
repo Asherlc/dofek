@@ -34,7 +34,10 @@ enum WhoopBleUploadRuntime {
     }
 
     static func reportNativeError(_ error: Error) {
-        SentrySDK.capture(error: error)
+        let context = (error as NSError).userInfo[WhoopUploadTelemetry.contextKey] as? [String: Any]
+        SentrySDK.capture(error: error) { scope in
+            if let context { scope.setContext(value: context, key: "whoop_upload") }
+        }
     }
 
     private static func reportNativeUploadOutcome(_ outcome: WhoopUploadOutcome) {

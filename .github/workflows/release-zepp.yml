@@ -1,4 +1,4 @@
-name: Release Dofek Zepp (Zepp Store)
+name: Release / Zepp store
 
 on:
   workflow_run:

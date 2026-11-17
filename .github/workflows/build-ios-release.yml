@@ -1,4 +1,4 @@
-name: Build iOS Release
+name: Reusable / Build iOS Release
 
 on:
   workflow_call:

@@ -1,4 +1,4 @@
-name: Cleanup PR R2 Artifacts
+name: Maintenance / PR artifacts
 
 on:
   pull_request:

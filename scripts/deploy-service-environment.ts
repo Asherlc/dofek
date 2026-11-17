@@ -25,6 +25,7 @@ const DEPLOY_SERVICE_NAMES = [
   "collector",
   "databaseOperations",
   "r2Operations",
+  "pipedash",
   "web",
   "webPreMigration",
   "worker",
@@ -46,6 +47,7 @@ export const DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES = {
   collector: "collector.env",
   databaseOperations: "database-operations.env",
   r2Operations: "r2-operations.env",
+  pipedash: "pipedash.env",
   web: "web.env",
   webPreMigration: "web-pre-migration.env",
   worker: "worker.env",
@@ -220,6 +222,10 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
   DeployServiceName,
   DeployServiceEnvironmentPolicy
 > = {
+  pipedash: {
+    allowedKeys: ["PIPEDASH_VAULT_PASSWORD", "PIPEDASH_GITHUB_TOKEN"],
+    requiredKeys: ["PIPEDASH_VAULT_PASSWORD", "PIPEDASH_GITHUB_TOKEN"],
+  },
   kafka: {
     allowedKeys: ["KAFKA_CLUSTER_ID", ...KAFKA_TIERED_STORAGE_KEYS],
     requiredKeys: ["KAFKA_CLUSTER_ID", ...KAFKA_TIERED_STORAGE_KEYS],
@@ -354,6 +360,7 @@ export interface DeployServiceEnvironmentPaths {
   collector: string;
   databaseOperations: string;
   r2Operations: string;
+  pipedash: string;
   web: string;
   webPreMigration: string;
   worker: string;
@@ -390,6 +397,7 @@ function resolvePaths(outputDirectory: string): DeployServiceEnvironmentPaths {
       DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.databaseOperations,
     ),
     r2Operations: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.r2Operations),
+    pipedash: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.pipedash),
     web: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.web),
     webPreMigration: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.webPreMigration),
     worker: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.worker),

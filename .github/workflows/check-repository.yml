@@ -1,4 +1,4 @@
-name: Check Repository
+name: Reusable / Check Repository
 
 on:
   workflow_call:

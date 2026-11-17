@@ -1,4 +1,4 @@
-name: Build Mobile Storybook
+name: Reusable / Build Mobile Storybook
 
 on:
   workflow_call:

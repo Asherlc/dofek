@@ -46,6 +46,42 @@ describe("WhoopBleDiagnostics", () => {
       }),
     );
   });
+  it("reports the last upload outcome with batch and acknowledgment correlation", () => {
+    const stats = makeWhoopCaptureStats();
+    Object.assign(stats.buffers, {
+      lastUploadOutcome: {
+        batchIdentity: "generation.batch",
+        stream: "imu",
+        route: "inertialMeasurementUnitSync.pushSamples",
+        stage: "outbox_retired",
+        statusCode: 200,
+        responseOriginValidated: true,
+        acknowledgmentValidated: true,
+        outboxState: "retired",
+        batchSampleCount: 500,
+        attempt: 4,
+        taskIdentifier: 2806,
+        transportPath: "background",
+        occurredAt: "2026-11-16T05:13:54.269Z",
+      },
+    });
+    new WhoopBleDiagnostics().snapshot(stats, "foreground", "active");
+    expect(logger.info).toHaveBeenCalledWith(
+      "whoop-ble",
+      "capture_snapshot",
+      expect.objectContaining({
+        uploadOutcomeStage: "outbox_retired",
+        uploadBatchIdentity: "generation.batch",
+        uploadStream: "imu",
+        uploadRoute: "inertialMeasurementUnitSync.pushSamples",
+        uploadTaskIdentifier: 2806,
+        uploadHttpStatus: 200,
+        uploadResponseOriginValidated: true,
+        uploadAcknowledgmentValidated: true,
+        uploadOutboxState: "retired",
+      }),
+    );
+  });
   it("replays unseen native events once with native time, flat metadata and unknown account provenance", () => {
     const diagnostics = new WhoopBleDiagnostics();
     const stats = makeWhoopCaptureStats();
