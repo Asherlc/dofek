@@ -9,7 +9,12 @@ import {
   catalogueCandidateSchema,
 } from "./contracts.ts";
 import { gpsCoordinatesSchema } from "./geometry.ts";
-import { catalogueNameMatch, catalogueSearchNames } from "./matching.ts";
+import {
+  catalogueLocalArea,
+  catalogueNameMatch,
+  catalogueSearchNames,
+  normalizeCatalogueName,
+} from "./matching.ts";
 
 const origin = "https://www.8a.nu";
 const api = "https://vlcapi.vertical-life.info";
@@ -170,6 +175,26 @@ function candidate(climb: Climb, externalId: number): CatalogueCandidate {
   });
 }
 
+function hitMatchesSeed(names: string[], recordedArea: string | null, hit: Climb): boolean {
+  // A hit supplies no aliases, and seed aliases are already in names, so a name
+  // comparison here is only ever exact or approximate.
+  const local = [hit.areaName, hit.cragName, hit.sectorName]
+    .filter((label): label is string => label != null && label !== "Unknown Sector")
+    .map((label) => normalizeCatalogueName(label));
+  const localAgrees = recordedArea !== null && local.includes(recordedArea);
+  if (
+    recordedArea !== null &&
+    !localAgrees &&
+    recordedArea !== normalizeCatalogueName(hit.countryName) &&
+    recordedArea !== normalizeCatalogueName(hit.countrySlug)
+  )
+    return false;
+  return names.some((name) => {
+    const match = catalogueNameMatch(name, { name: hit.zlaggableName });
+    return match === "exact" || (match === "approximate" && localAgrees);
+  });
+}
+
 /** Public Vertical-Life catalogue, using Dofek's existing 8a.nu provider identity. */
 export class VerticalLifeCatalogueAdapter implements ClimbingCatalogueAdapter {
   readonly providerId = "eight-a";
@@ -212,7 +237,7 @@ export class VerticalLifeCatalogueAdapter implements ClimbingCatalogueAdapter {
         crag.cragSlug !== climb.cragSlug ||
         crag.countrySlug !== climb.countrySlug ||
         crag.category !== climb.category ||
-        (climb.areaSlug != null && crag.areaSlug !== climb.areaSlug)
+        (climb.areaSlug != null && crag.areaSlug != null && crag.areaSlug !== climb.areaSlug)
       )
         throw new Error("Vertical-Life catalogue crag identity does not match the climb's parent.");
       let parent: z.infer<typeof areaSchema> | undefined;
@@ -246,7 +271,10 @@ export class VerticalLifeCatalogueAdapter implements ClimbingCatalogueAdapter {
     return candidates;
   }
 
-  async search(seed: CatalogueSeed): Promise<CatalogueSearchResult> {
+  async search(
+    seed: CatalogueSeed,
+    recordedLocations: CatalogueSeed["locations"] = seed.locations,
+  ): Promise<CatalogueSearchResult> {
     if (seed.providerId === this.providerId && seed.sourceUrl) {
       const url = URL.parse(seed.sourceUrl);
       if (
@@ -272,12 +300,11 @@ export class VerticalLifeCatalogueAdapter implements ClimbingCatalogueAdapter {
         complete: true,
       };
     }
-    const pending = catalogueSearchNames(seed).map((name) => ({
-      name,
-      page: 0,
-      seen: new Set<number>(),
-    }));
+    const names = catalogueSearchNames(seed);
+    const pending = names.map((name) => ({ name, page: 0, seen: new Set<number>() }));
     if (!pending.length) return { candidates: [], complete: false };
+    const recorded = catalogueLocalArea(recordedLocations)?.name;
+    const recordedArea = recorded ? normalizeCatalogueName(recorded) || null : null;
     const candidates = new Map<number, Climb>();
     let partial = false;
     for (let request = 0; request < 3 && pending.length; request++) {
@@ -299,17 +326,14 @@ export class VerticalLifeCatalogueAdapter implements ClimbingCatalogueAdapter {
           continue;
         }
         current.seen.add(item.zlaggableId);
-        if (
+        const identified =
           (seed.providerId === this.providerId && seed.externalId === String(item.zlaggableId)) ||
           seed.references?.some(
             (reference) =>
               reference.providerId === this.providerId &&
               reference.externalId === String(item.zlaggableId),
-          ) ||
-          [seed.name, ...(seed.aliases ?? [])].some(
-            (name) => catalogueNameMatch(name, { name: item.zlaggableName }) !== null,
-          )
-        )
+          );
+        if (identified || hitMatchesSeed(names, recordedArea, item))
           candidates.set(item.zlaggableId, item);
       }
       current.page++;

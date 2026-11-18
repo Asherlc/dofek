@@ -115,6 +115,7 @@ describe("ClimbingCatalogueSearch", () => {
               },
             ];
       const queries: CatalogueSeed[] = [];
+      const recordedArgs: (CatalogueSeed["locations"] | undefined)[] = [];
       const input = { ...seed, locations: recordedLocations };
       const search = new ClimbingCatalogueSearch([
         {
@@ -126,14 +127,16 @@ describe("ClimbingCatalogueSearch", () => {
         },
         {
           providerId: "openbeta",
-          search: async (query) => {
+          search: async (query, recorded?: CatalogueSeed["locations"]) => {
             queries.push(query);
+            recordedArgs.push(recorded);
             return { candidates: [], complete: false };
           },
         },
       ]);
       const result = await search.search(input);
       expect(queries[0]?.locations).toEqual(scope === "area" ? nativeLocations : recordedLocations);
+      expect(recordedArgs).toEqual([recordedLocations]);
       expect(input.locations).toEqual(recordedLocations);
       expect(result[0]?.matches[0]?.candidate.locations).toEqual(nativeLocations);
     },

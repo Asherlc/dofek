@@ -136,5 +136,8 @@ export type CatalogueSourceResult = z.infer<typeof catalogueSourceResultSchema>;
 export type CatalogueMatch = CatalogueSourceResult["matches"][number];
 export interface ClimbingCatalogueAdapter {
   readonly providerId: CatalogueProviderId;
-  search(seed: CatalogueSeed): Promise<CatalogueSearchResult>;
+  search(
+    seed: CatalogueSeed,
+    recordedLocations?: CatalogueSeed["locations"],
+  ): Promise<CatalogueSearchResult>;
 }

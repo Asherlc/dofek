@@ -97,9 +97,12 @@ See the [matching implementation](src/matching.ts) and its [regressions](src/mat
 
 ## Provider adapters and transport
 
-Each adapter implements `ClimbingCatalogueAdapter`: a `providerId` and
-`search(seed): Promise<CatalogueSearchResult>`. Use a subset of providers or
-supply your own adapter for one of the supported provider namespaces.
+Each adapter implements `ClimbingCatalogueAdapter` with a `providerId` and
+`search(seed, recordedLocations?): Promise<CatalogueSearchResult>`. The optional
+locations preserve the logged ancestry when native lookup enriches the search
+seed. Direct adapter calls can omit them. Use a subset of providers or supply
+your own adapter for one of the supported provider namespaces.
+[Adapter contract](src/contracts.ts) · [Search implementation](src/search.ts)
 
 | Subpath | Export | Constructor |
 | --- | --- | --- |
@@ -119,10 +122,18 @@ HTTP 200. The error contains a safe message for the caller's retry policy.
 Vertical-Life uses the `eight-a` provider namespace and public outdoor route
 search. Native detail lookup uses an 8a.nu route URL and validates its unified
 ID against the recorded ID. Discovery shares a three-page budget across names;
-incomplete results remain suggestions. Coordinates, wall angles and tags are
-left unknown when absent from the response. The transport reads the
-[collection search](https://vlcapi.vertical-life.info/collection/v1/web/search?query=Midnight%20Lightning&pageIndex=0&pageSize=5&entityTypes%5B%5D=3)
-and [outdoor detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/bouldering/united-states/camp-4/sectors/unknown-sector-5dd83/routes/midnight-lightning)
+incomplete results remain suggestions. Hits are screened before parent hydration:
+an exact name or alias passes unless a known recorded area matches no hit label,
+country name or slug, while a fuzzy name needs a matching non-country local area;
+native IDs, explicit references and direct URLs remain eligible on their own.
+A verified crag may omit the broader area slug, but a conflicting non-null slug
+or wrong crag identity is rejected. Coordinates, wall angles and tags are
+left unknown when absent from the response. The transport reads the observed
+[collection search](https://vlcapi.vertical-life.info/collection/v1/web/search?query=Midnight%20Lightning&pageIndex=0&pageSize=5&entityTypes%5B%5D=3),
+[outdoor detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/bouldering/united-states/camp-4/sectors/unknown-sector-5dd83/routes/midnight-lightning),
+[Friendly search](https://vlcapi.vertical-life.info/collection/v1/web/search?query=Friendly&pageIndex=0&pageSize=20&entityTypes%5B%5D=3),
+[Friendly route detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/sportclimbing/lebanon/beit-mery/sectors/sector-6/routes/friendly-fire)
+and [Friendly crag detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/sportclimbing/lebanon/beit-mery)
 contracts used by the [deployed web client](https://www.8a.nu/_nuxt/BvPRvgJk.js).
 The search record's `zlaggableId` matches the detail record's `unifiedId`;
 the detail record's separate `zlaggableId` is not the catalogue identity

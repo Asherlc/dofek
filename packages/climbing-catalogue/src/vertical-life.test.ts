@@ -228,9 +228,9 @@ describe("VerticalLifeCatalogueAdapter", () => {
     { topFlags: [{ name: "technical", count: -1 }] },
     { location: { latitude: 100, longitude: 0 } },
   ])("rejects mismatched or malformed crags %j", async (overrides) => {
-    await expect(
-      new VerticalLifeCatalogueAdapter(client([page()], () => crag(overrides))).search(seed),
-    ).rejects.toThrow();
+    const fetchFn = client([page()], () => crag(overrides));
+    await expect(new VerticalLifeCatalogueAdapter(fetchFn).search(seed)).rejects.toThrow();
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
   it.each([{ areaSlug: "another-area" }, { countrySlug: "canada" }, { unifiedId: null }])(
@@ -387,11 +387,12 @@ describe("VerticalLifeCatalogueAdapter", () => {
     expect(found.candidates[0]?.externalId).toBe("36615");
   });
 
-  it("retains an explicitly referenced Vertical-Life climb despite a changed name", async () => {
+  it("retains an explicitly referenced Vertical-Life climb despite a changed name and area", async () => {
     const found = await new VerticalLifeCatalogueAdapter(
       client([page([{ ...row, zlaggableName: "Renamed completely" }])]),
     ).search({
       ...seed,
+      locations: [{ externalId: null, name: "Another Area", scope: "area", coordinates: null }],
       references: [{ providerId: "eight-a", externalId: "36615" }],
     });
     expect(found.candidates[0]?.externalId).toBe("36615");
@@ -540,5 +541,78 @@ describe("VerticalLifeCatalogueAdapter", () => {
         seed,
       ),
     ).rejects.toThrow(/redirect/);
+  });
+
+  it.each([
+    { name: "Friendly", area: null, reason: "a fuzzy name with no recorded area" },
+    {
+      name: "Friendly",
+      area: "United States of America",
+      reason: "a fuzzy name with only a country label",
+    },
+    {
+      name: "Friendly fire",
+      area: "Another Area",
+      reason: "an exact name with a different known area",
+    },
+  ])("filters $reason without requesting a crag", async ({ name, area }) => {
+    const fetchFn = client([page([{ ...row, zlaggableName: "Friendly fire" }])]);
+    const found = await new VerticalLifeCatalogueAdapter(fetchFn).search({
+      ...seed,
+      name,
+      locations: area ? [{ externalId: null, name: area, scope: "area", coordinates: null }] : [],
+    });
+    expect(found.candidates).toEqual([]);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a declared alias when the primary name does not match", async () => {
+    const found = await new VerticalLifeCatalogueAdapter(
+      client([page([]), page([{ ...row, zlaggableName: "Friendly fire" }])]),
+    ).search({ ...seed, aliases: ["Friendly fire"] });
+    expect(found.candidates[0]?.externalId).toBe("36615");
+  });
+
+  it("accepts a verified crag whose detail omits the hit's broader area", async () => {
+    const fetchFn = client([page([row])], (url) =>
+      url.pathname.includes("/areas/") ? region() : crag({ areaSlug: null, areaName: null }),
+    );
+    const found = await new VerticalLifeCatalogueAdapter(fetchFn).search(seed);
+    expect(found.candidates[0]?.locations).toHaveLength(2);
+    expect(found.candidates[0]?.locations[1]).toMatchObject({
+      externalId: "5766",
+      name: "Camp 4",
+      context: { url: "https://www.8a.nu/crags/bouldering/united-states/camp-4" },
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("admits a fuzzy name hit when the recorded local area matches a hit label case-insensitively", async () => {
+    const found = await new VerticalLifeCatalogueAdapter(
+      client([page([{ ...row, zlaggableName: "Midnight Lightening" }])]),
+    ).search({
+      ...seed,
+      locations: [{ externalId: null, name: "YOSEMITE (CA)", scope: "area", coordinates: null }],
+    });
+    expect(found.candidates).toHaveLength(1);
+  });
+
+  it("treats a punctuation-only recorded area as unknown", async () => {
+    const found = await new VerticalLifeCatalogueAdapter(client([page([row])])).search({
+      ...seed,
+      locations: [{ externalId: null, name: "---", scope: "area", coordinates: null }],
+    });
+    expect(found.candidates).toHaveLength(1);
+  });
+
+  it("prefers the recorded local area over a different current label for an exact hit", async () => {
+    const found = await new VerticalLifeCatalogueAdapter(client([page([row])])).search(
+      {
+        ...seed,
+        locations: [{ externalId: null, name: "Another Area", scope: "area", coordinates: null }],
+      },
+      [{ externalId: null, name: "Yosemite (CA)", scope: "area", coordinates: null }],
+    );
+    expect(found.candidates.map((candidate) => candidate.externalId)).toEqual(["36615"]);
   });
 });

@@ -20,9 +20,15 @@
   · [Route detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/sportclimbing/lebanon/beit-mery/sectors/sector-6/routes/friendly-fire)
   · [Crag detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/sportclimbing/lebanon/beit-mery)
   · [Deployed identity check](https://github.com/Asherlc/dofek/blob/4d8f11c2644ec36a3ae75ae020508eac7eda7690/packages/climbing-catalogue/src/vertical-life.ts#L205-L217)
-- **Follow-up.** The issue remains open. Evaluate using the crag detail as the
-  source for missing area context after verifying the crag's identity. Cover
-  this response pair and genuine parent conflicts with adapter regressions.
+- **Fix.** Screen 8a.nu name-search hits using the recorded area name before
+  fetching crag details. Fuzzy names require agreement with a local area label.
+  Crag detail can omit the broader area slug when the core crag identity
+  agrees. Differing non-null area slugs still trigger the identity error.
+  [Adapter](../packages/climbing-catalogue/src/vertical-life.ts)
+- **Validation and follow-up.** Replaying the public responses confirms that
+  `Friendly` skips the fuzzy hit and that an exact `Friendly fire` lookup
+  retains the verified crag without the search-only area slug. The production
+  issue remains open pending deployment and a subsequent refresh.
 
 ## 2026-11-18 — TestFlight upload used the iOS 26.5 SDK
 
