@@ -406,6 +406,11 @@ publication. Search becomes available after the initial backfill completes.
 Keep both erasure credentials configured while the service holds activity data,
 including periods when search and publishing are paused.
 
+Public place lookup on Activities uses `GEOAPIFY_API_KEY` in Infisical
+production. The environment renderer passes it to the web service. Verify
+setup by looking up a qualified place such as Oakland, California and selecting
+the matching result. [Geoapify API key setup](https://apidocs.geoapify.com/docs/geocoding/#getting-an-api-key)
+
 ### Flow Diagram
 
 ```text

@@ -263,6 +263,7 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
   },
   web: {
     ...WEB_ENVIRONMENT_POLICY,
+    allowedKeys: [...WEB_ENVIRONMENT_POLICY.allowedKeys, "GEOAPIFY_API_KEY"],
     activitySearchKeys: ["ACTIVITY_SEARCH_ENABLED", "ACTIVITY_SEARCH_READ_URL"],
   },
   webPreMigration: {

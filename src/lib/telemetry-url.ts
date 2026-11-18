@@ -10,6 +10,13 @@ export const TELEMETRY_REDACTED_QUERY_PARAMS = [
   "token",
   "session",
   "code",
+  "apiKey",
+  "input",
+  "param_activityIds",
+  "param_latitude",
+  "param_longitude",
+  "param_cursorId",
+  "param_cursorStartedAt",
 ];
 
 const sensitiveQueryNames = new Set(
@@ -19,9 +26,12 @@ const sensitiveQueryNames = new Set(
 export function redactTelemetryQuery(query: string): string {
   const prefix = query.startsWith("?") ? "?" : "";
   const params = new URLSearchParams(query);
+  const names = new Set(params.keys());
+  const hasApiKey = [...names].some((name) => name.toLowerCase() === "apikey");
   let changed = false;
-  for (const name of new Set(params.keys())) {
-    if (sensitiveQueryNames.has(name.toLowerCase())) {
+  for (const name of names) {
+    const normalized = name.toLowerCase();
+    if (sensitiveQueryNames.has(normalized) || (hasApiKey && normalized === "text")) {
       params.set(name, "REDACTED");
       changed = true;
     }
