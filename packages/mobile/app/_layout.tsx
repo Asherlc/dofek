@@ -1,9 +1,18 @@
 import * as Sentry from "@sentry/react-native";
 import { QueryClientProvider } from "@tanstack/react-query";
+import * as Device from "expo-device";
 import { Stack, usePathname, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  AppState,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AccountDeletionStatusScreen } from "../components/AccountDeletionStatusScreen";
 import {
@@ -604,9 +613,12 @@ function AuthGate() {
       <TelemetryRouteSync isAuthenticated isLoading={false} />
       <HealthKitManualSyncProvider controller={manualSyncController}>
         <MobileQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
-          {backgroundSyncReady && userId && sessionToken && (
-            <WhoopBleSyncManager userId={userId} token={sessionToken} serverURL={serverUrl} />
-          )}
+          {(Platform.OS !== "ios" || Device.isDevice) &&
+            backgroundSyncReady &&
+            userId &&
+            sessionToken && (
+              <WhoopBleSyncManager userId={userId} token={sessionToken} serverURL={serverUrl} />
+            )}
           {backgroundSyncReady && <BleHeartRateSyncManager trpcClient={trpcClient} />}
           <Stack screenOptions={rootStackScreenOptions}>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

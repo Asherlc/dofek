@@ -19,7 +19,7 @@ struct DofekWatchApp: App {
     )
 
     init() {
-        #if canImport(Sentry)
+        #if !targetEnvironment(simulator) && canImport(Sentry)
         if let sentryDsn = Bundle.main.object(forInfoDictionaryKey: "SentryDsn") as? String,
            !sentryDsn.isEmpty {
             SentrySDK.start { options in

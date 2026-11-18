@@ -7,6 +7,15 @@ import {
   enableCollectionNotifications,
 } from "../modules/background-refresh";
 
+// Suite-local, hoisted so the mock factory keeps one mutable object across
+// vi.resetModules(); tests flip isDevice to exercise the simulator path.
+const deviceMock = vi.hoisted(() => ({ isDevice: true }));
+vi.mock("expo-device", () => ({
+  get isDevice() {
+    return deviceMock.isDevice;
+  },
+}));
+
 const { mockRegisterQueryLifecycle, mockCleanupQueryLifecycle } = vi.hoisted(() => {
   const cleanup = vi.fn();
   return { mockRegisterQueryLifecycle: vi.fn(() => cleanup), mockCleanupQueryLifecycle: cleanup };
@@ -355,14 +364,18 @@ mockCreateClient.mockImplementation(() => ({
   },
 }));
 
-async function importRootLayout() {
+async function importRootLayout(platformOS: "ios" | "android" | "web" = "ios") {
   vi.resetModules();
+  const { Platform } = await import("react-native");
+  Platform.OS = platformOS;
   return (await import("../app/_layout")).default;
 }
 
 describe("RootLayout background cleanup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("__DEV__", true);
+    deviceMock.isDevice = true;
     mockManualSyncControllers.length = 0;
     mockUseWhoopBleSync.mockReset();
     mockGetRequestStatus.mockResolvedValue("shouldRequest");
@@ -411,6 +424,37 @@ describe("RootLayout background cleanup", () => {
     );
     rendered.unmount();
   });
+
+  it.each([true, false])(
+    "does not start automatic WHOOP BLE sync on a simulator (__DEV__=%s)",
+    async (isDev) => {
+      vi.stubGlobal("__DEV__", isDev);
+      deviceMock.isDevice = false;
+      const RootLayout = await importRootLayout();
+      const rendered = render(<RootLayout />);
+
+      await waitFor(() => expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce());
+      expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
+      // Unrelated startup remains active on the simulator.
+      expect(mockUseBleHeartRateSync).toHaveBeenCalled();
+      expect(mockCreateRefreshDiagnostics).toHaveBeenCalledOnce();
+      rendered.unmount();
+    },
+  );
+
+  it.each(["android", "web"] as const)(
+    "starts automatic WHOOP BLE sync on %s even when the device reports an emulator",
+    async (platformOS) => {
+      deviceMock.isDevice = false;
+      const RootLayout = await importRootLayout(platformOS);
+      const rendered = render(<RootLayout />);
+
+      await waitFor(() => expect(mockUseWhoopBleSync).toHaveBeenCalled());
+      // Simulator-only suppression must not change Android/Web behavior.
+      expect(mockUseBleHeartRateSync).toHaveBeenCalled();
+      rendered.unmount();
+    },
+  );
 
   it("keeps WHOOP owned by its mounted hook when the auth cleanup nonce changes", async () => {
     const { useWhoopBleSync } =

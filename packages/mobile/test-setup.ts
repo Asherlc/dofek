@@ -45,6 +45,11 @@ vi.mock("expo-constants", () => ({
   default: { platform: { ios: { buildNumber: "test-build" } } },
 }));
 
+// ── expo-device mock ────────────────────────────────────────────────
+// Default to a physical device so existing tests exercise the device path.
+// Simulator regressions override this with a suite-local mock.
+vi.mock("expo-device", () => ({ isDevice: true }));
+
 vi.mock("expo-crypto", () => ({
   randomUUID: vi.fn(() => crypto.randomUUID()),
 }));

@@ -50,6 +50,17 @@ test("configures cleanup attribution in the existing native Sentry startup", asy
   expect(result).toContain("WhoopBleModule.configureCleanupLogAttribution(options)");
 });
 
+test("guards the native Sentry startup and cleanup attribution on simulators", async () => {
+  const result = await transform(delegate);
+  expect(result).toContain(
+    "  #if !targetEnvironment(simulator)\n" +
+      "  RNSentrySDK.start { options in\n" +
+      "    WhoopBleModule.configureCleanupLogAttribution(options)\n" +
+      "  }\n" +
+      "  #endif",
+  );
+});
+
 test("composes with Sentry's native initialization mod", async () => {
   const result = await transform(
     "import Expo\nclass AppDelegate {\n  func application() -> Bool {\n    return true\n  }\n}\n",

@@ -344,6 +344,22 @@ software-only flows; use physical devices for BLE and motion validation. Expo
 lists current simulator hardware limitations here:
 <https://docs.expo.dev/workflow/ios-simulator/#limitations>.
 
+On Apple simulators, both Debug development builds and Release audits, the app
+skips automatic WHOOP BLE sync startup and Sentry. This covers the JavaScript
+client and native SDK on iOS, and native Sentry on watchOS. It stops local
+simulator work from creating Sentry issues. The JavaScript guards use
+`Platform.OS` and Expo's
+[`Device.isDevice`](https://docs.expo.dev/versions/latest/sdk/device/#deviceisdevice),
+which is `false` in a Simulator and `true` on web and physical devices. Only iOS
+Simulators opt out. Local logs, PostHog, and OTLP keep working. Physical devices
+keep their normal setup in Debug and Release. The native guards are compiled
+into the binary through Swift's
+[`targetEnvironment(simulator)`](https://docs.swift.org/latest/documentation/the-swift-programming-language/statements/#Conditional-Compilation-Block)
+condition in the [Expo config plugin](./plugins/with-whoop-cleanup-logging.ts)
+and the [watch target](./targets/DofekWatch/DofekWatchApp.swift). To refresh them
+in an existing simulator installation, run `pnpm prebuild` and rebuild the
+native app.
+
 ### Signed Release simulator audit
 
 Use an embedded Release bundle when the goal is to audit production-like app UI
@@ -691,7 +707,9 @@ prior-account provenance, and cannot restore samples. See the
 [WHOOP diagnostic procedure](../../docs/whoop-ble-protocol.md#diagnosing-capture-upload-and-visibility)
 for fields, filters, raw/serving checks, and interpretation limits.
 
-`lib/telemetry.ts` always reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN`.
+`lib/telemetry.ts` reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN` on
+all platforms except iOS Simulators, where the Sentry client is skipped as
+described above. Local logs and the other telemetry destinations remain active.
 Exceptions also include the current Expo Router pathname in Sentry, PostHog, and
 OTLP context. UUID and numeric path segments are normalized to `:id`, so route
 context identifies the screen without copying record identifiers into telemetry.

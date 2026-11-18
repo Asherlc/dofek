@@ -61,6 +61,15 @@ vi.mock("expo-constants", () => ({
 }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "runtime-instance-id" }));
 
+// Suite-local, hoisted so the mock factory keeps one mutable object across
+// vi.resetModules(); tests flip isDevice to exercise the simulator path.
+const deviceMock = vi.hoisted(() => ({ isDevice: true }));
+vi.mock("expo-device", () => ({
+  get isDevice() {
+    return deviceMock.isDevice;
+  },
+}));
+
 const runtimeContext = {
   appVersion: "1.2.3",
   appBuild: "123",
@@ -111,6 +120,7 @@ type PostHogClientOptions = {
       unhandledRejections: boolean;
     };
   };
+  customAppProperties?: (properties: Record<string, unknown>) => Record<string, unknown>;
 };
 
 vi.mock("posthog-react-native", () => ({
@@ -199,6 +209,7 @@ describe("ios telemetry", () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.stubGlobal("__DEV__", true);
+    deviceMock.isDevice = true;
     constantsMock.platform = { ios: { buildNumber: "123" } };
     for (const key of Object.keys(posthogMocks.registeredProperties)) {
       delete posthogMocks.registeredProperties[key];
@@ -278,6 +289,85 @@ describe("ios telemetry", () => {
       }),
     ).toBe(0);
     expect(mocks.mockCaptureMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    "skips Sentry initialization on a simulator in __DEV__=%s builds",
+    async (isDev) => {
+      vi.stubGlobal("__DEV__", isDev);
+      deviceMock.isDevice = false;
+      process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+      process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+
+      const mod = await import("./telemetry");
+      mod.initTelemetry();
+
+      expect(mocks.mockInit).not.toHaveBeenCalled();
+      // The other telemetry destinations and local logging stay active so
+      // simulator failures remain observable without a Sentry client.
+      expect(mocks.mockLoggerProvider).toHaveBeenCalledOnce();
+      mod.logger.info("simulator", "startup");
+      expect(mocks.mockEmit).toHaveBeenCalledWith(
+        expect.objectContaining({ body: "[simulator] startup" }),
+      );
+      if (!isDev) {
+        expect(posthogMocks.mockPosthogConstructor).toHaveBeenCalledOnce();
+      }
+    },
+  );
+
+  it.each(["android", "web"] as const)(
+    "keeps Sentry initialized on %s even when the device reports an emulator",
+    async (platformOS) => {
+      vi.stubGlobal("__DEV__", false);
+      const { Platform } = await import("react-native");
+      Platform.OS = platformOS;
+      deviceMock.isDevice = false;
+      process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+      process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+
+      const mod = await import("./telemetry");
+      mod.initTelemetry();
+
+      // Only the iOS simulator suppresses Sentry; Android emulators and web
+      // keep the existing initialization behavior.
+      expect(mocks.mockInit).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("omits newly populated Expo Device app properties from PostHog", async () => {
+    vi.stubGlobal("__DEV__", false);
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+
+    const options = posthogMocks.mockPosthogConstructor.mock.calls[0]?.[1];
+    expect(options?.customAppProperties).toBeTypeOf("function");
+    expect(
+      options?.customAppProperties?.({
+        $app_build: "123",
+        $app_name: "Dofek",
+        $app_namespace: "com.dofek.app",
+        $app_version: "1.2.3",
+        $device_type: "Mobile",
+        $device_manufacturer: "Apple",
+        $device_name: "iPhone 16",
+        $os_name: "iOS",
+        $os_version: "18.0",
+        $is_emulator: false,
+        $locale: "en-US",
+        $timezone: "UTC",
+      }),
+    ).toEqual({
+      $app_build: "123",
+      $app_name: "Dofek",
+      $app_namespace: "com.dofek.app",
+      $app_version: "1.2.3",
+      $device_type: "Mobile",
+      $locale: "en-US",
+      $timezone: "UTC",
+    });
   });
 
   it("passes the bundled release and distribution to Sentry", async () => {
