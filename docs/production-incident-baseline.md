@@ -39226,6 +39226,44 @@ Local qualification and CI are separate from production throughput acceptance. T
   credential expiry with the first stream completion and capture the RSocket
   error or close reason before the SDK wraps it.
 
+## 2026-11-18 — WHOOP capture disk-write warnings recur on iOS
+
+- [DOFEK-MOBILE-2Q](https://east-bay-software.sentry.io/issues/7852012407/)
+  recorded three MetricKit disk-write warnings for one user on November 17–18.
+  Sentry tagged them with native builds `1794882574` (`5666ea479`) and
+  `1794972877` (`6882926ac`). The reports measured approximately 4.29 GB,
+  17.18 GB, and 1.07 GB written during their respective diagnostic periods.
+  The events recorded no crashed thread. Effects on capture or upload were
+  unverified. [Apple MetricKit write totals](https://developer.apple.com/documentation/metrickit/mxdiskwriteexceptiondiagnostic/totalwritescaused).
+- All three stacks pass from the WHOOP Bluetooth notification handler through
+  `WhoopBleBackgroundUploader.append` into a SQLite write-ahead log commit.
+  This is the capture path seen in the earlier
+  [DOFEK-MOBILE-27](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-27)
+  reports. Both reporting builds contain [PR #3188](https://github.com/Asherlc/dofek/pull/3188),
+  which grouped the streams from each notification into one durable transaction.
+  The store still commits synchronously for every notification that yields
+  samples. The relative contributions of notification frequency, pages written
+  per transaction, and checkpoint activity remain unmeasured on the device.
+  [Capture call site](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule+ConnectionManagerDelegate.swift#L137)
+  and [SQLite append](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleStore.swift#L162).
+- **Fix and verification.** SQLite writes complete pages to the WAL. A
+  1,000-notification replay using the queue schema produced 58–61% fewer WAL
+  bytes with 1 KiB pages versus 4 KiB pages. The native queue now uses 1 KiB
+  pages. The first open of an older queue rebuilds it in place with SQLite's
+  rollback journal and EXTRA synchronous mode, then restores WAL and FULL
+  synchronous mode. Native SQLite regressions verify lower WAL bytes, preserved
+  samples and reservations that were still in the WAL, preserved erasure state,
+  restart on either side of the rebuild, and retry after a reader releases the
+  WAL.
+  [SQLite WAL format](https://www.sqlite.org/fileformat2.html#wal_file_format) and
+  [SQLite database rebuilds](https://www.sqlite.org/lang_vacuum.html).
+- **Remaining risk.** A physical iPhone trace could not attach to the running
+  app. Keep the issue open until the rebuilt app is verified on hardware.
+  Compare writes per captured sample under sustained WHOOP capture and check
+  whether MetricKit warnings recur on a build with the fix. The first open of a
+  large older queue needs temporary free space for the rebuild.
+  [Apple disk-write profiling guidance](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
+
 ## 2026-11-18 — WHOOP uploads rejected during a failed web rollout
 
 - At 16:15:24 UTC a realtime WHOOP batch received HTTP 408 and stayed in the
