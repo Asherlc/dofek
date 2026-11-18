@@ -7,6 +7,14 @@ terraform {
     }
   }
   required_providers {
+    aiven = {
+      source  = "aiven/aiven"
+      version = "4.66.0"
+    }
+    opensearch = {
+      source  = "opensearch-project/opensearch"
+      version = "2.6.0"
+    }
     cloudflare = {
       source  = "cloudflare/cloudflare"
       version = "~> 5.0"

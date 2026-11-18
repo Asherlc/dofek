@@ -1,29 +1,13 @@
 import {
-  type ActivityDataState,
-  type ActivityMetric,
-  activityDataStateLabel,
-  formatActivityMetric,
-} from "@dofek/format/activity-data-state";
-import {
   formatDateForDisplay,
   formatDateYmd,
-  formatDurationMinutes,
   isToday,
   isYesterday,
   parseValidDate,
 } from "@dofek/format/format";
-import {
-  formatRecordLocalTime,
-  type RecordLocalTimeContext,
-} from "@dofek/format/record-local-time";
-import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
-import { providerSourceLabel } from "@dofek/providers/providers";
-import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { formatActivityTypeLabel } from "@dofek/training/training";
-import type { ActivityLocation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -34,6 +18,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -47,6 +32,11 @@ import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import { PaginationControls } from "../../components/PaginationControls";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import {
+  displayDuration,
+  displayRecordLocalTime,
+  formatActivityAccessibilityLabel,
+} from "../../lib/activity-list-presentation";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
@@ -62,120 +52,15 @@ const DATE_RANGE_OPTIONS = [
   { value: 12, label: "12 weeks" },
 ] as const;
 
-function sourceLocationLabel(location: ClimbingMapLocation): string {
-  return `${location.scope === "area" ? "Area location" : "Climb location"}${location.name ? `: ${location.name}` : ""} · ${providerSourceLabel(location.providerId)}`;
-}
-
-function displayRecordLocalTime(
-  startedAt: string,
-  localTimeContext: RecordLocalTimeContext,
-): string {
-  const localTime = formatRecordLocalTime(
-    startedAt,
-    localTimeContext,
-    "start",
-    undefined,
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
-  );
-  return localTime === "--" ? "Local time unavailable" : localTime;
-}
-
-function displayDuration(durationMin: number | null): string {
-  return durationMin === null ? "Duration unavailable" : formatDurationMinutes(durationMin);
-}
-
-function formatActivityAccessibilityLabel(
-  action: "Open" | "Select" | "Deselect",
-  activity: {
-    activityType: string;
-    primaryActivityType: string | null;
-    modality: string | null;
-    durationMin: number | null;
-    localTimeContext: RecordLocalTimeContext;
-    name: string | null;
-    startedAt: string;
-    distanceMeters: number | null;
-    distanceState: ActivityDataState;
-    elevationGainM: number | null;
-    elevationState: ActivityDataState;
-    location: ActivityLocation | null;
-    stats: ActivityMetric[];
-  },
-  units: UnitConverter,
-): string {
-  const activityTypeLabel = formatActivityTypeLabel(
-    activity.primaryActivityType ?? activity.activityType,
-  );
-  const labelParts = [
-    activity.name ?? activityTypeLabel,
-    displayRecordLocalTime(activity.startedAt, activity.localTimeContext),
-    displayDuration(activity.durationMin),
-  ];
-
-  if (activity.name !== null && activity.name !== activityTypeLabel) {
-    labelParts.push(activityTypeLabel);
-  }
-
-  const isIndoorCycling =
-    activity.activityType === "cycling" && isIndoorCyclingModality(activity.modality);
-  const hasRouteMetrics =
-    !isIndoorCycling &&
-    (activity.location?.kind === "recorded_gps" ||
-      activity.distanceState.status !== "missing" ||
-      activity.elevationState.status !== "missing");
-  if (hasRouteMetrics) {
-    const routeMetrics = [
-      formatActivityMetric(
-        "Distance",
-        activity.distanceMeters,
-        activity.distanceState,
-        (distanceMeters) => formatMeasurementText(units.formatDistance(distanceMeters / 1000)),
-      ),
-      formatActivityMetric(
-        "Elevation",
-        activity.elevationGainM,
-        activity.elevationState,
-        (elevationMeters) => formatMeasurementText(units.formatElevation(elevationMeters)),
-      ),
-    ];
-    for (const metric of routeMetrics) {
-      if (metric.status === "available") {
-        labelParts.push(`${metric.label} ${metric.value}`);
-      } else {
-        labelParts.push(
-          `${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`,
-        );
-      }
-    }
-  } else {
-    for (const metric of activity.stats) {
-      if (metric.status === "available") {
-        labelParts.push(`${metric.label} ${metric.value}`);
-      } else {
-        labelParts.push(
-          `${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`,
-        );
-      }
-    }
-  }
-
-  if (activity.location?.kind === "climbing_source") {
-    labelParts.push(
-      `Climbing source locations: ${activity.location.sourcePoints.map((point) => sourceLocationLabel(point.location)).join("; ")}`,
-    );
-  } else if (activity.location?.kind === "processing") {
-    labelParts.push("Processing map");
-  }
-
-  return `${action} ${labelParts.join(", ")}`;
-}
-
 export default function ActivitiesScreen() {
   const router = useRouter();
   const units = useUnitConverter();
   const endDate = useMemo(() => formatDateYmd(), []);
   const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
+  const [searchDraft, setSearchDraft] = useState("");
+  const [searchTitle, setSearchTitle] = useState<string>();
+  const searching = searchTitle !== undefined;
   const [selectMode, setSelectMode] = useState(false);
   const [selectedActivities, setSelectedActivities] = useState<Map<string, string>>(new Map());
   const selectedActivityIds = new Set(selectedActivities.keys());
@@ -190,6 +75,15 @@ export default function ActivitiesScreen() {
     [weeks, endDate, selectedActivityType],
   );
   const trpcUtils = trpc.useUtils();
+  const searchQuery = trpc.calendar.searchActivities.useInfiniteQuery(
+    { title: searchTitle ?? "", activityType: selectedActivityType, pageSize: ACTIVITY_PAGE_SIZE },
+    {
+      enabled: searching,
+      getNextPageParam: (page) => page.next ?? undefined,
+      gcTime: 0,
+      meta: { persist: false },
+    },
+  );
   const pageInput = useMemo(
     () => ({ ...queryInput, page: activityPage, pageSize: ACTIVITY_PAGE_SIZE }),
     [queryInput, activityPage],
@@ -199,6 +93,7 @@ export default function ActivitiesScreen() {
     undefined,
   );
   const query = trpc.calendar.weekListV2.useQuery(pageInput, {
+    enabled: !searching,
     placeholderData: (previousData) => previousData,
     refetchInterval: (query) =>
       query.state.data?.days.some((day) =>
@@ -232,6 +127,7 @@ export default function ActivitiesScreen() {
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await trpcUtils.calendar.weekListV2.invalidate();
+      await trpcUtils.calendar.searchActivities.invalidate();
       await trpcUtils.calendar.activityOverview.invalidate();
       await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
@@ -242,6 +138,7 @@ export default function ActivitiesScreen() {
   const mergeActivities = trpc.activity.merge.useMutation({
     onSuccess: async () => {
       await trpcUtils.calendar.weekListV2.invalidate();
+      await trpcUtils.calendar.searchActivities.invalidate();
       await trpcUtils.calendar.activityOverview.invalidate();
       await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
@@ -254,6 +151,7 @@ export default function ActivitiesScreen() {
     invalidate: () =>
       Promise.all([
         trpcUtils.calendar.weekListV2.invalidate(),
+        trpcUtils.calendar.searchActivities.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.calendar.calendarData.invalidate(),
         trpcUtils.activity.list.invalidate(),
@@ -261,7 +159,13 @@ export default function ActivitiesScreen() {
       ]).then(() => undefined),
   });
 
-  const dayGroups = pageData?.days;
+  const dayGroups = searching
+    ? searchQuery.data?.pages.flatMap(({ activities }) =>
+        activities.map(({ date, ...activity }) => ({ date, activities: [activity] })),
+      )
+    : pageData?.days;
+  const listQuery = searching ? searchQuery : query;
+  const hasListData = searching ? !!searchQuery.data : !!pageData;
   const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
   const activityCount = pageData?.totalCount ?? 0;
   const currentActivityPage = pageData?.page ?? activityPage;
@@ -286,6 +190,10 @@ export default function ActivitiesScreen() {
   const cancelSelection = () => {
     setSelectedActivities(new Map());
     setSelectMode(false);
+  };
+  const submitSearch = () => {
+    setSearchTitle(searchDraft.trim() || undefined);
+    cancelSelection();
   };
   const updateActivityType = (nextActivityType: string) => {
     setActivityType(nextActivityType);
@@ -330,6 +238,7 @@ export default function ActivitiesScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -344,10 +253,45 @@ export default function ActivitiesScreen() {
         loading={processingStatus.isLoading}
       />
 
+      <View style={styles.searchRow}>
+        <TextInput
+          accessibilityLabel="Search activity titles"
+          placeholder="Search activity titles"
+          placeholderTextColor={colors.textSecondary}
+          value={searchDraft}
+          maxLength={200}
+          onChangeText={setSearchDraft}
+          onSubmitEditing={submitSearch}
+          returnKeyType="search"
+          style={styles.searchInput}
+        />
+        <TouchableOpacity
+          style={styles.selectButton}
+          accessibilityRole="button"
+          onPress={submitSearch}
+        >
+          <Text style={styles.selectButtonText}>Search</Text>
+        </TouchableOpacity>
+        {searching ? (
+          <TouchableOpacity
+            style={styles.selectButton}
+            accessibilityRole="button"
+            onPress={() => {
+              setSearchDraft("");
+              setSearchTitle(undefined);
+              cancelSelection();
+            }}
+          >
+            <Text style={styles.selectButtonText}>Clear search</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
       <ActivityControls
         activityTypes={overviewQuery.data?.activityTypes ?? []}
         activityType={activityType}
         weeks={weeks}
+        searching={searching}
         canSelect={hasActivities}
         selectMode={selectMode}
         selectedCount={selectedCount}
@@ -367,7 +311,7 @@ export default function ActivitiesScreen() {
         <QueryStatePanel variant="error" message={userFacingErrorMessage(bulkDelete.error)} />
       ) : null}
 
-      {overviewQuery.isLoading && !overviewQuery.data ? (
+      {searching ? null : overviewQuery.isLoading && !overviewQuery.data ? (
         <QueryStatePanel variant="loading" minHeight={100} />
       ) : overviewQuery.isError && !overviewQuery.data ? (
         <QueryStatePanel variant="error" message={userFacingErrorMessage(overviewQuery.error)} />
@@ -385,7 +329,7 @@ export default function ActivitiesScreen() {
         </>
       )}
 
-      {calendarQuery.isLoading && !calendarQuery.data ? (
+      {searching ? null : calendarQuery.isLoading && !calendarQuery.data ? (
         <QueryStatePanel variant="loading" minHeight={180} />
       ) : calendarQuery.isError && !calendarQuery.data ? (
         <QueryStatePanel variant="error" message={userFacingErrorMessage(calendarQuery.error)} />
@@ -403,31 +347,36 @@ export default function ActivitiesScreen() {
         </>
       )}
 
-      {query.isLoading && !pageData ? (
+      {listQuery.isLoading && !hasListData ? (
         <QueryStatePanel variant="loading" minHeight={200} />
-      ) : query.isError && !pageData ? (
+      ) : listQuery.isError && (!hasListData || (searching && !hasActivities)) ? (
         <QueryStatePanel
           variant="error"
-          message={userFacingErrorMessage(query.error)}
-          onRetry={() => void query.refetch()}
-          retrying={query.isFetching}
+          message={userFacingErrorMessage(listQuery.error)}
+          onRetry={() => void listQuery.refetch()}
+          retrying={listQuery.isFetching}
         />
-      ) : !dayGroups || dayGroups.length === 0 ? (
-        <QueryStatePanel variant="empty" message={`No activities in the last ${weeks} weeks.`} />
+      ) : !hasActivities && !(searching && searchQuery.hasNextPage) ? (
+        <QueryStatePanel
+          variant="empty"
+          message={
+            searching ? "No matching activities." : `No activities in the last ${weeks} weeks.`
+          }
+        />
       ) : (
         <>
-          {query.isError ? (
+          {listQuery.isError ? (
             <QueryStatePanel
               variant="error"
-              message={userFacingErrorMessage(query.error)}
+              message={userFacingErrorMessage(listQuery.error)}
               minHeight={72}
               style={styles.backgroundErrorPanel}
-              onRetry={() => void query.refetch()}
-              retrying={query.isFetching}
+              onRetry={() => void listQuery.refetch()}
+              retrying={listQuery.isFetching}
             />
           ) : null}
           {visibleDayGroups?.map((day) => (
-            <View key={day.date} style={styles.daySection}>
+            <View key={searching ? day.activities[0]?.id : day.date} style={styles.daySection}>
               <View style={styles.dayHeaderRow}>
                 <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
                 <View style={styles.dayHeaderRule} />
@@ -552,13 +501,28 @@ export default function ActivitiesScreen() {
               ))}
             </View>
           ))}
-          <PaginationControls
-            page={currentActivityPage}
-            pageSize={ACTIVITY_PAGE_SIZE}
-            totalItems={activityCount}
-            itemLabel="activities"
-            onPageChange={setActivityPage}
-          />
+          {searching ? (
+            searchQuery.hasNextPage ? (
+              <TouchableOpacity
+                style={styles.selectButton}
+                accessibilityRole="button"
+                disabled={searchQuery.isFetching}
+                onPress={() => void searchQuery.fetchNextPage()}
+              >
+                <Text style={styles.selectButtonText}>
+                  {searchQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+                </Text>
+              </TouchableOpacity>
+            ) : null
+          ) : (
+            <PaginationControls
+              page={currentActivityPage}
+              pageSize={ACTIVITY_PAGE_SIZE}
+              totalItems={activityCount}
+              itemLabel="activities"
+              onPageChange={setActivityPage}
+            />
+          )}
         </>
       )}
     </ScrollView>
@@ -569,6 +533,7 @@ interface ActivityControlsProps {
   activityTypes: string[];
   activityType: string;
   weeks: number;
+  searching: boolean;
   canSelect: boolean;
   selectMode: boolean;
   selectedCount: number;
@@ -588,6 +553,7 @@ function ActivityControls({
   activityTypes,
   activityType,
   weeks,
+  searching,
   canSelect,
   selectMode,
   selectedCount,
@@ -690,28 +656,30 @@ function ActivityControls({
           </TouchableOpacity>
         </View>
       ) : null}
-      <View style={styles.chipRow}>
-        {DATE_RANGE_OPTIONS.map((option) => (
-          <TouchableOpacity
-            key={option.value}
-            style={[styles.filterChip, weeks === option.value ? styles.filterChipSelected : null]}
-            onPress={() => onWeeksChange(option.value)}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={option.label}
-            accessibilityState={{ selected: weeks === option.value }}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                weeks === option.value ? styles.filterChipTextSelected : null,
-              ]}
+      {!searching ? (
+        <View style={styles.chipRow}>
+          {DATE_RANGE_OPTIONS.map((option) => (
+            <TouchableOpacity
+              key={option.value}
+              style={[styles.filterChip, weeks === option.value ? styles.filterChipSelected : null]}
+              onPress={() => onWeeksChange(option.value)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={option.label}
+              accessibilityState={{ selected: weeks === option.value }}
             >
-              {option.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+              <Text
+                style={[
+                  styles.filterChipText,
+                  weeks === option.value ? styles.filterChipTextSelected : null,
+                ]}
+              >
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
       <View style={styles.chipRow}>
         <TouchableOpacity
           style={[
@@ -767,6 +735,16 @@ function formatDayHeader(dateStr: string): string {
 }
 
 const styles = StyleSheet.create({
+  searchRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm },
+  searchInput: {
+    flex: 1,
+    minWidth: 140,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    color: colors.text,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,
