@@ -90,7 +90,7 @@ Do not create a generic topic or group in Infisical for these services.
 The shared archive configuration reads both internal values through
 [Redpanda Connect environment interpolation](https://docs.redpanda.com/connect/configuration/interpolation/#environment-variables).
 
-The pre-migration dependency apply is the only producer exception: it selects
+The pre-migration web configuration is the producer exception. It selects
 `web-pre-migration.env`, which also maps the explicit legacy topic to the generic
 key expected by the previously deployed web image. The two requested-image
 deployment phases select the normal `web.env`. This is an isolated deployment
