@@ -108,6 +108,12 @@ export function ActivitiesPage() {
     {
       enabled: searchLocation !== undefined,
       getNextPageParam: (page) => page.next ?? undefined,
+      refetchInterval: (query) =>
+        query.state.data?.pages.some((page) =>
+          page.activities.some((activity) => activity.location?.kind === "processing"),
+        )
+          ? processingPollInterval("active")
+          : false,
       gcTime: 0,
       meta: { persist: false },
     },

@@ -648,6 +648,12 @@ describe("ActivitiesPage", () => {
       false,
     );
     expect(interval?.({ state: {} })).toBe(false);
+    const searchInterval = locationSearchQuery.mock.lastCall?.[1].refetchInterval;
+    const readyPage = { activities: [{ location: { kind: "recorded_gps" } }] };
+    const pendingPage = { activities: [{ location: { kind: "processing" } }] };
+    expect(searchInterval?.({ state: { data: { pages: [readyPage, pendingPage] } } })).toBe(3000);
+    expect(searchInterval?.({ state: { data: { pages: [readyPage] } } })).toBe(false);
+    expect(searchInterval?.({ state: {} })).toBe(false);
   });
 
   it("keeps placeholder activity data visible during background refetch errors", () => {

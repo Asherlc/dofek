@@ -872,5 +872,11 @@ describe("ActivitiesScreen", () => {
     expect(activityMocks.weekListOptions?.refetchInterval?.({ state: { data: undefined } })).toBe(
       false,
     );
+    const searchInterval = locationSearchQuery.mock.lastCall?.[1].refetchInterval;
+    const readyPage = { activities: [activity({ location: null })] };
+    const pendingPage = { activities: [activity({ location: { kind: "processing" } })] };
+    expect(searchInterval?.({ state: { data: { pages: [readyPage, pendingPage] } } })).toBe(3000);
+    expect(searchInterval?.({ state: { data: { pages: [readyPage] } } })).toBe(false);
+    expect(searchInterval?.({ state: {} })).toBe(false);
   });
 });

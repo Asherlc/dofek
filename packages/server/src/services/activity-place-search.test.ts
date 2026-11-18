@@ -68,6 +68,18 @@ it("surfaces provider HTTP failures without including the key or response body",
   );
 });
 
+it("rejects redirects to a different place lookup origin", async () => {
+  const destination = "https://example.test/redirected";
+  server.use(
+    http.get(
+      endpoint,
+      () => new HttpResponse(null, { status: 302, headers: { location: destination } }),
+    ),
+    http.get(destination, () => HttpResponse.json({ results: [] })),
+  );
+  await expect(searchActivityPlaces("Oakland", "test-key")).rejects.toThrow();
+});
+
 it("rejects invalid provider coordinates", async () => {
   server.use(
     http.get(endpoint, () =>
@@ -78,5 +90,12 @@ it("rejects invalid provider coordinates", async () => {
   );
   await expect(searchActivityPlaces("Oakland", "test-key")).rejects.toThrow(
     "Geoapify returned an invalid place search response.",
+  );
+});
+
+it("rejects malformed JSON without exposing text from the response", async () => {
+  server.use(http.get(endpoint, () => HttpResponse.text("Private Gym details")));
+  await expect(searchActivityPlaces("Private Gym", "test-key")).rejects.toThrow(
+    /^Geoapify returned an invalid place search response\.$/,
   );
 });

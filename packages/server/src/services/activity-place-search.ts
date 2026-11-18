@@ -34,7 +34,7 @@ export async function searchActivityPlaces(query: string, apiKey: string) {
   if (!response.ok) {
     throw new Error(`Geoapify place search failed with HTTP ${response.status}.`);
   }
-  const parsed = geoapifyResponseSchema.safeParse(await response.json());
+  const parsed = geoapifyResponseSchema.safeParse(await response.json().catch(() => undefined));
   if (!parsed.success) throw new Error("Geoapify returned an invalid place search response.");
   return parsed.data.results.map((place) => ({
     id: place.place_id,
