@@ -39197,3 +39197,7 @@ Local qualification and CI are separate from production throughput acceptance. T
   consumes tokens from the account-wide budget. Check the signed-in budget
   before interpreting a generic HTTP 400 as a key problem. No sync behavior,
   credential, or account setting changed.
+- A read-only production query confirmed the cursor was saved at 10:30:16 UTC
+  under the current authorization. Its source epoch is `1791745301`. A bounded
+  sync using that cursor requests `since=1791745300` to replay the boundary
+  second. This verifies saved progress. It does not measure the request's cost.
