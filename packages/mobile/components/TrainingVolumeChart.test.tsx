@@ -18,7 +18,7 @@ it("switches climbing metrics and preserves missing attempts", () => {
   expect(screen.getByLabelText("2026-01-05: Not recorded")).toBeTruthy();
   fireEvent.click(screen.getByRole("radio", { name: "Time" }));
   expect(screen.getByLabelText("2026-01-05: 45 minutes")).toBeTruthy();
-  expect(screen.getByText("minutes per week")).toBeTruthy();
+  expect(screen.getByText("Total climbing session time per week (minutes)")).toBeTruthy();
 });
 it.each([
   [60, "1:00"],
@@ -29,12 +29,12 @@ it.each([
     <TrainingVolumeChart sport="climbing" data={[{ week: "2026-01-05", attempts: 3, minutes }]} />,
   );
   fireEvent.click(screen.getByRole("radio", { name: "Time" }));
-  expect(screen.getByText("hours:minutes per week")).toBeTruthy();
+  expect(screen.getByText("Total climbing session time per week (hours:minutes)")).toBeTruthy();
   expect(screen.getByText(duration)).toBeTruthy();
   expect(screen.getByLabelText(`2026-01-05: ${duration} h:mm`)).toBeTruthy();
   fireEvent.click(screen.getByRole("radio", { name: "Attempts" }));
   expect(screen.getByLabelText("2026-01-05: 3 attempts")).toBeTruthy();
-  expect(screen.getByText("attempts per week")).toBeTruthy();
+  expect(screen.getByText("Recorded attempts per week")).toBeTruthy();
 });
 it("uses one duration format while preserving zero and missing climbing time", () => {
   render(

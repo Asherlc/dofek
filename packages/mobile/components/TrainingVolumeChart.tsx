@@ -54,6 +54,11 @@ export function TrainingVolumeChart(props: Props) {
         : metric === "sets"
           ? "sets"
           : "attempts";
+  const climbingCaption =
+    metric === "time"
+      ? `Total climbing session time per week (${showHoursMinutes ? "hours:minutes" : "minutes"})`
+      : "Recorded attempts per week";
+  const caption = props.sport === "climbing" ? climbingCaption : `${unit} per week`;
   return (
     <View style={styles.card}>
       <Text style={styles.title}>
@@ -81,7 +86,7 @@ export function TrainingVolumeChart(props: Props) {
       </View>
       {props.data.length ? (
         <>
-          <Text style={styles.text}>{showHoursMinutes ? "hours:minutes" : unit} per week</Text>
+          <Text style={styles.text}>{caption}</Text>
           <WeeklyVolumeBars
             weeks={props.data.map((row, index) => ({
               week: row.week,
