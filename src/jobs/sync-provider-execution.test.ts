@@ -6,6 +6,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { getProviderIngestContext } from "../db/provider-ingest-context.ts";
+import { ProviderStreamAbortedError } from "../lib/provider-error-reporting.ts";
 import { RefreshTokenRevokedError } from "../providers/auth-errors.ts";
 import type { SyncResult, WebhookEvent } from "../providers/types.ts";
 
@@ -607,6 +608,35 @@ describe("sync-provider-execution", () => {
       provider: "withings",
       data_type: "sync",
     });
+  });
+
+  it("counts a returned Kilter stream abort without sending an exception alert", async () => {
+    const cause = new ProviderStreamAbortedError(
+      "Kilter Board app sync failed: Connection aborted",
+    );
+    const provider = createMockProvider({
+      id: "kilter",
+      name: "Kilter Board",
+      sync: vi.fn().mockResolvedValue({
+        provider: "kilter",
+        recordsSynced: 0,
+        errors: [{ message: cause.message, cause }],
+        duration: 50,
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "kilter", origin: "scheduled" }), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledExactlyOnceWith(1, {
+      provider: "kilter",
+      data_type: "sync",
+    });
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ status: "error", errorCauses: [cause] }),
+    );
   });
 
   it("reports returned sync errors to Sentry", async () => {

@@ -1,7 +1,10 @@
 import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { isKnownProviderHttp5xxError } from "../lib/provider-error-reporting.ts";
+import {
+  isKnownProviderHttp5xxError,
+  ProviderStreamAbortedError,
+} from "../lib/provider-error-reporting.ts";
 import { isProviderTimeoutOnly } from "../lib/provider-transport-error.ts";
 import { logger } from "../logger.ts";
 import {
@@ -153,7 +156,10 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
   const onlyKnownProviderTransportErrors =
     errorCauses.length > 0 &&
     errorCauses.every(
-      (cause) => isKnownProviderHttp5xxError(cause) || isProviderTimeoutOnly(cause),
+      (cause) =>
+        cause instanceof ProviderStreamAbortedError ||
+        isKnownProviderHttp5xxError(cause) ||
+        isProviderTimeoutOnly(cause),
     );
   if (consecutiveFailures === 2 && !onlyKnownProviderTransportErrors) {
     captureException(new Error(`Provider ${entry.providerId} failed two scheduled syncs`), {
