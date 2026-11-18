@@ -39163,3 +39163,26 @@ Local qualification and CI are separate from production throughput acceptance. T
   inventory identified both listeners as other workspaces' Postgres ports.
   The fixtures now bind to the same IPv4 loopback address as the clients,
   following the [prior listener diagnosis](#2026-10-11--local-http-test-reached-a-docker-postgres-listener).
+
+## 2026-11-18 — Kilter Board app sync connection aborted
+
+- The 04:00 UTC scheduled sync failed at 04:01:29 with
+  `Kilter Board app sync failed: Connection aborted`. Postgres recorded zero
+  records for the failed run. Dofek fetches the full logbook before writing
+  climbing records. Sentry grouped four occurrences from November 14 through 18.
+  [Sentry event](https://east-bay-software.sentry.io/issues/7848218332/events/bf0294ed5c444ec3beaf02a5cc45471a/)
+  and [climbing sync write path](../src/lib/climbing-board-account.ts#L62).
+- Sentry breadcrumbs showed repeated HTTP 101 upgrades to the PowerSync stream.
+  Swarm worker logs showed repeated stream completions and a duplicate close
+  immediately before the failure. PowerSync 1.58.0 can replace an RSocket error
+  with `Connection aborted` when it closes a stream before the first payload.
+  The worker loaded a token with nine seconds left, and the SDK can reuse its
+  cached credential across connection attempts. The original close reason is
+  unresolved, so token expiry remains a possible cause.
+  [PowerSync 1.58.0 source](https://github.com/powersync-ja/powersync-js/blob/643875c64de3169ac6f7d73d1876cb71a3073360/packages/common/src/client/sync/stream/AbstractRemote.ts).
+- The 04:30 UTC scheduled sync refreshed the token and completed with two
+  records. The 05:00 UTC run also completed with two. These outcomes were
+  verified in `fitness.sync_log`. The scheduled sync recovered without a
+  deployment. Recurrence remains possible. On recurrence, correlate the
+  credential expiry with the first stream completion and capture the RSocket
+  error or close reason before the SDK wraps it.
