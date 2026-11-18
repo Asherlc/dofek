@@ -898,6 +898,9 @@ describe("Kaya native diagnostics in catalogue reports", () => {
   afterEach(() => server.resetHandlers());
   afterAll(() => server.close());
 
+  const nativeMessage =
+    "Kaya authenticated catalogue lookup returned invalid or rejected climb details; sync or reconnect Kaya and retry.";
+  const aggregateMessage = `kaya: ${nativeMessage}`;
   const nativeClimb = {
     id: "1062267",
     slug: "Cragmont-Crack",
@@ -925,13 +928,11 @@ describe("Kaya native diagnostics in catalogue reports", () => {
         ],
       },
       expected: { operation: "CatalogueClimb", kind: "graphql", codes: ["FORBIDDEN", "UNKNOWN"] },
-      hidden: ["private diagnostic", "secret detail", "SURPRISE_CODE"],
     },
     {
       label: "malformed internal marker",
       body: { data: null, errors: [{ extensions: { code: "INTERNAL_SERVER_ERROR" } }] },
       expected: { operation: "CatalogueClimb", kind: "graphql", codes: ["INTERNAL_SERVER_ERROR"] },
-      hidden: [],
     },
     {
       label: "malformed climb fields",
@@ -959,29 +960,29 @@ describe("Kaya native diagnostics in catalogue reports", () => {
           "data.climb.grade",
         ],
       },
-      hidden: [],
     },
-  ])("projects safe native metadata for $label", async ({ body, expected, hidden }) => {
+  ])("projects safe native metadata for $label", async ({ body, expected }) => {
     server.use(http.post("https://kaya-beta.kayaclimb.com/graphql", () => HttpResponse.json(body)));
     const retriedSeed = { ...seed, externalId: "1062267" };
     const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
       new KayaCatalogueAdapter(fetch, async () => "token"),
     ]);
-    await expect(service.refresh(retriedSeed)).rejects.toMatchObject({
-      errors: [expect.objectContaining({ name: "KayaNativeResponseError" })],
+    await expect(service.refresh(retriedSeed)).rejects.toThrow(AggregateError);
+    const reported = vi.mocked(captureException).mock.lastCall?.[0];
+    expect(reported).toBeInstanceOf(AggregateError);
+    expect(reported).toMatchObject({
+      message: aggregateMessage,
+      errors: [{ name: "KayaNativeResponseError", message: nativeMessage }],
     });
-    expect(captureException).toHaveBeenCalledExactlyOnceWith(expect.any(Error), {
+    expect(reported).not.toHaveProperty("cause");
+    expect(reported).not.toHaveProperty("errors.0.cause");
+    expect(captureException).toHaveBeenCalledExactlyOnceWith(reported, {
       tags: { phase: "climbing-catalogue-refresh" },
       extra: { kayaDiagnostic: expected },
     });
-    const captured = JSON.stringify(vi.mocked(captureException).mock.calls[0]);
-    for (const value of hidden) expect(captured).not.toContain(value);
-    expect(captured).not.toMatch(/expected string/i);
     expect(await service.read(retriedSeed)).toMatchObject({
       status: "error",
-      error: expect.stringContaining(
-        "Kaya authenticated catalogue lookup returned invalid or rejected climb details",
-      ),
+      error: aggregateMessage,
     });
   });
 });

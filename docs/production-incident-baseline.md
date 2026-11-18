@@ -30,6 +30,14 @@
   GraphQL error or failed schema validation. Safe fields for diagnosis are
   the operation name, a recognized error code, and validation paths without
   values. Keep tokens and response bodies out of telemetry.
+- **CI follow-up on November 18.** The first `Check Shared / Shared Stryker`
+  run failed at `Run Stryker` with a score of 17.65 against the required 75.
+  The shared suite excludes the worker service tests, so it exercised the
+  adapter without checking the new diagnostic fields. Adapter regressions in
+  the shared suite cover the diagnostic values and their bounds. Service
+  regressions verify the exact captured and cached messages. The same
+  changed-line shard scored 94.12 locally after the test changes.
+  [First mutation run](https://github.com/Asherlc/dofek/actions/runs/44325608106/job/134877388990)
 
 ## 2026-11-17 — Kaya and OpenBeta failures interrupt climbing catalogue refresh
 
