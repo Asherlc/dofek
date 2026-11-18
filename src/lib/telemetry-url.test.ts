@@ -45,8 +45,14 @@ describe("telemetry URL redaction", () => {
   });
 
   it("redacts ClickHouse location, cursor, and activity hydration parameters", () => {
-    const query =
-      "param_latitude=37.8&param_longitude=-122.3&param_cursorId=synthetic&param_cursorStartedAt=2026-03-15&param_activityIds=%5Bprivate-id%5D&param_limit=20";
+    const query = new URLSearchParams({
+      param_latitude: "37.8",
+      param_longitude: "-122.3",
+      param_cursorId: "synthetic",
+      param_cursorStartedAt: "2026-03-15",
+      param_activityIds: "[private-id]",
+      param_limit: "20",
+    }).toString();
     expect(redactTelemetryQuery(query)).toBe(
       "param_latitude=REDACTED&param_longitude=REDACTED&param_cursorId=REDACTED&param_cursorStartedAt=REDACTED&param_activityIds=REDACTED&param_limit=20",
     );

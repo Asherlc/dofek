@@ -357,7 +357,7 @@ describe("instrumentation", () => {
       request: {
         protocol: "https:",
         hostname: "clickhouse.example",
-        path: "/?param_activityIds=%5Bprivate-id%5D&param_latitude=37.8",
+        path: `/?param_activityIds=${encodeURIComponent("[private-id]")}&param_latitude=37.8`,
       },
       expectedUrl: "https://clickhouse.example/?param_activityIds=REDACTED&param_latitude=REDACTED",
     },

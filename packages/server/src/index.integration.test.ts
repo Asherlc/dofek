@@ -122,7 +122,9 @@ describe("tRPC API", () => {
             typeof value === "string" &&
             value.startsWith("[web] GET /api/trpc/activityLocation.search?"),
         );
-      expect(accessLogs).toEqual([expect.stringContaining("input=%5BREDACTED%5D")]);
+      expect(accessLogs).toEqual([
+        expect.stringContaining(`input=${encodeURIComponent("[REDACTED]")}`),
+      ]);
       expect(accessLogs.join()).not.toContain("Private");
     } finally {
       log.mockRestore();
