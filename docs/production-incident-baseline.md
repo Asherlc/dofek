@@ -12,6 +12,13 @@
   the selected Xcode and iOS SDK versions.
   [Original archive](https://github.com/Asherlc/dofek/actions/runs/44365854019/job/135020785278)
   · [Runner toolchains](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md#xcode)
+- **CI follow-up.** The Xcode 27.2 CI archive passed. The WHOOP bridge test
+  host crashed at launch on the iOS 27.0 Simulator. Its result bundle recorded
+  `Application failed to launch: UIScene life cycle is required for apps built with this SDK.`
+  The CocoaPods test host now declares a window scene. Expo already generates
+  the production app's scene declaration.
+  [First iOS 27 CI run](https://github.com/Asherlc/dofek/actions/runs/44375133974/job/135052867560)
+  · [Apple's scene lifecycle requirements](https://developer.apple.com/documentation/uikit/transitioning-to-the-uikit-scene-based-life-cycle)
 - **Follow-up.** Confirm the signed archive reports the iOS 27.2 SDK and
   check App Store Connect processing on the next TestFlight upload.
 

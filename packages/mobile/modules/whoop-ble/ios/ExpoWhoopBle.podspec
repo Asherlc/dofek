@@ -21,7 +21,15 @@ Pod::Spec.new do |s|
     host.source_files = 'BridgeTestHost/*.swift'
     host.info_plist = {
       'NSBluetoothAlwaysUsageDescription' => 'Exercise native WHOOP connection tests.',
-      'UIBackgroundModes' => ['bluetooth-central']
+      'UIBackgroundModes' => ['bluetooth-central'],
+      'UIApplicationSceneManifest' => {
+        'UIApplicationSupportsMultipleScenes' => false,
+        'UISceneConfigurations' => {
+          'UIWindowSceneSessionRoleApplication' => [
+            { 'UISceneDelegateClassName' => 'BridgeTestSceneDelegate' }
+          ]
+        }
+      }
     }
   end
 
