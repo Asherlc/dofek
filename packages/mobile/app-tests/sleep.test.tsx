@@ -2,6 +2,8 @@
 
 import { shiftDateYmd } from "@dofek/format/format";
 import { fireEvent, render, screen } from "@testing-library/react";
+import type { CSSProperties } from "react";
+import { useWindowDimensions } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockSleepData: Record<string, unknown> | undefined;
@@ -34,16 +36,19 @@ vi.mock("@react-native-community/datetimepicker", () => ({
   default: ({
     maximumDate,
     onChange,
+    style,
     value,
   }: {
     maximumDate: Date;
     onChange: (event: { type: string }, date?: Date) => void;
+    style?: CSSProperties | Array<CSSProperties | false | undefined>;
     value: Date;
   }) => (
     <input
       type="date"
       aria-label="Night date"
       max={maximumDate.toISOString().slice(0, 10)}
+      style={Array.isArray(style) ? Object.assign({}, ...style) : style}
       value={value.toISOString().slice(0, 10)}
       onChange={(event) =>
         onChange({ type: "set" }, new Date(`${event.currentTarget.value}T12:00:00`))
@@ -95,10 +100,18 @@ vi.mock("../components/charts/SparkLine", () => ({
   ),
 }));
 
+const mockUseWindowDimensions = vi.mocked(useWindowDimensions);
+
 describe("SleepScreen", () => {
   beforeEach(() => {
     mockSleepData = undefined;
     mockSleepError = null;
+    mockUseWindowDimensions.mockReturnValue({
+      width: 390,
+      height: 844,
+      scale: 3,
+      fontScale: 1,
+    });
     sleepMocks.stagesByDate.mockImplementation((input?: { date?: string }) => ({
       data: { date: input?.date ?? "2026-07-20", stages: [] },
       error: null,
@@ -453,5 +466,114 @@ describe("SleepScreen", () => {
     });
 
     expect(sleepMocks.stagesByDate).toHaveBeenLastCalledWith({ date: selectedDate });
+  });
+
+  it("keeps the independently browsed night stages before the grouped trend range", async () => {
+    mockSleepData = {
+      nightly: [
+        {
+          date: "2026-07-20",
+          startedAt: "2026-07-20T05:00:00.000Z",
+          endedAt: "2026-07-20T13:00:00.000Z",
+          localTimeContext: {
+            timezone: null,
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "provider_offset",
+          },
+          durationMinutes: 320,
+          sleepMinutes: 300,
+          deepPct: 20,
+          remPct: 20,
+          lightPct: 50,
+          awakePct: 10,
+          efficiency: 50,
+          stagingAvailable: true,
+          rollingAvgDuration: 300,
+          durationState: { status: "available" },
+          sleepState: { status: "available" },
+          stageState: { status: "available" },
+        },
+      ],
+      averageSleepMinutes: 455,
+      averageEfficiencyPercent: 91.2,
+    };
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    const nightStages = screen.getByText("Night’s Stages");
+    const trendRange = screen.getByRole("radiogroup", { name: "Time range" });
+    const trendCard = screen.getByText("Average Duration");
+    expect(
+      nightStages.compareDocumentPosition(trendRange) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      trendRange.compareDocumentPosition(trendCard) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("keeps one compact row with chevron navigation and 44-point targets at the standard text size", async () => {
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    const controls = screen.getByTestId("night-date-controls");
+    expect(controls.style.flexDirection).toBe("row");
+    expect(controls.style.flexWrap).toBe("wrap");
+
+    const previous = screen.getByRole("button", { name: "Previous day" });
+    const next = screen.getByRole("button", { name: "Next day" });
+    const picker = screen.getByLabelText("Night date");
+    for (const button of [previous, next]) {
+      expect(button.style.minHeight).toBe("44px");
+      expect(button.style.minWidth).toBe("44px");
+    }
+    expect(previous.querySelector('[data-icon="chevron-back"]')).toBeTruthy();
+    expect(next.querySelector('[data-icon="chevron-forward"]')).toBeTruthy();
+    expect(
+      previous.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(picker.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("gives the date picker its own line and keeps both chevrons together at accessibility text sizes", async () => {
+    const today = new Intl.DateTimeFormat("en-CA").format(new Date());
+    mockUseWindowDimensions.mockReturnValue({
+      width: 390,
+      height: 844,
+      scale: 3,
+      fontScale: 2,
+    });
+    sleepMocks.stagesByDate.mockImplementation((input?: { date?: string }) => ({
+      data: { date: input?.date ?? today, stages: [] },
+      error: null,
+      isError: false,
+      isLoading: false,
+      isFetching: false,
+    }));
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    const controls = screen.getByTestId("night-date-controls");
+    const picker = screen.getByLabelText("Night date");
+    expect(picker.style.width).toBe("100%");
+
+    const previous = screen.getByRole("button", { name: "Previous day" });
+    const next = screen.getByRole("button", { name: "Next day" });
+    const nav = previous.parentElement;
+    if (!nav) throw new Error("Expected the navigation buttons to be grouped");
+    expect(nav).toBe(next.parentElement);
+    expect(nav.style.flexDirection).toBe("row");
+    expect(picker.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const button of [previous, next]) {
+      expect(button.style.minHeight).toBe("44px");
+      expect(button.style.minWidth).toBe("44px");
+      expect(button.style.width).not.toBe("100%");
+      expect(controls.contains(button)).toBe(true);
+    }
+    expect(previous.querySelector('[data-icon="chevron-back"]')).toBeTruthy();
+    expect(next.querySelector('[data-icon="chevron-forward"]')).toBeTruthy();
+    expect(next.hasAttribute("disabled")).toBe(true);
   });
 });

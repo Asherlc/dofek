@@ -873,7 +873,14 @@ export default function ProvidersScreen() {
         />
       }
     >
-      <View testID="provider-sync-controls-region" style={{ minHeight: 140 * fontScale }}>
+      <View
+        testID="provider-sync-controls-region"
+        style={
+          (isLoading && !providers.error) || enabledProviders.length > 0
+            ? { minHeight: 140 * fontScale }
+            : undefined
+        }
+      >
         {enabledProviders.length > 0 && (
           <SyncAllControls
             busy={anySyncing || appleHealthPresentation.isRunning}

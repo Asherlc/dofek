@@ -78,6 +78,41 @@ describe("ProviderCard sync summary", () => {
     expect(screen.queryByText("Sync current")).toBeNull();
   });
 
+  it("gives a long provider name a wrapping full-width row with 44pt touch targets", () => {
+    render(
+      <ProviderCard
+        provider={{ ...provider, label: "8a.nu / Vertical-Life" }}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={vi.fn()}
+        onConnect={vi.fn()}
+        onImport={vi.fn()}
+        onPress={vi.fn()}
+      />,
+    );
+
+    const title = screen.getByText("8a.nu / Vertical-Life");
+    const titleRow = screen.getByRole("button", { name: "Open 8a.nu / Vertical-Life details" });
+    const syncButton = screen.getByRole("button", { name: "Sync 8a.nu / Vertical-Life" });
+    const importButton = screen.getByRole("button", {
+      name: "Import file for 8a.nu / Vertical-Life",
+    });
+
+    // The title row owns a full-width row and the header/actions wrap beneath it.
+    expect(titleRow.parentElement?.getAttribute("style")).toContain("flex-wrap: wrap");
+    expect(titleRow.getAttribute("style")).toContain("flex-basis: 100%");
+    expect(syncButton.parentElement?.getAttribute("style")).toContain("flex-wrap: wrap");
+
+    // The label can shrink and wrap inside that row at accessibility font sizes.
+    expect(title.getAttribute("style")).toContain("flex-shrink: 1");
+
+    // The title and the shared action buttons keep a minimum 44pt touch target.
+    expect(titleRow.getAttribute("style")).toContain("min-height: 44px");
+    expect(syncButton.getAttribute("style")).toContain("min-height: 44px");
+    expect(importButton.getAttribute("style")).toContain("min-height: 44px");
+  });
+
   it("keeps a failed attempt, its successful-update time, and reconnect action visible", () => {
     const { onConnect } = renderProvider({
       authStatus: "expired",

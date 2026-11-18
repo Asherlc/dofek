@@ -70,7 +70,11 @@ vi.mock("../components/QueryStatePanel.tsx", () => ({
   QueryStatePanel: ({ error }: { error: Error | null }) => <p>{error?.message ?? "Loading"}</p>,
 }));
 vi.mock("../components/TimeRangeSelector.tsx", () => ({
-  TimeRangeSelector: ({ description }: { description: string }) => <p>{description}</p>,
+  TimeRangeSelector: ({ days }: { days: number }) => (
+    <fieldset aria-label="Time range">
+      <legend>Selected range: {days}d</legend>
+    </fieldset>
+  ),
 }));
 vi.mock("../components/ProcessingStatusWidget.tsx", () => ({ ProcessingStatusWidget: () => null }));
 vi.mock("../components/SleepChart.tsx", () => ({
@@ -247,5 +251,19 @@ describe("SleepPage", () => {
 
     expect(mocks.stagesByDate).toHaveBeenLastCalledWith({ date: "2026-03-27" });
     expect(screen.getByRole("button", { name: "Previous day" })).toBeEnabled();
+  });
+
+  it("places independently browsed night stages before the trend range grouped with the trend chart", async () => {
+    const { SleepPage } = await import("./SleepPage.tsx");
+
+    render(<SleepPage />);
+
+    const nightStages = screen.getByRole("heading", { name: "Night’s Stages" });
+    const trendRange = screen.getByRole("group", { name: "Time range" });
+    const trendChartSection = screen.getByRole("region", { name: "Sleep Stages" });
+    expect(
+      nightStages.compareDocumentPosition(trendRange) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(trendChartSection.contains(trendRange)).toBe(true);
   });
 });

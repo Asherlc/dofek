@@ -2,8 +2,22 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ProviderStatsBreakdown } from "./ProviderStatsBreakdown";
 
+const zeroStats = {
+  totalRecords: 0,
+  activities: 0,
+  metricStream: 0,
+  dailyMetrics: 0,
+  sleepSessions: 0,
+  bodyMeasurements: 0,
+  healthEvents: 0,
+  foodEntries: 0,
+  nutritionDaily: 0,
+  clinicalRecords: 0,
+  climbingLogEntries: 0,
+};
+
 describe("ProviderStatsBreakdown", () => {
-  it("computes the total from metadata when totalRecords is omitted", () => {
+  it("shows only the computed total in the compact list variant", () => {
     render(
       <ProviderStatsBreakdown
         stats={{
@@ -21,29 +35,15 @@ describe("ProviderStatsBreakdown", () => {
       />,
     );
 
-    expect(screen.getAllByText("7")).toHaveLength(2);
+    expect(screen.getByText("7")).toBeTruthy();
+    expect(screen.getByText("records")).toBeTruthy();
+    expect(screen.queryByText("Activities")).toBeNull();
   });
 
-  it("renders every metadata field when all counts are zero", () => {
-    render(
-      <ProviderStatsBreakdown
-        stats={{
-          totalRecords: 0,
-          activities: 0,
-          metricStream: 0,
-          dailyMetrics: 0,
-          sleepSessions: 0,
-          bodyMeasurements: 0,
-          healthEvents: 0,
-          foodEntries: 0,
-          nutritionDaily: 0,
-          clinicalRecords: 0,
-          climbingLogEntries: 0,
-        }}
-      />,
-    );
+  it("keeps every record-type breakdown in the full detail variant", () => {
+    render(<ProviderStatsBreakdown stats={zeroStats} variant="full" />);
 
-    expect(screen.getByText("records")).toBeTruthy();
+    expect(screen.getByText("total records")).toBeTruthy();
     for (const label of [
       "Activities",
       "Metric Stream",

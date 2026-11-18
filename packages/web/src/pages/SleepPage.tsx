@@ -133,23 +133,12 @@ export function SleepPage() {
 
   return (
     <ChartRangeProvider days={days}>
-      <PageLayout
-        headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
-        title="Sleep"
-        subtitle="Sleep stages and patterns over time"
-      >
+      <PageLayout title="Sleep" subtitle="Sleep stages and patterns over time">
         <ProcessingStatusWidget
           data={processingStatus.data}
           error={processingStatus.error}
           loading={processingStatus.isLoading}
         />
-        {/* Sleep Stage Chart */}
-        <PageSection title="Sleep Stages">
-          {sleepData.isError && !sleepData.data && (
-            <QueryStatePanel error={sleepData.error} height={72} />
-          )}
-          <SleepChart data={sleepRows} loading={sleepData.isLoading} />
-        </PageSection>
 
         <PageSection title="Night’s Stages">
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -206,6 +195,17 @@ export function SleepPage() {
               Loading sleep stages...
             </p>
           ) : null}
+        </PageSection>
+
+        {/* Trend range grouped with the trend chart, below the independently browsed night. */}
+        <PageSection title="Sleep Stages">
+          <div className="mb-3 flex justify-end">
+            <TimeRangeSelector days={days} onChange={setDays} />
+          </div>
+          {sleepData.isError && !sleepData.data && (
+            <QueryStatePanel error={sleepData.error} height={72} />
+          )}
+          <SleepChart data={sleepRows} loading={sleepData.isLoading} />
         </PageSection>
 
         {/* Data Sources */}

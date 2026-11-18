@@ -59,9 +59,15 @@ vi.mock("../lib/background-refresh-diagnostics", () => ({
 const mockLoadStatusCapability = vi.fn();
 const mockLoadPreparation = vi.fn();
 let rootAppStateCallback: ((state: AppStateStatus) => void) | null = null;
-const { mockPathname, mockRouterReplace } = vi.hoisted(() => ({
+interface StackScreenRegistration {
+  name: string;
+  options?: { title?: string; headerShown?: boolean };
+}
+
+const { mockPathname, mockRouterReplace, mockStackScreen } = vi.hoisted(() => ({
   mockPathname: { value: "/" },
   mockRouterReplace: vi.fn(),
+  mockStackScreen: vi.fn<(props: StackScreenRegistration) => void>(),
 }));
 const {
   mockFinishStartupPhase,
@@ -131,7 +137,10 @@ vi.mock("expo-router", async () => {
 
   const Stack = ({ children }: { children: ReactNode }) =>
     React.createElement("Stack", { "data-testid": "app-navigation" }, children);
-  Stack.Screen = () => null;
+  Stack.Screen = (props: StackScreenRegistration) => {
+    mockStackScreen(props);
+    return null;
+  };
 
   return {
     Stack,
@@ -1009,5 +1018,20 @@ describe("RootLayout background cleanup", () => {
       type: "single",
       options: expect.anything(),
     });
+  });
+
+  it("registers the Data Sources list and detail in the root stack with native headers", async () => {
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(rendered.getByTestId("app-navigation")).toBeTruthy());
+
+    const screens = mockStackScreen.mock.calls.map(([props]) => props);
+    const listScreen = screens.find((screen) => screen.name === "providers/index");
+    const detailScreen = screens.find((screen) => screen.name === "providers/[id]");
+    expect(listScreen?.options?.title).toBe("Data Sources");
+    expect(listScreen?.options?.headerShown).not.toBe(false);
+    expect(detailScreen?.options?.title).toBe("Provider Detail");
+    expect(detailScreen?.options?.headerShown).not.toBe(false);
+    rendered.unmount();
   });
 });

@@ -94,9 +94,34 @@ export const VerticalLifeNarrow: ProviderCardStory = {
     const canvas = within(canvasElement);
     const title = canvas.getByText("8a.nu / Vertical-Life");
     const sync = canvas.getByRole("button", { name: "Sync 8a.nu / Vertical-Life" });
-    await expect(title.getBoundingClientRect().right).toBeLessThanOrEqual(
-      sync.getBoundingClientRect().left,
+    expect(sync.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      title.getBoundingClientRect().bottom,
     );
+  },
+};
+
+export const LongNameNarrowWithTwoActions: ProviderCardStory = {
+  ...VerticalLifeConnected,
+  name: "Long name · narrow width · two actions",
+  tags: ["review-scenario", "review-scenario-provider-long-name"],
+  decorators: [
+    (Story: ComponentType) => (
+      <View style={{ width: 320 }}>
+        <Story />
+      </View>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const title = canvas.getByText("8a.nu / Vertical-Life");
+    const sync = canvas.getByRole("button", { name: "Sync 8a.nu / Vertical-Life" });
+    const importAction = canvas.getByRole("button", {
+      name: "Import file for 8a.nu / Vertical-Life",
+    });
+    const titleRect = title.getBoundingClientRect();
+    expect(titleRect.right).toBeLessThanOrEqual(canvasElement.getBoundingClientRect().right);
+    expect(sync.getBoundingClientRect().top).toBeGreaterThanOrEqual(titleRect.bottom);
+    expect(importAction.getBoundingClientRect().top).toBeGreaterThanOrEqual(titleRect.bottom);
   },
 };
 
