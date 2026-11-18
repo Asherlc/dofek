@@ -210,7 +210,7 @@ export function HealthStatusBar({
     <div className="flex gap-3 overflow-x-auto">
       {metrics.map((metric, index) => {
         const formatter = formatters[metric.metric];
-        const comparisonFormatter = comparisonFormatters[metric.metric] ?? formatter;
+        const comparisonDeltaFormatter = comparisonFormatters[metric.metric] ?? formatter;
         const baselineContext = baselineRelative.find(
           (candidate) => candidate.metric === metric.metric,
         );
@@ -269,7 +269,9 @@ export function HealthStatusBar({
                 !baselineContext && metric.comparison
                   ? formatComparisonContext(metric.comparison, {
                       formatValue: (value) =>
-                        formatContextValue(value, comparisonFormatter, units[metric.metric]),
+                        formatContextValue(value, formatter, units[metric.metric]),
+                      formatDelta: (value) =>
+                        formatContextValue(value, comparisonDeltaFormatter, units[metric.metric]),
                       missingMeans: "summary",
                     })
                   : ""

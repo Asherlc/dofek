@@ -19,3 +19,20 @@ const meta = {
 
 export default meta;
 export const Default: StoryObj<typeof meta> = {};
+
+export const Empty: StoryObj<typeof meta> = { args: { sections: [] } };
+
+export const PerformanceMetrics: StoryObj<typeof meta> = {
+  args: {
+    label: "Performance metrics",
+    sections: [
+      { id: "heartRate", title: "Heart Rate" },
+      { id: "power", title: "Power" },
+      { id: "speed", title: "Speed" },
+      { id: "cadence", title: "Cadence" },
+      { id: "altitude", title: "Elevation" },
+      { id: "skinTemperature", title: "Skin Temperature" },
+    ],
+    selected: "skinTemperature",
+  },
+};

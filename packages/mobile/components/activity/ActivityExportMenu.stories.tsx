@@ -22,6 +22,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const Exporting: Story = { args: { exportingFormat: "csv" } };
 export const NoRoute: Story = {
   args: {
     options: meta.args.options.map((option) => ({

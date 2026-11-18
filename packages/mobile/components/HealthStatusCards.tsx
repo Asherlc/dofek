@@ -11,6 +11,7 @@ interface HealthStatusCardsProps {
   compact?: boolean;
   formatValue?: (metric: HealthStatusMetric) => string;
   formatComparisonValue?: (metric: HealthStatusMetric, value: number) => string;
+  formatComparisonDelta?: (metric: HealthStatusMetric, value: number) => string;
 }
 
 function statusColor(status: HealthStatusMetric["statusColor"]): string {
@@ -44,6 +45,7 @@ export function HealthStatusCards({
   compact = false,
   formatValue,
   formatComparisonValue,
+  formatComparisonDelta,
 }: HealthStatusCardsProps) {
   const [expandedMetric, setExpandedMetric] = useState<HealthStatusMetric["metric"] | null>(null);
 
@@ -124,6 +126,9 @@ export function HealthStatusCards({
                     {formatComparisonContext(metric.comparison, {
                       formatValue: (value) =>
                         formatComparisonValue?.(metric, value) ?? String(value),
+                      formatDelta: formatComparisonDelta
+                        ? (value) => formatComparisonDelta(metric, value)
+                        : undefined,
                       missingMeans: "values",
                     })}
                   </Text>

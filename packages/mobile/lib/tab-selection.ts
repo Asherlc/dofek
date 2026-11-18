@@ -10,6 +10,14 @@ const tabIconNames = {
 
 export type TabRouteName = keyof typeof tabIconNames;
 
+export const primaryTabs = [
+  { name: "index", title: "Overview" },
+  { name: "training", title: "Training" },
+  { name: "activities", title: "Activities" },
+  { name: "sleep-overview", title: "Sleep" },
+  { name: "more", title: "More" },
+] as const satisfies ReadonlyArray<{ name: TabRouteName; title: string }>;
+
 export function getTabIconName(routeName: TabRouteName, focused: boolean) {
   const iconNames = tabIconNames[routeName];
   return focused ? iconNames.focused : iconNames.unfocused;

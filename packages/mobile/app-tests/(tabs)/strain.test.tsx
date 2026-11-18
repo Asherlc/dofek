@@ -5,12 +5,15 @@ import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultMockTrainingData,
+  noPolarizationWeeks,
   recentCyclingActivityFixture,
+  sectionExpectations,
 } from "../../app-fixtures/(tabs)/strain-test-helpers";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
 import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 import { intervalRun, runningData } from "../../components/running-training-test-helpers";
+import { trainingSections } from "../../lib/training-sections";
 
 let mockTodayQueryDate = "2026-03-28";
 let mockRunningData: unknown;
@@ -41,8 +44,18 @@ type MockRangeQueryOptions = {
   }) => number | false;
   placeholderData?: (previousData: unknown) => unknown;
 };
+type MockRangeQueryName =
+  | "running"
+  | "training"
+  | "hrZones"
+  | "polarization"
+  | "locationMap"
+  | "strengths"
+  | "climbingVolume"
+  | "strengthVolume"
+  | "sportVolume";
 let mockRangeQueryCalls: Record<
-  "running" | "training" | "hrZones" | "polarization" | "locationMap" | "strengths",
+  MockRangeQueryName,
   Array<{ input: { days: number | null; endDate?: string }; options: MockRangeQueryOptions }>
 >;
 let mockTimeRangePreference = {
@@ -146,13 +159,10 @@ vi.mock("../../lib/trpc", () => ({
     hiking: { activityComparison: { useQuery: mockRouteComparisonQuery } },
     climbing: {
       volumeOverTime: {
-        useQuery: () => ({
-          data: [],
-          isLoading: false,
-          isFetching: false,
-          isError: false,
-          error: null,
-        }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.climbingVolume.push({ input, options });
+          return { data: [], isLoading: false, isFetching: false, isError: false, error: null };
+        },
       },
       strengths: {
         useQuery: (input: { days: number | null }, options: MockRangeQueryOptions) => {
@@ -169,13 +179,10 @@ vi.mock("../../lib/trpc", () => ({
     },
     strength: {
       volumeOverTime: {
-        useQuery: () => ({
-          data: [],
-          isLoading: false,
-          isFetching: false,
-          isError: false,
-          error: null,
-        }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.strengthVolume.push({ input, options });
+          return { data: [], isLoading: false, isFetching: false, isError: false, error: null };
+        },
       },
     },
     mobileDashboard: {
@@ -197,7 +204,10 @@ vi.mock("../../lib/trpc", () => ({
     },
     training: {
       sportVolume: {
-        useQuery: () => ({ data: undefined, isLoading: false, isFetching: false, error: null }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.sportVolume.push({ input, options });
+          return { data: undefined, isLoading: false, isFetching: false, error: null };
+        },
       },
       hrZones: {
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
@@ -364,6 +374,9 @@ describe("StrainScreen", () => {
       strengths: [],
       hrZones: [],
       polarization: [],
+      climbingVolume: [],
+      strengthVolume: [],
+      sportVolume: [],
     };
     mockTimeRangePreference = {
       days: 90,
@@ -373,13 +386,48 @@ describe("StrainScreen", () => {
     resetMockTrainingState();
   });
 
+  it.each(trainingSections.map(({ id }) => [id, sectionExpectations[id]] as const))(
+    "shows only the training panels and enables only the queries for %s",
+    async (section, { queries, cards }) => {
+      mockPolarizationState.data = noPolarizationWeeks;
+      const unrelatedError = new Error("Unrelated data failed");
+      if (section === "endurance") {
+        mockRunningError = unrelatedError;
+      } else {
+        Object.assign(mockHrZonesState, { isError: true, error: unrelatedError });
+      }
+      const { TrainingAnalysis } = await import("../../app/strain");
+      render(<TrainingAnalysis section={section} />);
+
+      const enabled = Object.entries(mockRangeQueryCalls)
+        .filter(([, calls]) => calls.at(-1)?.options.enabled)
+        .map(([name]) => name);
+      expect(enabled.sort()).toEqual([...queries].sort());
+      if (section === "hiking") {
+        expect(mockRouteComparisonQuery).toHaveBeenCalledWith(
+          { days: 90 },
+          expect.objectContaining({ enabled: true }),
+        );
+      } else {
+        expect(mockRouteComparisonQuery).not.toHaveBeenCalled();
+      }
+      const allCards = new Set(Object.values(sectionExpectations).flatMap((entry) => entry.cards));
+      for (const card of allCards) {
+        expect(screen.queryAllByText(card).length > 0, card).toBe(cards.includes(card));
+      }
+      expect(screen.queryByText(unrelatedError.message)).toBeNull();
+    },
+  );
+
   it("does not consume cached default-range data during preference hydration", async () => {
     mockTimeRangePreference.isHydrated = false;
 
     const { default: StrainScreen } = await import("../../app/strain");
     const view = render(<StrainScreen />);
 
-    for (const calls of Object.values(mockRangeQueryCalls)) {
+    const { sportVolume, ...rangeQueries } = mockRangeQueryCalls;
+    expect(sportVolume).toHaveLength(0);
+    for (const calls of Object.values(rangeQueries)) {
       expect(calls.at(-1)?.options.enabled).toBe(false);
     }
     expect(screen.queryByText("16.0")).toBeNull();
@@ -388,7 +436,9 @@ describe("StrainScreen", () => {
     mockTimeRangePreference.isHydrated = true;
     view.rerender(<StrainScreen />);
 
-    for (const calls of Object.values(mockRangeQueryCalls)) {
+    expect(sportVolume.at(-1)?.input.days).toBe(30);
+    expect(sportVolume.at(-1)?.options.enabled).toBe(true);
+    for (const calls of Object.values(rangeQueries)) {
       expect(calls.at(-1)?.input.days).toBe(30);
       expect(calls.at(-1)?.options.enabled).toBe(true);
       expect(calls.at(-1)?.options.placeholderData).toBeUndefined();
@@ -681,24 +731,7 @@ describe("StrainScreen", () => {
     };
     mockHrZonesState.isError = true;
     mockHrZonesState.error = new Error("Intensity refresh failed");
-    mockPolarizationState.data = {
-      model: "treff-three-zone",
-      activityScope: "cycling",
-      threshold: 2,
-      maxHr: 190,
-      explanation: "Cached mobile polarization.",
-      method: {
-        formula: "Cached Treff formula.",
-        zoneBasis: "Cached Treff zones.",
-        calculationChoice: "Cached calculation choice.",
-        interpretation: "Cached descriptive interpretation.",
-        source: {
-          title: "Treff source",
-          url: "https://doi.org/10.3389/fphys.2019.00707",
-        },
-      },
-      weeks: [],
-    };
+    mockPolarizationState.data = noPolarizationWeeks;
     mockPolarizationState.isError = true;
     mockPolarizationState.error = new Error("Polarization refresh failed");
 

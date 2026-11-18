@@ -21,7 +21,11 @@ import { HealthStatusCards } from "../components/HealthStatusCards";
 import { MetricCard } from "../components/MetricCard";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
-import { formatHealthCardComparison, formatHealthCardValue } from "../lib/health-status-format";
+import {
+  formatHealthCardComparison,
+  formatHealthCardComparisonDelta,
+  formatHealthCardValue,
+} from "../lib/health-status-format";
 import { trpc } from "../lib/trpc";
 import { useUnitConverter } from "../lib/units";
 import { useProcessingStatus } from "../lib/useProcessingStatus";
@@ -193,6 +197,9 @@ export default function RecoveryScreen({ body = false }: { body?: boolean }) {
           formatValue={(metric) => formatHealthCardValue(metric, units)}
           formatComparisonValue={(metric, value) =>
             formatHealthCardComparison(metric, value, units)
+          }
+          formatComparisonDelta={(metric, value) =>
+            formatHealthCardComparisonDelta(metric, value, units)
           }
         />
       )}

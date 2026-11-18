@@ -3,17 +3,9 @@ import { Tabs, useRouter } from "expo-router";
 import { StyleSheet } from "react-native";
 import { AlertsBell } from "../../components/AlertsBell";
 import { TabBarButton } from "../../components/TabBarButton";
-import { getTabIconName, selectedTabBackgroundColor } from "../../lib/tab-selection";
+import { getTabIconName, primaryTabs, selectedTabBackgroundColor } from "../../lib/tab-selection";
 import { useProcessingAlerts } from "../../lib/useProcessingAlerts";
 import { colors } from "../../theme";
-
-const primaryTabs = [
-  { name: "index", title: "Overview" },
-  { name: "training", title: "Training" },
-  { name: "activities", title: "Activities" },
-  { name: "sleep-overview", title: "Sleep" },
-  { name: "more", title: "More" },
-] as const;
 
 export default function TabsLayout() {
   const router = useRouter();

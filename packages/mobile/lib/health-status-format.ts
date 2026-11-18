@@ -26,10 +26,20 @@ export function formatHealthCardComparison(
   units: UnitConverter,
 ) {
   if (metric === "skin_temperature") {
-    return formatMeasurementText(units.formatTemperatureDelta(value));
+    return formatMeasurementText(units.formatTemperature(value));
   }
   if (metric === "spo2") return formatSpO2(value);
   if (metric === "hrv") return formatHRV(value);
   if (metric === "steps") return formatNumber(value, 0);
   return formatNumber(value);
+}
+
+export function formatHealthCardComparisonDelta(
+  metric: HealthStatusMetric,
+  value: number,
+  units: UnitConverter,
+) {
+  return metric.metric === "skin_temperature"
+    ? formatMeasurementText(units.formatTemperatureDelta(value))
+    : formatHealthCardComparison(metric, value, units);
 }

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
+import type { UnitSystem } from "@dofek/format/units";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { healthStatusMetricSchema } from "dofek-server/mobile-dashboard-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { overviewEvidenceFixture } from "../../app-fixtures/(tabs)/overview-evidence";
 
@@ -19,6 +21,7 @@ const mockUseRefresh = vi.fn((_options: unknown) => ({
 let mockDashboardLoading = false;
 let mockDashboardFetching = false;
 let mockDashboardPaused = false;
+let mockUnitSystem: UnitSystem = "metric";
 let mockDashboardData: unknown;
 let mockDashboardError: Error | null = null;
 let mockAnomalyData: unknown;
@@ -133,7 +136,7 @@ vi.mock("../../lib/units", async () => {
   const actual = await vi.importActual<typeof import("../../lib/units")>("../../lib/units");
   return {
     ...actual,
-    useUnitConverter: () => new UnitConverter("metric"),
+    useUnitConverter: () => new UnitConverter(mockUnitSystem),
   };
 });
 
@@ -170,6 +173,7 @@ describe("TodayScreen independent loading states", () => {
     mockDashboardLoading = false;
     mockDashboardFetching = false;
     mockDashboardPaused = false;
+    mockUnitSystem = "metric";
     mockDashboardRefetch.mockClear();
     mockAnomalyRefetch.mockClear();
     mockDashboardUseQuery.mockClear();
@@ -246,6 +250,22 @@ describe("TodayScreen independent loading states", () => {
       pathname: "/body",
       params: { section: "heart-rate" },
     });
+  });
+
+  it("uses health monitor fixtures that match the server contract", () => {
+    for (const metric of overviewEvidenceFixture.trends.data.healthStatus) {
+      expect(healthStatusMetricSchema.safeParse(metric).success).toBe(true);
+    }
+  });
+
+  it("shows Fahrenheit averages and temperature differences in Health Monitor details", async () => {
+    mockUnitSystem = "imperial";
+    mockTrendsQuery.mockReturnValue(overviewEvidenceFixture.trends);
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    render(<OverviewScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show details for Skin Temperature" }));
+    expect(screen.getByText("7d avg 96.8°F vs prior 28d avg 95.0°F · +1.8°F")).toBeTruthy();
   });
 
   it("distinguishes offline queries from empty data and keeps cached measurements visible", async () => {

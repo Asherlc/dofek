@@ -4,7 +4,11 @@ import type { AppRouterOutputs } from "dofek-server/router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
-import { formatHealthCardComparison, formatHealthCardValue } from "../lib/health-status-format";
+import {
+  formatHealthCardComparison,
+  formatHealthCardComparisonDelta,
+  formatHealthCardValue,
+} from "../lib/health-status-format";
 import { colors, fonts, radius, spacing } from "../theme";
 import { SparkLine } from "./charts/SparkLine";
 import { HealthStatusCards } from "./HealthStatusCards";
@@ -237,6 +241,9 @@ export function OverviewEvidence({
           formatValue={(metric) => formatHealthCardValue(metric, units)}
           formatComparisonValue={(metric, value) =>
             formatHealthCardComparison(metric, value, units)
+          }
+          formatComparisonDelta={(metric, value) =>
+            formatHealthCardComparisonDelta(metric, value, units)
           }
         />
       ) : null}
