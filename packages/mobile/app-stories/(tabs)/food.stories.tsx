@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { View } from "react-native";
-import FoodScreen from "../../app/(tabs)/food";
+import FoodScreen from "../../app/food";
 import { seedFoodStoryQuery } from "../../app-fixtures/(tabs)/food-story-fixture";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";

@@ -106,6 +106,7 @@ export const PendingSourceSelection: Story = {
     if (!powerMetric) throw new Error("Power preview metric is required");
     return (
       <ActivityMetricsCharts
+        visibleMetric="power"
         points={activityPreviewPoints(defaultActivityMetricSources)}
         sourceControls={[
           {

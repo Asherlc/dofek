@@ -3,17 +3,17 @@ import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { MacroSummary } from "../../components/MacroSummary";
-import { MealSection } from "../../components/MealSection";
-import { NutritionIntakeContext } from "../../components/NutritionIntakeContext";
-import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
-import { openExternalUrl } from "../../lib/open-external-url";
-import { safeParseData } from "../../lib/safe-parse";
-import { logger } from "../../lib/telemetry";
-import { trpc } from "../../lib/trpc";
-import { useRefresh } from "../../lib/useRefresh";
-import { colors } from "../../theme";
-import { FoodByDateV2Schema, type FoodEntryRow } from "../../types/api";
+import { MacroSummary } from "../components/MacroSummary";
+import { MealSection } from "../components/MealSection";
+import { NutritionIntakeContext } from "../components/NutritionIntakeContext";
+import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
+import { openExternalUrl } from "../lib/open-external-url";
+import { safeParseData } from "../lib/safe-parse";
+import { logger } from "../lib/telemetry";
+import { trpc } from "../lib/trpc";
+import { useRefresh } from "../lib/useRefresh";
+import { colors } from "../theme";
+import { FoodByDateV2Schema, type FoodEntryRow } from "../types/api";
 
 const MEALS = [
   { key: "breakfast", label: "Breakfast" },

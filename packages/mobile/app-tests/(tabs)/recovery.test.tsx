@@ -270,7 +270,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       },
     });
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("TREND WEIGHT")).toBeTruthy();
@@ -331,7 +331,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       },
     });
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("79.8 kg")).toBeTruthy();
@@ -352,7 +352,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     };
     mockTimeRangePreference.isHydrated = false;
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     const view = render(<RecoveryScreen />);
 
     expect(mockRecoveryQueryCalls.at(-1)?.options.enabled).toBe(false);
@@ -377,7 +377,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   });
 
   it("refreshes recovery data and processing status together", async () => {
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(mockRefreshInvalidate).toBeTypeOf("function");
@@ -390,7 +390,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   it("keeps day selector visible while recovery data is loading", async () => {
     mockRecoveryLoading = true;
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("30d")).toBeTruthy();
@@ -414,7 +414,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       weight: [],
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
@@ -425,7 +425,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   it("shows one actionable server error without rendering false recovery metrics", async () => {
     mockRecoveryError = new Error("Recovery analytics are temporarily unavailable.");
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getAllByRole("alert")).toHaveLength(1);
@@ -453,7 +453,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       weight: [],
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getAllByText("Recovery refresh failed.")).toHaveLength(1);
@@ -475,7 +475,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       weight: [],
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
@@ -508,7 +508,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       weight: [],
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("Resting Heart Rate")).toBeTruthy();
@@ -544,7 +544,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       restingHeartRateTrendDirection: null,
     });
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(
@@ -564,7 +564,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       baselineRelative: [baselineMetric("resting_heart_rate", 50)],
     });
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     const restingHeartRateSparklineCall = sparkLinePropsCalls.find(
@@ -591,7 +591,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       weight: [],
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     fireEvent.click(screen.getByRole("button", { name: "View data for Resting Heart Rate" }));
@@ -613,7 +613,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       weight: [],
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("Respiratory Rate")).toBeTruthy();
@@ -634,7 +634,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       weight: [],
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     fireEvent.click(screen.getByRole("button", { name: "View data for Sleep Efficiency" }));
@@ -652,7 +652,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       weight: [],
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("Blood Oxygen")).toBeTruthy();
@@ -669,7 +669,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       weight: [],
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("Skin Temperature")).toBeTruthy();
@@ -685,7 +685,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       weight: [],
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.queryByText("Blood Oxygen")).toBeNull();
@@ -701,7 +701,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       weight: [],
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.queryByText("Skin Temperature")).toBeNull();
@@ -763,7 +763,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       },
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("TREND WEIGHT")).toBeTruthy();
@@ -790,7 +790,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       ],
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("79.8 kg")).toBeTruthy();
@@ -830,7 +830,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       },
     };
 
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    const { default: RecoveryScreen } = await import("../../app/recovery");
     render(<RecoveryScreen />);
 
     expect(screen.getByText("-0.3 kg/wk").style.color).toBe("rgb(153, 153, 153)");

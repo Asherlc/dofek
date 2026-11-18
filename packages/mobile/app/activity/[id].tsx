@@ -17,17 +17,22 @@ import { type ComponentProps, useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import type { ActivityMetric as SeriesMetric } from "../../../server/src/contracts/activity-metric-sources";
 import { ActivityClimbingPanel } from "../../components/ActivityClimbingPanel";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
+import { ActivitySourceDisclosure } from "../../components/ActivitySourceDisclosure";
 import { ActivityMetricsCharts, chartStyles } from "../../components/activity/ActivityDetailCharts";
 import { ActivityDetailHeader } from "../../components/activity/ActivityDetailHeader";
+import {
+  ActivityExportMenu,
+  type ActivityExportOption,
+} from "../../components/activity/ActivityExportMenu";
 import { RecomputeActivityButton } from "../../components/activity/RecomputeActivityButton";
 import { statsStyles, styles } from "../../components/activity/styles";
 import { useActivityClimbing } from "../../components/activity/useActivityClimbing";
@@ -41,6 +46,7 @@ import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram"
 import { ProviderRecordDetailModal } from "../../components/providers/provider-record-detail-modal";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { RouteMap } from "../../components/RouteMap";
+import { ScreenSections } from "../../components/ScreenSections";
 import { UnattachedClimbingLogEntries } from "../../components/UnattachedClimbingLogEntries";
 import { type ActivityExportFormat, downloadActivityExport } from "../../lib/activity-export";
 import { useAuth } from "../../lib/auth-context";
@@ -50,6 +56,12 @@ import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
 
 const EMPTY_ROUTE_POINTS: ComponentProps<typeof RouteMap>["points"] = [];
+const activitySections = [
+  { id: "overview", title: "Overview" },
+  { id: "performance", title: "Performance" },
+  { id: "details", title: "Details" },
+] as const;
+type ActivitySection = (typeof activitySections)[number]["id"];
 
 // ── Stats Grid ──
 
@@ -297,14 +309,21 @@ const climbingStyles = StyleSheet.create({
 
 // ── Main Screen ──
 
-export default function ActivityDetailScreen() {
+export default function ActivityDetailRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  return <ActivityDetailScreen key={id} id={id} />;
+}
+
+function ActivityDetailScreen({ id }: { id: string }) {
   const router = useRouter();
   const units = useUnitConverter();
   const { serverUrl, sessionToken } = useAuth();
   const trpcUtils = trpc.useUtils();
   const [exportingFormat, setExportingFormat] = useState<ActivityExportFormat | null>(null);
   const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [section, setSection] = useState<ActivitySection>("overview");
+  const [requestedMetric, setRequestedMetric] = useState<SeriesMetric>();
+  const [actionsOpen, setActionsOpen] = useState(false);
   const deleteMutation = trpc.activity.delete.useMutation({
     onSuccess: async () => {
       if (id) {
@@ -320,6 +339,7 @@ export default function ActivityDetailScreen() {
     },
   });
   const handleDelete = () => {
+    setActionsOpen(false);
     Alert.alert(
       "Delete Activity",
       "Are you sure you want to delete this activity? This cannot be undone.",
@@ -432,13 +452,35 @@ export default function ActivityDetailScreen() {
     points.some((p) => p.heartRate != null) ||
     (isClimbingActivity && (heartRateContext.data?.points.length ?? 0) > 0);
   const hasAltitude = points.some((p) => p.altitude != null);
+  const metricSections = [
+    { id: "heartRate", title: "Heart Rate", available: hasHr || zones.length > 0 },
+    { id: "power", title: "Power", available: hasPower },
+    { id: "speed", title: "Speed", available: points.some((point) => point.speed != null) },
+    { id: "cadence", title: "Cadence", available: points.some((point) => point.cadence != null) },
+    { id: "altitude", title: "Elevation", available: hasAltitude },
+    {
+      id: "skinTemperature",
+      title: "Skin Temperature",
+      available: points.some((point) => point.skinTemperature != null),
+    },
+  ] as const;
+  const availableMetrics = metricSections.filter(
+    ({ id: metricId, available }) =>
+      available || sourceControls.some((control) => control.key === metricId),
+  );
+  const activeMetric =
+    availableMetrics.find((metric) => metric.id === requestedMetric)?.id ?? availableMetrics[0]?.id;
+  const showOverview = section === "overview";
+  const showPerformance = section === "performance";
+  const showDetails = section === "details";
+  const changeSection = (next: ActivitySection) => {
+    setSection(next);
+    setActionsOpen(false);
+    setScrollEnabled(true);
+    handleHoverIndex(null);
+  };
 
-  const exportOptions: Array<{
-    accessibilityLabel: string;
-    label: string;
-    format: ActivityExportFormat;
-    disabled?: boolean;
-  }> = [
+  const exportOptions: ActivityExportOption[] = [
     {
       accessibilityLabel: "GPS track (GPX)",
       label: "GPX",
@@ -465,6 +507,7 @@ export default function ActivityDetailScreen() {
 
   const handleExport = () => {
     if (!id || !sessionToken) return;
+    setActionsOpen(false);
     setExportModalVisible(true);
   };
 
@@ -575,6 +618,18 @@ export default function ActivityDetailScreen() {
       <ActivityDetailHeader
         key={id}
         activity={activity}
+        showLineage={!showDetails}
+        actions={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Activity actions"
+            accessibilityState={{ expanded: actionsOpen }}
+            onPress={() => setActionsOpen((open) => !open)}
+            style={styles.actionsTrigger}
+          >
+            <Text style={styles.actionsLabel}>⋯</Text>
+          </Pressable>
+        }
         photos={{
           images: images.data?.images ?? [],
           loading: images.isLoading,
@@ -588,118 +643,63 @@ export default function ActivityDetailScreen() {
         onRetryHardware={() => void hardware.refetch()}
       />
 
-      {/* Stats Grid */}
-      {stats.length > 0 && <StatsGrid stats={stats} />}
-      {isCycling && powerWork.error && (
-        <QueryStatePanel variant="error" message={powerWork.error.message} />
-      )}
-      <ActivityPerceivedExertion value={activity.perceivedExertion} />
+      <View
+        style={actionsOpen ? styles.actionsList : styles.actionsHidden}
+        aria-hidden={!actionsOpen}
+      >
+        {id ? <RecomputeActivityButton key={`recompute-${id}`} activityId={id} /> : null}
 
-      {isHangboardingActivity && (
-        <View style={hangboardingStyles.container}>
-          <Text style={hangboardingStyles.title}>Hangboarding</Text>
-          <HangboardingDetail
-            data={hangboardDetails.data}
-            loading={hangboardDetails.isLoading}
-            error={hangboardDetails.error ?? null}
-          />
-        </View>
-      )}
-
-      {/* Route Map */}
-      {route.error ? (
-        <QueryStatePanel
-          variant="error"
-          message={getQueryErrorMessage(route.error)}
-          onRetry={() => void route.refetch()}
-          retrying={route.isFetching}
-        />
-      ) : routeMapPending && hasMap ? (
-        <View style={styles.chartsLoading} accessibilityLiveRegion="polite">
-          <ActivityIndicator color={colors.accent} size="small" />
-          <Text style={styles.chartsLoadingText}>
-            {route.isLoading ? "Loading route map…" : "Processing route map…"}
+        <Pressable
+          onPress={handleExport}
+          disabled={exportingFormat != null || !sessionToken}
+          accessibilityRole="button"
+          accessibilityLabel="Export Activity"
+          accessibilityState={{
+            busy: exportingFormat != null,
+            disabled: exportingFormat != null || !sessionToken,
+          }}
+          style={({ pressed }) => [
+            styles.exportButton,
+            pressed && styles.exportButtonPressed,
+            (exportingFormat != null || !sessionToken) && styles.exportButtonDisabled,
+          ]}
+        >
+          <Text style={styles.exportButtonText}>
+            {exportingFormat != null
+              ? `Exporting ${exportingFormat.toUpperCase()}...`
+              : "Export Activity"}
           </Text>
-        </View>
-      ) : routeMapPending ? (
-        <View style={styles.mapProcessing}>
-          <MapProcessingState />
-        </View>
-      ) : null}
-      {hasMap &&
-        !(
-          isClimbingActivity &&
-          ((climbingEntries.data?.length ?? 0) > 0 || (entrySuggestions.data?.length ?? 0) > 0)
-        ) && (
-          <RouteMap
-            points={routePoints}
-            climbMarkers={climbMarkers}
-            onSelectEntry={setSelectedClimbingEntryId}
-            hoveredPosition={hoveredPosition}
-          />
-        )}
+        </Pressable>
 
-      {/* Strength Exercises */}
-      {(strengthExercises.data?.length ?? 0) > 0 && (
-        <ExerciseBreakdown exercises={strengthExercises.data ?? []} units={units} />
-      )}
+        {/* Delete Activity */}
+        <Pressable
+          onPress={handleDelete}
+          disabled={deleteMutation.isPending}
+          accessibilityRole="button"
+          accessibilityLabel="Delete Activity"
+          accessibilityState={{
+            busy: deleteMutation.isPending,
+            disabled: deleteMutation.isPending,
+          }}
+          style={({ pressed }) => [
+            styles.deleteButton,
+            pressed && styles.deleteButtonPressed,
+            deleteMutation.isPending && styles.deleteButtonDisabled,
+          ]}
+        >
+          <Text style={styles.deleteButtonText}>
+            {deleteMutation.isPending ? "Deleting..." : "Delete Activity"}
+          </Text>
+        </Pressable>
+      </View>
 
-      {isClimbingActivity && (
-        <View style={climbingStyles.container}>
-          <Text style={chartStyles.title}>Climbs</Text>
-          {climbingEntries.error && (
-            <Text style={styles.errorText}>{userFacingErrorMessage(climbingEntries.error)}</Text>
-          )}
-          {climbingEntriesLoading && <QueryStatePanel variant="loading" minHeight={72} />}
-          {((climbingEntries.data?.length ?? 0) > 0 ||
-            (entrySuggestions.data?.length ?? 0) > 0) && (
-            <ActivityClimbingPanel
-              selectedEntryId={highlightedClimbId}
-              onSelectEntry={setHighlightedClimbId}
-              points={routePoints}
-              hoveredPosition={hoveredPosition}
-              onOpenEntry={setSelectedClimbingEntryId}
-              suggestions={entrySuggestions.data}
-              attachmentStates={entryAttachState}
-              onAttach={handleAttachEntry}
-              entries={climbingEntries.data ?? []}
-              locations={climbingLocations}
-            />
-          )}
-          {(entrySuggestions.error ||
-            (!climbingEntriesLoading &&
-              entrySuggestions.isLoading &&
-              entrySuggestions.data === undefined) ||
-            (climbingEntries.data?.length === 0 && entrySuggestions.data?.length === 0)) && (
-            <UnattachedClimbingLogEntries
-              showEntries={false}
-              suggestions={entrySuggestions.data}
-              locations={climbingLocations}
-              selectedEntryId={selectedClimbingEntryId}
-              error={entrySuggestions.error ?? null}
-              isLoading={entrySuggestions.isLoading}
-              state={entryAttachState}
-              onAttach={handleAttachEntry}
-            />
-          )}
-        </View>
-      )}
+      <ScreenSections
+        label="Activity sections"
+        sections={activitySections}
+        selected={section}
+        onSelect={changeSection}
+      />
 
-      {selectedClimbingEntry && (
-        <ProviderRecordDetailModal
-          dataType="climbingLogEntries"
-          state={{ data: selectedClimbingEntry, error: null, isLoading: false }}
-          onClose={() => setSelectedClimbingEntryId(null)}
-        />
-      )}
-
-      {metricSources.error && (
-        <QueryStatePanel variant="error" message={metricSources.error.message} />
-      )}
-      {stream.error && <QueryStatePanel variant="error" message={stream.error.message} />}
-      {isClimbingActivity && heartRateContext.error && (
-        <QueryStatePanel variant="error" message={heartRateContext.error.message} />
-      )}
       {sourceControls.length > 0 && (
         <Text
           accessibilityLiveRegion="polite"
@@ -714,194 +714,271 @@ export default function ActivityDetailScreen() {
             : null}
         </Text>
       )}
-      {stream.isLoading ? (
-        <View style={styles.chartsLoading}>
-          <ActivityIndicator color={colors.accent} size="small" />
-          <Text style={styles.chartsLoadingText}>Loading charts...</Text>
-        </View>
-      ) : null}
-      <ActivityMetricsCharts
-        points={points}
-        sourceControls={sourceControls}
-        sourceAttribution={{
-          ...metrics.attributionHints.stream,
-          heartRate:
-            isClimbingActivity && heartRateContext.data !== undefined
-              ? metrics.attributionHints.heartRateContext
-              : metrics.attributionHints.stream.heartRate,
-        }}
-        serverUrl={serverUrl}
-        activityWindow={activity}
-        cadenceLabel={cadenceUnit(activity.activityType)}
-        isClimbingActivity={isClimbingActivity}
-        heartRateContext={heartRateContext.data}
-        climbingAnnotations={climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])}
-        highlightedClimbId={highlightedClimbId}
-        onSelectClimb={setHighlightedClimbId}
-        hasHr={hasHr}
-        hasPower={hasPower}
-        hasAltitude={hasAltitude}
-        units={units}
-        hasGps={hasGps}
-        onHoverIndex={handleHoverIndex}
-        onHoverTime={handleHeartRateHoverTime}
-        onScrubStart={handleScrubStart}
-        onScrubEnd={handleScrubEnd}
-      />
 
-      {(hasHr || zones.length > 0) && (
-        <View>
-          {zones.length > 0 && metrics.attributionHints.hrZones && (
-            <Text
-              accessibilityLiveRegion="polite"
-              style={{ color: colors.textSecondary, fontSize: 12 }}
-            >
-              {metrics.attributionHints.hrZones}
-            </Text>
+      {showOverview ? (
+        <>
+          {/* Stats Grid */}
+          {stats.length > 0 ? (
+            <>
+              <Text style={chartStyles.title}>Key stats</Text>
+              <StatsGrid stats={stats} />
+            </>
+          ) : null}
+          {isCycling && powerWork.error && (
+            <QueryStatePanel variant="error" message={powerWork.error.message} />
           )}
-          <HrZonesChart
-            zones={zones}
-            loading={hrZones.isLoading}
-            errorMessage={
-              hrZones.error
-                ? userFacingErrorMessage(
-                    hrZones.error,
-                    "Heart rate zones could not be loaded. Please try again.",
-                  )
-                : undefined
-            }
+          <ActivityPerceivedExertion value={activity.perceivedExertion} />
+
+          {isHangboardingActivity && (
+            <View style={hangboardingStyles.container}>
+              <Text style={hangboardingStyles.title}>Hangboarding</Text>
+              <HangboardingDetail
+                data={hangboardDetails.data}
+                loading={hangboardDetails.isLoading}
+                error={hangboardDetails.error ?? null}
+              />
+            </View>
+          )}
+
+          {/* Route Map */}
+          {route.error ? (
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(route.error)}
+              onRetry={() => void route.refetch()}
+              retrying={route.isFetching}
+            />
+          ) : routeMapPending && hasMap ? (
+            <View style={styles.chartsLoading} accessibilityLiveRegion="polite">
+              <ActivityIndicator color={colors.accent} size="small" />
+              <Text style={styles.chartsLoadingText}>
+                {route.isLoading ? "Loading route map…" : "Processing route map…"}
+              </Text>
+            </View>
+          ) : routeMapPending ? (
+            <View style={styles.mapProcessing}>
+              <MapProcessingState />
+            </View>
+          ) : null}
+          {hasMap &&
+            !(
+              isClimbingActivity &&
+              ((climbingEntries.data?.length ?? 0) > 0 || (entrySuggestions.data?.length ?? 0) > 0)
+            ) && (
+              <RouteMap
+                points={routePoints}
+                climbMarkers={climbMarkers}
+                onSelectEntry={setSelectedClimbingEntryId}
+                hoveredPosition={hoveredPosition}
+              />
+            )}
+
+          {/* Strength Exercises */}
+          {(strengthExercises.data?.length ?? 0) > 0 && (
+            <ExerciseBreakdown exercises={strengthExercises.data ?? []} units={units} />
+          )}
+
+          {isClimbingActivity && (
+            <View style={climbingStyles.container}>
+              <Text style={chartStyles.title}>Climbs</Text>
+              {climbingEntries.error && (
+                <Text style={styles.errorText}>
+                  {userFacingErrorMessage(climbingEntries.error)}
+                </Text>
+              )}
+              {climbingEntriesLoading && <QueryStatePanel variant="loading" minHeight={72} />}
+              {((climbingEntries.data?.length ?? 0) > 0 ||
+                (entrySuggestions.data?.length ?? 0) > 0) && (
+                <ActivityClimbingPanel
+                  selectedEntryId={highlightedClimbId}
+                  onSelectEntry={setHighlightedClimbId}
+                  points={routePoints}
+                  hoveredPosition={hoveredPosition}
+                  onOpenEntry={setSelectedClimbingEntryId}
+                  suggestions={entrySuggestions.data}
+                  attachmentStates={entryAttachState}
+                  onAttach={handleAttachEntry}
+                  entries={climbingEntries.data ?? []}
+                  locations={climbingLocations}
+                />
+              )}
+              {(entrySuggestions.error ||
+                (!climbingEntriesLoading &&
+                  entrySuggestions.isLoading &&
+                  entrySuggestions.data === undefined) ||
+                (climbingEntries.data?.length === 0 && entrySuggestions.data?.length === 0)) && (
+                <UnattachedClimbingLogEntries
+                  showEntries={false}
+                  suggestions={entrySuggestions.data}
+                  locations={climbingLocations}
+                  selectedEntryId={selectedClimbingEntryId}
+                  error={entrySuggestions.error ?? null}
+                  isLoading={entrySuggestions.isLoading}
+                  state={entryAttachState}
+                  onAttach={handleAttachEntry}
+                />
+              )}
+            </View>
+          )}
+
+          {selectedClimbingEntry && (
+            <ProviderRecordDetailModal
+              dataType="climbingLogEntries"
+              state={{ data: selectedClimbingEntry, error: null, isLoading: false }}
+              onClose={() => setSelectedClimbingEntryId(null)}
+            />
+          )}
+        </>
+      ) : null}
+
+      {showPerformance ? (
+        <>
+          {activeMetric && availableMetrics.length > 1 ? (
+            <ScreenSections
+              label="Performance metrics"
+              sections={availableMetrics}
+              selected={activeMetric}
+              onSelect={(metric) => {
+                setRequestedMetric(metric);
+                handleHoverIndex(null);
+              }}
+            />
+          ) : null}
+          {metricSources.error && (
+            <QueryStatePanel variant="error" message={metricSources.error.message} />
+          )}
+          {stream.error && <QueryStatePanel variant="error" message={stream.error.message} />}
+          {isClimbingActivity && heartRateContext.error && (
+            <QueryStatePanel variant="error" message={heartRateContext.error.message} />
+          )}
+          {stream.isLoading ? (
+            <View style={styles.chartsLoading}>
+              <ActivityIndicator color={colors.accent} size="small" />
+              <Text style={styles.chartsLoadingText}>Loading charts...</Text>
+            </View>
+          ) : null}
+          {activeMetric ? (
+            <ActivityMetricsCharts
+              visibleMetric={activeMetric}
+              points={points}
+              sourceControls={sourceControls}
+              sourceAttribution={{
+                ...metrics.attributionHints.stream,
+                heartRate:
+                  isClimbingActivity && heartRateContext.data !== undefined
+                    ? metrics.attributionHints.heartRateContext
+                    : metrics.attributionHints.stream.heartRate,
+              }}
+              serverUrl={serverUrl}
+              activityWindow={activity}
+              cadenceLabel={cadenceUnit(activity.activityType)}
+              isClimbingActivity={isClimbingActivity}
+              heartRateContext={heartRateContext.data}
+              climbingAnnotations={climbingEntries.data?.flatMap(
+                (entry) => entry.chartAnnotations ?? [],
+              )}
+              highlightedClimbId={highlightedClimbId}
+              onSelectClimb={setHighlightedClimbId}
+              hasHr={hasHr}
+              hasPower={hasPower}
+              hasAltitude={hasAltitude}
+              units={units}
+              hasGps={hasGps}
+              onHoverIndex={handleHoverIndex}
+              onHoverTime={handleHeartRateHoverTime}
+              onScrubStart={handleScrubStart}
+              onScrubEnd={handleScrubEnd}
+            />
+          ) : null}
+          {hasGps ? (
+            <RouteMap points={routePoints} hoveredPosition={hoveredPosition} height={180} />
+          ) : null}
+          {!activeMetric && !stream.isLoading && !stream.error ? (
+            <QueryStatePanel variant="empty" message="No performance measurements recorded" />
+          ) : null}
+
+          {activeMetric === "heartRate" && (hasHr || zones.length > 0) && (
+            <View>
+              {zones.length > 0 && metrics.attributionHints.hrZones && (
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={{ color: colors.textSecondary, fontSize: 12 }}
+                >
+                  {metrics.attributionHints.hrZones}
+                </Text>
+              )}
+              <HrZonesChart
+                zones={zones}
+                loading={hrZones.isLoading}
+                errorMessage={
+                  hrZones.error
+                    ? userFacingErrorMessage(
+                        hrZones.error,
+                        "Heart rate zones could not be loaded. Please try again.",
+                      )
+                    : undefined
+                }
+              />
+            </View>
+          )}
+
+          {/* Power Zones and dated manual FTP settings link */}
+          {activeMetric === "power" && powerZones.error && (
+            <QueryStatePanel variant="error" message={powerZones.error.message} />
+          )}
+          {activeMetric === "power" && isCycling && hasPower && powerZones.data != null && (
+            <View style={{ gap: 8 }}>
+              {powerZones.data.ftp != null &&
+                powerZones.data.zones.length > 0 &&
+                metrics.attributionHints.powerZones && (
+                  <Text
+                    accessibilityLiveRegion="polite"
+                    style={{ color: colors.textSecondary, fontSize: 12 }}
+                  >
+                    {metrics.attributionHints.powerZones}
+                  </Text>
+                )}
+              <CyclingThresholdDetails evidence={powerZones.data.thresholdEvidence} />
+              {!powerZones.error && !powerZones.isFetching && powerZones.data.ftp == null ? (
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel="Set cycling FTP for this activity date"
+                  onPress={() =>
+                    router.push(
+                      `/settings?tab=models-units&section=cycling-ftp&date=${powerZones.data?.activityDate ?? ""}`,
+                    )
+                  }
+                  style={{ minHeight: 44, justifyContent: "center" }}
+                >
+                  <Text style={{ color: colors.accent }}>Set FTP for this date</Text>
+                </Pressable>
+              ) : null}
+              {powerZones.data.ftp != null && <PowerZonesChart zones={powerZones.data.zones} />}
+            </View>
+          )}
+        </>
+      ) : null}
+
+      {showDetails ? (
+        <View>
+          <Text style={chartStyles.title}>Recording sources</Text>
+          <ActivitySourceDisclosure
+            tree={activity.sourceTree}
+            hardware={hardware.data}
+            hardwareLoading={hardware.isLoading}
+            hardwareError={hardware.error}
+            onRetryHardware={() => void hardware.refetch()}
           />
         </View>
-      )}
+      ) : null}
 
-      {/* Power Zones and dated manual FTP settings link */}
-      {powerZones.error && <QueryStatePanel variant="error" message={powerZones.error.message} />}
-      {isCycling && hasPower && powerZones.data != null && (
-        <View style={{ gap: 8 }}>
-          {powerZones.data.ftp != null &&
-            powerZones.data.zones.length > 0 &&
-            metrics.attributionHints.powerZones && (
-              <Text
-                accessibilityLiveRegion="polite"
-                style={{ color: colors.textSecondary, fontSize: 12 }}
-              >
-                {metrics.attributionHints.powerZones}
-              </Text>
-            )}
-          <CyclingThresholdDetails evidence={powerZones.data.thresholdEvidence} />
-          {!powerZones.error && !powerZones.isFetching && powerZones.data.ftp == null ? (
-            <Pressable
-              accessibilityRole="link"
-              accessibilityLabel="Set cycling FTP for this activity date"
-              onPress={() =>
-                router.push(
-                  `/settings?tab=models-units&section=cycling-ftp&date=${powerZones.data?.activityDate ?? ""}`,
-                )
-              }
-              style={{ minHeight: 44, justifyContent: "center" }}
-            >
-              <Text style={{ color: colors.accent }}>Set FTP for this date</Text>
-            </Pressable>
-          ) : null}
-          {powerZones.data.ftp != null && <PowerZonesChart zones={powerZones.data.zones} />}
-        </View>
-      )}
-
-      {id ? <RecomputeActivityButton key={`recompute-${id}`} activityId={id} /> : null}
-
-      <Pressable
-        onPress={handleExport}
-        disabled={exportingFormat != null || !sessionToken}
-        accessibilityRole="button"
-        accessibilityLabel="Export Activity"
-        accessibilityState={{
-          busy: exportingFormat != null,
-          disabled: exportingFormat != null || !sessionToken,
-        }}
-        style={({ pressed }) => [
-          styles.exportButton,
-          pressed && styles.exportButtonPressed,
-          (exportingFormat != null || !sessionToken) && styles.exportButtonDisabled,
-        ]}
-      >
-        <Text style={styles.exportButtonText}>
-          {exportingFormat != null
-            ? `Exporting ${exportingFormat.toUpperCase()}...`
-            : "Export Activity"}
-        </Text>
-      </Pressable>
-
-      <Modal
+      <ActivityExportMenu
         visible={exportModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setExportModalVisible(false)}
-      >
-        <Pressable
-          style={styles.exportModalBackdrop}
-          onPress={() => setExportModalVisible(false)}
-          accessible={false}
-        >
-          <Pressable style={styles.exportModalCard} onPress={() => undefined} accessible={false}>
-            <Text style={styles.exportModalTitle}>Export Activity</Text>
-            <Text style={styles.exportModalSubtitle}>Choose a file format</Text>
-            {exportOptions.map(({ accessibilityLabel, label, format, disabled }) => (
-              <Pressable
-                key={format}
-                disabled={disabled || exportingFormat != null}
-                onPress={() => handleExportFormatSelect(format)}
-                accessibilityRole="button"
-                accessibilityLabel={`Export as ${accessibilityLabel}`}
-                accessibilityState={{
-                  busy: exportingFormat === format,
-                  disabled: disabled || exportingFormat != null,
-                }}
-                style={({ pressed }) => [
-                  styles.exportModalOption,
-                  pressed && !disabled && styles.exportModalOptionPressed,
-                  disabled && styles.exportModalOptionDisabled,
-                ]}
-              >
-                <Text style={styles.exportModalOptionText}>
-                  {disabled ? `${label} (no GPS)` : label}
-                </Text>
-              </Pressable>
-            ))}
-            <Pressable
-              onPress={() => setExportModalVisible(false)}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel export"
-              style={({ pressed }) => [
-                styles.exportModalCancel,
-                pressed && styles.exportModalOptionPressed,
-              ]}
-            >
-              <Text style={styles.exportModalCancelText}>Cancel</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Delete Activity */}
-      <Pressable
-        onPress={handleDelete}
-        disabled={deleteMutation.isPending}
-        accessibilityRole="button"
-        accessibilityLabel="Delete Activity"
-        accessibilityState={{
-          busy: deleteMutation.isPending,
-          disabled: deleteMutation.isPending,
-        }}
-        style={({ pressed }) => [
-          styles.deleteButton,
-          pressed && styles.deleteButtonPressed,
-          deleteMutation.isPending && styles.deleteButtonDisabled,
-        ]}
-      >
-        <Text style={styles.deleteButtonText}>
-          {deleteMutation.isPending ? "Deleting..." : "Delete Activity"}
-        </Text>
-      </Pressable>
+        options={exportOptions}
+        exportingFormat={exportingFormat}
+        onSelect={handleExportFormatSelect}
+        onClose={() => setExportModalVisible(false)}
+      />
     </ScrollView>
   );
 }

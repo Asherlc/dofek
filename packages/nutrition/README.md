@@ -14,7 +14,7 @@ Available days also expose a server-authored `contributionGrain` and
 `contributionLabel`. The label combines the canonical provider display name with
 the source path when one exists, such as `Cronometer (via Apple Health) daily
 total`. When the status is `source_conflict`, [web](../web/src/pages/NutritionPage.tsx)
-and [mobile](<../mobile/app/(tabs)/food.tsx>) show an alert with the server's
+and [mobile](<../mobile/app/food.tsx>) show an alert with the server's
 resolution message and source labels.
 Source selection prefers itemized entries, then meal aggregates, then daily
 aggregates. Multiple sources at the selected tier conflict. Account-scoped

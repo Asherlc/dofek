@@ -506,7 +506,7 @@ describe("CorrelationScreen", () => {
     expect(screen.getByText("Aggregate inputs · Apple Health")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Open Canonical daily nutrition inputs" }));
-    expect(state.routerPush).toHaveBeenCalledWith("/food");
+    expect(state.routerPush).toHaveBeenCalledWith("/nutrition");
 
     fireEvent.click(screen.getByRole("button", { name: "Open Morning run" }));
     expect(state.routerPush).toHaveBeenCalledWith("/activity/00000000-0000-4000-8000-000000000106");

@@ -4,7 +4,7 @@ import { DefaultTheme, ThemeProvider } from "expo-router/react-navigation";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { tabsScreenOptions } from "../app/(tabs)/_layout";
-import { getTabIconName, type TabRouteName } from "../lib/tab-selection";
+import { getTabIconName, primaryTabs, type TabRouteName } from "../lib/tab-selection";
 import { colors } from "../theme";
 import { TabBarButton } from "./TabBarButton";
 
@@ -22,16 +22,22 @@ const meta = {
   component: TabBarButton,
   args: {
     role: "button",
-    "aria-label": "Today",
+    "aria-label": primaryTabs[0].title,
     "aria-selected": true,
     pressOpacity: 1,
     style: [navigatorButtonStyle, { backgroundColor: colors.accentSubtle }],
     children: (
       <>
         <View style={{ height: 28, justifyContent: "center" }}>
-          <Ionicons name="today" size={25} style={{ color: colors.accent }} />
+          <Ionicons
+            name={getTabIconName("index", true)}
+            size={25}
+            style={{ color: colors.accent }}
+          />
         </View>
-        <Text style={{ fontSize: 10, fontWeight: "600", color: colors.accent }}>Today</Text>
+        <Text style={{ fontSize: 10, fontWeight: "600", color: colors.accent }}>
+          {primaryTabs[0].title}
+        </Text>
       </>
     ),
   },
@@ -64,21 +70,19 @@ export const Unselected: Story = {
     children: (
       <>
         <View style={{ height: 28, justifyContent: "center" }}>
-          <Ionicons name="today-outline" size={25} style={{ color: colors.textSecondary }} />
+          <Ionicons
+            name={getTabIconName("index", false)}
+            size={25}
+            style={{ color: colors.textSecondary }}
+          />
         </View>
-        <Text style={{ fontSize: 10, fontWeight: "600", color: colors.textSecondary }}>Today</Text>
+        <Text style={{ fontSize: 10, fontWeight: "600", color: colors.textSecondary }}>
+          {primaryTabs[0].title}
+        </Text>
       </>
     ),
   },
 };
-
-const tabItems: { name: TabRouteName; label: string }[] = [
-  { name: "index", label: "Today" },
-  { name: "recovery", label: "Recovery" },
-  { name: "strain", label: "Training" },
-  { name: "activities", label: "Activities" },
-  { name: "food", label: "Nutrition" },
-];
 
 function NavigationPreview({ horizontal = false }: { horizontal?: boolean }) {
   const [selectedTab, setSelectedTab] = useState<TabRouteName>("index");
@@ -91,14 +95,14 @@ function NavigationPreview({ horizontal = false }: { horizontal?: boolean }) {
           { height: horizontal ? 32 : 49, flexDirection: "row" },
         ]}
       >
-        {tabItems.map(({ name, label }) => {
+        {primaryTabs.map(({ name, title }) => {
           const focused = selectedTab === name;
           const color = focused ? colors.accent : colors.textSecondary;
           return (
             <View key={name} style={[{ flex: 1 }, tabsScreenOptions.tabBarItemStyle]}>
               <TabBarButton
                 role="button"
-                aria-label={label}
+                aria-label={title}
                 aria-selected={focused}
                 pressOpacity={1}
                 onPress={() => setSelectedTab(name)}
@@ -126,7 +130,7 @@ function NavigationPreview({ horizontal = false }: { horizontal?: boolean }) {
                     horizontal && { marginLeft: 5, lineHeight: 24 },
                   ]}
                 >
-                  {label}
+                  {title}
                 </Text>
               </TabBarButton>
             </View>

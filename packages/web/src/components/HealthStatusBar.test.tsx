@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { UnitConverter } from "@dofek/format/units";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HealthStatusBar } from "./HealthStatusBar.tsx";
@@ -249,6 +250,31 @@ describe("HealthStatusBar", () => {
     expect(screen.getByText(/baseline 7,640/)).toBeDefined();
     expect(screen.queryByText("999 ms")).toBeNull();
     expect(screen.getByText("52 ms").classList).toContain("whitespace-nowrap");
+  });
+
+  it("shows Fahrenheit means and their difference in the same comparison", () => {
+    const units = new UnitConverter("imperial");
+    render(
+      <HealthStatusBar
+        metrics={[
+          {
+            ...serverMetric,
+            comparison: {
+              recentDays: 7,
+              baselineDays: 28,
+              recentMean: 36,
+              baselineMean: 35,
+              delta: 1,
+              direction: "increasing",
+            },
+          },
+        ]}
+        formatters={{ skin_temperature: (value) => units.formatTemperature(value) }}
+        comparisonFormatters={{ skin_temperature: (value) => units.formatTemperatureDelta(value) }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show details for Skin Temperature" }));
+    expect(screen.getByText("7d avg 96.8°F vs prior 28d avg 95.0°F · +1.8°F")).toBeTruthy();
   });
 
   it("renders server-computed baseline deviation, comparison, and coverage", () => {

@@ -4,11 +4,13 @@ import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
-import TodayScreen from "../../app/(tabs)/index";
+import OverviewScreen from "../../app/(tabs)/index";
+import { overviewEvidenceFixture } from "../../app-fixtures/(tabs)/overview-evidence";
 import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
 } from "../../app-fixtures/(tabs)/processing-status-story-fixture";
+import { overviewDays } from "../../components/OverviewEvidence";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 
@@ -94,9 +96,18 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
     },
   );
 
+  const overviewInput = { days: overviewDays, endDate: todayDate };
   queryClient.setQueryData(
-    [["dailyMetrics", "trends"], { input: { days: 30, endDate: todayDate }, type: "query" }],
-    { latest_date: todayDate },
+    [["dailyMetrics", "trends"], { input: overviewInput, type: "query" }],
+    overviewEvidenceFixture.trends.data,
+  );
+  queryClient.setQueryData(
+    [["dailyMetrics", "hrvBaseline"], { input: overviewInput, type: "query" }],
+    overviewEvidenceFixture.heartRate.data,
+  );
+  queryClient.setQueryData(
+    [["insights", "compute"], { input: overviewInput, type: "query" }],
+    overviewEvidenceFixture.insights.data,
   );
 
   queryClient.setQueryData(
@@ -161,8 +172,8 @@ function MockProviders({
 }
 
 const meta = {
-  title: "Pages/Home",
-  component: TodayScreen,
+  title: "Pages/Overview",
+  component: OverviewScreen,
   parameters: {
     layout: "fullscreen",
   },
@@ -175,7 +186,7 @@ const meta = {
       </MockProviders>
     ),
   ],
-} satisfies Meta<typeof TodayScreen>;
+} satisfies Meta<typeof OverviewScreen>;
 
 export default meta;
 

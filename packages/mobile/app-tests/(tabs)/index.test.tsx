@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import type { UnitSystem } from "@dofek/format/units";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { healthStatusMetricSchema } from "dofek-server/mobile-dashboard-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { overviewEvidenceFixture } from "../../app-fixtures/(tabs)/overview-evidence";
 
 const mockRouterPush = vi.fn();
 const mockDashboardRefetch = vi.fn(() => Promise.resolve());
@@ -17,12 +20,17 @@ const mockUseRefresh = vi.fn((_options: unknown) => ({
 }));
 let mockDashboardLoading = false;
 let mockDashboardFetching = false;
+let mockDashboardPaused = false;
+let mockUnitSystem: UnitSystem = "metric";
 let mockDashboardData: unknown;
 let mockDashboardError: Error | null = null;
 let mockAnomalyData: unknown;
 let mockDataHealthData: unknown;
 let mockProviderGuideError: Error | null = null;
 const mockDataHealthRefetch = vi.fn(() => Promise.resolve());
+const mockTrendsQuery = vi.fn();
+const mockHeartRateQuery = vi.fn();
+const mockInsightsQuery = vi.fn();
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
@@ -30,6 +38,11 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    dailyMetrics: {
+      trends: { useQuery: mockTrendsQuery },
+      hrvBaseline: { useQuery: mockHeartRateQuery },
+    },
+    insights: { compute: { useQuery: mockInsightsQuery } },
     mobileDashboard: {
       dashboard: {
         useQuery: (...parameters: unknown[]) => {
@@ -51,6 +64,7 @@ vi.mock("../../lib/trpc", () => ({
             data: mockDashboardData,
             isLoading: mockDashboardLoading,
             isFetching: mockDashboardFetching,
+            isPaused: mockDashboardPaused,
             isError: !!mockDashboardError,
             error: mockDashboardError,
             refetch: mockDashboardRefetch,
@@ -122,11 +136,12 @@ vi.mock("../../lib/units", async () => {
   const actual = await vi.importActual<typeof import("../../lib/units")>("../../lib/units");
   return {
     ...actual,
-    useUnitConverter: () => new UnitConverter("metric"),
+    useUnitConverter: () => new UnitConverter(mockUnitSystem),
   };
 });
 
 vi.mock("../../theme", () => ({
+  fonts: { mono: "monospace" },
   colors: {
     background: "#000",
     surface: "#1a1a1a",
@@ -151,8 +166,14 @@ vi.mock("../../theme", () => ({
 
 describe("TodayScreen independent loading states", () => {
   beforeEach(() => {
+    for (const query of [mockTrendsQuery, mockHeartRateQuery, mockInsightsQuery]) {
+      query.mockReset();
+      query.mockReturnValue({ isLoading: false, error: null, refetch: vi.fn() });
+    }
     mockDashboardLoading = false;
     mockDashboardFetching = false;
+    mockDashboardPaused = false;
+    mockUnitSystem = "metric";
     mockDashboardRefetch.mockClear();
     mockAnomalyRefetch.mockClear();
     mockDashboardUseQuery.mockClear();
@@ -187,6 +208,91 @@ describe("TodayScreen independent loading states", () => {
     mockDataHealthUseQuery.mockClear();
     mockDataHealthRefetch.mockClear();
     mockUseRefresh.mockClear();
+  });
+
+  it("shows the web overview evidence and opens the matching Body section", async () => {
+    mockTrendsQuery.mockReturnValue({
+      data: {
+        latest_resting_hr: 52,
+        restingHeartRateTrendLabel: "below average",
+        healthStatus: [],
+      },
+    });
+    mockHeartRateQuery.mockReturnValue({
+      data: [
+        { date: "2026-03-19", resting_hr: 54, resting_hr_mean_7d: 56 },
+        { date: "2026-03-20", resting_hr: 52, resting_hr_mean_7d: 55 },
+      ],
+    });
+    mockInsightsQuery.mockReturnValue({
+      data: [
+        {
+          confidence: "strong",
+          type: "correlation",
+          effectSize: 0.72,
+          action: "Sleep consistency",
+          metric: "Heart rate variability",
+          message: "More consistent sleep tracked with higher heart rate variability",
+          detail: "90 daily observations",
+        },
+      ],
+    });
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    render(<OverviewScreen />);
+
+    expect(
+      screen.getByText("More consistent sleep tracked with higher heart rate variability"),
+    ).toBeTruthy();
+    expect(screen.getByText("7-day average")).toBeTruthy();
+    expect(screen.getByText("Health monitor")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "View heart rate data" }));
+    expect(mockRouterPush).toHaveBeenLastCalledWith({
+      pathname: "/body",
+      params: { section: "heart-rate" },
+    });
+  });
+
+  it("uses health monitor fixtures that match the server contract", () => {
+    for (const metric of overviewEvidenceFixture.trends.data.healthStatus) {
+      expect(healthStatusMetricSchema.safeParse(metric).success).toBe(true);
+    }
+  });
+
+  it("shows Fahrenheit averages and temperature differences in Health Monitor details", async () => {
+    mockUnitSystem = "imperial";
+    mockTrendsQuery.mockReturnValue(overviewEvidenceFixture.trends);
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    render(<OverviewScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show details for Skin Temperature" }));
+    expect(screen.getByText("7d avg 96.8°F vs prior 28d avg 95.0°F · +1.8°F")).toBeTruthy();
+  });
+
+  it("distinguishes offline queries from empty data and keeps cached measurements visible", async () => {
+    const cachedDashboard = mockDashboardData;
+    mockDashboardData = undefined;
+    mockDashboardPaused = true;
+    for (const query of [mockInsightsQuery, mockHeartRateQuery, mockTrendsQuery]) {
+      query.mockReturnValue({ isLoading: false, isPaused: true });
+    }
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    const { rerender } = render(<OverviewScreen />);
+
+    expect(screen.getAllByText("Waiting for a connection")).toHaveLength(4);
+    expect(screen.queryByText(/No (insights|trend|health measurements|sleep data)/)).toBeNull();
+
+    mockDashboardData = cachedDashboard;
+    mockTrendsQuery.mockReturnValue({
+      ...overviewEvidenceFixture.trends,
+      isPaused: true,
+    });
+    rerender(<OverviewScreen />);
+
+    expect(screen.getByRole("button", { name: "Open last night sleep details" })).toBeTruthy();
+    expect(screen.getByText("14.0 breaths/min")).toBeTruthy();
+    expect(screen.getByText("92.0%")).toBeTruthy();
+    expect(screen.getByText("52 bpm")).toBeTruthy();
+    expect(screen.getAllByText("Waiting for a connection")).toHaveLength(2);
   });
 
   it("shows data readiness when dashboard summaries are stale", async () => {

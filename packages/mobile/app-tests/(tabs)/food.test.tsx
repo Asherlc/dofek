@@ -67,7 +67,7 @@ describe("FoodScreen", () => {
   });
 
   it("scopes pull-to-refresh to the selected-date food DTO", async () => {
-    const { default: FoodScreen } = await import("../../app/(tabs)/food");
+    const { default: FoodScreen } = await import("../../app/food");
     render(<FoodScreen />);
     await mockUseRefresh.mock.calls.at(-1)?.[0]?.invalidate?.();
     expect(invalidateFoodByDateMock).toHaveBeenCalledWith({
@@ -76,7 +76,7 @@ describe("FoodScreen", () => {
   });
 
   it("records a screen breadcrumb when the nutrition tab renders", async () => {
-    const { default: FoodScreen } = await import("../../app/(tabs)/food");
+    const { default: FoodScreen } = await import("../../app/food");
     render(<FoodScreen />);
     expect(loggerInfoMock).toHaveBeenCalledWith("screen-navigation", "Nutrition tab rendered", {
       route: "food",
@@ -106,14 +106,14 @@ describe("FoodScreen", () => {
       isFetching: true,
       isLoading: true,
     };
-    const { default: FoodScreen } = await import("../../app/(tabs)/food");
+    const { default: FoodScreen } = await import("../../app/food");
     render(<FoodScreen />);
     expect(screen.getByText("Greek yogurt")).toBeTruthy();
     expect(screen.queryByText("Loading...")).toBeNull();
   });
 
   it("opens the read-only nutrition attribution link", async () => {
-    const { default: FoodScreen } = await import("../../app/(tabs)/food");
+    const { default: FoodScreen } = await import("../../app/food");
     render(<FoodScreen />);
     fireEvent.click(
       screen.getByRole("link", { name: "Powered by fatsecret nutrition API (www.fatsecret.com)" }),

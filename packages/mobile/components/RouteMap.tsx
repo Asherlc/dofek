@@ -30,6 +30,7 @@ interface RouteMapProps {
   hoveredPosition?: { lat: number; lng: number } | null;
   climbMarkers?: readonly ClimbingMapMarker[];
   compact?: boolean;
+  height?: number;
   onSelectEntry?: (entryId: string) => void;
 }
 
@@ -41,6 +42,7 @@ export function RouteMap({
   hoveredPosition,
   climbMarkers = NO_CLIMB_MARKERS,
   compact = false,
+  height = MAP_HEIGHT,
   onSelectEntry,
   selectedEntryId: controlledEntryId,
 }: RouteMapProps) {
@@ -149,14 +151,10 @@ export function RouteMap({
   return (
     <View style={styles.container}>
       {gpsPoints.length > 0 && <Text style={styles.title}>Route Map</Text>}
-      <View
-        testID="climbing-map"
-        style={[styles.mapWrapper, { height: MAP_HEIGHT }]}
-        onLayout={handleLayout}
-      >
+      <View testID="climbing-map" style={[styles.mapWrapper, { height }]} onLayout={handleLayout}>
         {mapWidth != null && (
           <NativeMap
-            style={{ width: mapWidth, height: MAP_HEIGHT }}
+            style={{ width: mapWidth, height }}
             pointerEvents="auto"
             mapStyle={mapStyle}
             dragPan
@@ -252,7 +250,7 @@ export function RouteMap({
             <QueryStatePanel
               variant="error"
               message="Map unavailable. Check your connection and reopen this activity."
-              minHeight={MAP_HEIGHT}
+              minHeight={height}
             />
           </View>
         )}

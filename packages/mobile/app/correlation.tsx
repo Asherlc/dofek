@@ -43,11 +43,11 @@ const LAG_OPTIONS = [0, 1, 2, 3].map((value) => ({
 
 const DOMAIN_ORDER = ["Recovery", "Sleep", "Nutrition", "Activity", "Body"];
 const METRIC_FAMILY_ROUTES = {
-  recovery: "/recovery",
+  recovery: "/body",
   sleep: "/sleep",
-  nutrition: "/food",
+  nutrition: "/nutrition",
   activity: "/activities",
-  body: "/recovery",
+  body: "/body",
 } as const;
 
 type CorrelationObservationsOutput = AppRouterOutputs["correlation"]["observations"];
