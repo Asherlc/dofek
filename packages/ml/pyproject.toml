@@ -26,7 +26,7 @@ matching = [
     "rtree==1.4.1",
     "splink==5.0.0",
     "torch==2.15.0",
-    "transformers==5.22.1",
+    "transformers==5.22.2",
 ]
 
 [project.scripts]
