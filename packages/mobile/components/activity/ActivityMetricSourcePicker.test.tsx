@@ -80,7 +80,7 @@ describe("ActivityMetricSourcePicker", () => {
     ).toBeTruthy();
     expect(option.querySelector('[uri="https://api.example.test/logos/peloton.svg"]')).toBeTruthy();
   });
-  it("uses provider logos while retaining device names and complete accessible choices", () => {
+  it("uses icon-only choices and retains the selected device name", () => {
     const choices: ActivityMetricSource[] = [
       {
         id: "peloton",
@@ -127,7 +127,7 @@ describe("ActivityMetricSourcePicker", () => {
       name: "Strava · recorded by Peloton Bike",
       checked: false,
     });
-    expect(bike.textContent).toBe("Peloton Bike");
+    expect(bike.textContent).toBe("");
     expect(bike.querySelector('[uri="https://api.example.test/logos/strava.svg"]')).toBeTruthy();
     expect(bike.querySelector('[data-icon="radio-button-off"]')).toBeTruthy();
     fireEvent.click(bike);
@@ -149,7 +149,7 @@ describe("ActivityMetricSourcePicker", () => {
     ).toBe("Peloton Bike");
   });
 
-  it("shows a compact device name while keeping full provenance accessible", () => {
+  it("keeps full provenance accessible on icon-only choices", () => {
     const source: ActivityMetricSource = {
       id: "edge",
       label: "Garmin Edge 1050 · Recorded by Garmin Edge 1050 · FIT file creator Garmin",
@@ -170,7 +170,7 @@ describe("ActivityMetricSourcePicker", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: `Power source: ${source.label}` }));
-    expect(screen.getByRole("radio", { name: source.label }).textContent).toBe("Garmin Edge 1050");
+    expect(screen.getByRole("radio", { name: source.label }).textContent).toBe("");
   });
   it.each([true, false])("keeps full attribution accessible with showLabel=%s", (showLabel) => {
     render(
@@ -195,7 +195,7 @@ describe("ActivityMetricSourcePicker", () => {
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("radio", { name: sources[0]?.label, checked: true }).textContent).toBe(
-      sources[0]?.presentation.displayName,
+      "",
     );
   });
 
@@ -203,7 +203,6 @@ describe("ActivityMetricSourcePicker", () => {
     ["opaque-cloud", "cloud-outline", "WHOOP (via WHOOP Cloud)"],
     [whoopBleSource.id, "bluetooth-outline", whoopBleSource.label],
   ])("uses the structured attribution icon for %s", (selectedId, icon, fullLabel) => {
-    const selectedWhoopBleSource = whoopBleSources.find((source) => source.id === selectedId);
     render(
       <ActivityMetricSourcePicker
         label="Heart Rate"
@@ -216,15 +215,11 @@ describe("ActivityMetricSourcePicker", () => {
     const trigger = screen.getByRole("button", { name: `Heart Rate source: ${fullLabel}` });
     expect(trigger.querySelector(`[data-icon="${icon}"]`)).toBeTruthy();
     expect(trigger.querySelector('[data-icon="chevron-down"]')).toBeTruthy();
-    expect(trigger.textContent).toBe(
-      selectedWhoopBleSource
-        ? `Heart Rate · ${selectedWhoopBleSource.presentation.displayName}`
-        : "Heart Rate · ",
-    );
+    expect(trigger.textContent).toBe("Heart Rate · ");
     fireEvent.click(trigger);
     const option = screen.getByRole("radio", { name: fullLabel });
     expect(option.querySelector(`[data-icon="${icon}"]`)).toBeTruthy();
-    expect(option.textContent).toBe(selectedWhoopBleSource?.presentation.displayName ?? "");
+    expect(option.textContent).toBe("");
   });
 
   it("distinguishes duplicate names and switches by source ID", () => {
@@ -250,11 +245,12 @@ describe("ActivityMetricSourcePicker", () => {
       checked: false,
     });
     expect(bluetoothChoice.style.minHeight).toBe("44px");
-    const secondBluetoothChoice = screen.getByRole("radio", {
-      name: secondWhoopBleSource.label,
-      checked: false,
-    });
-    expect(secondBluetoothChoice.textContent).toBe(secondWhoopBleSource.presentation.displayName);
+    expect(
+      screen.getByRole("radio", {
+        name: secondWhoopBleSource.label,
+        checked: false,
+      }),
+    ).toBeTruthy();
     fireEvent.click(bluetoothChoice);
     expect(onChange).toHaveBeenCalledExactlyOnceWith(whoopBleSource.id);
     expect(screen.queryByRole("radio")).toBeNull();
@@ -270,7 +266,7 @@ describe("ActivityMetricSourcePicker", () => {
     expect(
       screen.getByRole("button", { name: `Heart Rate source: ${whoopBleSource.label}` })
         .textContent,
-    ).toBe(`Heart Rate · ${whoopBleSource.presentation.displayName}`);
+    ).toBe("Heart Rate · ");
 
     const selectedBluetoothTrigger = screen.getByRole("button", {
       name: `Heart Rate source: ${whoopBleSource.label}`,
@@ -280,7 +276,6 @@ describe("ActivityMetricSourcePicker", () => {
       name: secondWhoopBleSource.label,
       checked: false,
     });
-    expect(secondBluetoothOption.textContent).toBe(secondWhoopBleSource.presentation.displayName);
     fireEvent.click(secondBluetoothOption);
     expect(onChange).toHaveBeenLastCalledWith(secondWhoopBleSource.id);
     rerender(
@@ -295,9 +290,7 @@ describe("ActivityMetricSourcePicker", () => {
     const secondBluetoothTrigger = screen.getByRole("button", {
       name: `Heart Rate source: ${secondWhoopBleSource.label}`,
     });
-    expect(secondBluetoothTrigger.textContent).toContain(
-      secondWhoopBleSource.presentation.displayName,
-    );
+    expect(secondBluetoothTrigger.textContent).toBe("Heart Rate · ");
   });
 
   it("dismisses the chooser without changing the selected source", () => {

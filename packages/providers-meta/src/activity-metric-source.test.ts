@@ -3,6 +3,7 @@ import {
   activityMetricSourcePresentation,
   activityMetricSourceSchema,
   activityMetricSourceText,
+  activityMetricSourceTriggerText,
 } from "./activity-metric-source.ts";
 
 describe("activityMetricSourcePresentation", () => {
@@ -215,5 +216,28 @@ describe("activityMetricSourceText", () => {
       "Peloton Bike",
     );
     expect(activityMetricSourceText(presentation)).toBe("Peloton Bike");
+  });
+});
+
+describe("activityMetricSourceTriggerText", () => {
+  it("omits a Bluetooth device UUID surrounded by whitespace from the picker button", () => {
+    const deviceId = "C270F6F2-89F2-6333-E054-97819E454EB2";
+    const presentation = activityMetricSourcePresentation(
+      "whoop_ble",
+      deviceId,
+      `WHOOP (Bluetooth) · ${deviceId}`,
+    );
+    expect(
+      activityMetricSourceTriggerText({ ...presentation, displayName: ` ${deviceId} ` }),
+    ).toBeNull();
+  });
+
+  it("keeps a readable Bluetooth device name on the picker button", () => {
+    const presentation = activityMetricSourcePresentation(
+      "whoop_ble",
+      "Alex’s WHOOP",
+      "WHOOP (Bluetooth) · Alex’s WHOOP",
+    );
+    expect(activityMetricSourceTriggerText(presentation)).toBe("Alex’s WHOOP");
   });
 });

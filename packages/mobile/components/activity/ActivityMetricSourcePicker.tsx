@@ -1,6 +1,6 @@
 import {
   type ActivityMetricSource,
-  activityMetricSourceText,
+  activityMetricSourceTriggerText,
 } from "@dofek/providers/activity-metric-source";
 import { providerSourceLogo } from "@dofek/providers/providers";
 import { Ionicons } from "@expo/vector-icons";
@@ -58,7 +58,7 @@ export function ActivityMetricSourcePicker({
   const [open, setOpen] = useState(false);
   const selected = sources.find((source) => source.id === selectedId);
   const presentation = selected?.presentation;
-  const sourceText = presentation ? activityMetricSourceText(presentation) : null;
+  const sourceText = presentation ? activityMetricSourceTriggerText(presentation) : null;
   return (
     <View>
       <Pressable
@@ -97,58 +97,47 @@ export function ActivityMetricSourcePicker({
               <Text accessibilityRole="header" style={styles.dialogTitle}>
                 {label} source
               </Text>
-              {sources.map((source) => {
-                const sourceText = activityMetricSourceText(source.presentation);
-                return (
-                  <Pressable
-                    key={source.id}
-                    accessibilityRole="radio"
-                    accessibilityLabel={source.label}
-                    accessibilityState={{ checked: source.id === selectedId }}
-                    onPress={() => {
-                      onChange(source.id);
-                      setOpen(false);
-                    }}
-                    style={[styles.choice, styles.sourceChoice]}
+              {sources.map((source) => (
+                <Pressable
+                  key={source.id}
+                  accessibilityRole="radio"
+                  accessibilityLabel={source.label}
+                  accessibilityState={{ checked: source.id === selectedId }}
+                  onPress={() => {
+                    onChange(source.id);
+                    setOpen(false);
+                  }}
+                  style={[styles.choice, styles.sourceChoice]}
+                >
+                  <View
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                    style={styles.sourceLogo}
                   >
-                    <View
-                      accessibilityElementsHidden
-                      importantForAccessibility="no-hide-descendants"
-                    >
-                      <ProviderLogo
-                        provider={
-                          providerSourceLogo(
-                            source.presentation.providerId,
-                            source.presentation.sourceName,
-                          ).provider
-                        }
-                        sourceName={source.presentation.sourceName}
-                        serverUrl={serverUrl}
-                        size={22}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      {sourceText && (
-                        <Text
-                          style={{ color: source.id === selectedId ? colors.accent : colors.text }}
-                        >
-                          {sourceText}
-                        </Text>
-                      )}
-                    </View>
-                    <AttributionIcon
-                      attribution={source.presentation.attribution}
+                    <ProviderLogo
+                      provider={
+                        providerSourceLogo(
+                          source.presentation.providerId,
+                          source.presentation.sourceName,
+                        ).provider
+                      }
+                      sourceName={source.presentation.sourceName}
                       serverUrl={serverUrl}
+                      size={22}
                     />
-                    <Ionicons
-                      name={source.id === selectedId ? "radio-button-on" : "radio-button-off"}
-                      size={20}
-                      color={source.id === selectedId ? colors.accent : colors.textTertiary}
-                      accessible={false}
-                    />
-                  </Pressable>
-                );
-              })}
+                  </View>
+                  <AttributionIcon
+                    attribution={source.presentation.attribution}
+                    serverUrl={serverUrl}
+                  />
+                  <Ionicons
+                    name={source.id === selectedId ? "radio-button-on" : "radio-button-off"}
+                    size={20}
+                    color={source.id === selectedId ? colors.accent : colors.textTertiary}
+                    accessible={false}
+                  />
+                </Pressable>
+              ))}
               <Pressable
                 accessibilityRole="button"
                 onPress={() => setOpen(false)}
@@ -191,5 +180,6 @@ const styles = StyleSheet.create({
   dialog: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 8 },
   dialogTitle: { color: colors.text, fontWeight: "600" },
   sourceChoice: { flexDirection: "row", alignItems: "center", gap: 8 },
+  sourceLogo: { marginRight: "auto" },
   choice: { minHeight: 44, padding: 12, justifyContent: "center" },
 });
