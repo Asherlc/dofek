@@ -492,6 +492,59 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     );
   });
 
+  it("scopes each activity search credential to the service that uses it", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(
+      sourcePath,
+      dotenv({
+        ...completeDeployEnvironment(),
+        ACTIVITY_SEARCH_ENABLED: "true",
+        ACTIVITY_SEARCH_READ_URL: "reader-uri",
+        ACTIVITY_SEARCH_WRITE_URL: "writer-uri",
+        ACTIVITY_SEARCH_ERASE_URL: "erase-uri",
+        ACTIVITY_SEARCH_RETENTION_TOKEN: "retention-token",
+      }),
+    );
+
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+    const expected: Record<string, Record<string, string>> = {
+      web: { ACTIVITY_SEARCH_ENABLED: "true", ACTIVITY_SEARCH_READ_URL: "reader-uri" },
+      analyticsWorker: { ACTIVITY_SEARCH_ENABLED: "true", ACTIVITY_SEARCH_WRITE_URL: "writer-uri" },
+      worker: {
+        ACTIVITY_SEARCH_ERASE_URL: "erase-uri",
+        ACTIVITY_SEARCH_RETENTION_TOKEN: "retention-token",
+      },
+    };
+    for (const [service, path] of Object.entries(paths)) {
+      const environment = parseEnv(readFileSync(path, "utf8"));
+      const searchKeys = Object.entries(environment).filter(([key]) =>
+        key.startsWith("ACTIVITY_SEARCH_"),
+      );
+      expect(Object.fromEntries(searchKeys), service).toEqual(expected[service] ?? {});
+    }
+  });
+
+  it("requires account erasure credentials when search publication is enabled", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(
+      sourcePath,
+      dotenv({
+        ...completeDeployEnvironment(),
+        ACTIVITY_SEARCH_ENABLED: "true",
+        ACTIVITY_SEARCH_READ_URL: "reader-uri",
+        ACTIVITY_SEARCH_WRITE_URL: "writer-uri",
+      }),
+    );
+
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow(
+      "worker deploy environment is missing required keys: ACTIVITY_SEARCH_ERASE_URL, ACTIVITY_SEARCH_RETENTION_TOKEN",
+    );
+  });
+
   it("fails before worker startup when a worker-only contract is incomplete", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");

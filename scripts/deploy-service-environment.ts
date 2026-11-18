@@ -180,6 +180,7 @@ const CDC_ENVIRONMENT_KEYS = [
 interface DeployServiceEnvironmentPolicy {
   allowedKeys: readonly string[];
   requiredKeys: readonly string[];
+  activitySearchKeys?: readonly string[];
   metricStreamRoute?: {
     topicKey:
       | "METRIC_STREAM_LEGACY_TOPIC"
@@ -233,6 +234,7 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
   analyticsWorker: {
     allowedKeys: ["CLICKHOUSE_PASSWORD", "SENTRY_DSN", "SENTRY_DSN_unencrypted"],
     requiredKeys: ["CLICKHOUSE_PASSWORD"],
+    activitySearchKeys: ["ACTIVITY_SEARCH_ENABLED", "ACTIVITY_SEARCH_WRITE_URL"],
   },
   cdcHealth: {
     allowedKeys: [...CDC_ENVIRONMENT_KEYS, "SENTRY_DSN", "SENTRY_DSN_unencrypted"],
@@ -259,13 +261,17 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
     allowedKeys: ["R2_ACCESS_KEY_ID", "R2_ENDPOINT", "R2_SECRET_ACCESS_KEY"],
     requiredKeys: ["R2_ACCESS_KEY_ID", "R2_ENDPOINT", "R2_SECRET_ACCESS_KEY"],
   },
-  web: WEB_ENVIRONMENT_POLICY,
+  web: {
+    ...WEB_ENVIRONMENT_POLICY,
+    activitySearchKeys: ["ACTIVITY_SEARCH_ENABLED", "ACTIVITY_SEARCH_READ_URL"],
+  },
   webPreMigration: {
     ...WEB_ENVIRONMENT_POLICY,
     requiredKeys: [...WEB_ENVIRONMENT_POLICY.requiredKeys, "METRIC_STREAM_LEGACY_TOPIC"],
     metricStreamRoute: { topicKey: "METRIC_STREAM_LEGACY_TOPIC" },
   },
   worker: {
+    activitySearchKeys: ["ACTIVITY_SEARCH_ERASE_URL", "ACTIVITY_SEARCH_RETENTION_TOKEN"],
     allowedKeys: [
       "KAFKA_CLUSTER_ID",
       ...KAFKA_TIERED_STORAGE_KEYS,
@@ -435,9 +441,20 @@ export function renderDeployServiceEnvironmentFiles(
   const source = readFileSync(sourcePath, "utf8");
   const environment = parseEnv(source);
   const assignments = readRawAssignments(source);
+  const searchEnabled = environment.ACTIVITY_SEARCH_ENABLED;
+  if (searchEnabled !== undefined && searchEnabled !== "true" && searchEnabled !== "false") {
+    throw new Error("ACTIVITY_SEARCH_ENABLED must be true or false.");
+  }
+  const searchErasureConfigured = Boolean(
+    environment.ACTIVITY_SEARCH_ERASE_URL || environment.ACTIVITY_SEARCH_RETENTION_TOKEN,
+  );
 
   for (const serviceName of DEPLOY_SERVICE_NAMES) {
-    const missingKeys = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].requiredKeys.filter(
+    const { requiredKeys, activitySearchKeys = [] } =
+      DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName];
+    const requireSearchKeys =
+      searchEnabled === "true" || (serviceName === "worker" && searchErasureConfigured);
+    const missingKeys = [...requiredKeys, ...(requireSearchKeys ? activitySearchKeys : [])].filter(
       (key) => !environment[key]?.trim(),
     );
     if (missingKeys.length > 0) {
@@ -459,7 +476,12 @@ export function renderDeployServiceEnvironmentFiles(
   const paths = resolvePaths(outputDirectory);
 
   for (const serviceName of DEPLOY_SERVICE_NAMES) {
-    const lines = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].allowedKeys.flatMap((key) => {
+    const {
+      allowedKeys,
+      activitySearchKeys = [],
+      metricStreamRoute: route,
+    } = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName];
+    const lines = [...allowedKeys, ...activitySearchKeys].flatMap((key) => {
       if (key === "KAFKA_CLUSTER_ID") {
         const targetKey = serviceName === "kafka" ? "CLUSTER_ID" : key;
         return [`${targetKey}=${environment.KAFKA_CLUSTER_ID}`];
@@ -472,7 +494,6 @@ export function renderDeployServiceEnvironmentFiles(
     if (serviceName === "kafka") {
       lines.push(`KAFKA_RSM_CONFIG_KEY_PREFIX=${environment.KAFKA_CLUSTER_ID}/`);
     }
-    const route = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].metricStreamRoute;
     if (route) {
       const assignment = assignments.get(route.topicKey);
       if (!assignment) throw new Error(`Missing validated assignment: ${route.topicKey}`);

@@ -39101,3 +39101,26 @@ Local qualification and CI are separate from production throughput acceptance. T
   checks whose target varies by source should read the checked-out target
   configuration. Keep exact-source health checks and guarded receipt recovery
   in the release runbook. No retry or timeout settings changed.
+
+## 2026-11-17 — Activities search Terraform qualification
+
+- The first local plan stopped at `ProjectServicePlanSpecsGet` with HTTP 403.
+  The Terraform identity could read the service and its connection credentials,
+  while the provider's plan metadata endpoint required a legacy project role.
+  A full workspace run also required the separately managed GitHub Terraform
+  environment credential for Cloudflare R2. The Activities plan targeted its
+  Infisical URL resources and their dependencies in the existing workspace.
+  [Aiven client permissions](https://pkg.go.dev/github.com/aiven/go-client-codegen/handler/project#ProjectHandler.ProjectServicePlanSpecsGet)
+  and [Terraform resource targeting](https://developer.hashicorp.com/terraform/cli/commands/plan#resource-targeting).
+- Granting the Terraform identity `read_only` in the `dofek` project cleared
+  the 403. The local apply adopted the existing Aiven service and created the
+  index, ACLs, and three scoped Infisical URLs. A second plan tried to replace
+  the index because the OpenSearch provider read back inherited mappings. It
+  stopped at `prevent_destroy`. Declaring those mappings on the index and
+  matching the template settings to OpenSearch's returned form allowed an
+  in-place template update.
+- Synthetic queries verified ranking, account and activity-type filters, and
+  credential scoping. The hosted erasure retry found zero deleted segments
+  after the shard's retention lease advanced. The backup identity read the
+  hosted backup inventory. Production search remained disabled and no customer
+  activity titles were indexed.
