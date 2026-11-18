@@ -24,6 +24,19 @@ type Story = StoryObj<typeof meta>;
 
 export const AuthorizationExpired: Story = {};
 
+export const LogbookAccessDenied: Story = {
+  args: {
+    providerName: "theCrag",
+    entry: {
+      ...meta.args.entry,
+      dataType: "sync",
+      authFailureReason: null,
+      errorMessage:
+        "theCrag denied logbook access (400). Check your weekly token budget, supporter status, and API key. https://www.thecrag.com/settings/apikey/",
+    },
+  },
+};
+
 export const SuccessfulSync: Story = {
   args: {
     providerName: "Strava",

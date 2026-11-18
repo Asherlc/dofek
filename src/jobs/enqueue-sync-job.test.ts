@@ -89,7 +89,10 @@ describe("enqueueSyncJob", () => {
         expect.objectContaining({ providerId: requestedProviderId ?? "garmin", userId: "user-1" }),
         expect.anything(),
       );
-      expect(providerRateLimitCooldownJobId).toHaveBeenCalledWith(cooldown, "user-1");
+      expect(providerRateLimitCooldownJobId).toHaveBeenCalledWith(cooldown, {
+        providerId: requestedProviderId ?? "garmin",
+        userId: "user-1",
+      });
     },
   );
 
@@ -292,7 +295,7 @@ describe("enqueueSyncJob", () => {
       expect.objectContaining({
         attempts: 288,
         delay: 600_000,
-        jobId: "rate-limit-delayed-job",
+        jobId: expect.stringMatching(/^sync-req-garmin-user-1-/),
       }),
     );
   });

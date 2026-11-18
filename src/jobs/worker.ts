@@ -27,6 +27,7 @@ import { startFileUploadReconciler } from "./file-upload-reconciliation.ts";
 import { createGarminImportProgressCoordinator } from "./garmin-import-progress.ts";
 import { dispatchActivityImageBackfills } from "./process-activity-image-backfill-job.ts";
 import { startProviderDataDeletionOutboxDispatcher } from "./provider-data-deletion-outbox.ts";
+import { providerPollingIntervalMinutes } from "./provider-queue-config.ts";
 import { ensureProvidersRegistered } from "./provider-registration.ts";
 import {
   getAccountErasureQueue,
@@ -36,7 +37,7 @@ import {
   getProviderDataDeletionQueue,
   getRedisConnection,
 } from "./queues.ts";
-import { DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES, setupScheduledSync } from "./scheduled-sync.ts";
+import { setupScheduledSync } from "./scheduled-sync.ts";
 import { attachWorkerEvents } from "./worker-events.ts";
 import { createWorkerLifecycle } from "./worker-lifecycle.ts";
 import { createWorkerQueues } from "./worker-queues.ts";
@@ -65,18 +66,8 @@ await runAccountErasureRestoreStartupGate(() =>
 const connection = getRedisConnection();
 let importUploadStorage: ReturnType<typeof createImportUploadStorageFromEnv> | null = null;
 
-const rawSyncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES;
-const syncIntervalMinutes =
-  rawSyncIntervalMinutes === undefined
-    ? DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES
-    : Number(rawSyncIntervalMinutes);
 try {
-  if (!Number.isFinite(syncIntervalMinutes) || syncIntervalMinutes <= 0) {
-    throw new Error(
-      `SYNC_INTERVAL_MINUTES must be a finite positive number, received ${JSON.stringify(rawSyncIntervalMinutes)}`,
-    );
-  }
-  await setupScheduledSync(syncIntervalMinutes);
+  await setupScheduledSync(providerPollingIntervalMinutes("regular"));
 } catch (error: unknown) {
   captureException(error, {
     tags: { workerStartupStep: "scheduledSyncRegistration" },

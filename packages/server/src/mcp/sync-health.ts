@@ -1,10 +1,14 @@
+import {
+  type ProviderRateLimitCooldown,
+  providerSyncDeferralMessage,
+} from "dofek/jobs/provider-rate-limit-cooldown";
 import type { ProviderScheduledSyncHealth } from "../repositories/sync-repository.ts";
-
-const EXPECTED_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 
 export function syncHealth(
   health: ProviderScheduledSyncHealth | undefined,
-  cooldown?: { expiresAt: Date } | null,
+  cooldown: Pick<ProviderRateLimitCooldown, "expiresAt" | "reason"> | null | undefined,
+  intervalMinutes: number,
+  accessIssue?: { message: string; action: { url: string } } | null,
 ) {
   const lastSuccess = health?.lastSuccess;
   return {
@@ -12,12 +16,14 @@ export function syncHealth(
     last_attempt: health?.lastAttempt ?? null,
     last_error:
       cooldown != null
-        ? `Rate limited; sync deferred until ${cooldown.expiresAt.toISOString()}`
-        : (health?.lastError ?? null),
+        ? providerSyncDeferralMessage(cooldown)
+        : accessIssue
+          ? `${accessIssue.message} ${accessIssue.action.url}`
+          : (health?.lastError ?? null),
     consecutive_failures: health?.consecutiveFailures ?? 0,
-    expected_sync_interval_minutes: EXPECTED_SYNC_INTERVAL_MS / 60_000,
+    expected_sync_interval_minutes: intervalMinutes,
     stale:
       lastSuccess == null ||
-      Date.now() - new Date(lastSuccess).getTime() > EXPECTED_SYNC_INTERVAL_MS * 3,
+      Date.now() - new Date(lastSuccess).getTime() > intervalMinutes * 60_000 * 3,
   };
 }

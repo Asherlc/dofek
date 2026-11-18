@@ -127,6 +127,7 @@ describe("logSync", () => {
       dataType: "sync",
       status: "error",
       errorMessage: "access token expired",
+      authFailureReason: "access_token_expired",
       userId: "user-123",
       origin: "scheduled",
     });
@@ -142,8 +143,10 @@ describe("logSync", () => {
         user_id: "user-123",
       },
       level: "warning",
+      fingerprint: ["scheduled-provider-sync", "amazfit-zepp", "authorization"],
       tags: {
         consecutive_failures: "2",
+        failure_kind: "authorization",
         operation: "scheduled-provider-sync",
         provider: "amazfit-zepp",
       },

@@ -216,6 +216,36 @@ describe("theCrag official logbook persistence (PostgreSQL)", () => {
     expect(await progress()).toEqual(cursor);
   });
 
+  it("preserves the connection and cursor after an ambiguous access denial", async () => {
+    serve();
+    await run();
+    const before = await entries();
+    const cursor = await progress();
+    server.resetHandlers();
+    serve(() =>
+      HttpResponse.json(
+        {
+          error:
+            "You have insufficient access for the api endpoint '/api/logbook/ascents', minimum level logbook",
+        },
+        { status: 400 },
+      ),
+    );
+
+    const result = await run();
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining("weekly token budget"),
+        cause: expect.objectContaining({ name: "ProviderAccessDeniedError" }),
+      }),
+    ]);
+    expect(await progress()).toEqual(cursor);
+    expect(await entries()).toEqual(before);
+    server.resetHandlers();
+    serve(() => HttpResponse.json(logbookPage([])));
+    expect(await run()).toMatchObject({ errors: [] });
+  });
+
   it("imports every page and saves the maximum source epoch", async () => {
     serve((url) => {
       const page = Number(url.searchParams.get("page"));

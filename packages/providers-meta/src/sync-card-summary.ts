@@ -1,5 +1,5 @@
 import type { ProcessingDisplayStatus } from "./processing-status.ts";
-import { providerSyncLogPresentation } from "./sync-log-presentation.ts";
+import { providerSyncAccessIssue, providerSyncLogPresentation } from "./sync-log-presentation.ts";
 
 export interface ProviderSyncHistory {
   authorized?: boolean;
@@ -178,7 +178,11 @@ export function providerSyncStatusPresentation(
     dataType: outcome.dataType ?? "data",
     status: outcome.status,
     authFailureReason: history.needsReauth ? (outcome.authFailureReason ?? null) : null,
-    errorMessage: !history.needsReauth && !outcome.authFailureReason ? outcome.errorMessage : null,
+    errorMessage:
+      !history.needsReauth &&
+      (!outcome.authFailureReason || providerSyncAccessIssue(outcome.errorMessage))
+        ? outcome.errorMessage
+        : null,
     pushOnly: history.pushOnly,
   });
   return {

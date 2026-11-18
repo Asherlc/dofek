@@ -65,12 +65,19 @@ function callerAbortSignal(
  * unparseable.
  */
 export function parseRetryAfterHeader(header: string | null | undefined): number | null {
-  if (!header) return null;
+  const value = header?.trim();
+  if (!value) return null;
 
-  const seconds = Number.parseInt(header, 10);
-  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  if (/^\d+$/.test(value)) {
+    const seconds = Number(value);
+    return Number.isFinite(new Date(Date.now() + seconds * 1000).getTime()) ? seconds : null;
+  }
 
-  const retryAt = Date.parse(header);
+  if (!/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)/i.test(value)) return null;
+  // The obsolete form without a time zone represents UTC.
+  const obsoleteDate = /^[A-Za-z]{3} [A-Za-z]{3} {1,2}\d{1,2} \d{2}:\d{2}:\d{2} \d{4}$/.test(value);
+  if (!obsoleteDate && !/ GMT$/i.test(value)) return null;
+  const retryAt = Date.parse(obsoleteDate ? `${value} GMT` : value);
   if (Number.isNaN(retryAt)) return null;
 
   return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));

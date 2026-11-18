@@ -1,33 +1,32 @@
-import type { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { createHash } from "node:crypto";
+import {
+  ProviderRateLimitError,
+  type ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { providerAdaptiveRateLimitStore } from "../lib/provider-adaptive-rate-limit.ts";
-import { getSharedRedisConnection } from "./queues.ts";
+import {
+  compareAndSetRedisValue,
+  type RedisCompareAndSetClient,
+} from "../lib/redis-compare-and-set.ts";
+import { getSharedRedisConnection, type SyncJobData } from "./queues.ts";
 
 export type ProviderRateLimitCooldownScope = "provider" | "user";
+type ProviderDeferralError = ProviderRateLimitError | ProviderServiceUnavailableError;
 
 export interface ProviderRateLimitCooldown {
   providerId: string;
   scope: ProviderRateLimitCooldownScope;
   userId: string | null;
   expiresAt: Date;
+  /** Absent on rate-limit records, including records written by previous workers. */
+  reason?: "service_unavailable";
   /** Number of consecutive rate-limit hits; used to escalate cooldown duration. */
   consecutiveHits?: number;
 }
 
 export interface ProviderRateLimitCooldownStore {
-  record(error: ProviderRateLimitError, fallbackUserId: string): Promise<ProviderRateLimitCooldown>;
+  record(error: ProviderDeferralError, fallbackUserId: string): Promise<ProviderRateLimitCooldown>;
   getActive(providerId: string, userId: string): Promise<ProviderRateLimitCooldown | null>;
-}
-
-interface RedisMulti {
-  set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => RedisMulti;
-  exec: () => Promise<unknown[] | null>;
-}
-
-interface RedisClient {
-  set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => Promise<unknown>;
-  get: (key: string) => Promise<string | null>;
-  watch?: (key: string) => Promise<unknown>;
-  multi?: () => RedisMulti;
 }
 
 const DEFAULT_FALLBACK_COOLDOWN_SECONDS = 30 * 60;
@@ -88,6 +87,7 @@ function serializeCooldown(cooldown: ProviderRateLimitCooldown): string {
     scope: cooldown.scope,
     userId: cooldown.userId,
     expiresAt: cooldown.expiresAt.toISOString(),
+    reason: cooldown.reason,
     consecutiveHits: cooldown.consecutiveHits,
   });
 }
@@ -102,6 +102,7 @@ export function parseProviderRateLimitCooldown(
   const scope = Reflect.get(parsed, "scope");
   const userId = Reflect.get(parsed, "userId");
   const expiresAtValue = Reflect.get(parsed, "expiresAt");
+  const reason = Reflect.get(parsed, "reason");
   const consecutiveHits = Reflect.get(parsed, "consecutiveHits");
   if (typeof providerId !== "string") return null;
   if (scope !== "provider" && scope !== "user") return null;
@@ -114,6 +115,7 @@ export function parseProviderRateLimitCooldown(
     scope,
     userId,
     expiresAt,
+    ...(reason === "service_unavailable" ? { reason } : {}),
     consecutiveHits:
       typeof consecutiveHits === "number" && Number.isFinite(consecutiveHits)
         ? consecutiveHits
@@ -139,14 +141,28 @@ function activeOrNull(
 }
 
 function cooldownFromError(
-  error: ProviderRateLimitError,
+  error: ProviderDeferralError,
   fallbackUserId: string,
   previous: ProviderRateLimitCooldown | null,
   baseFallbackSeconds: number,
 ): ProviderRateLimitCooldown {
   const scope = error.scope;
   const userId = scope === "user" ? (error.userId ?? fallbackUserId) : null;
-  const consecutiveHits = consecutiveHitsForRecord(previous);
+  if (!(error instanceof ProviderRateLimitError)) {
+    if (!error.retryAfterSeconds || error.retryAfterSeconds <= 0) {
+      throw new Error("A service outage cooldown requires a positive Retry-After delay");
+    }
+    return {
+      providerId: error.providerId,
+      scope,
+      userId,
+      expiresAt: new Date(Date.now() + error.retryAfterSeconds * 1000),
+      reason: "service_unavailable",
+    };
+  }
+  const consecutiveHits = consecutiveHitsForRecord(
+    previous?.reason === undefined ? previous : null,
+  );
   const durationSeconds =
     error.retryAfterSeconds && error.retryAfterSeconds > 0
       ? error.retryAfterSeconds
@@ -162,7 +178,7 @@ function cooldownFromError(
 }
 
 function effectiveCooldown(
-  error: ProviderRateLimitError,
+  error: ProviderDeferralError,
   fallbackUserId: string,
   previous: ProviderRateLimitCooldown | null,
   baseFallbackSeconds: number,
@@ -170,6 +186,7 @@ function effectiveCooldown(
   const next = cooldownFromError(error, fallbackUserId, previous, baseFallbackSeconds);
   const activePrevious = activeOrNull(previous);
   if (activePrevious && activePrevious.expiresAt > next.expiresAt) {
+    if (activePrevious.reason !== next.reason) return activePrevious;
     return {
       ...activePrevious,
       consecutiveHits: next.consecutiveHits,
@@ -179,47 +196,33 @@ function effectiveCooldown(
 }
 
 async function persistCooldownAtomically(
-  redisClient: RedisClient,
+  redisClient: RedisCompareAndSetClient,
   key: string,
   computeEffective: (previous: ProviderRateLimitCooldown | null) => ProviderRateLimitCooldown,
 ): Promise<ProviderRateLimitCooldown> {
-  const watch = redisClient.watch;
-  const multi = redisClient.multi;
-  if (!watch || !multi) {
-    const previous = parseProviderRateLimitCooldown(await redisClient.get(key));
+  for (let retries = 0; retries < MAX_COOLDOWN_RETRIES; retries++) {
+    const raw = await redisClient.get(key);
+    const previous = parseProviderRateLimitCooldown(raw);
     const effective = computeEffective(previous);
-    await redisClient.set(
+    const saved = await compareAndSetRedisValue(
+      redisClient,
       key,
+      raw,
       serializeCooldown(effective),
-      "PX",
       providerRateLimitDelayMs(effective),
     );
-    return effective;
+    if (saved) return effective;
   }
-
-  let retries = 0;
-  for (;;) {
-    await watch(key);
-    const previous = parseProviderRateLimitCooldown(await redisClient.get(key));
-    const effective = computeEffective(previous);
-    const execResult = await multi()
-      .set(key, serializeCooldown(effective), "PX", providerRateLimitDelayMs(effective))
-      .exec();
-    if (execResult) return effective;
-    retries++;
-    if (retries >= MAX_COOLDOWN_RETRIES) {
-      throw new Error(
-        `Failed to persist rate-limit cooldown for ${key} after ${MAX_COOLDOWN_RETRIES} Redis transaction conflicts`,
-      );
-    }
-  }
+  throw new Error(
+    `Failed to persist rate-limit cooldown for ${key} after ${MAX_COOLDOWN_RETRIES} Redis transaction conflicts`,
+  );
 }
 
 export class InMemoryProviderRateLimitCooldownStore implements ProviderRateLimitCooldownStore {
   readonly #cooldownRecords = new Map<string, ProviderRateLimitCooldown>();
 
   async record(
-    error: ProviderRateLimitError,
+    error: ProviderDeferralError,
     fallbackUserId: string,
   ): Promise<ProviderRateLimitCooldown> {
     const learned = await providerAdaptiveRateLimitStore.getLearnedCooldownSeconds(
@@ -245,37 +248,19 @@ export class InMemoryProviderRateLimitCooldownStore implements ProviderRateLimit
   }
 }
 
-async function getSharedRedisClient(): Promise<RedisClient> {
-  const connection = getSharedRedisConnection();
-  const redisClient = await connection.client;
-  return {
-    set: async (key, value, mode, millisecondsToExpire) =>
-      redisClient.set(key, value, mode, millisecondsToExpire),
-    get: async (key) => redisClient.get(key),
-    watch: async (key) => redisClient.watch(key),
-    multi: () => {
-      const transaction = redisClient.multi();
-      const chain: RedisMulti = {
-        set: (key, value, mode, millisecondsToExpire) => {
-          transaction.set(key, value, mode, millisecondsToExpire);
-          return chain;
-        },
-        exec: async () => transaction.exec(),
-      };
-      return chain;
-    },
-  };
+function getSharedRedisClient(): Promise<RedisCompareAndSetClient> {
+  return getSharedRedisConnection().client;
 }
 
 export class RedisProviderRateLimitCooldownStore implements ProviderRateLimitCooldownStore {
-  readonly #getRedisClient: () => Promise<RedisClient>;
+  readonly #getRedisClient: () => Promise<RedisCompareAndSetClient>;
 
-  constructor(getRedisClient: () => Promise<RedisClient> = getSharedRedisClient) {
+  constructor(getRedisClient: () => Promise<RedisCompareAndSetClient> = getSharedRedisClient) {
     this.#getRedisClient = getRedisClient;
   }
 
   async record(
-    error: ProviderRateLimitError,
+    error: ProviderDeferralError,
     fallbackUserId: string,
   ): Promise<ProviderRateLimitCooldown> {
     const learned = await providerAdaptiveRateLimitStore.getLearnedCooldownSeconds(
@@ -307,6 +292,18 @@ export const providerRateLimitCooldownStore: ProviderRateLimitCooldownStore =
     ? new InMemoryProviderRateLimitCooldownStore()
     : new RedisProviderRateLimitCooldownStore();
 
+export function providerCooldownLabel(cooldown: Pick<ProviderRateLimitCooldown, "reason">): string {
+  return cooldown.reason === "service_unavailable" ? "Service unavailable" : "Rate limited";
+}
+
+export function providerSyncDeferralMessage(
+  cooldown: Pick<ProviderRateLimitCooldown, "expiresAt" | "reason"> | null,
+): string {
+  return cooldown
+    ? `${providerCooldownLabel(cooldown)}; sync deferred until ${cooldown.expiresAt.toISOString()}`
+    : "Sync was deferred. Try syncing again.";
+}
+
 export function providerRateLimitDelayMs(
   cooldown: ProviderRateLimitCooldown,
   now = new Date(),
@@ -316,10 +313,9 @@ export function providerRateLimitDelayMs(
 
 export function providerRateLimitCooldownJobId(
   cooldown: ProviderRateLimitCooldown,
-  jobUserId: string,
+  jobData: SyncJobData,
 ): string {
-  const safeProviderId = cooldown.providerId.replace(/:/g, "-");
-  const safeUserId = (cooldown.userId ?? jobUserId).replace(/:/g, "-");
-  const suffix = cooldown.scope === "provider" ? "" : `-${safeUserId}`;
-  return `${KEY_PREFIX}-${safeProviderId}-${cooldown.scope}${suffix}-${cooldown.expiresAt.getTime()}`;
+  const safeProviderId = (jobData.providerId ?? cooldown.providerId).replace(/:/g, "-");
+  const digest = createHash("sha256").update(JSON.stringify(jobData)).digest("hex").slice(0, 24);
+  return `${KEY_PREFIX}-${safeProviderId}-${cooldown.scope}-${cooldown.expiresAt.getTime()}-${digest}`;
 }

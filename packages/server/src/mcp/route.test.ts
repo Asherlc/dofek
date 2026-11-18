@@ -220,7 +220,8 @@ vi.mock("dofek/providers/registry", () => ({
   registerProvider: vi.fn(),
 }));
 
-vi.mock("dofek/jobs/provider-rate-limit-cooldown", () => ({
+vi.mock("dofek/jobs/provider-rate-limit-cooldown", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("dofek/jobs/provider-rate-limit-cooldown")>()),
   providerRateLimitCooldownStore: {
     getActive: toolTestMocks.getProviderRateLimitCooldown,
   },
@@ -4376,26 +4377,25 @@ describe("createMcpRouter", () => {
     ]);
   });
 
-  it("explains an active provider rate-limit cooldown in MCP sync health", async () => {
+  it("explains a previously misclassified theCrag access denial in MCP sync health", async () => {
     authorizeMcpToken();
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([
+      { providerId: "thecrag", updatedAt: new Date("2026-09-04T02:00:00Z"), hasTokens: true },
+    ]);
+    toolTestMocks.getLatestErrors.mockResolvedValue([
       {
-        providerId: "garmin",
-        updatedAt: new Date("2026-09-04T02:32:46.000Z"),
-        hasTokens: true,
+        authFailureReason: "authorization_failed",
+        errorMessage:
+          "theCrag requires logbook access for this key (400). Check the key's access in theCrag Settings > API Keys.",
+        providerId: "thecrag",
+        syncedAt: new Date("2026-09-04T02:30:00Z"),
       },
     ]);
-    toolTestMocks.getProviderRateLimitCooldown.mockResolvedValue({
-      providerId: "garmin",
-      scope: "user",
-      userId: "00000000-0000-0000-0000-000000000001",
-      expiresAt: new Date("2026-09-04T04:32:46.000Z"),
-    });
     toolTestMocks.getAllProviders.mockReturnValue([
       {
         authSetup: () => ({ automatedLogin: async () => ({}) }),
-        id: "garmin",
-        name: "Garmin Connect",
+        id: "thecrag",
+        name: "theCrag",
         validate: () => null,
       },
     ]);
@@ -4407,9 +4407,52 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toEqual([
       expect.objectContaining({
-        id: "garmin",
+        id: "thecrag",
+        authorized: true,
+        needsReauth: false,
+        sync_health: expect.objectContaining({
+          expected_sync_interval_minutes: 1440,
+          last_error: expect.stringContaining("https://www.thecrag.com/settings/apikey/"),
+        }),
+      }),
+    ]);
+  });
+
+  it("explains an active provider rate-limit cooldown in MCP sync health", async () => {
+    authorizeMcpToken();
+    toolTestMocks.getConnectedProviderIds.mockResolvedValue([
+      {
+        providerId: "thecrag",
+        updatedAt: new Date("2026-09-04T02:32:46.000Z"),
+        hasTokens: true,
+      },
+    ]);
+    toolTestMocks.getProviderRateLimitCooldown.mockResolvedValue({
+      providerId: "thecrag",
+      scope: "user",
+      userId: "00000000-0000-0000-0000-000000000001",
+      expiresAt: new Date("2026-09-04T04:32:46.000Z"),
+    });
+    toolTestMocks.getAllProviders.mockReturnValue([
+      {
+        authSetup: () => ({ automatedLogin: async () => ({}) }),
+        id: "thecrag",
+        name: "theCrag",
+        validate: () => null,
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("list_providers", {}),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      expect.objectContaining({
+        id: "thecrag",
         authorized: true,
         sync_health: expect.objectContaining({
+          expected_sync_interval_minutes: 1440,
           last_error: "Rate limited; sync deferred until 2026-09-04T04:32:46.000Z",
         }),
       }),
@@ -4533,8 +4576,15 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.queueAdd).not.toHaveBeenCalled();
   });
 
-  it("returns a tool error when sync enqueue is skipped for rate-limit cooldown", async () => {
+  it("explains an outage cooldown when an MCP manual sync is deferred", async () => {
     authorizeMcpToken();
+    toolTestMocks.getProviderRateLimitCooldown.mockResolvedValueOnce({
+      providerId: "wahoo",
+      scope: "provider",
+      userId: null,
+      reason: "service_unavailable",
+      expiresAt: new Date("2026-11-25T12:00:00Z"),
+    });
     vi.spyOn(enqueueSyncJobModule, "enqueueSyncJob").mockResolvedValueOnce(null);
     toolTestMocks.getAllProviders.mockReturnValue([
       { id: "wahoo", name: "Wahoo", validate: () => null },
@@ -4551,7 +4601,7 @@ describe("createMcpRouter", () => {
     const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
     expect(parsedResponse.result.isError).toBe(true);
     expect(parsedResponse.result.content[0]?.text).toBe(
-      "Provider wahoo sync skipped: rate-limit cooldown active",
+      "Service unavailable; sync deferred until 2026-11-25T12:00:00.000Z",
     );
     expect(toolTestMocks.queueAdd).not.toHaveBeenCalled();
   });

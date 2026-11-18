@@ -9,7 +9,7 @@ import type { DataExportRequest } from "../db/data-export.ts";
 import type { ProviderDataDeletionRequest } from "../db/provider-data-deletion.ts";
 import type { SyncLogOrigin } from "../db/schema/events.ts";
 import type { WebhookEvent } from "../webhook-event.ts";
-import type { ProviderSyncTier } from "./provider-queue-config.ts";
+import type { ProviderPollingCadence } from "./provider-queue-config.ts";
 
 // ── Job payload types ──
 
@@ -132,10 +132,8 @@ export interface DataExportQueue {
 export interface ScheduledSyncJobData {
   /** Marker to distinguish from regular sync jobs */
   type: "scheduled-sync-all";
-  /** Which sync tier this scheduled run targets (omit to sync all tiers) */
-  syncTier?: ProviderSyncTier;
-  /** Interval in ms between scheduled runs (used for stagger delay computation) */
-  intervalMs?: number;
+  /** Legacy jobs without a cadence run on the regular schedule. */
+  cadence?: ProviderPollingCadence;
 }
 
 export interface AnalyticsRefreshJobData {
@@ -247,6 +245,7 @@ export const FIT_FILE_IMPORT_BATCH_QUEUE = "fit-file-import-batch";
 export const ZIP_ENTRY_EXTRACT_QUEUE = "zip-entry-extract";
 export const EXPORT_QUEUE = "export";
 export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
+export const DAILY_SCHEDULED_SYNC_QUEUE = "scheduled-sync-daily";
 export const POST_SYNC_QUEUE = "post-sync";
 export const ANALYTICS_REFRESH_QUEUE = "analytics-refresh";
 export const PROVIDER_DATA_DELETION_QUEUE = "provider-data-deletion";
@@ -427,8 +426,10 @@ export async function enqueueDataExport(
 
 export function createScheduledSyncQueue(
   connection?: ConnectionOptions,
+  cadence: ProviderPollingCadence = "regular",
 ): Queue<ScheduledSyncJobData> {
-  return new Queue(SCHEDULED_SYNC_QUEUE, { connection: connection ?? getRedisConnection() });
+  const name = cadence === "daily" ? DAILY_SCHEDULED_SYNC_QUEUE : SCHEDULED_SYNC_QUEUE;
+  return new Queue(name, { connection: connection ?? getRedisConnection() });
 }
 
 export function createPostSyncQueue(connection?: ConnectionOptions): Queue<PostSyncJobData> {

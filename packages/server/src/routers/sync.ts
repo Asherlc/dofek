@@ -3,7 +3,14 @@ import { TRPCError } from "@trpc/server";
 import type { Job, Queue } from "bullmq";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
-import { providerRateLimitCooldownStore } from "dofek/jobs/provider-rate-limit-cooldown";
+import {
+  getProviderPollingCadence,
+  providerPollingIntervalMinutes,
+} from "dofek/jobs/provider-queue-config";
+import {
+  providerRateLimitCooldownStore,
+  providerSyncDeferralMessage,
+} from "dofek/jobs/provider-rate-limit-cooldown";
 import {
   getImportQueue,
   getProviderSyncQueue,
@@ -20,7 +27,6 @@ import { sanitizeErrorMessage } from "dofek/lib/sanitize-error";
 import { ProviderModel, providerTokenAuthSchema } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
-import { DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES } from "../../../../src/jobs/scheduled-sync.ts";
 import { operationStatusOutputSchema, readOperationProgress } from "../lib/operation-progress.ts";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
@@ -321,6 +327,7 @@ const syncRouterProcedures = {
               r.authFailureReason,
               r.syncedAt,
               connectionUpdatedAtMap.get(r.providerId),
+              r.errorMessage,
             ),
           )
           .map((r) => r.providerId),
@@ -350,6 +357,7 @@ const syncRouterProcedures = {
       );
       const registeredProviders = registeredProviderModels.map((model) => {
         const lastSuccessfulSyncAt = lastSuccessfulSyncMap.get(model.id) ?? null;
+        const cadence = getProviderPollingCadence(model.id);
         return {
           id: model.id,
           name: model.name,
@@ -363,14 +371,15 @@ const syncRouterProcedures = {
             ? (lastProcessedUpdateMap.get(model.id) ?? null)
             : null,
           syncFreshness:
-            model.isConnected && !model.importOnly && !model.pushOnly
+            model.isConnected && !model.importOnly && !model.pushOnly && cadence
               ? evaluateProviderSyncFreshness({
                   now: requestTime,
                   lastSuccessfulSyncAt: lastSuccessfulSyncAt
                     ? new Date(lastSuccessfulSyncAt)
                     : null,
-                  intervalMinutes: DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES,
+                  intervalMinutes: providerPollingIntervalMinutes(cadence),
                   cooldownUntil: cooldowns.get(model.id)?.expiresAt ?? null,
+                  cooldownReason: cooldowns.get(model.id)?.reason,
                 })
               : null,
           importOnly: model.importOnly,
@@ -763,7 +772,9 @@ function createTriggerSyncProcedure() {
                 return {
                   providerId,
                   status: "skippedCooldown",
-                  message: "Provider sync skipped: rate-limit cooldown active",
+                  message: providerSyncDeferralMessage(
+                    await providerRateLimitCooldownStore.getActive(providerId, ctx.userId),
+                  ),
                 };
               }
               const jobId = toJobId(job.id, providerId);

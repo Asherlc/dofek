@@ -49,11 +49,13 @@ export async function syncJobOptionsWithRateLimitCooldown(
   userId: string,
 ): Promise<JobsOptions> {
   const cooldown = await providerRateLimitCooldownStore.getActive(providerId, userId);
-  if (!cooldown) return SYNC_JOB_RETRY_OPTIONS;
+  return jobOptionsForCooldown(cooldown);
+}
+
+function jobOptionsForCooldown(cooldown: ProviderRateLimitCooldown | null): JobsOptions {
   return {
     ...SYNC_JOB_RETRY_OPTIONS,
-    delay: providerRateLimitDelayMs(cooldown),
-    jobId: providerRateLimitCooldownJobId(cooldown, userId),
+    ...(cooldown ? { delay: providerRateLimitDelayMs(cooldown) } : {}),
   };
 }
 
@@ -67,7 +69,7 @@ export async function enqueueSyncJob(
     return null;
   }
   const anchoredJobData = withRelativeRequestAnchor(jobData);
-  const jobOptions = { ...(await syncJobOptionsWithRateLimitCooldown(providerId, jobData.userId)) };
+  const jobOptions = jobOptionsForCooldown(cooldown);
   if (anchoredJobData.webhookEvent) jobOptions.jobId = `sync-webhook-${randomUUID()}`;
   const deduplicationId = initialFullSyncDeduplicationId(providerId, anchoredJobData, options);
   const queue = getProviderSyncQueue(providerId);
@@ -109,7 +111,7 @@ export async function scheduleDelayedSyncJob(
       delay: providerRateLimitDelayMs(cooldown),
       jobId: jobData.webhookEvent
         ? `sync-webhook-${randomUUID()}`
-        : providerRateLimitCooldownJobId(cooldown, jobData.userId),
+        : providerRateLimitCooldownJobId(cooldown, anchoredJobData),
     },
     (name, data, opts) => queue.add(name, data, opts),
     (jobId) => queue.getJob(jobId),

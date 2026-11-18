@@ -26,6 +26,14 @@ export class ProviderAuthError extends Error {
   }
 }
 
+/** The provider denied access without identifying a rejected credential. */
+export class ProviderAccessDeniedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProviderAccessDeniedError";
+  }
+}
+
 export class AccessTokenExpiredError extends ProviderAuthError {
   constructor(providerName: string, options?: ErrorOptions) {
     super("access_token_expired", `${providerName} access token expired.`, options);

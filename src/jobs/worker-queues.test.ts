@@ -51,6 +51,11 @@ describe("worker queues", () => {
       expect.any(Object),
     );
     expect(Worker).toHaveBeenCalledWith(
+      "daily-scheduled-sync-queue",
+      expect.any(Function),
+      expect.any(Object),
+    );
+    expect(Worker).toHaveBeenCalledWith(
       "post-sync-queue",
       expect.any(Function),
       expect.any(Object),

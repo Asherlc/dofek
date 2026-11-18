@@ -1,3 +1,8 @@
+import { providerSyncAccessIssue } from "@dofek/providers/sync-log-presentation";
+import {
+  getProviderPollingCadence,
+  providerPollingIntervalMinutes,
+} from "dofek/jobs/provider-queue-config";
 import { providerRateLimitCooldownStore } from "dofek/jobs/provider-rate-limit-cooldown";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
@@ -37,9 +42,16 @@ export async function listProviderStatuses(context: Pick<DofekMcpContext, "db" |
           provider.authFailureReason,
           provider.syncedAt,
           tokenUpdatedAtMap.get(provider.providerId),
+          provider.errorMessage,
         ),
       )
       .map((provider) => provider.providerId),
+  );
+  const accessIssues = new Map(
+    latestErrors.map(({ providerId, errorMessage }) => [
+      providerId,
+      providerSyncAccessIssue(errorMessage),
+    ]),
   );
   const providerModels = getAllProviders()
     .filter((provider) => provider.validate() === null)
@@ -61,17 +73,25 @@ export async function listProviderStatuses(context: Pick<DofekMcpContext, "db" |
     ),
   );
 
-  return providerModels.map((model) => ({
-    id: model.id,
-    name: model.name,
-    authType: model.authType,
-    authorized: model.isConnected,
-    lastSyncedAt: model.lastSyncedAt,
-    importOnly: model.importOnly,
-    needsReauth: authErrorProviderIds.has(model.id),
-    sync_health:
-      model.isConnected && !model.importOnly
-        ? syncHealth(scheduledSyncHealthMap.get(model.id), cooldowns.get(model.id))
-        : null,
-  }));
+  return providerModels.map((model) => {
+    const cadence = getProviderPollingCadence(model.id);
+    return {
+      id: model.id,
+      name: model.name,
+      authType: model.authType,
+      authorized: model.isConnected,
+      lastSyncedAt: model.lastSyncedAt,
+      importOnly: model.importOnly,
+      needsReauth: authErrorProviderIds.has(model.id),
+      sync_health:
+        model.isConnected && !model.importOnly && !model.pushOnly && cadence
+          ? syncHealth(
+              scheduledSyncHealthMap.get(model.id),
+              cooldowns.get(model.id),
+              providerPollingIntervalMinutes(cadence),
+              accessIssues.get(model.id),
+            )
+          : null,
+    };
+  });
 }

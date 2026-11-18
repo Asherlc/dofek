@@ -818,6 +818,11 @@ describe("fetchWithRateLimitHandling", () => {
 });
 
 describe("parseRetryAfterHeader", () => {
+  it.each(["10seconds", "1.5", "-5", "+5", "2026-06-02", "99999999999999999999"])(
+    "rejects %s as neither delay-seconds nor an HTTP date",
+    (header) => expect(parseRetryAfterHeader(header)).toBeNull(),
+  );
+
   it("parses numeric seconds", () => {
     expect(parseRetryAfterHeader("5")).toBe(5);
   });
@@ -826,9 +831,13 @@ describe("parseRetryAfterHeader", () => {
     expect(parseRetryAfterHeader("0")).toBe(0);
   });
 
-  it("parses an HTTP-date into seconds", () => {
+  it.each([
+    "Tue, 02 Jun 2026 12:00:05 GMT",
+    "Tuesday, 02-Jun-26 12:00:05 GMT",
+    "Tue Jun  2 12:00:05 2026",
+  ])("parses the HTTP-date %s as UTC", (date) => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
-    expect(parseRetryAfterHeader("Tue, 02 Jun 2026 12:00:05 GMT")).toBe(5);
+    expect(parseRetryAfterHeader(date)).toBe(5);
     vi.useRealTimers();
   });
 

@@ -30,6 +30,7 @@ function createWorkerHealthQueues(): HealthQueue[] {
     createImportQueue(),
     createExportQueue(),
     createScheduledSyncQueue(),
+    createScheduledSyncQueue(undefined, "daily"),
     createPostSyncQueue(),
     createActivityDeleteAnalyticsQueue(),
   ];

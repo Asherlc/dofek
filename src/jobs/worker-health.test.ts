@@ -32,16 +32,16 @@ describe("checkWorkerQueues", () => {
   it("checks every worker queue and closes queue clients", async () => {
     await expect(checkWorkerQueues()).resolves.toEqual({ status: "ok", queues: "ok" });
 
-    expect(mockQueueWaitUntilReady).toHaveBeenCalledTimes(6);
-    expect(mockQueueGetJobCounts).toHaveBeenCalledTimes(6);
-    expect(mockQueueClose).toHaveBeenCalledTimes(6);
+    expect(mockQueueWaitUntilReady).toHaveBeenCalledTimes(7);
+    expect(mockQueueGetJobCounts).toHaveBeenCalledTimes(7);
+    expect(mockQueueClose).toHaveBeenCalledTimes(7);
   });
 
   it("fails when a worker queue cannot reach Redis", async () => {
     mockQueueGetJobCounts.mockRejectedValueOnce(new Error("redis offline"));
 
     await expect(checkWorkerQueues()).rejects.toThrow("redis offline");
-    expect(mockQueueClose).toHaveBeenCalledTimes(6);
+    expect(mockQueueClose).toHaveBeenCalledTimes(7);
   });
 
   it("fails when a later worker queue cannot reach Redis", async () => {
@@ -50,7 +50,7 @@ describe("checkWorkerQueues", () => {
       .mockRejectedValueOnce(new Error("later redis offline"));
 
     await expect(checkWorkerQueues()).rejects.toThrow("later redis offline");
-    expect(mockQueueClose).toHaveBeenCalledTimes(6);
+    expect(mockQueueClose).toHaveBeenCalledTimes(7);
   });
 
   it("fails when queue cleanup fails", async () => {
@@ -65,7 +65,7 @@ describe("checkWorkerQueues", () => {
     await expect(checkWorkerQueues({ timeoutMs: 1 })).rejects.toThrow(
       "worker queue readiness timed out",
     );
-    expect(mockQueueClose).toHaveBeenCalledTimes(6);
+    expect(mockQueueClose).toHaveBeenCalledTimes(7);
   });
 
   it("clears the timeout after a successful queue check", async () => {

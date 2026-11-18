@@ -192,7 +192,9 @@ describe("sync-provider-failure", () => {
       expect.objectContaining({
         attempts: 288,
         delay: 600_000,
-        jobId: "provider-rate-limit-example-provider-1780402200000",
+        jobId: expect.stringMatching(
+          /^provider-rate-limit-example-provider-1780402200000-[a-f0-9]{24}$/,
+        ),
       }),
     );
     expect(mockCaptureException).not.toHaveBeenCalledWith(
@@ -216,6 +218,7 @@ describe("sync-provider-failure", () => {
       dataType: "sync",
       status: "error",
       errorMessage: "Example API rate limit exceeded (429): limited",
+      errorCauses: [expect.any(ProviderRateLimitError)],
       durationMs: 0,
       userId: "user-1",
       origin: "unknown",
@@ -234,6 +237,8 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "example",
       data_type: "sync",
+      failure_kind: "rate_limited",
+      origin: "unknown",
     });
     vi.useRealTimers();
   });
@@ -361,7 +366,9 @@ describe("sync-provider-failure", () => {
       }),
       expect.objectContaining({
         delay: 600_000,
-        jobId: "provider-rate-limit-example-provider-1780402200000",
+        jobId: expect.stringMatching(
+          /^provider-rate-limit-example-provider-1780402200000-[a-f0-9]{24}$/,
+        ),
       }),
     );
     expect(mockCaptureException).not.toHaveBeenCalled();
@@ -482,6 +489,12 @@ describe("sync-provider-failure", () => {
       level: "warning",
     });
     expect(mockLogSync).not.toHaveBeenCalled();
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "example",
+      data_type: "sync",
+      failure_kind: "infrastructure",
+      origin: "unknown",
+    });
     expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
     expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
   });
@@ -586,6 +599,8 @@ describe("sync-provider-failure", () => {
       expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
         provider: "openbeta",
         data_type: "sync",
+        failure_kind: "service_unavailable",
+        origin: "unknown",
       });
       expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
         provider: "openbeta",
@@ -688,6 +703,8 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "amazfit-zepp",
       data_type: "sync",
+      failure_kind: "service_unavailable",
+      origin: "unknown",
     });
     expect(mockCaptureException).not.toHaveBeenCalled(); // Terminal failed event owns the alert.
   });
@@ -717,8 +734,103 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "zwift",
       data_type: "sync",
+      failure_kind: "service_unavailable",
+      origin: "unknown",
     });
   });
+
+  it.each(["thrown", "returned"])("defers a %s 503 with explicit retry guidance", async (mode) => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const unavailable = new ProviderServiceUnavailableError({
+      message: "Example is unavailable",
+      providerId: "example",
+      statusCode: 503,
+      responseBody: "",
+      retryAfterSeconds: 600,
+    });
+    const provider = createMockProvider({
+      id: "example",
+      name: "Example",
+      sync:
+        mode === "thrown"
+          ? vi.fn().mockRejectedValue(unavailable)
+          : vi.fn().mockResolvedValue({
+              errors: [{ message: unavailable.message, cause: unavailable }],
+            }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({ providerId: "example" });
+
+    await runSyncJob(job, mockDb);
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({ providerId: "example" }),
+      expect.objectContaining({ delay: 600_000 }),
+    );
+    expect(job.updateProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providers: {
+          example: {
+            status: "running",
+            message: "Service unavailable; retry scheduled for 2026-06-02T12:10:00.000Z",
+          },
+        },
+      }),
+    );
+  });
+
+  it.each([false, true])(
+    "keeps both scopes when rate limits and outages arrive together (reverse=%s)",
+    async (reverse) => {
+      vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+      const outages = new ProviderServiceUnavailableError({
+        providerId: "example",
+        statusCode: 503,
+        message: "Service unavailable",
+        responseBody: "",
+        scope: "user",
+        retryAfterSeconds: 60,
+      });
+      const limited = new ProviderRateLimitError({
+        providerId: "example",
+        statusCode: 429,
+        message: "Rate limited",
+        responseBody: "",
+        scope: "provider",
+        retryAfterSeconds: 600,
+      });
+      const errors = (reverse ? [limited, outages] : [outages, limited]).map((cause) => ({
+        cause,
+        message: cause.message,
+      }));
+      const provider = createMockProvider({
+        id: "example",
+        sync: vi.fn().mockResolvedValue({ errors }),
+      });
+      mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+      await runSyncJob(createMockJob({ providerId: "example" }), mockDb);
+
+      expect(mockProviderQueueAdd).toHaveBeenCalledExactlyOnceWith(
+        "sync",
+        expect.anything(),
+        expect.objectContaining({ delay: 600_000 }),
+      );
+      expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ failure_kind: "rate_limited" }),
+      );
+      expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ failure_kind: "service_unavailable" }),
+      );
+      const { providerRateLimitCooldownStore } = await import("./provider-rate-limit-cooldown.ts");
+      await expect(
+        providerRateLimitCooldownStore.getActive("example", "another-owner"),
+      ).resolves.toMatchObject({ expiresAt: new Date("2026-06-02T12:10:00Z") });
+    },
+  );
 
   it("records a Zepp HTTP 503 service outage without retrying or reporting it to Sentry", async () => {
     const serviceUnavailableError = new ProviderServiceUnavailableError({
@@ -745,6 +857,8 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "amazfit-zepp",
       data_type: "sync",
+      failure_kind: "service_unavailable",
+      origin: "unknown",
     });
   });
 
@@ -797,6 +911,8 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "zwift",
       data_type: "sync",
+      failure_kind: "service_unavailable",
+      origin: "unknown",
     });
   });
 
@@ -820,6 +936,8 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "zwift",
       data_type: "sync",
+      failure_kind: "service_unavailable",
+      origin: "unknown",
     });
   });
 
@@ -862,6 +980,8 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "broken",
       data_type: "sync",
+      failure_kind: "unknown",
+      origin: "unknown",
     });
   });
 });

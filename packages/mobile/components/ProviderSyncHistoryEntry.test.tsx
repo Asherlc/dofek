@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { Linking } from "react-native";
+import { describe, expect, it, vi } from "vitest";
 import { ProviderSyncHistoryEntry } from "./ProviderSyncHistoryEntry";
 
 const expiredAuthorizationEntry = {
@@ -14,6 +15,28 @@ const expiredAuthorizationEntry = {
 };
 
 describe("ProviderSyncHistoryEntry", () => {
+  it("opens account settings when logbook access is denied", () => {
+    const openURL = vi.spyOn(Linking, "openURL").mockResolvedValue(undefined);
+    try {
+      render(
+        <ProviderSyncHistoryEntry
+          providerName="theCrag"
+          entry={{
+            ...expiredAuthorizationEntry,
+            authFailureReason: null,
+            errorMessage:
+              "theCrag denied logbook access (400). Check your weekly token budget, supporter status, and API key. https://www.thecrag.com/settings/apikey/",
+          }}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("link", { name: "theCrag API Keys" }));
+      expect(openURL).toHaveBeenCalledWith("https://www.thecrag.com/settings/apikey/");
+    } finally {
+      openURL.mockRestore();
+    }
+  });
+
   it.each(["error", "degraded"])("renders one actionable message for a push %s", (status) => {
     render(
       <ProviderSyncHistoryEntry

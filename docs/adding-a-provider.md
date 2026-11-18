@@ -203,6 +203,13 @@ provider from [scheduled sync eligibility](../src/providers/index.ts)
 does not replace queue registration. Configure on-demand delivery without a
 polling schedule or unsupported provider-specific limiter.
 
+Set the provider's automatic polling tier in the [queue configuration](../src/jobs/provider-queue-config.ts).
+Use the [shared provider HTTP wrapper](../src/lib/provider-rate-limit-fetch.ts)
+for typed throttling and `Retry-After` handling. Keep the scope account-specific
+when the upstream limit is per account. If an upstream access denial can have
+several causes, use `ProviderAccessDeniedError` and actionable checks. Reserve
+credential errors for outcomes that establish a credential problem.
+
 If other packages need a bare import such as `dofek/providers/my-provider`, add a matching export to the root `package.json`.
 
 ## 4. Add env vars and setup notes

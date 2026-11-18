@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Database, SyncDatabase } from "../db/index.ts";
+import type { ScheduledSyncJobData } from "./queues.ts";
 
 /** Per-provider mock queues keyed by provider ID */
 const providerQueues = new Map<
@@ -107,9 +108,9 @@ function createScheduledSyncDatabase(rows: ScheduledSyncRow[]): ScheduledSyncDat
   };
 }
 
-function createScheduledSyncJob() {
+function createScheduledSyncJob(cadence?: "regular" | "daily") {
   return {
-    data: { type: "scheduled-sync-all" as const },
+    data: { type: "scheduled-sync-all", cadence } satisfies ScheduledSyncJobData,
     updateProgress: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -129,6 +130,24 @@ describe("processScheduledSyncJob", () => {
         operation: (database: ScheduledSyncDatabase) => Promise<unknown>,
       ) => operation(database),
     );
+  });
+
+  it.each([
+    { cadence: undefined, expected: ["strava", "whoop"] },
+    { cadence: "regular" as const, expected: ["strava", "whoop"] },
+    { cadence: "daily" as const, expected: ["thecrag", "fatsecret"] },
+  ])("dispatches only providers due on the $cadence schedule", async ({ cadence, expected }) => {
+    const db = createScheduledSyncDatabase(
+      ["strava", "whoop", "thecrag", "fatsecret", "bodyspec"].map((provider_id) => ({
+        user_id: "user-1",
+        provider_id,
+        has_tokens: true,
+      })),
+    );
+
+    await processScheduledSyncJob(createScheduledSyncJob(cadence), db);
+
+    expect([...providerQueues.keys()]).toEqual(expected);
   });
 
   it("enqueues sync jobs into per-provider queues for non-CSV providers only", async () => {

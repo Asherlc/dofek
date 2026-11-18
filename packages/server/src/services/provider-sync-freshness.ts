@@ -1,3 +1,8 @@
+import {
+  type ProviderRateLimitCooldown,
+  providerCooldownLabel,
+} from "dofek/jobs/provider-rate-limit-cooldown";
+
 export type ProviderSyncFreshness =
   | {
       status: "unknown";
@@ -24,6 +29,7 @@ interface ProviderSyncFreshnessInput {
   lastSuccessfulSyncAt: Date | null;
   intervalMinutes: number;
   cooldownUntil?: Date | null;
+  cooldownReason?: ProviderRateLimitCooldown["reason"];
 }
 
 export function evaluateProviderSyncFreshness({
@@ -31,12 +37,13 @@ export function evaluateProviderSyncFreshness({
   lastSuccessfulSyncAt,
   intervalMinutes,
   cooldownUntil,
+  cooldownReason,
 }: ProviderSyncFreshnessInput): ProviderSyncFreshness {
   if (cooldownUntil && cooldownUntil.getTime() > now.getTime()) {
     return {
       status: "deferred",
       label: "Sync deferred",
-      description: `Rate limited until ${cooldownUntil.toISOString()}.`,
+      description: `${providerCooldownLabel({ reason: cooldownReason })} until ${cooldownUntil.toISOString()}.`,
     };
   }
 

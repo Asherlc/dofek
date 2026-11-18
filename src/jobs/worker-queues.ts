@@ -37,6 +37,7 @@ import {
   ACTIVITY_IMAGE_QUEUE,
   type ActivityAnalyticsJobData,
   type ActivityImageJobData,
+  DAILY_SCHEDULED_SYNC_QUEUE,
   EXPORT_QUEUE,
   type ExportJobData,
   FIT_FILE_IMPORT_BATCH_QUEUE,
@@ -211,10 +212,13 @@ export function createWorkerQueues({
       ),
     { autorun: false, connection, concurrency: 2 },
   );
-  const scheduledSyncWorker = new Worker<ScheduledSyncJobData>(
-    SCHEDULED_SYNC_QUEUE,
-    (job) => jobContext.run(job, () => processScheduledSyncJob(job, db)),
-    { autorun: false, connection },
+  const scheduledSyncWorkers = [SCHEDULED_SYNC_QUEUE, DAILY_SCHEDULED_SYNC_QUEUE].map(
+    (queueName) =>
+      new Worker<ScheduledSyncJobData>(
+        queueName,
+        (job) => jobContext.run(job, () => processScheduledSyncJob(job, db)),
+        { autorun: false, connection },
+      ),
   );
   const postSyncWorker = new Worker<PostSyncJobData>(
     POST_SYNC_QUEUE,
@@ -319,7 +323,7 @@ export function createWorkerQueues({
     fitFileImportWorker,
     fitFileImportBatchWorker,
     zipEntryExtractWorker,
-    scheduledSyncWorker,
+    ...scheduledSyncWorkers,
     postSyncWorker,
     activityDeleteAnalyticsWorker,
     providerDataDeletionWorker,

@@ -93,7 +93,8 @@ reprocessing and historical-data limits.
 
 ## Configuration
 
-- **Provider Tiers**: Sync frequency and priority are defined in `provider-queue-config.ts`.
+- **Provider tiers**: Realtime and frequent providers use the regular schedule, which defaults to 30 minutes and accepts `SYNC_INTERVAL_MINUTES`. Daily providers run every 24 hours. On-demand providers can be synced manually when eligible. The worker and provider status use the same [queue configuration](provider-queue-config.ts).
+- **Scheduler rollout**: Daily dispatch uses its own BullMQ queue. Older worker releases subscribe only to the regular queue. After a rollback the daily queue waits for a compatible worker. The [scheduler registration](scheduled-sync.ts) uses stable keys and BullMQ's [upsert semantics](https://docs.bullmq.io/guide/job-schedulers/).
 - **Push-only queues**: Queue registration and scheduled eligibility are distinct. Garmin still needs an on-demand provider queue/worker, while `pushOnly` excludes scheduled and manual polls. See [queue configuration](provider-queue-config.ts), [worker construction](worker-queues.ts), and [sync eligibility](../providers/index.ts).
 - **Concurrency**: Per-queue concurrency limits for rate-limiting API calls.
 - **Retry Logic**: Sync and post-sync jobs use a fixed five-minute backoff;
@@ -105,6 +106,14 @@ reprocessing and historical-data limits.
   Unexpected causes still go to Sentry and end the refresh immediately.
   Other queues declare retry options at their enqueue sites. See BullMQ's
   [retrying failing jobs](https://docs.bullmq.io/guide/retrying-failing-jobs).
+- **Upstream deferral**: HTTP 429 uses the provider or account cooldown. An HTTP 503 with a positive `Retry-After` uses the same delayed queue path and appears as service unavailability. The HTTP boundary accepts delay-seconds and HTTP-date values as defined in [HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110.html#section-10.2.3).
+  A Redis compare-and-set preserves the longest active cooldown across concurrent writes. Delayed jobs use the request and its processing state as their identity. See [Redis transaction semantics](https://redis.io/docs/latest/develop/clients/nodejs/transpipe/#watch-keys-for-changes).
+
+The provider worker emits `sync.errors.total` with `provider`, `data_type`,
+`origin`, and `failure_kind` dimensions. The failure categories are
+`access_denied`, `authorization`, `rate_limited`, `service_unavailable`,
+`timeout`, `infrastructure`, and `unknown`. Repeated scheduled failures use the
+provider and failure category in their [Sentry fingerprint](https://docs.sentry.io/platforms/javascript/guides/node/enriching-events/fingerprinting/).
 
 ## Provider Issue Emails
 

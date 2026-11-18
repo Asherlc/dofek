@@ -5,7 +5,8 @@ import {
   providerSyncLogPresentation,
 } from "@dofek/providers/sync-log-presentation";
 import { useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { captureException } from "../lib/telemetry";
 import { colors, fonts, radius, spacing } from "../theme";
 
 export interface ProviderSyncHistoryEntryData {
@@ -39,6 +40,7 @@ export function ProviderSyncHistoryEntry({
     authFailureReason: entry.authFailureReason,
     errorMessage: entry.errorMessage,
   });
+  const action = presentation.action;
 
   return (
     <View style={[styles.container, borderStyleByTone[presentation.tone]]}>
@@ -47,6 +49,19 @@ export function ProviderSyncHistoryEntry({
           <Text style={styles.dataType}>{presentation.dataTypeLabel}</Text>
           <Text style={styles.heading}>{presentation.heading}</Text>
           {presentation.message ? <Text style={styles.message}>{presentation.message}</Text> : null}
+          {action ? (
+            <TouchableOpacity
+              accessibilityRole="link"
+              accessibilityLabel={action.label}
+              onPress={() => {
+                void Linking.openURL(action.url).catch((error: unknown) => {
+                  captureException(error, { tags: { operation: "provider-access-help" } });
+                });
+              }}
+            >
+              <Text style={styles.diagnosticsButton}>{action.label}</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
         <Text style={styles.time}>{formatTime(entry.syncedAt)}</Text>
       </View>

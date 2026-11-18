@@ -294,6 +294,8 @@ describe("sync-provider-execution", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "strava",
       data_type: "sync",
+      failure_kind: "service_unavailable",
+      origin: "unknown",
     });
   });
 
@@ -421,7 +423,9 @@ describe("sync-provider-execution", () => {
       }),
       expect.objectContaining({
         delay: 600_000,
-        jobId: "provider-rate-limit-garmin-provider-1780402200000",
+        jobId: expect.stringMatching(
+          /^provider-rate-limit-garmin-provider-1780402200000-[a-f0-9]{24}$/,
+        ),
       }),
     );
     expect(mockLogSync).not.toHaveBeenCalled();
@@ -606,6 +610,8 @@ describe("sync-provider-execution", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "withings",
       data_type: "sync",
+      failure_kind: "timeout",
+      origin: "unknown",
     });
   });
 
@@ -706,6 +712,8 @@ describe("sync-provider-execution", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "zwift",
       data_type: "sync",
+      failure_kind: "service_unavailable",
+      origin: "scheduled",
     });
   });
 
@@ -826,6 +834,8 @@ describe("sync-provider-execution", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(2, {
       provider: "partial",
       data_type: "sync",
+      failure_kind: "unknown",
+      origin: "unknown",
     });
   });
 

@@ -1,4 +1,3 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import { loadUserHomeTimezone } from "../db/home-timezone.ts";
 import { runWithProviderUserIngestContext } from "../db/provider-ingest-context.ts";
@@ -12,22 +11,23 @@ import {
   shouldReportProviderError,
 } from "../lib/provider-error-reporting.ts";
 import { logger } from "../logger.ts";
+import { ProviderAccessDeniedError } from "../providers/auth-errors.ts";
 import { isPushProvider, isWebhookProvider, type SyncProvider } from "../providers/types.ts";
-import {
-  syncDuration,
-  syncErrorsTotal,
-  syncOperationsTotal,
-  syncRecordsTotal,
-} from "../sync-metrics.ts";
+import { syncDuration, syncOperationsTotal, syncRecordsTotal } from "../sync-metrics.ts";
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import { scheduleDelayedSyncJob } from "./enqueue-sync-job.ts";
-import { providerRateLimitCooldownStore } from "./provider-rate-limit-cooldown.ts";
+import {
+  providerCooldownLabel,
+  providerRateLimitCooldownStore,
+} from "./provider-rate-limit-cooldown.ts";
 import type { SyncJobContext } from "./sync-job-context.ts";
 import { SyncProcessingOperation } from "./sync-processing-operation.ts";
 import {
   firstAuthFailureReason,
   handleSyncProviderFailure,
+  providerSyncDeferralErrors,
   providerSyncFailureEvent,
+  recordProviderSyncFailures,
   throwRetryableSyncResultError,
 } from "./sync-provider-failure.ts";
 
@@ -85,15 +85,13 @@ export async function executeSyncProvider(
     context.completedCount++;
     context.providerStatus[provider.id] = {
       status: "running",
-      message: `Rate limited; retry scheduled for ${retryAt}`,
+      message: `${providerCooldownLabel(activeCooldown)}; retry scheduled for ${retryAt}`,
     };
     await job.updateProgress({
       providers: context.providerStatus,
       percentage: context.percentage(0),
     });
-    logger.info(
-      `[worker] ${provider.name} sync deferred until rate-limit cooldown expires at ${retryAt}`,
-    );
+    logger.info(`[worker] ${provider.name} sync deferred until ${retryAt}`);
     return true;
   }
 
@@ -125,9 +123,9 @@ export async function executeSyncProvider(
               metricStreamPublisher: processingOperation.metricStreamPublisher,
             });
           } catch (error) {
-            if (isKnownProviderHttp5xxError(error)) {
-              syncErrorsTotal.add(1, { provider: provider.id, data_type: "sync" });
-            } else {
+            if (providerSyncDeferralErrors(error).length > 0) throw error;
+            recordProviderSyncFailures(provider.id, job.data.origin ?? "unknown", [error]);
+            if (!isKnownProviderHttp5xxError(error)) {
               captureException(error, {
                 tags: { provider: provider.id, webhookPhase: "targeted-sync" },
               });
@@ -168,11 +166,14 @@ export async function executeSyncProvider(
       throw failure?.cause ?? new Error(result.errors.map((error) => error.message).join("; "));
     }
     const authFailureReason = firstAuthFailureReason(result.errors);
+    const firstError = result.errors[0];
     const failureEvent = providerSyncFailureEvent(
       provider.name,
       authFailureReason,
       provider.pushOnly,
-      result.errors[0]?.message,
+      firstError?.cause instanceof ProviderAccessDeniedError
+        ? firstError.cause
+        : firstError?.message,
     );
     context.completedCount++;
     const hasErrors = result.errors.length > 0;
@@ -229,7 +230,11 @@ export async function executeSyncProvider(
     syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status });
     syncDuration.record(durationMs, { provider: provider.id, data_type: "sync" });
     if (hasErrors) {
-      syncErrorsTotal.add(result.errors.length, { provider: provider.id, data_type: "sync" });
+      recordProviderSyncFailures(
+        provider.id,
+        job.data.origin ?? "unknown",
+        result.errors.map((error) => error.cause ?? error.message),
+      );
     }
   } catch (err: unknown) {
     await handleSyncProviderFailure(context, provider, processingOperation, syncStart, err);
@@ -238,7 +243,7 @@ export async function executeSyncProvider(
     if (
       isPushProvider(provider) &&
       job.data.webhookEvent &&
-      !(err instanceof ProviderRateLimitError)
+      providerSyncDeferralErrors(err).length === 0
     ) {
       throw err;
     }
