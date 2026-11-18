@@ -39272,3 +39272,54 @@ Local qualification and CI are separate from production throughput acceptance. T
   For the next ClickHouse image change, qualify the order of the database and
   pre-migration web updates. Starting them together can cause another web
   rollback. The recovery used the existing checks with their original limits.
+
+## 2026-11-18 — WHOOP uploads rejected during a failed web rollout
+
+- At 16:15:24 UTC a realtime WHOOP batch received HTTP 408 and stayed in the
+  mobile outbox. At 16:15:58.769, Axiom recorded `upload_published` for the same
+  batch, with 31 input samples and 62 rows published to Redpanda. The source of
+  the 408 is unresolved. The uploader's `attempt` value is a submission
+  sequence across streams. [Sentry 408 event](https://east-bay-software.sentry.io/issues/7828344976/events/f7827c4249b4494a84a97d5a584bee1a/)
+  and [uploader source](../packages/mobile/modules/whoop-ble/ios/WhoopBleBackgroundUploader.swift).
+- At 16:17:03–08, mobile breadcrumbs and Traefik logs record three HTTP 503s.
+  Traefik recorded `OriginStatus=0` for each. At 16:17:35–40, the same three
+  upload streams received HTTP 404. The iOS uploader blocks each stream on
+  that status and keeps the batch pending. The observed interval overlaps zero
+  ready web replicas. Axiom exports only Traefik 5xx access logs, so the precise
+  source of the 404s remains unverified. No publish was found for the three
+  affected batches through 16:23. [Sentry 404 event and breadcrumbs](https://east-bay-software.sentry.io/issues/7828344976/events/d636ebfac25d43d494d6c42b97d82430/)
+  and [Traefik log coverage](axiom-observability-runbook.md#traefik-server-error-access-logs).
+- The pre-migration `docker stack deploy` rolled the web and ClickHouse
+  tasks together. Swarm recorded the old ClickHouse task shut down at
+  16:16:47.195 and the new task running at 16:17:33.607. In that gap the
+  replacement web task exited after logging its first fatal startup error,
+  `[web] Failed to start: Error: getaddrinfo ENOTFOUND clickhouse`, at
+  16:17:24.217. `Wait for pre-migration web convergence` then saw `0/2`
+  replicas and failed with `dofek_web did not finish the pre-migration
+  deployment; update_state=rollback_started`. [Failed deployment job](https://github.com/Asherlc/dofek/actions/runs/44343743471/job/134942094952).
+- Swarm completed the web rollback at 16:18:25. Public `/healthz` returned
+  HTTP 200 and web had `2/2` replicas. The worker, analytics worker, three
+  ClickHouse sinks and processing reconciliation still had zero desired
+  replicas at the time of inspection. A second release attempt was already
+  running. Verify restored processing replicas and watch for publication of
+  the three pending batch IDs after the client reconfigures its uploader.
+  [Deployment runbook](../deploy/README.md#deployment) and
+  [release attempt 2](https://github.com/Asherlc/dofek/actions/runs/44343743471/attempts/2).
+- During the second attempt, web returned HTTP 200 at `/healthz` with `2/2`
+  replicas. The worker, analytics worker, ClickHouse sinks and reconciliation
+  each returned to `1/1`. Axiom recorded `upload_published` to Redpanda for
+  all three affected batch IDs at 16:38:09–10. The paired phone's Dofek build
+  `1794972877` was also relaunched through CoreDevice.
+- The workflow fix omits web during the rolling dependency apply. It waits
+  for ClickHouse convergence and overlay-network readiness before refreshing
+  the previous web image's configuration and verifying both replicas. The
+  regression fixtures and a Docker CLI configuration round trip cover the
+  rolling and maintenance paths. [Deployment workflow](../.github/workflows/deploy-web-stack.yml).
+- The rollout follow-up pins the ClickHouse image across stack phases and
+  checks the desired task settings before probing readiness. Web checks its
+  dependencies before listening and uses process health while running so
+  ClickHouse downtime does not recycle serving tasks. In a local Swarm, two
+  stand-in web tasks stayed running through a ClickHouse version upgrade and
+  a same-image config update. The rollout gate also waited for a
+  stop-grace-period change and passed immediately on an unchanged spec.
+  [Deployment runbook](../deploy/README.md#deployment-runbook-cold-start-and-db-availability).

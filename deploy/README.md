@@ -110,6 +110,12 @@ infrastructure has been retired.
   workflow digest edits.
 - Traefik consumes the swarm provider and routes traffic from labels declared on stack services.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
+- Web startup checks Postgres, ClickHouse, and queue readiness before opening
+  its listening socket. Swarm then uses `/healthz` to check process liveness,
+  while `/readyz` continues to report dependency readiness. Existing tasks
+  can serve unaffected routes during a database restart.
+  [Server startup](../packages/server/src/index.ts) and
+  [Docker healthchecks](https://docs.docker.com/reference/dockerfile/#healthcheck).
 - The BullMQ worker has a 30-minute stop grace period. BullMQ's graceful `Worker.close()` stops accepting new jobs and waits for active jobs, while Docker otherwise sends `SIGKILL` after a 10-second default. Provider HTTP calls have a shared two-minute deadline, and provider-data deletion advances through one durable 1,000-row continuation job per batch, so the grace period covers bounded work instead of masking unbounded requests or multi-hour loops. The initial rollout convergence deadline is 35 minutes so CI can observe the full graceful-drain result. See [BullMQ graceful shutdown](https://docs.bullmq.io/guide/workers/graceful-shutdown), [Docker `stop_grace_period`](https://docs.docker.com/reference/compose-file/services/#stop_grace_period), and [Node.js `AbortSignal.timeout()`](https://nodejs.org/api/globals.html#static-method-abortsignaltimeoutdelay).
 - Analytics uses the same 30-minute stop grace so its existing consumer shutdown
   can finish the active dbt/projector cycle and release publication ownership.
@@ -262,6 +268,8 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
   [digest pinning](https://docs.docker.com/reference/cli/docker/image/pull/#pull-an-image-by-digest-immutable-identifier)
   and the [registry manifest descriptor](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/#json-output).
 - `docker stack deploy` is the only production rollout command for web deploys. It updates `web` and `worker` together from `deploy/docker-compose.yml`.
+- The stack pins the ClickHouse image by digest so the release uses the same
+  database image in each phase. [Docker image resolution](https://docs.docker.com/reference/cli/docker/stack/deploy/).
 - Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
 - Migrations run after the non-pruning pre-migration stack apply and after the
   existing PeerDB mapping identities have been reconciled and checked against
@@ -346,12 +354,13 @@ reruns can still reference the removed copies; use the current workflow's
 dispatch entry point when deploying an older source revision. Infisical
 documents [GitHub sync settings](https://infisical.com/docs/integrations/secret-syncs/github).
 
-The renderer also creates `web-pre-migration.env` for the canonical dependency
-apply, which can still run the previously deployed web image. This artifact
+The renderer also creates `web-pre-migration.env` for the pre-migration
+configuration of the previously deployed web image. This artifact
 contains the normal web environment plus `METRIC_STREAM_TOPIC` derived strictly
 from `METRIC_STREAM_LEGACY_TOPIC`. The workflow selects it with a command-scoped
-`WEB_ENV_FILE` assignment for that apply only; both requested-image deployment
-phases use `web.env`, whose producer contract contains only live/history keys.
+`WEB_ENV_FILE` assignment during pre-migration applies. Both requested-image
+deployment phases use `web.env`, whose producer contract contains only
+live/history keys.
 The explicit live/history values remain in the migration artifact for clean-slate
 deploys that already use the requested image. No generic producer key is required
 in Infisical. See the [renderer](../scripts/deploy-service-environment.ts) and
@@ -1015,13 +1024,16 @@ and [status reporting](https://docs.github.com/en/rest/deployments/statuses#crea
       absent. The workflow therefore fails before `docker stack deploy` if a
       path such as `/mnt/dofek-data/redis` is missing. See
       [Docker's bind-mount constraints and syntax](https://docs.docker.com/engine/storage/bind-mounts/#syntax).
-   7. Apply the stack configuration before migrations with a non-prune,
+   7. Apply the stack configuration before migrations with a non-pruning,
       detached `docker stack deploy`, the temporary five-service quiesce
-      overlay, and the migration quiesce overlay. On existing stacks
-      this preserves the web service's complete desired image digest, so database, ClickHouse,
-      network, config, and resource-limit changes are applied before migrations
-      without rolling new app code ahead of schema changes. The overlays keep
-      `analytics-worker`, all three metric-stream ClickHouse sinks,
+      overlay, and the migration quiesce overlay. For rolling deploys, omit web
+      from this apply so Swarm keeps the running web tasks while it updates
+      dependencies. Once Kafka is ready, Postgres is writable, and a ClickHouse
+      task matching the desired settings answers `/ping` from the overlay network, apply the web
+      configuration alone using its existing immutable image and wait for both
+      replicas to converge before migrations.
+      See [Docker stack deploy](https://docs.docker.com/reference/cli/docker/stack/deploy/).
+      The overlays keep `analytics-worker`, all three metric-stream ClickHouse sinks,
       `processing-reconciliation`, and the migration-running `worker` at zero
       replicas during the migration window; see the
       [worker entrypoint](../entrypoint.sh). On clean-slate hosts the
@@ -1303,11 +1315,16 @@ The [deploy workflow](../.github/workflows/deploy-web-stack.yml) handles this by
 always applying the stack configuration before migrations, using the immutable
 references selected by the [image resolver](../scripts/resolve-deploy-image.ts):
 
-- On existing stacks, the pre-migration deploy uses the web service's existing
-  desired image digest reference so infrastructure/config changes are applied
-  while app code remains on that release. The migration quiesce overlay sets `worker` to zero so
-  that old release cannot run its startup migration against a database that the
-  requested image will advance. The CDC quiesce overlay also sets
+- On a rolling deploy, the initial non-pruning dependency apply omits web.
+  ClickHouse-backed requests can fail briefly during a database restart.
+  On a stack whose web healthcheck still uses `/readyz`, first release the
+  process healthcheck with the current ClickHouse image.
+  After database and Kafka readiness checks, a separate non-pruning apply
+  refreshes web configuration with its existing immutable image. The workflow
+  verifies both web replicas before migrating. The migration quiesce overlay
+  sets `worker` to zero so the old release cannot run its startup migration
+  against a database that the requested image will advance. The CDC quiesce
+  overlay also sets
   `analytics-worker`, all three metric-stream ClickHouse sinks, and
   `processing-reconciliation` to zero so all five remain stopped until the
   final stack deploy.

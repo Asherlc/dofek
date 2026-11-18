@@ -584,6 +584,7 @@ describe("createApp", () => {
     const fakeDb = createDatabaseFromEnv();
     const app = createApp(fakeDb, makeMockSensorStore([{ ok: 1 }]));
 
+    expect((await request(app, "GET", "/healthz")).status).toBe(200);
     const res = await request(app, "GET", "/readyz");
 
     expect(res.status).toBe(503);
@@ -686,6 +687,27 @@ describe("main", () => {
       expect(middlewareOptions).toBeDefined();
       const context = await middlewareOptions?.createContext({ req: { headers: {} } });
       expect(context?.metricStreamPublisher).toBe(metricStreamPublisher);
+    } finally {
+      listen.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("waits for dependency readiness before opening the listening socket", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://health:health@db:5432/health");
+    vi.stubEnv("CLICKHOUSE_URL", "http://default:health@clickhouse:8123");
+    mockGetDefaultMetricStreamEventPublisher.mockResolvedValue({ publishRows: vi.fn() });
+    mockCheckReadiness.mockResolvedValueOnce({
+      status: "error",
+      checks: { postgres: "error", clickhouse: "error", queues: "ok" },
+    });
+    const listen = vi.spyOn(express.application, "listen").mockReturnValue(new http.Server());
+
+    try {
+      await expect(main()).rejects.toThrow(
+        "Web startup dependencies are unavailable: postgres, clickhouse",
+      );
+      expect(listen).not.toHaveBeenCalled();
     } finally {
       listen.mockRestore();
       vi.unstubAllEnvs();

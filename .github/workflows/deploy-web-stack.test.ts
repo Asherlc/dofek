@@ -15,6 +15,7 @@ import {
   runTopicPolicyFixture,
   runPeerdbMigrationFixture,
   runPipedashVerificationFixture,
+  runClickHouseReadinessFixture,
 } from "./deploy-web-stack-test-helpers.ts";
 import { deployTestDigest, deployTestOldImage, deployTestRepository, runDeployImageFixture } from "../../scripts/deploy-image-test-helpers.ts";
 import { spawnSync } from "node:child_process";
@@ -22,7 +23,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
+import { parse, parseDocument } from "yaml";
 import { z } from "zod";
 
 const workflowText = readFileSync(".github/workflows/deploy-web-stack.yml", "utf8");
@@ -267,6 +268,15 @@ function workflowRunScript(name: string): string {
   return script;
 }
 
+function workflowStackWebFilter(): string {
+  return z.string().optional().parse(parseDocument(workflowText).getIn(["jobs", "web-stack", "env", "STACK_WEB_FILTER"])) ?? "";
+}
+
+function deployedStackServices(stdout: string): unknown {
+  const config = z.string().parse(stdout.match(/^STACK_CONFIG=(.+)$/m)?.[1]);
+  return z.object({ services: z.unknown() }).parse(parse(z.string().parse(JSON.parse(config)))).services;
+}
+
 function deployQuiescedRunScript(): string {
   const stepStart = workflowText.indexOf("      - name: Deploy stack without ClickHouse consumers");
   const runStart = workflowText.indexOf("        run: |\n", stepStart);
@@ -379,8 +389,13 @@ function runDeployQuiesced(
 
 
 describe("deploy-web-stack workflow contract", () => {
-  it("keeps PeerDB contract gates around migrations and before consumer restoration", () => {
+  it("converges dependencies and pre-migration web before migrating and restoring consumers", () => {
     const orderedSteps = [
+      "Apply dependency stack before migrations",
+      "Wait for Postgres writable",
+      "Wait for ClickHouse",
+      "Apply pre-migration web configuration",
+      "Wait for pre-migration web convergence",
       "Wait for PeerDB before migrations",
       "Prepare PeerDB CDC contract",
       "Run migrations",
@@ -389,13 +404,21 @@ describe("deploy-web-stack workflow contract", () => {
       "Verify PeerDB CDC causal markers",
       "Deploy and verify remaining services",
     ];
-    const positions = orderedSteps.map((name) => workflowText.indexOf(`      - name: ${name}`));
+    const positions = orderedSteps.map((name) => workflowText.indexOf(`      - name: ${name}\n`));
 
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
     expect(workflowText).toContain(
       "steps.verify_peerdb_cdc_contract.conclusion == 'success'",
     );
+    expect(workflowRunScript("Wait for pre-migration web convergence")).toContain("UpdateStatus.State");
+  });
+
+  it.each(["image", "config", "lifecycle", "updating", "no-op"] as const)("waits for ClickHouse readiness for %s", (change) => {
+    const result = runClickHouseReadinessFixture(workflowRunScript("Wait for ClickHouse"), change);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("ClickHouse is reachable");
+    expect(result.stdout.includes("ClickHouse readiness attempt 1/36")).toBe(change !== "no-op");
   });
 
   it("continues CDC gates after a terminal web rollback before failing the deployment", () => {
@@ -438,7 +461,6 @@ describe("deploy-web-stack workflow contract", () => {
   );
 
   it.each([
-    ["Apply dependency stack before migrations", "web-pre-migration.env", deployTestOldImage],
     ["Deploy stack without ClickHouse consumers", "web.env", deployTestRepository + "@" + deployTestDigest],
     ["Deploy and verify remaining services", "web.env", deployTestRepository + "@" + deployTestDigest],
   ])("selects the correct web environment in %s", (step, expectedFile, expectedImage) => {
@@ -446,15 +468,7 @@ describe("deploy-web-stack workflow contract", () => {
       "bash",
       [
         "-c",
-        `
-docker() {
-  if [ "$1" = service ] && [ "$2" = inspect ]; then
-    printf '%s\\n' 'ghcr.io/asherlc/dofek:previous@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-    return 0
-  fi
-  return 1
-}
-node() {
+        `node() {
   printf 'selected-web-env=%s image=%s\\n' "$WEB_ENV_FILE" "$APP_IMAGE"
   return 23
 }
@@ -683,39 +697,6 @@ ${workflowRunScript(step)}
     expect(result.githubOutput).not.toContain("web_convergence_failed=true");
   });
 
-  it("quiesces the migration-running worker before the dependency stack apply", () => {
-    const stepStart = workflowText.indexOf(
-      "      - name: Apply dependency stack before migrations",
-    );
-    const stepEnd = workflowText.indexOf("\n      - name: Wait for Postgres writable", stepStart);
-
-    expect(stepStart).toBeGreaterThanOrEqual(0);
-    expect(stepEnd).toBeGreaterThan(stepStart);
-    expect(workflowText.slice(stepStart, stepEnd)).toContain(
-      "-c deploy/stack.migration-quiesce.yml",
-    );
-  });
-
-  it("waits for the pre-migration web update before running migrations", () => {
-    const dependencyStep = workflowText.indexOf(
-      "      - name: Apply dependency stack before migrations",
-    );
-    const convergenceStep = workflowText.indexOf(
-      "      - name: Wait for pre-migration web convergence",
-    );
-    const migrationStep = workflowText.indexOf("      - name: Run migrations");
-
-    expect(dependencyStep).toBeGreaterThanOrEqual(0);
-    expect(convergenceStep).toBeGreaterThan(dependencyStep);
-    expect(migrationStep).toBeGreaterThan(convergenceStep);
-    expect(workflowText.slice(convergenceStep, migrationStep)).toContain(
-      '"${STACK_NAME}_web"',
-    );
-    expect(workflowText.slice(convergenceStep, migrationStep)).toContain(
-      "UpdateStatus.State",
-    );
-  });
-
   it("keeps ClickHouse consumers quiesced when CDC configuration fails", () => {
     expect(workflowText).toContain(
       `      - name: Deploy and verify remaining services
@@ -928,18 +909,37 @@ ${workflowRunScript("Select migration deployment mode from image histories")}
           APP_IMAGE: deployTestOldImage,
           MIGRATION_DEPLOYMENT_MODE: mode,
           MIGRATION_MAINTENANCE_BOUNDARY: "0148_compute_climbing_attempt_outcome",
+          STACK_WEB_FILTER: workflowStackWebFilter(),
         },
       });
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain(`DEPLOY_IMAGE=${deployTestOldImage}`);
       expect(result.stdout).toContain("WEB_ENV_FILE=old-web.env");
+      const rendered = result.calls.find((call) => call[0] === "stack" && call[1] === "config");
       const apply = result.calls.find((call) => call[0] === "stack" && call[1] === "deploy");
-      expect(apply).toEqual(expect.arrayContaining([
+      expect(rendered ?? apply).toEqual(expect.arrayContaining([
         "deploy/stack.cdc-quiesce.yml", "deploy/stack.migration-quiesce.yml",
       ]));
       expect(apply?.includes("deploy/stack.maintenance.yml")).toBe(mode === "maintenance");
+      expect(apply).not.toContain("--prune");
+      if (mode === "rolling") {
+        expect(deployedStackServices(result.stdout)).toEqual({
+          clickhouse: { image: "fixture-clickhouse" }, worker: { deploy: { replicas: 0 } },
+        });
+      }
     },
   );
+  it("applies only the old web service with its pre-migration environment", () => {
+    const result = runDeployImageFixture({
+      script: ["Create dotenv command runner", "Apply pre-migration web configuration"].map(workflowRunScript).join("\n"),
+      environment: { APP_IMAGE: deployTestOldImage, STACK_WEB_FILTER: workflowStackWebFilter() },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(deployedStackServices(result.stdout)).toEqual({
+      web: { image: deployTestOldImage, env_file: ["old-web.env"], environment: { PASSWORD: "fixture$$token" } },
+    });
+    expect(result.calls.find((call) => call.slice(0, 2).join(" ") === "stack deploy")).not.toContain("--prune");
+  });
   it("pins the selected maintenance boundary through dotenv loading", () => {
     const selectedBoundary = "0148_compute_climbing_attempt_outcome";
     const contaminateFixture = String.raw`

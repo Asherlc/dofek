@@ -101,7 +101,9 @@ services:
     # in packages/server/src/index.ts) so Swarm doesn't SIGKILL mid-drain.
     stop_grace_period: 45s
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/readyz | grep -q ok"]
+      # The server checks dependencies before listening. Once running, let it
+      # serve other routes during a database restart without recycling the task.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/healthz | grep -q ok"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -342,7 +344,7 @@ services:
           memory: 2G
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.10.3.7-alpine
+    image: clickhouse/clickhouse-server:26.10.3.7-alpine@sha256:1b09f476eb1109522cfc0e8e4ddf6a4305263e7cdd310f7bd1d3fd29dfcb8b33
     environment:
       CLICKHOUSE_DB: fitness
       CLICKHOUSE_USER: default
