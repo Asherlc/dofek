@@ -39258,3 +39258,13 @@ Local qualification and CI are separate from production throughput acceptance. T
   the three pending batch IDs after the client reconfigures its uploader.
   [Deployment runbook](../deploy/README.md#deployment) and
   [release attempt 2](https://github.com/Asherlc/dofek/actions/runs/44343743471/attempts/2).
+- During the second attempt, web returned HTTP 200 at `/healthz` with `2/2`
+  replicas. The worker, analytics worker, ClickHouse sinks and reconciliation
+  each returned to `1/1`. Axiom recorded `upload_published` to Redpanda for
+  all three affected batch IDs at 16:38:09–10. The paired phone's Dofek build
+  `1794972877` was also relaunched through CoreDevice.
+- The workflow fix omits web during the rolling dependency apply. It waits
+  for ClickHouse convergence and overlay-network readiness before refreshing
+  the previous web image's configuration and verifying both replicas. The
+  regression fixtures and a Docker CLI configuration round trip cover the
+  rolling and maintenance paths. [Deployment workflow](../.github/workflows/deploy-web-stack.yml).
