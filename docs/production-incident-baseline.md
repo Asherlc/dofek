@@ -39183,3 +39183,17 @@ Local qualification and CI are separate from production throughput acceptance. T
   Verify a successful Dofek sync after access is restored and keep the issue
   open until then. This investigation used read-only Sentry and Dofek queries.
   [theCrag personal API guide](https://www.thecrag.com/article/logbookreadapi).
+
+- The follow-up found the affected account's weekly token budget at **100% used**
+  and marked **exhausted** in the signed-in [theCrag API Keys settings](https://www.thecrag.com/settings/apikey/).
+  The owner confirmed the listed Logbook Read key is the one configured in
+  Dofek. Its listed expiration date was in the future. The exhausted budget
+  independently accounts for denied access under theCrag's documented checks.
+  The HTTP 400 response leaves the specific failed check unstated. The
+  14:30 UTC Dofek attempt recorded the eighth consecutive denial. Supporter
+  status and sync recovery after the weekly reset remain unverified.
+- The deployed [sync](https://github.com/Asherlc/dofek/blob/d15b8a89fc31a815a7bf9f183b87217d3a9541cd/src/providers/thecrag/provider.ts#L119-L135)
+  uses `since` once it has a saved cursor. Each incremental request still
+  consumes tokens from the account-wide budget. Check the signed-in budget
+  before interpreting a generic HTTP 400 as a key problem. No sync behavior,
+  credential, or account setting changed.
