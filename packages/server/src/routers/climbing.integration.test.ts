@@ -8,7 +8,7 @@ import {
   buildActivitySummaryRowsTableSql,
   buildActivitySummaryViewSql,
 } from "../../../../src/db/clickhouse-activity-summary.ts";
-import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-schema.ts";
+import { buildCyclingPowerObservationRowsTableSql } from "../../../../src/db/cycling-power-schema.ts";
 import { activity } from "../../../../src/db/schema/activity.ts";
 import { area, climb, climbingLogEntry } from "../../../../src/db/schema/climbing.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
@@ -88,7 +88,7 @@ describe("Hangboarding climbing router integration", () => {
     await client.command({ query: `CREATE DATABASE ${database}` });
     for (const statement of [
       buildActivitySummaryRowsTableSql(),
-      ...cyclingPowerSchemaStatements(),
+      buildCyclingPowerObservationRowsTableSql(),
       buildActivitySummaryViewSql(),
     ]) {
       await client.command({ query: rewrite(statement) });

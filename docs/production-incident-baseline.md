@@ -39141,3 +39141,14 @@ Local qualification and CI are separate from production throughput acceptance. T
   The reason for the missing cache entries is unresolved. The merged revision
   will trigger a new hosted check. A fully cold archive within 25 minutes
   remains unverified.
+- On the merged revision, Server Unit, Mobile Tests, and the mutation shards
+  passed. [Integration shard 5](https://github.com/Asherlc/dofek/actions/runs/44237867474/job/134578877953)
+  failed during Hangboarding fixture setup with `UNKNOWN_TABLE` for
+  `ingest.account_erasure_fence`. The cycling power bootstrap creates a view
+  that references this table, so fixtures that set up the view depended on
+  another suite creating the shared table first. An isolated ClickHouse run
+  reproduced the setup failure in the Hangboarding repository, Climbing
+  router, Running, Activity Map, and Cycling Analytics suites. The first
+  three fixtures now create the observations table they use. Activity Map
+  and Cycling Analytics create their own fence before the view. All 38 tests
+  across the five suites passed with the fixes.

@@ -7,7 +7,7 @@ import {
 } from "../../../../src/db/clickhouse-activity-summary.ts";
 import { createMigration } from "../../../../src/db/clickhouse-migrations/0107_running_step_cadence.ts";
 import { buildActivitySummaryRowsTableSql as buildHistoricalActivitySummaryRowsTableSql } from "../../../../src/db/clickhouse-migrations/activity-summary-schema-before-0108.ts";
-import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-schema.ts";
+import { buildCyclingPowerObservationRowsTableSql } from "../../../../src/db/cycling-power-schema.ts";
 import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -47,8 +47,7 @@ describe("running summary query", () => {
     });
     await client.command({ query: `CREATE DATABASE ${database}` });
     await client.command({ query: rewrite(buildActivitySummaryRowsTableSql()) });
-    for (const query of cyclingPowerSchemaStatements())
-      await client.command({ query: rewrite(query) });
+    await client.command({ query: rewrite(buildCyclingPowerObservationRowsTableSql()) });
     await client.command({ query: rewrite(buildActivitySummaryViewSql()) });
     await client.insert?.({
       table: `${database}.activity_summary_rows`,

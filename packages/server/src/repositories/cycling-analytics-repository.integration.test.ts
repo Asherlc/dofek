@@ -11,6 +11,7 @@ import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
+import { buildAccountErasureFenceTableSql } from "../../../../src/metric-stream/clickhouse-table.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import { buildTestAnalyticsTableStatement } from "../routers/clickhouse-integration-test-models.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -53,7 +54,8 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
       (${TEST_USER_ID}::uuid, 'cycling', 250, CURRENT_DATE - 10)`);
     const client = createClickHouseClientFromEnv();
     const database = `cycling_analytics_test_${randomUUID().replaceAll("-", "")}`;
-    const rewrite = (query: string) => query.replace(/\b(analytics|postgres_fitness)\b/g, database);
+    const rewrite = (query: string) =>
+      query.replace(/\b(analytics|ingest|postgres_fitness)\b/g, database);
     executeCommand = (query) => client.command({ query: rewrite(query) });
     testContext.addCleanup(async () => {
       await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
@@ -61,6 +63,7 @@ describe("CyclingAnalyticsRepository ClickHouse serving models", () => {
     });
     await client.command({ query: `CREATE DATABASE ${database}` });
     for (const statement of [
+      buildAccountErasureFenceTableSql(),
       ...[
         "cycling_activity",
         "daily_cycling",

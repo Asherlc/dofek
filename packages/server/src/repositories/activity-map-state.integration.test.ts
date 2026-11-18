@@ -13,6 +13,7 @@ import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
+import { buildAccountErasureFenceTableSql } from "../../../../src/metric-stream/clickhouse-table.ts";
 import { buildTestAnalyticsTableStatement } from "../routers/clickhouse-integration-test-models.ts";
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
 import { ActivityRepository } from "./activity-repository.ts";
@@ -22,7 +23,10 @@ describe("activity map readiness", () => {
   const database = `activity_map_${randomUUID().replaceAll("-", "")}`;
   const client = createClickHouseClientFromEnv();
   const rewrite = (query: string) =>
-    query.replaceAll("analytics.", `${database}.`).replaceAll("postgres_fitness.", `${database}.`);
+    query
+      .replaceAll("analytics.", `${database}.`)
+      .replaceAll("ingest.", `${database}.`)
+      .replaceAll("postgres_fitness.", `${database}.`);
   const sensorStore = new ClickHouseActivitySensorStore({
     query: (options) => client.query({ ...options, query: rewrite(options.query) }),
     command: (options) => client.command({ ...options, query: rewrite(options.query) }),
@@ -95,6 +99,7 @@ describe("activity map readiness", () => {
     const memberChangeTable = createMigration().statements[0];
     if (!memberChangeTable) throw new Error("Expected current location-change schema");
     for (const query of [
+      buildAccountErasureFenceTableSql(),
       buildTestAnalyticsTableStatement("analytics.deduped_activities"),
       buildPostgresFitnessActivityRawTableStatement(),
       memberChangeTable,
