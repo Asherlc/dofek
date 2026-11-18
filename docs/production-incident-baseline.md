@@ -39225,3 +39225,29 @@ Local qualification and CI are separate from production throughput acceptance. T
   deployment. Recurrence remains possible. On recurrence, correlate the
   credential expiry with the first stream completion and capture the RSocket
   error or close reason before the SDK wraps it.
+
+## 2026-11-18 — WHOOP capture disk-write warnings recur on iOS
+
+- [DOFEK-MOBILE-2Q](https://east-bay-software.sentry.io/issues/7852012407/)
+  recorded three MetricKit disk-write warnings for one user on November 17–18.
+  Sentry tagged them with native builds `1794882574` (`5666ea479`) and
+  `1794972877` (`6882926ac`). The reports measured approximately 4.29 GB,
+  17.18 GB, and 1.07 GB written during their respective diagnostic periods.
+  The events recorded no crashed thread. Effects on capture or upload were
+  unverified. [Apple MetricKit write totals](https://developer.apple.com/documentation/metrickit/mxdiskwriteexceptiondiagnostic/totalwritescaused).
+- All three stacks pass from the WHOOP Bluetooth notification handler through
+  `WhoopBleBackgroundUploader.append` into a SQLite write-ahead log commit.
+  This is the capture path seen in the earlier
+  [DOFEK-MOBILE-27](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-27)
+  reports. Both reporting builds contain [PR #3188](https://github.com/Asherlc/dofek/pull/3188),
+  which grouped the streams from each notification into one durable transaction.
+  The store still commits synchronously for every notification that yields
+  samples. The relative contributions of notification frequency, pages written
+  per transaction, and checkpoint activity remain unmeasured on the device.
+  [Capture call site](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule+ConnectionManagerDelegate.swift#L137)
+  and [SQLite append](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleStore.swift#L162).
+- The issue is open pending physical-device reproduction. Profile sustained
+  WHOOP capture with Instruments File Activity and compare bytes written with
+  the number of samples captured. Use that measurement to identify where a
+  change can reduce writes while preserving capture durability.
+  [Apple disk-write profiling guidance](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
