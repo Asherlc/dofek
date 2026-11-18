@@ -104,8 +104,24 @@ final class WhoopBleSampleStore {
             throw StoreError(message)
         }
         sqlite3_busy_timeout(database, 5000)
-        try execute("PRAGMA journal_mode = WAL")
-        try execute("PRAGMA synchronous = FULL")
+        do {
+            try prepareDatabase()
+            #if os(iOS)
+            try FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: path
+            )
+            #endif
+        } catch {
+            sqlite3_close(database)
+            database = nil
+            throw error
+        }
+    }
+
+    deinit { sqlite3_close(database) }
+
+    private func prepareDatabase() throws {
+        try configureJournal()
         try execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         try execute("""
             CREATE TABLE IF NOT EXISTS samples (
@@ -132,19 +148,8 @@ final class WhoopBleSampleStore {
             try execute("INSERT OR IGNORE INTO stats(stream) VALUES (?)", [stream.rawValue])
         }
         if try metadata("generation") == nil { try setMetadata("generation", UUID().uuidString) }
-        do {
-            try finishPendingPurgeLocked()
-        } catch {
-            sqlite3_close(database)
-            database = nil
-            throw error
-        }
-        #if os(iOS)
-        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: path)
-        #endif
+        try finishPendingPurgeLocked()
     }
-
-    deinit { sqlite3_close(database) }
 
     var binding: WhoopUploadBinding? { get throws { try synchronized { try readBinding() } } }
     var generation: String { get throws { try synchronized { try currentGeneration() } } }

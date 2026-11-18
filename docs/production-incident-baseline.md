@@ -39246,8 +39246,20 @@ Local qualification and CI are separate from production throughput acceptance. T
   per transaction, and checkpoint activity remain unmeasured on the device.
   [Capture call site](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule+ConnectionManagerDelegate.swift#L137)
   and [SQLite append](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleStore.swift#L162).
-- The issue is open pending physical-device reproduction. Profile sustained
-  WHOOP capture with Instruments File Activity and compare bytes written with
-  the number of samples captured. Use that measurement to identify where a
-  change can reduce writes while preserving capture durability.
+- **Fix and verification.** SQLite writes complete pages to the WAL. A
+  1,000-notification replay using the queue schema produced 58–61% fewer WAL
+  bytes with 1 KiB pages versus 4 KiB pages. The native queue now uses 1 KiB
+  pages. The first open of an older queue rebuilds it in place with SQLite's
+  rollback journal and EXTRA synchronous mode, then restores WAL and FULL
+  synchronous mode. Native SQLite regressions verify lower WAL bytes, preserved
+  samples and reservations that were still in the WAL, preserved erasure state,
+  restart on either side of the rebuild, and retry after a reader releases the
+  WAL.
+  [SQLite WAL format](https://www.sqlite.org/fileformat2.html#wal_file_format) and
+  [SQLite database rebuilds](https://www.sqlite.org/lang_vacuum.html).
+- **Remaining risk.** A physical iPhone trace could not attach to the running
+  app. Keep the issue open until the rebuilt app is verified on hardware.
+  Compare writes per captured sample under sustained WHOOP capture and check
+  whether MetricKit warnings recur on a build with the fix. The first open of a
+  large older queue needs temporary free space for the rebuild.
   [Apple disk-write profiling guidance](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
