@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { persistClimbingLogEntries } from "../../../../src/db/climbing-log-sync.ts";
 import { activity, activityGroup } from "../../../../src/db/schema/activity.ts";
 import { provider, userProfile } from "../../../../src/db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
@@ -125,4 +126,74 @@ describe("ClimbingVolumeRepository", () => {
     await addActivity("2026-11-05T18:00:00Z", null);
     expect(await repository().getIncrease(evaluationTime)).toEqual({ status: "insufficient_data" });
   });
+
+  it.each(["climbing", "hiking"] as const)(
+    "deduplicates dated logs and counts missing attempts from a %s activity",
+    async (activityType) => {
+      const addLog = async (
+        date: string,
+        count: number,
+        input?: { providerId: string; activityId?: string; includeVScale?: boolean },
+      ) =>
+        persistClimbingLogEntries(context.db, {
+          userId,
+          providerId: input?.providerId ?? logProvider,
+          entries: [
+            {
+              externalId: randomUUID(),
+              ...(input?.activityId ? { activityId: input.activityId } : {}),
+              climbedOn: date,
+              discipline: "rock_climbing",
+              climb: {
+                externalId: "fixture-boulder",
+                kind: "boulder",
+                name: "Fixture boulder",
+                publishedGrades: [
+                  { system: "font", value: "6B" },
+                  ...(input?.includeVScale ? [{ system: "v_scale" as const, value: "V4" }] : []),
+                ],
+                areas: [{ externalId: "fixture-gym", name: "Fixture gym" }],
+              },
+              attempts: Array.from({ length: count }, () => ({
+                scope: "climb" as const,
+                sourceCompleted: false,
+              })),
+            },
+          ],
+        });
+      await addLog("2026-10-13", 20);
+      await addLog("2026-11-09", 20);
+      const groupId = randomUUID();
+      const first = randomUUID();
+      const second = randomUUID();
+      const starts = "2026-11-17T01:00:00Z";
+      await addActivity(starts, null, { groupId, id: first });
+      await addActivity(starts, null, { groupId, id: second, providerId: secondProvider });
+      await addLog("2026-11-17", 20, {
+        providerId: recordingProvider,
+        activityId: first,
+        includeVScale: activityType === "climbing",
+      });
+      await addLog("2026-11-17", 20, { providerId: secondProvider, activityId: second });
+      const read = () => repository().getAttemptIncrease(evaluationTime);
+      expect(await read()).toEqual({
+        status: "increase",
+        recentAttempts: 20,
+        baselineAttempts: 10,
+        increasePercent: 100,
+      });
+      const missingActivityId = randomUUID();
+      await addActivity("2026-11-13T18:00:00Z", "2026-11-13T20:00:00Z", {
+        id: missingActivityId,
+        canonicalType: activityType,
+      });
+      if (activityType === "hiking") {
+        await addLog("2026-11-13", 0, {
+          providerId: recordingProvider,
+          activityId: missingActivityId,
+        });
+      }
+      expect(await read()).toEqual({ status: "insufficient_data" });
+    },
+  );
 });

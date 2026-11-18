@@ -34,6 +34,8 @@ const mockRouteComparisonInvalidate = vi.fn();
 const mockRouteComparisonQuery = vi.fn();
 const mockVolumeIncreaseQuery = vi.fn();
 const mockVolumeIncreaseInvalidate = vi.fn();
+const mockAttemptIncreaseQuery = vi.fn();
+const mockAttemptIncreaseInvalidate = vi.fn();
 let mockTrainingScreenFocused = true;
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 let mockTrainingDataDays = 90;
@@ -149,6 +151,7 @@ vi.mock("../../lib/trpc", () => ({
     },
     hiking: { activityComparison: { useQuery: mockRouteComparisonQuery } },
     climbing: {
+      attemptIncrease: { useQuery: mockAttemptIncreaseQuery },
       volumeIncrease: { useQuery: mockVolumeIncreaseQuery },
       volumeOverTime: {
         useQuery: () => ({
@@ -231,6 +234,7 @@ vi.mock("../../lib/trpc", () => ({
       running: { dynamicsV2: { invalidate: mockRunningInvalidate } },
       hiking: { activityComparison: { invalidate: mockRouteComparisonInvalidate } },
       climbing: {
+        attemptIncrease: { invalidate: mockAttemptIncreaseInvalidate },
         volumeIncrease: { invalidate: mockVolumeIncreaseInvalidate },
         volumeOverTime: { invalidate: vi.fn() },
         locationMap: { invalidate: mockLocationMapInvalidate },
@@ -338,6 +342,8 @@ describe("StrainScreen", () => {
     mockTrainingScreenFocused = true;
     mockVolumeIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
     mockVolumeIncreaseInvalidate.mockReset().mockResolvedValue(undefined);
+    mockAttemptIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
+    mockAttemptIncreaseInvalidate.mockReset().mockResolvedValue(undefined);
     mockRunningData = { ...runningData, data: [] };
     mockRunningLoading = false;
     mockRunningError = null;
@@ -582,6 +588,20 @@ describe("StrainScreen", () => {
     mockVolumeIncreaseQuery.mockReturnValue({ data: { status: "below_threshold" }, error: null });
     rerender(<StrainScreen />);
     expect(screen.queryByText("Climbing volume increased")).toBeNull();
+  });
+
+  it("shows an attempt increase independently and refreshes its comparison", async () => {
+    mockAttemptIncreaseQuery.mockReturnValue({
+      data: { status: "increase", recentAttempts: 50, baselineAttempts: 40, increasePercent: 25 },
+      error: null,
+    });
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    expect(screen.getByText("Recorded climbing attempts increased")).toBeTruthy();
+    expect(screen.getByText(/50 climbing attempts in the last 7 days, up 25%/)).toBeTruthy();
+    expect(screen.queryByText("Climbing volume increased")).toBeNull();
+    await mockRefreshInvalidate?.();
+    expect(mockAttemptIncreaseInvalidate).toHaveBeenCalledOnce();
   });
 
   it("reloads a stale comparison when the Training tab regains focus", async () => {

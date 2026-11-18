@@ -1,5 +1,7 @@
 import {
+  climbingAttemptIncreaseTitle,
   climbingVolumeIncreaseTitle,
+  formatClimbingAttemptIncrease,
   formatClimbingVolumeIncrease,
 } from "@dofek/format/climbing-volume";
 import {
@@ -128,12 +130,20 @@ export function TrainingScreen({ isFocused }: { isFocused: boolean }) {
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
-  const climbingVolumeIncrease = trpc.climbing.volumeIncrease.useQuery(undefined, {
+  const climbingIncreaseQueryOptions = {
     enabled: isHydrated && isFocused,
     staleTime: 0,
     refetchOnMount: true,
     refetchOnWindowFocus: true,
-  });
+  };
+  const climbingVolumeIncrease = trpc.climbing.volumeIncrease.useQuery(
+    undefined,
+    climbingIncreaseQueryOptions,
+  );
+  const climbingAttemptIncrease = trpc.climbing.attemptIncrease.useQuery(
+    undefined,
+    climbingIncreaseQueryOptions,
+  );
   const climbingVolumeQuery = trpc.climbing.volumeOverTime.useQuery(
     { days, ...climbingFilters },
     {
@@ -149,6 +159,7 @@ export function TrainingScreen({ isFocused }: { isFocused: boolean }) {
     },
   );
   useReportQueryError(climbingVolumeIncrease);
+  useReportQueryError(climbingAttemptIncrease);
   useReportQueryError(climbingVolumeQuery);
   useReportQueryError(strengthVolumeQuery);
   const hrZonesQuery = trpc.training.hrZones.useQuery(
@@ -226,6 +237,7 @@ export function TrainingScreen({ isFocused }: { isFocused: boolean }) {
         utils.climbing.locationMap.invalidate(),
         utils.climbing.strengths.invalidate(),
         utils.climbing.volumeIncrease.invalidate(),
+        utils.climbing.attemptIncrease.invalidate(),
         utils.climbing.volumeOverTime.invalidate(),
         utils.strength.volumeOverTime.invalidate(),
         utils.training.hrZones.invalidate(),
@@ -337,14 +349,18 @@ export function TrainingScreen({ isFocused }: { isFocused: boolean }) {
       {climbingVolumeIncrease.error ? (
         <QueryStatePanel variant="error" message={climbingVolumeIncrease.error.message} />
       ) : climbingVolumeIncrease.data?.status === "increase" ? (
-        <View style={styles.volumeIncrease}>
-          <Text accessibilityRole="header" style={styles.volumeIncreaseTitle}>
-            {climbingVolumeIncreaseTitle}
-          </Text>
-          <Text style={styles.volumeIncreaseMessage}>
-            {formatClimbingVolumeIncrease(climbingVolumeIncrease.data)}
-          </Text>
-        </View>
+        <ClimbingIncreaseCallout
+          title={climbingVolumeIncreaseTitle}
+          message={formatClimbingVolumeIncrease(climbingVolumeIncrease.data)}
+        />
+      ) : null}
+      {climbingAttemptIncrease.error ? (
+        <QueryStatePanel variant="error" message={climbingAttemptIncrease.error.message} />
+      ) : climbingAttemptIncrease.data?.status === "increase" ? (
+        <ClimbingIncreaseCallout
+          title={climbingAttemptIncreaseTitle}
+          message={formatClimbingAttemptIncrease(climbingAttemptIncrease.data)}
+        />
       ) : null}
       {climbingVolumeQuery.error ? (
         <QueryStatePanel variant="error" message={climbingVolumeQuery.error.message} />
@@ -516,6 +532,17 @@ export function TrainingScreen({ isFocused }: { isFocused: boolean }) {
         polarization={polarizationQuery.data ?? null}
       />
     </ScrollView>
+  );
+}
+
+function ClimbingIncreaseCallout({ title, message }: { title: string; message: string }) {
+  return (
+    <View style={styles.volumeIncrease}>
+      <Text accessibilityRole="header" style={styles.volumeIncreaseTitle}>
+        {title}
+      </Text>
+      <Text style={styles.volumeIncreaseMessage}>{message}</Text>
+    </View>
   );
 }
 

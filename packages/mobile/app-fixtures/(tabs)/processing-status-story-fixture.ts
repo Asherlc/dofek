@@ -19,6 +19,9 @@ type ProcessingStatusStoryCompanionResponses = {
   "climbing.volumeIncrease"?: Awaited<
     ReturnType<AppRouterClient["climbing"]["volumeIncrease"]["query"]>
   >;
+  "climbing.attemptIncrease"?: Awaited<
+    ReturnType<AppRouterClient["climbing"]["attemptIncrease"]["query"]>
+  >;
   "climbing.volumeOverTime"?: Awaited<
     ReturnType<AppRouterClient["climbing"]["volumeOverTime"]["query"]>
   >;
@@ -41,6 +44,7 @@ const PROCESSING_STATUS_STORY_COMPANION_PATHS = [
   "climbing.locationMap",
   "climbing.strengths",
   "climbing.volumeIncrease",
+  "climbing.attemptIncrease",
   "climbing.volumeOverTime",
   "strength.volumeOverTime",
   "running.dynamicsV2",

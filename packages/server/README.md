@@ -41,6 +41,12 @@ increase of at least 25 percent and 60 minutes triggers the callout when the
 account has access to the full window and timed workouts in at least two
 baseline weeks. See the [design and evidence](../../docs/superpowers/specs/2026-11-17-climbing-volume-alert-design.md).
 
+The same surfaces use [`climbing.attemptIncrease`](src/routers/climbing.ts) for
+recorded whole-climb attempts. A 25 percent and 10-attempt increase triggers
+its own callout. The comparison requires attempt counts on at least 70 percent
+of recorded climbing days in each period, with coverage within 15 percentage
+points. Dated climb logs can contribute attempts without a timed workout.
+
 The [`training.sportVolume` query](src/routers/training.ts) extends weekly volume
 to the other recorded sports. Its [shared metric definitions](../training/src/sport-volume.ts)
 offer time for every sport, distance and elevation for applicable sports, and

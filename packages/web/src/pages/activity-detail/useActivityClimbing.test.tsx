@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   sessionSummaryInvalidate: vi.fn(),
   gradeProgressionInvalidate: vi.fn(),
   strengthsInvalidate: vi.fn(),
+  attemptsInvalidate: vi.fn(),
   volumeByGradeInvalidate: vi.fn(),
   activityByIdInvalidate: vi.fn(),
   streamInvalidate: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock("../../lib/trpc.ts", () => ({
         gradeProgressionV2: { invalidate: mocks.gradeProgressionInvalidate },
         volumeByGrade: { invalidate: mocks.volumeByGradeInvalidate },
         strengths: { invalidate: mocks.strengthsInvalidate },
+        attemptIncrease: { invalidate: mocks.attemptsInvalidate },
         unattachedClimbingLogEntries: { invalidate: mocks.suggestionsInvalidate },
       },
       activity: {
@@ -245,6 +247,7 @@ it("keeps attachment errors per entry and invalidates the targeted web query fam
     mocks.gradeProgressionInvalidate,
     mocks.volumeByGradeInvalidate,
     mocks.strengthsInvalidate,
+    mocks.attemptsInvalidate,
   ]) {
     expect(invalidate).toHaveBeenCalledOnce();
     expect(invalidate).toHaveBeenCalledWith();

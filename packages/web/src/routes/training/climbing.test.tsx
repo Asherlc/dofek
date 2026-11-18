@@ -11,6 +11,7 @@ const hangboardingSummaryQuery = vi.hoisted(() => vi.fn());
 const locationMapQuery = vi.hoisted(() => vi.fn());
 const strengthsQuery = vi.hoisted(() => vi.fn());
 const volumeIncreaseQuery = vi.hoisted(() => vi.fn());
+const attemptIncreaseQuery = vi.hoisted(() => vi.fn());
 const trainingDaysState = vi.hoisted<{ days: number | null }>(() => ({ days: 90 }));
 const queryDate = vi.hoisted(() => ({ value: "2026-10-26" }));
 
@@ -66,6 +67,7 @@ vi.mock("../../lib/trpc.ts", () => ({
       gradeProgressionV2: { useQuery: gradeProgressionQuery },
       volumeByGrade: { useQuery: volumeByGradeQuery },
       volumeIncrease: { useQuery: volumeIncreaseQuery },
+      attemptIncrease: { useQuery: attemptIncreaseQuery },
       volumeOverTime: {
         useQuery: () => ({ data: [], isLoading: false, isFetching: false, error: null }),
       },
@@ -82,6 +84,23 @@ async function importClimbingTab() {
 }
 
 describe("ClimbingTab", () => {
+  it("shows an attempt increase independently of the duration alert", async () => {
+    attemptIncreaseQuery.mockReturnValue({
+      data: { status: "increase", recentAttempts: 50, baselineAttempts: 40, increasePercent: 25 },
+      error: null,
+    });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    const alert = screen.getByRole("complementary", {
+      name: "Recorded climbing attempts increased",
+    });
+    expect(
+      within(alert).getByText(/50 climbing attempts in the last 7 days, up 25%/),
+    ).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Climbing volume increased" })).toBeNull();
+    expect(attemptIncreaseQuery.mock.lastCall?.[0]).toBeUndefined();
+  });
+
   it("shows the training-wide volume increase beside the chart and clears it on refresh", async () => {
     volumeIncreaseQuery.mockReturnValue({
       data: {
@@ -344,6 +363,7 @@ describe("ClimbingTab", () => {
   });
   beforeEach(() => {
     volumeIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
+    attemptIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
     strengthsQuery.mockReset();
     strengthsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     gradeProgressionQuery.mockReset();

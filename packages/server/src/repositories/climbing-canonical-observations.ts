@@ -1,12 +1,15 @@
 import type { ClimbingFilters } from "@dofek/training/climbing-filters";
-import type { ClimbingGradePreference } from "@dofek/training/climbing-grades";
+import {
+  type ClimbingGradePreference,
+  DEFAULT_CLIMBING_GRADE_PREFERENCE,
+} from "@dofek/training/climbing-grades";
 import { type SQL, sql } from "drizzle-orm";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import { rockClimbingLogProjection } from "./climbing-rock-observations.ts";
 export function canonicalClimbingLogCtes(
   range: number | { startDate?: string; endDate: string },
   filters: ClimbingFilters,
-  preference: ClimbingGradePreference,
+  preference: ClimbingGradePreference | null,
   userId: string,
   timezone: string,
   dateAccessPredicate: (date: SQL) => SQL,
@@ -16,27 +19,33 @@ export function canonicalClimbingLogCtes(
     typeof range === "number"
       ? sql`(${date}) > (NOW() AT TIME ZONE ${timezone})::date - ${range}::int AND (${date}) <= (NOW() AT TIME ZONE ${timezone})::date`
       : sql`(${date}) <= ${range.endDate}::date ${range.startDate === undefined ? sql`` : sql`AND (${date}) >= ${range.startDate}::date`}`;
-  return sql`rock_logs AS (${rockClimbingLogProjection(preference, filters)}),
-      dated_logs AS (
+  // Attempt totals use the climb's recorded identity independently of its display grade.
+  const gradeIdentity = preference === null ? sql`` : sql`ce.grade_system, LOWER(BTRIM(ce.grade)),`;
+  const projection = rockClimbingLogProjection(
+    preference ?? DEFAULT_CLIMBING_GRADE_PREFERENCE,
+    filters,
+    sql`dated_log_entries`,
+  );
+  return sql`dated_log_entries AS (
         SELECT (${activityDate})::text AS session_date, a.id AS canonical_activity_id,
           a.name AS activity_name, ce.*
-        FROM fitness.v_activity AS a JOIN rock_logs AS ce ON ce.activity_id = ANY(a.member_activity_ids)
+        FROM fitness.v_activity AS a JOIN fitness.v_climbing_log_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
         WHERE a.user_id = ${userId} AND ce.user_id = ${userId}
           AND a.canonical_type IN ('climbing', 'hiking')
           AND ${datePredicate(activityDate)}
           ${dateAccessPredicate(activityDate)}
         UNION ALL
         SELECT ce.climbed_on::text AS session_date, NULL::uuid AS canonical_activity_id,
-          NULL::text AS activity_name, ce.* FROM rock_logs AS ce
+          NULL::text AS activity_name, ce.* FROM fitness.v_climbing_log_entry AS ce
         WHERE ce.user_id = ${userId} AND ce.activity_id IS NULL
           AND ${datePredicate(sql`ce.climbed_on`)}
           ${dateAccessPredicate(sql`ce.climbed_on`)}
-      ), observations AS (
+      ), dated_logs AS (${projection}), observations AS (
         SELECT ce.*, CASE WHEN ce.canonical_activity_id IS NOT NULL
           AND NULLIF(BTRIM(ce.climb_name), '') IS NOT NULL AND jsonb_array_length(ce.area_path) > 0
           AND (ce.attempt_scope = 'climb' OR ce.pitch_number IS NOT NULL)
           THEN jsonb_build_array(ce.canonical_activity_id, ce.session_date, ce.climb_kind,
-            ce.grade_system, LOWER(BTRIM(ce.grade)), ce.attempt_scope, ce.pitch_number, ce.rope_method,
+            ${gradeIdentity} ce.attempt_scope, ce.pitch_number, ce.rope_method,
             ce.solo, ce.setting, LOWER(BTRIM(ce.climb_name)),
             (SELECT jsonb_agg(LOWER(BTRIM(node->>'name')) ORDER BY position)
               FROM jsonb_array_elements(ce.area_path) WITH ORDINALITY AS location(node, position)),

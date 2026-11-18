@@ -41,6 +41,12 @@ const STRAIN_COMPANION_RESPONSES = {
     { week: "2026-09-28", attempts: 12, minutes: 120 },
     { week: "2026-10-05", attempts: 8, minutes: 90 },
   ],
+  "climbing.attemptIncrease": {
+    status: "increase",
+    recentAttempts: 50,
+    baselineAttempts: 40,
+    increasePercent: 25,
+  },
   "strength.volumeOverTime": [
     {
       week: "2026-09-28",

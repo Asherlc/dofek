@@ -41,6 +41,7 @@ export function useActivityClimbing(activityId: string | undefined, enabled: boo
         utils.mobileDashboard.trainingV2.invalidate(),
         utils.climbing.volumeByGrade.invalidate(),
         utils.climbing.strengths.invalidate(),
+        utils.climbing.attemptIncrease.invalidate(),
         utils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
           responseVersion: 5,

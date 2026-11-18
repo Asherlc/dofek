@@ -29,3 +29,10 @@
 - [x] Verify review fixes for mobile navigation focus, health sync invalidation and replacing a stale alert with an error after failed refresh. Keep the previous alert visible while a refresh is in flight.
 - [x] Run `pnpm lint`, `pnpm --recursive --include-workspace-root --if-present typecheck`, the relevant non-interactive unit/mobile tests and the PostgreSQL regression suite.
 - [ ] Replay the alert against authorized historical workout data before rollout. This release check is pending.
+
+## Task 4. Add the separate attempts alert
+
+- [x] Verify the approved 25 percent and 10-attempt increase rule, 70 percent coverage in each window and 15-percentage-point coverage gap in unit tests.
+- [x] Reuse the canonical attempt projection and return daily counts through `climbing.attemptIncrease`. Exercise baseline dates, untimed logs, provider deduplication and days with missing counts in PostgreSQL.
+- [x] Show the attempts alert beside the duration callout on web and iOS. Verify independent rendering and refresh behavior, shared copy, lint and typechecks before pushing.
+- [x] Verify review fixes for dated logs attached to hikes, preference-independent deduplication, date-scoped attempt queries and attachment refreshes. Run the existing climbing and strengths repository suites against PostgreSQL.

@@ -10,6 +10,7 @@ describe("invalidateSyncedHealthData", () => {
       [["mobileDashboard", "recovery"], { type: "query" }],
       [["mobileDashboard", "trainingV2"], { type: "query" }],
       [["climbing", "volumeIncrease"], { type: "query" }],
+      [["climbing", "attemptIncrease"], { type: "query" }],
       [["calendar", "weekListV2"], { type: "query" }],
       [["calendar", "activityOverview"], { type: "query" }],
       [["activity", "list"], { type: "query" }],

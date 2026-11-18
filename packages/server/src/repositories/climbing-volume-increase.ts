@@ -1,9 +1,10 @@
 import { z } from "zod";
 
-const daysPerWeek = 7;
-const baselineWeeks = 4;
+export const climbingVolumeDaysPerWeek = 7;
+export const climbingVolumeBaselineWeeks = 4;
 const microsecondsPerMinute = 60_000_000;
-export const climbingVolumeWindowDays = daysPerWeek * (baselineWeeks + 1);
+export const climbingVolumeWindowDays =
+  climbingVolumeDaysPerWeek * (climbingVolumeBaselineWeeks + 1);
 
 export const climbingVolumeIncreaseSchema = z.discriminatedUnion("status", [
   z.object({
@@ -34,17 +35,17 @@ export function evaluateClimbingVolumeIncrease(
       return { status: "insufficient_data" };
     }
 
-    if (daysAgo < daysPerWeek) {
+    if (daysAgo < climbingVolumeDaysPerWeek) {
       recentDuration += durationMicroseconds;
     } else {
       baselineDuration += durationMicroseconds;
-      activeBaselineWeeks.add(Math.floor(daysAgo / daysPerWeek));
+      activeBaselineWeeks.add(Math.floor(daysAgo / climbingVolumeDaysPerWeek));
     }
   }
 
   if (activeBaselineWeeks.size < 2) return { status: "insufficient_data" };
 
-  const weeklyBaseline = baselineDuration / baselineWeeks;
+  const weeklyBaseline = baselineDuration / climbingVolumeBaselineWeeks;
   const increase = recentDuration - weeklyBaseline;
   if (increase < weeklyBaseline * 0.25 || increase < 60 * microsecondsPerMinute) {
     return { status: "below_threshold" };

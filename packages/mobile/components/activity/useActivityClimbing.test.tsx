@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   trainingInvalidate: vi.fn().mockResolvedValue(undefined),
   volumeInvalidate: vi.fn().mockResolvedValue(undefined),
   strengthsInvalidate: vi.fn().mockResolvedValue(undefined),
+  attemptsInvalidate: vi.fn().mockResolvedValue(undefined),
   suggestionsInvalidate: vi.fn().mockResolvedValue(undefined),
   byIdInvalidate: vi.fn().mockResolvedValue(undefined),
   streamInvalidate: vi.fn().mockResolvedValue(undefined),
@@ -52,6 +53,7 @@ vi.mock("../../lib/trpc", () => ({
         sessionSummary: { invalidate: mocks.sessionSummaryInvalidate },
         volumeByGrade: { invalidate: mocks.volumeInvalidate },
         strengths: { invalidate: mocks.strengthsInvalidate },
+        attemptIncrease: { invalidate: mocks.attemptsInvalidate },
         unattachedClimbingLogEntries: { invalidate: mocks.suggestionsInvalidate },
       },
       mobileDashboard: {
@@ -87,6 +89,7 @@ beforeEach(() => {
     mocks.trainingInvalidate,
     mocks.volumeInvalidate,
     mocks.strengthsInvalidate,
+    mocks.attemptsInvalidate,
     mocks.suggestionsInvalidate,
     mocks.byIdInvalidate,
     mocks.streamInvalidate,
@@ -161,6 +164,7 @@ it("keeps attachment errors per entry and preserves mobile invalidations", async
   expect(mocks.trainingInvalidate).toHaveBeenCalledWith();
   expect(mocks.volumeInvalidate).toHaveBeenCalledWith();
   expect(mocks.strengthsInvalidate).toHaveBeenCalledWith();
+  expect(mocks.attemptsInvalidate).toHaveBeenCalledWith();
   expect(mocks.byIdInvalidate).not.toHaveBeenCalled();
   expect(mocks.streamInvalidate).not.toHaveBeenCalled();
 });

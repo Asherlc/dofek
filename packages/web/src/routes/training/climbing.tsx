@@ -1,11 +1,13 @@
 import {
+  climbingAttemptIncreaseTitle,
   climbingVolumeIncreaseTitle,
+  formatClimbingAttemptIncrease,
   formatClimbingVolumeIncrease,
 } from "@dofek/format/climbing-volume";
 import type { ClimbingFilters as Filters } from "@dofek/training/climbing-filters";
 import { keepPreviousData } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { ClimbingFilters } from "../../components/ClimbingFilters.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
 import { ClimbingLocationMap } from "../../components/ClimbingLocationMap.tsx";
@@ -42,9 +44,9 @@ export function ClimbingTab() {
     climbingQueryOptions,
   );
   const volumeByGrade = trpc.climbing.volumeByGrade.useQuery(rangeInput, climbingQueryOptions);
-  const volumeIncrease = trpc.climbing.volumeIncrease.useQuery(undefined, {
-    refetchOnWindowFocus: true,
-  });
+  const increaseQueryOptions = { refetchOnWindowFocus: true };
+  const volumeIncrease = trpc.climbing.volumeIncrease.useQuery(undefined, increaseQueryOptions);
+  const attemptIncrease = trpc.climbing.attemptIncrease.useQuery(undefined, increaseQueryOptions);
   const volumeOverTime = trpc.climbing.volumeOverTime.useQuery(
     { ...rangeInput, days },
     climbingQueryOptions,
@@ -81,15 +83,18 @@ export function ClimbingTab() {
           {volumeIncrease.error ? (
             <QueryStatePanel error={volumeIncrease.error} height={0} />
           ) : volumeIncrease.data?.status === "increase" ? (
-            <aside
-              aria-labelledby="climbing-volume-increase-title"
-              className="mb-4 rounded-lg border border-border bg-accent/10 px-4 py-3 text-sm"
-            >
-              <h3 id="climbing-volume-increase-title" className="font-semibold text-foreground">
-                {climbingVolumeIncreaseTitle}
-              </h3>
-              <p className="mt-1 text-muted">{formatClimbingVolumeIncrease(volumeIncrease.data)}</p>
-            </aside>
+            <ClimbingIncreaseCallout
+              title={climbingVolumeIncreaseTitle}
+              message={formatClimbingVolumeIncrease(volumeIncrease.data)}
+            />
+          ) : null}
+          {attemptIncrease.error ? (
+            <QueryStatePanel error={attemptIncrease.error} height={0} />
+          ) : attemptIncrease.data?.status === "increase" ? (
+            <ClimbingIncreaseCallout
+              title={climbingAttemptIncreaseTitle}
+              message={formatClimbingAttemptIncrease(attemptIncrease.data)}
+            />
           ) : null}
           {volumeOverTime.error ? (
             <QueryStatePanel error={volumeOverTime.error} height={0} />
@@ -156,6 +161,21 @@ export function ClimbingTab() {
         ) : null}
       </Section>
     </>
+  );
+}
+
+function ClimbingIncreaseCallout({ title, message }: { title: string; message: string }) {
+  const titleId = useId();
+  return (
+    <aside
+      aria-labelledby={titleId}
+      className="mb-4 rounded-lg border border-border bg-accent/10 px-4 py-3 text-sm"
+    >
+      <h3 id={titleId} className="font-semibold text-foreground">
+        {title}
+      </h3>
+      <p className="mt-1 text-muted">{message}</p>
+    </aside>
   );
 }
 

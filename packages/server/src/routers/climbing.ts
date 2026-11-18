@@ -18,6 +18,7 @@ import {
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { activityImagesOutputSchema } from "../repositories/activity-images-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { climbingAttemptIncreaseSchema } from "../repositories/climbing-attempt-increase.ts";
 import { ClimbingCatalogueRepository } from "../repositories/climbing-catalogue-repository.ts";
 import { ClimbingImagesRepository } from "../repositories/climbing-images-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
@@ -360,6 +361,20 @@ export const climbingRouter = router({
           ctx.timezone,
           ctx.accessWindow,
         ).getIncrease(),
+      ),
+    ),
+
+  attemptIncrease: protectedProcedure
+    .input(z.void())
+    .output(climbingAttemptIncreaseSchema)
+    .query(({ ctx }) =>
+      runClimbingQuery(() =>
+        new ClimbingVolumeRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+        ).getAttemptIncrease(),
       ),
     ),
 

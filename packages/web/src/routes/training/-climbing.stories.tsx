@@ -102,7 +102,14 @@ const mockLink: TRPCLink<AppRouter> = () => {
                     baselineMinutes: 210,
                     increasePercent: 42.86,
                   }
-                : data,
+                : op.path === "climbing.attemptIncrease"
+                  ? {
+                      status: "increase",
+                      recentAttempts: 50,
+                      baselineAttempts: 40,
+                      increasePercent: 25,
+                    }
+                  : data,
           },
         });
         observer.complete?.();
