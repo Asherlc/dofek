@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { aborted } from "node:util";
 import { column, PowerSyncDatabase, Schema, Table } from "@powersync/node";
 import { z } from "zod";
+import { ProviderStreamAbortedError } from "./provider-error-reporting.ts";
 
 const identity = z.string().trim().min(1);
 const name = z
@@ -116,12 +117,16 @@ export class KilterBoardDirectory {
         const dispose = db.registerListener({
           statusChanged: ({ dataFlowStatus: { downloadError } }) => {
             // The SDK rebuilds status from SyncStatus.toJSON(), so this is a plain serialized object.
-            if (downloadError)
-              failure.abort(
-                new Error(`Kilter Board app sync failed: ${downloadError.message}`, {
-                  cause: downloadError,
-                }),
-              );
+            if (!downloadError) return;
+            const ErrorType =
+              downloadError.name === "Error" && downloadError.message === "Connection aborted"
+                ? ProviderStreamAbortedError
+                : Error;
+            failure.abort(
+              new ErrorType(`Kilter Board app sync failed: ${downloadError.message}`, {
+                cause: downloadError,
+              }),
+            );
           },
         });
         try {

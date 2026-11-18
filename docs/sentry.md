@@ -138,6 +138,13 @@ and filter by `provider` in a window covering the request and metric export.
 Confirm the counter advances and check Sentry for timeout-only events from the
 same release and window. See [Axiom's metrics guide](https://axiom.co/docs/query-data/metrics).
 
+The Kilter Board adapter classifies the exact PowerSync download error
+`Connection aborted` as a provider stream abort.
+The worker records the failed sync in logs, status, and `sync.errors.total`
+with `provider=kilter` and `data_type=sync`. The per-error report and the
+scheduled two-failure warning skip this known outcome. Unexpected errors in
+the same sync can still trigger alerts. [Kilter Board adapter](../src/lib/kilter-board-directory.ts).
+
 Classification requires a known transport shape or an explicit credential
 marker from Dofek's own password-check rejection. A generic 401/403, BAD_REQUEST,
 or vendor credential error class does not establish invalid credentials: existing
