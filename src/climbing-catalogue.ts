@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { CatalogueSearchError, ClimbingCatalogueSearch } from "@dofek/climbing-catalogue";
 import type { ClimbingCatalogueAdapter } from "@dofek/climbing-catalogue/contracts";
-import { KayaCatalogueUnavailableError } from "@dofek/climbing-catalogue/kaya";
+import {
+  KayaCatalogueUnavailableError,
+  KayaNativeResponseError,
+} from "@dofek/climbing-catalogue/kaya";
 import {
   ProviderRateLimitError,
   ProviderServiceUnavailableError,
@@ -89,6 +92,13 @@ export class ClimbingCatalogueService {
         };
       })
       .filter((failure) => failure !== null);
+    const kayaDiagnostic = failures.find(
+      (failure): failure is KayaNativeResponseError => failure instanceof KayaNativeResponseError,
+    )?.diagnostic;
+    const extra = {
+      ...(providerFailures.length > 0 ? { providerFailures } : {}),
+      ...(kayaDiagnostic !== undefined ? { kayaDiagnostic } : {}),
+    };
     const reportable = failures.filter((failure) => !isCatalogueProviderOutage(failure));
     if (reportable.length < failures.length) {
       logger.warn("[climbing-catalogue] Upstream service unavailable: %j", providerFailures);
@@ -100,7 +110,7 @@ export class ClimbingCatalogueService {
           : new AggregateError(reportable, "Unexpected climbing catalogue provider failure");
       captureException(exception, {
         tags: { phase: "climbing-catalogue-refresh" },
-        ...(providerFailures.length > 0 ? { extra: { providerFailures } } : {}),
+        ...(Object.keys(extra).length > 0 ? { extra } : {}),
       });
     }
     const previous = await this.read(seed);

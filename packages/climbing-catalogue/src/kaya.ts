@@ -261,7 +261,25 @@ export class KayaCatalogueUnavailableError extends Error {
   }
 }
 
-function throwKayaResponseError(body: unknown, message: string): never {
+type KayaNativeDiagnostic =
+  | { operation: "CatalogueClimb"; kind: "graphql"; codes: string[] }
+  | { operation: "CatalogueClimb"; kind: "validation"; paths: string[] };
+
+/** Retains only a closed-code or declared-path diagnostic, never upstream content. */
+export class KayaNativeResponseError extends Error {
+  readonly diagnostic: KayaNativeDiagnostic;
+  constructor(message: string, diagnostic: KayaNativeDiagnostic) {
+    super(message);
+    this.name = "KayaNativeResponseError";
+    this.diagnostic = diagnostic;
+  }
+}
+
+function throwKayaResponseError(
+  body: unknown,
+  message: string,
+  issues?: z.ZodError["issues"],
+): never {
   const internalError = z
     .object({
       errors: z
@@ -275,6 +293,34 @@ function throwKayaResponseError(body: unknown, message: string): never {
     })
     .safeParse(body);
   if (internalError.success) throw new KayaCatalogueUnavailableError();
+  if (issues !== undefined) {
+    const errors = z.object({ errors: z.array(z.unknown()).nonempty() }).safeParse(body);
+    if (errors.success) {
+      const allowed = new Set(["UNAUTHENTICATED", "FORBIDDEN", "INTERNAL_SERVER_ERROR"]);
+      const codeSchema = z.object({ extensions: z.object({ code: z.string() }) });
+      const codes = new Set<string>();
+      for (const error of errors.data.errors) {
+        const parsed = codeSchema.safeParse(error);
+        const code = parsed.success ? parsed.data.extensions.code : null;
+        codes.add(code !== null && allowed.has(code) ? code : "UNKNOWN");
+      }
+      throw new KayaNativeResponseError(message, {
+        operation: "CatalogueClimb",
+        kind: "graphql",
+        codes: [...codes].sort(),
+      });
+    }
+    const paths = new Set<string>();
+    for (const issue of issues) {
+      if (paths.size >= 5) break;
+      if (issue.path.length > 0) paths.add(issue.path.join("."));
+    }
+    throw new KayaNativeResponseError(message, {
+      operation: "CatalogueClimb",
+      kind: "validation",
+      paths: [...paths],
+    });
+  }
   throw new Error(message);
 }
 
@@ -332,6 +378,7 @@ export class KayaCatalogueAdapter implements ClimbingCatalogueAdapter {
       throwKayaResponseError(
         body,
         "Kaya authenticated catalogue lookup returned invalid or rejected climb details; sync or reconnect Kaya and retry.",
+        result.success ? [] : result.error.issues,
       );
     if (result.data.data.climb.id !== id)
       throw new Error(

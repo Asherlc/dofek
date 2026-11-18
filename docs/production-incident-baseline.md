@@ -1,5 +1,44 @@
 # Production Incident Baseline
 
+## 2026-11-17 — Authenticated Kaya climb-detail enrichment regressed
+
+- **Impact.** Sentry grouped 45 occurrences under `DOFEK-SERVER-7V`. The
+  latest event at 21:22:39 UTC was a background refresh failure while Kaya
+  enriched a candidate found through discovery. This affects optional
+  climbing catalogue metadata. The event has no user identity, so the number
+  of affected users is unknown.
+  [Sentry event](https://east-bay-software.sentry.io/issues/7826230732/events/51506ec2b54e4df19d6165c6a26eaaf6/)
+- **Evidence.** Axiom recorded 40 worker log entries with the same error from
+  19:47:58 to 21:23:24 UTC. The event's adapter reached response validation
+  after successful HTTP and JSON parsing. Release `8c624359d` threw the same
+  error for a validation failure and a GraphQL rejection. The log and event
+  retained neither the response classification nor the climb identity.
+  Failed refresh jobs were configured for automatic removal. The exact
+  upstream cause and affected lookup remain unresolved.
+  [Deployed response check](https://github.com/Asherlc/dofek/blob/8c624359d4591b70032d0a3bee18e9fe83ef6560/packages/climbing-catalogue/src/kaya.ts#L265-L310)
+  · [Queue settings](https://github.com/Asherlc/dofek/blob/8c624359d4591b70032d0a3bee18e9fe83ef6560/src/jobs/queues.ts#L755-L770)
+- **Mitigation and validation.** Swarm reports the worker at `d15b8a89f`
+  running since 23:09:49 UTC. It includes the existing bounded retry for
+  confirmed provider outages. Through 05:44 UTC on November 18, Axiom
+  recorded 1,717 worker log entries with zero matches for the original error
+  or a classified Kaya internal-error warning. Sentry returned zero events
+  for this issue on that release. Recovery of the original job remains
+  unverified.
+  [Retry change](https://github.com/Asherlc/dofek/pull/3384)
+  · [Axiom query runbook](axiom-observability-runbook.md#queries)
+- **Follow-up.** If the error recurs, record whether the response contained a
+  GraphQL error or failed schema validation. Safe fields for diagnosis are
+  the operation name, a recognized error code, and validation paths without
+  values. Keep tokens and response bodies out of telemetry.
+- **CI follow-up on November 18.** The first `Check Shared / Shared Stryker`
+  run failed at `Run Stryker` with a score of 17.65 against the required 75.
+  The shared suite excludes the worker service tests, so it exercised the
+  adapter without checking the new diagnostic fields. Adapter regressions in
+  the shared suite cover the diagnostic values and their bounds. Service
+  regressions verify the exact captured and cached messages. The same
+  changed-line shard scored 94.12 locally after the test changes.
+  [First mutation run](https://github.com/Asherlc/dofek/actions/runs/44325608106/job/134877388990)
+
 ## 2026-11-17 — Kaya and OpenBeta failures interrupt climbing catalogue refresh
 
 - **Symptoms / impact:** A production background refresh failed at 19:46:33

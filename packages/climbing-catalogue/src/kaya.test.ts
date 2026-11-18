@@ -28,6 +28,7 @@ const climb = {
   description: "crimps",
   tags: [],
 };
+const nativeSeed: CatalogueSeed = { ...seed, providerId: "kaya", externalId: climb.id };
 const response = (rows: unknown[]) => Response.json({ data: { webSearchForClimb: rows } });
 
 describe("Kaya catalogue GraphQL service errors", () => {
@@ -71,11 +72,7 @@ describe("Kaya catalogue GraphQL service errors", () => {
       ),
     );
     await expect(
-      new KayaCatalogueAdapter(fetch, async () => "token").search({
-        ...seed,
-        providerId: "kaya",
-        externalId: climb.id,
-      }),
+      new KayaCatalogueAdapter(fetch, async () => "token").search(nativeSeed),
     ).rejects.toMatchObject({
       name: "KayaCatalogueUnavailableError",
       message: expect.not.stringContaining("reconnect"),
@@ -96,6 +93,40 @@ describe("Kaya catalogue GraphQL service errors", () => {
     ).rejects.toMatchObject({
       name: "Error",
       message: expect.stringContaining("invalid or rejected search response"),
+    });
+  });
+
+  const gql = (data: unknown, ...codes: string[]) => ({
+    data,
+    errors: codes.map((code) => ({ message: "private", extensions: { code } })),
+  });
+  const bad = (fields: object) => ({ data: { climb: { ...climb, ...fields } } });
+  const paths5 = ["id", "slug", "name", "climb_type", "grade"].map((k) => `data.climb.${k}`);
+  const lookup = (body: unknown) => {
+    server.use(http.post("https://kaya-beta.kayaclimb.com/graphql", () => HttpResponse.json(body)));
+    return new KayaCatalogueAdapter(fetch, async () => "token").search(nativeSeed);
+  };
+  it.each([
+    [
+      gql(null, "UNAUTHENTICATED", "FORBIDDEN", "PRIVATE"),
+      { kind: "graphql", codes: ["FORBIDDEN", "UNAUTHENTICATED", "UNKNOWN"] },
+    ],
+    [
+      gql({ climb: { ...climb, lead: null, is_trad: null } }, "FORBIDDEN"),
+      { kind: "graphql", codes: ["FORBIDDEN"] },
+    ],
+    [{}, { kind: "validation", paths: ["data"] }],
+    [null, { kind: "validation", paths: [] }],
+    [gql(null), { kind: "validation", paths: ["data"] }],
+    [
+      bad({ id: 1, slug: 2, name: 3, climb_type: 4, grade: 5, gym: 6 }),
+      { kind: "validation", paths: paths5 },
+    ],
+  ])("diagnoses native response %#", async (body, diagnostic) => {
+    await expect(lookup(body)).rejects.toMatchObject({
+      name: "KayaNativeResponseError",
+      message: expect.stringContaining("sync or reconnect Kaya"),
+      diagnostic: { operation: "CatalogueClimb", ...diagnostic },
     });
   });
 });
@@ -321,9 +352,7 @@ describe("KayaCatalogueAdapter", () => {
         }),
       );
       const result = await new Adapter(fetchFn, async () => "token").search({
-        ...seed,
-        providerId: "kaya",
-        externalId: "1062267",
+        ...nativeSeed,
         name: null,
         setting: "indoor",
       });
@@ -560,13 +589,7 @@ describe("KayaCatalogueAdapter", () => {
       ]),
     );
     expect(
-      (
-        await new KayaCatalogueAdapter(fetchFn, async () => null).search({
-          ...seed,
-          providerId: "kaya",
-          externalId: climb.id,
-        })
-      ).candidates,
+      (await new KayaCatalogueAdapter(fetchFn, async () => null).search(nativeSeed)).candidates,
     ).toHaveLength(1);
   });
   it("stops repeated full pages without declaring search complete", async () => {
@@ -713,9 +736,7 @@ describe("Kaya authenticated catalogue classification", () => {
         });
       });
       const result = await new KayaCatalogueAdapter(fetchFn, async () => "token").search({
-        ...seed,
-        providerId: "kaya",
-        externalId: climb.id,
+        ...nativeSeed,
         name: null,
       });
       expect(result.candidates[0]?.name).toBeNull();
@@ -775,11 +796,9 @@ describe("Kaya authenticated catalogue classification", () => {
           },
         }),
       );
-      const result = await new KayaCatalogueAdapter(fetchFn, async () => "token").search({
-        ...seed,
-        providerId: "kaya",
-        externalId: climb.id,
-      });
+      const result = await new KayaCatalogueAdapter(fetchFn, async () => "token").search(
+        nativeSeed,
+      );
       expect(result.candidates[0]?.tags).toContainEqual({
         kind: "other",
         sourceKey: "literal",
@@ -805,11 +824,7 @@ describe("Kaya authenticated catalogue classification", () => {
       }),
     );
     await expect(
-      new KayaCatalogueAdapter(fetchFn, async () => "token").search({
-        ...seed,
-        providerId: "kaya",
-        externalId: climb.id,
-      }),
+      new KayaCatalogueAdapter(fetchFn, async () => "token").search(nativeSeed),
     ).rejects.toThrow(
       "Kaya authenticated catalogue lookup returned invalid or rejected climb details; sync or reconnect Kaya and retry.",
     );
@@ -918,11 +933,9 @@ describe("Kaya authenticated catalogue classification", () => {
       const fetchFn = vi
         .fn<typeof fetch>()
         .mockResolvedValue(Response.json({ data: { climb: { ...climb, lead, is_trad } } }));
-      const result = await new KayaCatalogueAdapter(fetchFn, async () => "token").search({
-        ...seed,
-        providerId: "kaya",
-        externalId: climb.id,
-      });
+      const result = await new KayaCatalogueAdapter(fetchFn, async () => "token").search(
+        nativeSeed,
+      );
       expect(
         result.candidates[0]?.tags
           .filter((tag) => tag.kind === "climb_type")
@@ -936,11 +949,7 @@ describe("Kaya authenticated catalogue classification", () => {
         data: { climb: { ...climb, name: "New name", lead: true, is_trad: false } },
       }),
     );
-    const result = await new KayaCatalogueAdapter(fetchFn, async () => "token").search({
-      ...seed,
-      providerId: "kaya",
-      externalId: climb.id,
-    });
+    const result = await new KayaCatalogueAdapter(fetchFn, async () => "token").search(nativeSeed);
     expect(result).toMatchObject({
       complete: true,
       candidates: [{ externalId: climb.id, name: "New name" }],
@@ -969,11 +978,7 @@ describe("Kaya authenticated catalogue classification", () => {
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({ data: { climb: native } }));
     await expect(
-      new KayaCatalogueAdapter(fetchFn, async () => "token").search({
-        ...seed,
-        providerId: "kaya",
-        externalId: climb.id,
-      }),
+      new KayaCatalogueAdapter(fetchFn, async () => "token").search(nativeSeed),
     ).rejects.toThrow(/Kaya/);
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
@@ -983,11 +988,7 @@ describe("Kaya authenticated catalogue classification", () => {
   ])("surfaces authenticated failures without falling back to public data", async (value) => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(value);
     await expect(
-      new KayaCatalogueAdapter(fetchFn, async () => "token").search({
-        ...seed,
-        providerId: "kaya",
-        externalId: climb.id,
-      }),
+      new KayaCatalogueAdapter(fetchFn, async () => "token").search(nativeSeed),
     ).rejects.toThrow(/Kaya.*(?:401|reconnect)/);
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
