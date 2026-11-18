@@ -142,6 +142,18 @@ jobs:
       DOCKER_SSH_COMMAND: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10
       DEPLOY_ENVIRONMENT: ${{ inputs.infisical_environment || 'prod' }}
       STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
+      STACK_WEB_FILTER: |
+        import { parse } from "yaml";
+        process.stdin.setEncoding("utf8");
+        let input = "";
+        for await (const chunk of process.stdin) input += chunk;
+        const config = parse(input);
+        if (!config?.services?.web) throw new Error("Resolved stack config is missing services.web");
+        if (process.argv[1] === "only") config.services = { web: config.services.web };
+        else delete config.services.web;
+        // Swarm resolves env files when rendering, even with --skip-interpolation.
+        // Escape literal dollars so the deploy command preserves the resolved values.
+        process.stdout.write(JSON.stringify(config).replaceAll("$", () => "$$"));
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -702,23 +714,28 @@ jobs:
           MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
           MIGRATION_MAINTENANCE_BOUNDARY: ${{ steps.migration_deployment.outputs.maintenance_boundary }}
         run: |
+          set -euo pipefail
           stack_file_flags=()
           read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
-          maintenance_flags=()
-          if [ "$MIGRATION_DEPLOYMENT_MODE" = "maintenance" ]; then
-            maintenance_flags=(-c deploy/stack.maintenance.yml)
-          fi
-
+          stack_file_flags+=(-c deploy/stack.cdc-quiesce.yml -c deploy/stack.migration-quiesce.yml)
+          web_env_file="${WEB_PRE_MIGRATION_ENV_FILE:?WEB_PRE_MIGRATION_ENV_FILE is required}"
           echo "Applying dependency changes with app image ${APP_IMAGE} before migrations (${MIGRATION_DEPLOYMENT_MODE})."
-          WEB_ENV_FILE="${WEB_PRE_MIGRATION_ENV_FILE:?WEB_PRE_MIGRATION_ENV_FILE is required}" \
+          if [ "$MIGRATION_DEPLOYMENT_MODE" = "maintenance" ]; then
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-            env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$WEB_PRE_MIGRATION_ENV_FILE" \
-              MIGRATION_MAINTENANCE_BOUNDARY="$MIGRATION_MAINTENANCE_BOUNDARY" \
-            docker stack deploy "${stack_file_flags[@]}" \
-              -c deploy/stack.cdc-quiesce.yml \
-              -c deploy/stack.migration-quiesce.yml \
-              "${maintenance_flags[@]}" \
-              --with-registry-auth --detach=true "$STACK_NAME"
+              env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$web_env_file" \
+                MIGRATION_MAINTENANCE_BOUNDARY="$MIGRATION_MAINTENANCE_BOUNDARY" \
+              docker stack deploy "${stack_file_flags[@]}" -c deploy/stack.maintenance.yml \
+                --with-registry-auth --detach=true "$STACK_NAME"
+          else
+            # This non-pruning apply leaves the live web service definition untouched.
+            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+              env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$web_env_file" \
+              docker stack config "${stack_file_flags[@]}" \
+              | node --input-type=module -e "$STACK_WEB_FILTER" without \
+              | node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+                env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$web_env_file" \
+                docker stack deploy -c - --with-registry-auth --detach=true "$STACK_NAME"
+          fi
 
       - name: Verify Kafka after dependency stack apply
         run: *kafka_api_readiness
@@ -768,6 +785,79 @@ jobs:
           console.log('Kafka broker and worker tiered backend match');
           NODE
 
+      - name: Wait for migration readers and writers to stop
+        env:
+          MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
+        run: pnpm tsx scripts/wait-migration-quiescence.ts "$STACK_NAME" "$MIGRATION_DEPLOYMENT_MODE"
+
+      - name: Wait for Postgres writable
+        run: |
+          for attempt in $(seq 1 36); do
+            recovery_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
+              postgres:18-alpine sh -euc \
+              "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
+              psql --host=db --username=health --dbname=health --no-align --tuples-only --quiet \
+              --command \"SELECT CASE WHEN pg_is_in_recovery() THEN 'recovery' ELSE 'writable' END;\"" 2>&1 || true)
+            recovery_state="$(printf '%s\n' "$recovery_output" | tail -n 1 | tr -d '[:space:]')"
+            if [ "$recovery_state" = "writable" ]; then
+              echo "Postgres is writable."
+              break
+            fi
+            if [ "$attempt" -eq 36 ]; then
+              echo "::error::Postgres did not become writable within 180s"
+              exit 1
+            fi
+            echo "Postgres readiness attempt ${attempt}/36: retrying in 5s..."
+            sleep 5
+          done
+
+      - name: Wait for ClickHouse
+        run: |
+          for attempt in $(seq 1 36); do
+            # A requested image change can precede Swarm's update status.
+            update_state="$(docker service inspect "${STACK_NAME}_clickhouse" \
+              --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{else if and .PreviousSpec (ne .Spec.TaskTemplate.ContainerSpec.Image .PreviousSpec.TaskTemplate.ContainerSpec.Image)}}updating{{end}}')"
+            case "$update_state" in
+              paused|rollback_*)
+                echo "::error::ClickHouse update did not converge: ${update_state}"
+                exit 1
+                ;;
+            esac
+            if [ -z "$update_state" ] || [ "$update_state" = "completed" ]; then
+              clickhouse_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+                postgres:18-alpine sh -euc \
+                "wget -qO- http://clickhouse:8123/ping" 2>&1 || true)
+              if [ "$clickhouse_output" = "Ok." ]; then
+                echo "ClickHouse is reachable."
+                break
+              fi
+            fi
+            if [ "$attempt" -eq 36 ]; then
+              echo "::error::ClickHouse did not converge and become reachable before migrations"
+              exit 1
+            fi
+            echo "ClickHouse readiness attempt ${attempt}/36 (update=${update_state:-none}): retrying in 5s..."
+            sleep 5
+          done
+
+      - name: Apply pre-migration web configuration
+        if: steps.migration_deployment.outputs.mode == 'rolling'
+        env:
+          APP_IMAGE: ${{ steps.pull_images.outputs.pre_migration_image_ref }}
+        run: |
+          set -euo pipefail
+          stack_file_flags=()
+          read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
+          web_env_file="${WEB_PRE_MIGRATION_ENV_FILE:?WEB_PRE_MIGRATION_ENV_FILE is required}"
+          node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+            env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$web_env_file" \
+            docker stack config "${stack_file_flags[@]}" \
+            | node --input-type=module -e "$STACK_WEB_FILTER" only \
+            | node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+              env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$web_env_file" \
+              docker stack deploy -c - --with-registry-auth --detach=true "$STACK_NAME"
+
       - name: Wait for pre-migration web convergence
         if: steps.migration_deployment.outputs.mode == 'rolling'
         env:
@@ -801,51 +891,6 @@ jobs:
               echo "::error::${STACK_NAME}_web did not converge before migrations"
               exit 1
             fi
-            sleep 5
-          done
-
-      - name: Wait for migration readers and writers to stop
-        env:
-          MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
-        run: pnpm tsx scripts/wait-migration-quiescence.ts "$STACK_NAME" "$MIGRATION_DEPLOYMENT_MODE"
-
-      - name: Wait for Postgres writable
-        run: |
-          for attempt in $(seq 1 36); do
-            recovery_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
-              --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
-              postgres:18-alpine sh -euc \
-              "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
-              psql --host=db --username=health --dbname=health --no-align --tuples-only --quiet \
-              --command \"SELECT CASE WHEN pg_is_in_recovery() THEN 'recovery' ELSE 'writable' END;\"" 2>&1 || true)
-            recovery_state="$(printf '%s\n' "$recovery_output" | tail -n 1 | tr -d '[:space:]')"
-            if [ "$recovery_state" = "writable" ]; then
-              echo "Postgres is writable."
-              break
-            fi
-            if [ "$attempt" -eq 36 ]; then
-              echo "::error::Postgres did not become writable within 180s"
-              exit 1
-            fi
-            echo "Postgres readiness attempt ${attempt}/36: retrying in 5s..."
-            sleep 5
-          done
-
-      - name: Wait for ClickHouse
-        run: |
-          for attempt in $(seq 1 36); do
-            clickhouse_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
-              postgres:18-alpine sh -euc \
-              "wget -qO- http://clickhouse:8123/ping" 2>&1 || true)
-            if [ "$clickhouse_output" = "Ok." ]; then
-              echo "ClickHouse is reachable."
-              break
-            fi
-            if [ "$attempt" -eq 36 ]; then
-              echo "::error::ClickHouse did not become reachable within 180s"
-              exit 1
-            fi
-            echo "ClickHouse readiness attempt ${attempt}/36: retrying in 5s..."
             sleep 5
           done
 
