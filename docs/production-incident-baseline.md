@@ -39124,3 +39124,42 @@ Local qualification and CI are separate from production throughput acceptance. T
   after the shard's retention lease advanced. The backup identity read the
   hosted backup inventory. Production search remained disabled and no customer
   activity titles were indexed.
+
+## 2026-11-17 — Climbing alert PR checks and cold iOS archive
+
+- PR #3385's [Server Unit](https://github.com/Asherlc/dofek/actions/runs/44210424729/job/134491823883)
+  and [Mobile Tests](https://github.com/Asherlc/dofek/actions/runs/44210424729/job/134491823226)
+  jobs failed. The Drizzle snapshots
+  still expected the log source inside a literal SQL chunk, and activity-detail
+  fixtures lacked `climbing.attemptIncrease.invalidate()`. The resulting
+  unhandled rejection also broke the [Stryker dry run](https://github.com/Asherlc/dofek/actions/runs/44210424729/job/134495932495)
+  for the web detail hook. [The fix](https://github.com/Asherlc/dofek/commit/bf12f8cf9fe8b9a76e0a4ddf0ad57bcd73c304a1)
+  updated the four affected snapshots and both fixtures.
+- The [iOS Native Build](https://github.com/Asherlc/dofek/actions/runs/44210424729/job/134491823662)
+  missed the Pods, DerivedData, and ccache restores. Compilation was still
+  running when GitHub stopped `Archive (Release, no signing)` at 25 minutes.
+  ccache recorded 538 misses and zero hits. The archive had passed on the
+  [earlier PR revision](https://github.com/Asherlc/dofek/actions/runs/44167991176)
+  and on [main](https://github.com/Asherlc/dofek/actions/runs/44230514635).
+  The reason for the missing cache entries is unresolved. The
+  [passing replacement archive](https://github.com/Asherlc/dofek/actions/runs/44240366945/job/134587124990)
+  used restored caches. A fully cold archive within 25 minutes remains unverified.
+- On the merged revision, Server Unit, Mobile Tests, and the mutation shards
+  passed. [Integration shard 5](https://github.com/Asherlc/dofek/actions/runs/44237867474/job/134578877953)
+  failed during Hangboarding fixture setup with `UNKNOWN_TABLE` for
+  `ingest.account_erasure_fence`. The cycling power bootstrap creates a view
+  that references this table, so fixtures that set up the view depended on
+  another suite creating the shared table first. An isolated ClickHouse run
+  reproduced the setup failure in the Hangboarding repository, Climbing
+  router, Running, Activity Map, and Cycling Analytics suites. The first
+  three fixtures now create the observations table they use. Activity Map
+  and Cycling Analytics create their own fence before the view. All 38 tests
+  across the five suites passed locally with [the fixture changes](https://github.com/Asherlc/dofek/commit/84e41e34f1689e9ca07ded5386910cf5e34c4e57).
+  The [replacement CI run](https://github.com/Asherlc/dofek/actions/runs/44240366945)
+  passed all required checks.
+- During merge validation, two local unit/mobile runs failed with
+  `UND_ERR_SOCKET` in the MSW and Garmin webhook fixtures. Their clients
+  connected over IPv4 to ports 58023 and 59250. `lsof` and Docker's port
+  inventory identified both listeners as other workspaces' Postgres ports.
+  The fixtures now bind to the same IPv4 loopback address as the clients,
+  following the [prior listener diagnosis](#2026-10-11--local-http-test-reached-a-docker-postgres-listener).

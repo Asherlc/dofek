@@ -92,7 +92,26 @@ const mockLink: TRPCLink<AppRouter> = () => {
                           : null;
     const result: OperationResultObservable<AppRouter, unknown> = {
       subscribe(observer) {
-        observer.next?.({ result: { data } });
+        observer.next?.({
+          result: {
+            data:
+              op.path === "climbing.volumeIncrease"
+                ? {
+                    status: "increase",
+                    recentMinutes: 300,
+                    baselineMinutes: 210,
+                    increasePercent: 42.86,
+                  }
+                : op.path === "climbing.attemptIncrease"
+                  ? {
+                      status: "increase",
+                      recentAttempts: 50,
+                      baselineAttempts: 40,
+                      increasePercent: 25,
+                    }
+                  : data,
+          },
+        });
         observer.complete?.();
         return { unsubscribe: () => {} };
       },

@@ -16,6 +16,7 @@ function anySelected<T>(values: readonly T[], predicate: (value: T) => SQL): SQL
 export function rockClimbingLogProjection(
   preference: ClimbingGradePreference,
   filters: ClimbingFilters = {},
+  source = sql`fitness.v_climbing_log_entry`,
 ) {
   const logPredicates = [
     sql`ce.discipline = 'rock_climbing'`,
@@ -99,7 +100,7 @@ export function rockClimbingLogProjection(
       target.sends, target.unknown_outcomes, target.free_send AS recorded_free_send,
       target.attempts, target.attempt_observations, target.rock_result_labels,
       (ce.area_path -> -1 ->> 'name') AS location_name
-    FROM fitness.v_climbing_log_entry AS ce
+    FROM ${source} AS ce
     JOIN LATERAL (
       SELECT attempt.scope, attempt.pitch_id,
         CASE WHEN attempt.scope = 'pitch' AND attempt.pitch_id IS NULL THEN attempt.id END AS unknown_pitch_attempt_id,

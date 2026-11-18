@@ -87,7 +87,7 @@ async function post(
   raw = false,
   headers: Record<string, string> = {},
 ) {
-  const server = app.listen(0);
+  const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Missing test server port");

@@ -54,12 +54,18 @@ export function formatDurationHoursMinutes(minutes: number): string {
   return `${hours}:${String(mins).padStart(2, "0")}`;
 }
 
-/** Format a duration in minutes as "Xh Ym" */
-export function formatDurationMinutes(minutes: number | null): string {
+/** Format minutes as a compact label or spell out the units for prose. */
+export function formatDurationMinutes(minutes: number | null, options?: { style: "long" }): string {
   if (minutes === null) return "--";
   const totalMinutes = Math.round(minutes);
   const hours = Math.floor(totalMinutes / 60);
   const mins = totalMinutes % 60;
+  if (options?.style === "long") {
+    const hourLabel = hours === 1 ? "1 hour" : `${hours} hours`;
+    const minuteLabel = mins === 1 ? "1 minute" : `${mins} minutes`;
+    if (hours === 0) return minuteLabel;
+    return mins === 0 ? hourLabel : `${hourLabel} ${minuteLabel}`;
+  }
   if (hours === 0) return `${mins}m`;
   return `${hours}h ${mins}m`;
 }

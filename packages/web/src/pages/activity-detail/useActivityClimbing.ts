@@ -40,6 +40,7 @@ export function useActivityClimbing(activityId: string, enabled: boolean) {
         utils.climbing.gradeProgressionV2.invalidate(),
         utils.climbing.volumeByGrade.invalidate(),
         utils.climbing.strengths.invalidate(),
+        utils.climbing.attemptIncrease.invalidate(),
         utils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
           responseVersion: 5,

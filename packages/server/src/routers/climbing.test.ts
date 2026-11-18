@@ -120,6 +120,36 @@ function makeCallerWithResponses(responses: Record<string, unknown>[][]) {
 
 const groupId = "00000000-0000-4000-8000-000000000701";
 describe("climbingRouter", () => {
+  it("serves an increase in recorded climbing attempts through its own query", async () => {
+    const { caller, execute } = makeCaller([
+      { daysAgo: 0, attempts: 20 },
+      { daysAgo: 7, attempts: 20 },
+      { daysAgo: 14, attempts: 20 },
+    ]);
+    expect(await caller.attemptIncrease()).toEqual({
+      status: "increase",
+      recentAttempts: 20,
+      baselineAttempts: 10,
+      increasePercent: 100,
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves a fixed-window climbing volume increase", async () => {
+    const { caller, execute } = makeCaller([
+      { daysAgo: 7, durationMicroseconds: 28_800_000_000 },
+      { daysAgo: 14, durationMicroseconds: 28_800_000_000 },
+      { daysAgo: 0, durationMicroseconds: 18_000_000_000 },
+    ]);
+    expect(await caller.volumeIncrease()).toEqual({
+      status: "increase",
+      recentMinutes: 300,
+      baselineMinutes: 240,
+      increasePercent: 25,
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it.each([undefined, 1, 2] as const)(
     "negotiates attached and suggested log traits for response version %s",
     async (responseVersion) => {

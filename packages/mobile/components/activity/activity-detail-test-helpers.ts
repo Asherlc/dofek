@@ -611,6 +611,7 @@ export function makeTrpcMock() {
           sessionSummary: { invalidate: mocks.climbingSessionSummaryInvalidate },
           strengths: { invalidate: mocks.climbingStrengthsInvalidate },
           volumeByGrade: { invalidate: mocks.climbingVolumeByGradeInvalidate },
+          attemptIncrease: { invalidate: vi.fn().mockResolvedValue(undefined) },
         },
       }),
     },

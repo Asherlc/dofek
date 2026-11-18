@@ -36,6 +36,7 @@ export function ClimbingLogAttachment({
         utils.mobileDashboard.trainingV2.invalidate(),
         utils.climbing.volumeByGrade.invalidate(),
         utils.climbing.strengths.invalidate(),
+        utils.climbing.attemptIncrease.invalidate(),
         utils.activity.images.invalidate({ id: input.activityId }),
         utils.activity.list.invalidate(),
         utils.calendar.weekListV2.invalidate(),

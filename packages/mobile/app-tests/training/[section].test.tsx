@@ -8,6 +8,7 @@ const routeParams = vi.hoisted(() => ({ section: "hiking" }));
 
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
+  useIsFocused: () => true,
   useLocalSearchParams: () => routeParams,
 }));
 

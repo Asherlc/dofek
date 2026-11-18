@@ -441,6 +441,7 @@ vi.mock("../lib/trpc.ts", () => ({
         gradeProgressionV2: { invalidate: mockClimbingGradeProgressionInvalidate },
         strengths: { invalidate: mockClimbingStrengthsInvalidate },
         volumeByGrade: { invalidate: mockClimbingVolumeByGradeInvalidate },
+        attemptIncrease: { invalidate: vi.fn().mockResolvedValue(undefined) },
       },
     }),
   },

@@ -9,7 +9,7 @@ describe("failOnUnhandledExternalRequest", () => {
     const listener = createServer((_request, response) => response.end("native"));
     let dispatched = 0;
     listener.on("request", () => dispatched++);
-    listener.listen(0);
+    listener.listen(0, "127.0.0.1");
     await once(listener, "listening");
     const address = listener.address();
     if (!address || typeof address === "string") throw new Error("Missing listener address");
@@ -35,7 +35,7 @@ describe("failOnUnhandledExternalRequest", () => {
     const listener = createServer((_request, response) => response.end("native"));
     let dispatched = 0;
     listener.on("request", () => dispatched++);
-    listener.listen(0);
+    listener.listen(0, "127.0.0.1");
     await once(listener, "listening");
     const address = listener.address();
     if (!address || typeof address === "string") throw new Error("Missing listener address");

@@ -18,6 +18,7 @@ import {
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { activityImagesOutputSchema } from "../repositories/activity-images-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { climbingAttemptIncreaseSchema } from "../repositories/climbing-attempt-increase.ts";
 import { ClimbingCatalogueRepository } from "../repositories/climbing-catalogue-repository.ts";
 import { ClimbingImagesRepository } from "../repositories/climbing-images-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
@@ -35,6 +36,8 @@ import {
 import { ClimbingStrengthsEnrichmentRepository } from "../repositories/climbing-strengths-enrichment-repository.ts";
 import { ClimbingStrengthsRepository } from "../repositories/climbing-strengths-repository.ts";
 import { ClimbingTrainingLogRepository } from "../repositories/climbing-training-log-repository.ts";
+import { climbingVolumeIncreaseSchema } from "../repositories/climbing-volume-increase.ts";
+import { ClimbingVolumeRepository } from "../repositories/climbing-volume-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import { catalogueStrengthTraits } from "../services/climbing-catalogue-traits.ts";
 import { buildClimbingLocationMap } from "../services/climbing-location-map.ts";
@@ -346,6 +349,34 @@ export const climbingRouter = router({
         return (await repository.getVolumeByGrade(input.days, input)).map((row) => row.toDetail());
       });
     }),
+
+  volumeIncrease: protectedProcedure
+    .input(z.void())
+    .output(climbingVolumeIncreaseSchema)
+    .query(({ ctx }) =>
+      runClimbingQuery(() =>
+        new ClimbingVolumeRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+        ).getIncrease(),
+      ),
+    ),
+
+  attemptIncrease: protectedProcedure
+    .input(z.void())
+    .output(climbingAttemptIncreaseSchema)
+    .query(({ ctx }) =>
+      runClimbingQuery(() =>
+        new ClimbingVolumeRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+        ).getAttemptIncrease(),
+      ),
+    ),
 
   volumeOverTime: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,

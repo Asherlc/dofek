@@ -10,6 +10,8 @@ const volumeByGradeQuery = vi.hoisted(() => vi.fn());
 const hangboardingSummaryQuery = vi.hoisted(() => vi.fn());
 const locationMapQuery = vi.hoisted(() => vi.fn());
 const strengthsQuery = vi.hoisted(() => vi.fn());
+const volumeIncreaseQuery = vi.hoisted(() => vi.fn());
+const attemptIncreaseQuery = vi.hoisted(() => vi.fn());
 const trainingDaysState = vi.hoisted<{ days: number | null }>(() => ({ days: 90 }));
 const queryDate = vi.hoisted(() => ({ value: "2026-10-26" }));
 
@@ -64,6 +66,8 @@ vi.mock("../../lib/trpc.ts", () => ({
     climbing: {
       gradeProgressionV2: { useQuery: gradeProgressionQuery },
       volumeByGrade: { useQuery: volumeByGradeQuery },
+      volumeIncrease: { useQuery: volumeIncreaseQuery },
+      attemptIncrease: { useQuery: attemptIncreaseQuery },
       volumeOverTime: {
         useQuery: () => ({ data: [], isLoading: false, isFetching: false, error: null }),
       },
@@ -80,6 +84,82 @@ async function importClimbingTab() {
 }
 
 describe("ClimbingTab", () => {
+  it("shows an attempt increase independently of the duration alert", async () => {
+    attemptIncreaseQuery.mockReturnValue({
+      data: { status: "increase", recentAttempts: 50, baselineAttempts: 40, increasePercent: 25 },
+      error: null,
+    });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    const alert = screen.getByRole("complementary", {
+      name: "Recorded climbing attempts increased",
+    });
+    expect(
+      within(alert).getByText(/50 climbing attempts in the last 7 days, up 25%/),
+    ).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Climbing volume increased" })).toBeNull();
+    expect(attemptIncreaseQuery.mock.lastCall?.[0]).toBeUndefined();
+  });
+
+  it("shows the training-wide volume increase beside the chart and clears it on refresh", async () => {
+    volumeIncreaseQuery.mockReturnValue({
+      data: {
+        status: "increase",
+        recentMinutes: 300,
+        baselineMinutes: 210,
+        increasePercent: 42.86,
+      },
+      error: null,
+    });
+    const ClimbingTab = await importClimbingTab();
+    const { rerender } = render(<ClimbingTab />);
+    const volumeSection = screen
+      .getByRole("heading", { name: "Climbing Volume" })
+      .closest("section");
+    if (!volumeSection) throw new Error("Missing volume section");
+    const alert = within(volumeSection).getByRole("complementary", {
+      name: "Climbing volume increased",
+    });
+    expect(within(alert).getByRole("heading", { name: "Climbing volume increased" })).toBeVisible();
+    expect(
+      within(alert).getByText(
+        "You logged 5 hours of climbing in the last 7 days, up 43% from your recent weekly average of 3 hours 30 minutes.",
+      ),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
+    trainingDaysState.days = 30;
+    rerender(<ClimbingTab />);
+    expect(volumeIncreaseQuery.mock.calls.every(([input]) => input === undefined)).toBe(true);
+    expect(volumeIncreaseQuery.mock.lastCall?.[1]).toMatchObject({ refetchOnWindowFocus: true });
+    expect(alert).toBeVisible();
+
+    volumeIncreaseQuery.mockReturnValue({ data: { status: "below_threshold" }, error: null });
+    rerender(<ClimbingTab />);
+    expect(within(volumeSection).queryByText("Climbing volume increased")).toBeNull();
+  });
+
+  it("keeps the comparison while refreshing and hides it after a failed refresh", async () => {
+    const data = {
+      status: "increase",
+      recentMinutes: 300,
+      baselineMinutes: 210,
+      increasePercent: 42.86,
+    };
+    volumeIncreaseQuery.mockReturnValue({ data, isFetching: true, error: null });
+    const ClimbingTab = await importClimbingTab();
+    const { rerender } = render(<ClimbingTab />);
+    expect(screen.getByRole("heading", { name: "Climbing volume increased" })).toBeVisible();
+
+    volumeIncreaseQuery.mockReturnValue({ data, error: new Error("Climbing time unavailable") });
+    rerender(<ClimbingTab />);
+    expect(screen.getByText("Error: Climbing time unavailable")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Climbing Volume" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Climbing volume increased" })).toBeNull();
+  });
+
   it("keeps the refresh status space and selected strengths view through polling cycles", async () => {
     const queryState = {
       data: { ...climbingStrengthsFixture, enrichmentPending: true },
@@ -282,6 +362,8 @@ describe("ClimbingTab", () => {
     );
   });
   beforeEach(() => {
+    volumeIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
+    attemptIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
     strengthsQuery.mockReset();
     strengthsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     gradeProgressionQuery.mockReset();

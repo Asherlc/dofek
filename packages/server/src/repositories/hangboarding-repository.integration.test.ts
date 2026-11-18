@@ -6,7 +6,7 @@ import {
   buildActivitySummaryRowsTableSql,
   buildActivitySummaryViewSql,
 } from "../../../../src/db/clickhouse-activity-summary.ts";
-import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-schema.ts";
+import { buildCyclingPowerObservationRowsTableSql } from "../../../../src/db/cycling-power-schema.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
@@ -223,7 +223,7 @@ describe("HangboardingRepository integration", () => {
     await clickhouse.command({ query: `CREATE DATABASE ${analyticsDatabase}` });
     for (const statement of [
       buildActivitySummaryRowsTableSql(),
-      ...cyclingPowerSchemaStatements(),
+      buildCyclingPowerObservationRowsTableSql(),
       buildActivitySummaryViewSql(),
     ]) {
       await clickhouse.command({
