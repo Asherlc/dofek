@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   isKnownProviderHttp5xxError,
   ProviderStreamAbortedError,
+  providerSyncFailureKind,
 } from "../lib/provider-error-reporting.ts";
 import { isProviderTimeoutOnly } from "../lib/provider-transport-error.ts";
 import { logger } from "../logger.ts";
@@ -162,12 +163,20 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
         isProviderTimeoutOnly(cause),
     );
   if (consecutiveFailures === 2 && !onlyKnownProviderTransportErrors) {
+    const failureKinds = new Set(errorCauses.map(providerSyncFailureKind));
+    const failureKind = entry.authFailureReason
+      ? "authorization"
+      : failureKinds.size > 1
+        ? "mixed"
+        : ([...failureKinds][0] ?? "unknown");
     captureException(new Error(`Provider ${entry.providerId} failed two scheduled syncs`), {
       level: "warning",
+      fingerprint: ["scheduled-provider-sync", entry.providerId, failureKind],
       tags: {
         provider: entry.providerId,
         operation: "scheduled-provider-sync",
         consecutive_failures: "2",
+        failure_kind: failureKind,
       },
       extra: {
         user_id: scopedUserId,

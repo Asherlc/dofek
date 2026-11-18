@@ -21,6 +21,8 @@ createWorkerQueues(dependencies);
 describe("worker queues", () => {
   it("creates per-provider workers plus standard workers", async () => {
     const { Worker } = await import("bullmq");
+    vi.mocked(Worker).mockClear();
+    createWorkerQueues(dependencies);
     expect(Worker).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
     // Per-provider workers
     expect(Worker).toHaveBeenCalledWith("sync-strava", expect.any(Function), expect.any(Object));
@@ -47,6 +49,11 @@ describe("worker queues", () => {
     expect(Worker).toHaveBeenCalledWith("export-queue", expect.any(Function), expect.any(Object));
     expect(Worker).toHaveBeenCalledWith(
       "scheduled-sync-queue",
+      expect.any(Function),
+      expect.any(Object),
+    );
+    expect(Worker).toHaveBeenCalledWith(
+      "daily-scheduled-sync-queue",
       expect.any(Function),
       expect.any(Object),
     );

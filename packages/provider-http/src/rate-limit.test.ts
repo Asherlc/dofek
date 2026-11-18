@@ -818,17 +818,28 @@ describe("fetchWithRateLimitHandling", () => {
 });
 
 describe("parseRetryAfterHeader", () => {
-  it("parses numeric seconds", () => {
-    expect(parseRetryAfterHeader("5")).toBe(5);
+  it.each(["10seconds", "1.5", "-5", "+5", "2026-06-02", "99999999999999999999"])(
+    "rejects %s as neither delay-seconds nor an HTTP date",
+    (header) => expect(parseRetryAfterHeader(header)).toBeNull(),
+  );
+
+  it.each(["5", " 5 "])("parses numeric seconds from %j", (header) => {
+    expect(parseRetryAfterHeader(header)).toBe(5);
   });
 
   it("accepts zero seconds", () => {
     expect(parseRetryAfterHeader("0")).toBe(0);
   });
 
-  it("parses an HTTP-date into seconds", () => {
+  it.each([
+    "Tue, 02 Jun 2026 12:00:05 GMT",
+    "  Tue, 02 Jun 2026 12:00:05 GMT  ",
+    "Tuesday, 02-Jun-26 12:00:05 GMT",
+    "Tue Jun  2 12:00:05 2026",
+    "Tue Jun 02 12:00:05 2026",
+  ])("parses the HTTP-date %s as UTC", (date) => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
-    expect(parseRetryAfterHeader("Tue, 02 Jun 2026 12:00:05 GMT")).toBe(5);
+    expect(parseRetryAfterHeader(date)).toBe(5);
     vi.useRealTimers();
   });
 
@@ -842,5 +853,24 @@ describe("parseRetryAfterHeader", () => {
     expect(parseRetryAfterHeader(null)).toBeNull();
     expect(parseRetryAfterHeader(undefined)).toBeNull();
     expect(parseRetryAfterHeader("not a retry date")).toBeNull();
+  });
+
+  it("rejects a numeric delay whose millisecond value overflows the Date range", () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const overflowSeconds = Math.ceil((8_640_000_000_000_000 - Date.now()) / 1000) + 1;
+    expect(parseRetryAfterHeader(String(overflowSeconds))).toBeNull();
+  });
+
+  it.each([
+    "02 Jun 2026 12:00:05 GMT",
+    "garbage Tue, 02 Jun 2026 12:00:05 GMT",
+    "Tue Jun  2 12:00:05 2026 UTC",
+    "Tue Jun Jun  2 12:00:05 2026",
+    "Tue Jun  2 12:00:05 2026 junk",
+    "Tue, 02 Jun 2026 12:00:05 UTC",
+    "Tue, 02 Jun 2026 12:00:05 GMT junk",
+  ])("rejects the malformed HTTP-date %s", (header) => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    expect(parseRetryAfterHeader(header)).toBeNull();
   });
 });

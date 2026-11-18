@@ -302,7 +302,6 @@ vi.mock("../file-upload-reconciliation.ts", () => ({
 }));
 
 vi.mock("../scheduled-sync.ts", () => ({
-  DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES: 30,
   setupScheduledSync: () =>
     hoisted.scheduledSyncState.error
       ? Promise.reject(hoisted.scheduledSyncState.error)
@@ -333,7 +332,8 @@ vi.mock("../account-erasure-work-guard.ts", () => ({
   ),
 }));
 
-vi.mock("../provider-queue-config.ts", () => ({
+vi.mock("../provider-queue-config.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../provider-queue-config.ts")>()),
   getConfiguredProviderIds: vi.fn(() => ["strava", "garmin"]),
   getProviderQueueConfig: vi.fn(() => ({
     concurrency: 3,
@@ -384,6 +384,7 @@ vi.mock("../queues.ts", () => ({
   SYNC_QUEUE: "sync-queue",
   EXPORT_QUEUE: "export-queue",
   SCHEDULED_SYNC_QUEUE: "scheduled-sync-queue",
+  DAILY_SCHEDULED_SYNC_QUEUE: "daily-scheduled-sync-queue",
   POST_SYNC_QUEUE: "post-sync-queue",
   ACTIVITY_IMAGE_QUEUE: "activity-images",
   ACTIVITY_DELETE_ANALYTICS_QUEUE: "activity-delete-analytics-queue",
@@ -514,7 +515,7 @@ export async function processorArity(queueName: string): Promise<number> {
   }
   return processor.length;
 }
-export const EXPECTED_WORKER_COUNT = 14;
+export const EXPECTED_WORKER_COUNT = 15;
 
 export async function workerQueueDependencies() {
   const { createDatabaseFromEnv } = await import("../../db/index.ts");

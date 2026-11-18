@@ -2,6 +2,10 @@ import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { McpServer } from "@modelcontextprotocol/server";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
+import {
+  providerRateLimitCooldownStore,
+  providerSyncDeferralMessage,
+} from "dofek/jobs/provider-rate-limit-cooldown";
 import { providerSyncQueueName } from "dofek/jobs/queues";
 import { syncJobDataFromTriggerInput } from "dofek/jobs/sync-window";
 import { providerRequiresStoredTokens } from "dofek/lib/custom-auth-providers";
@@ -694,7 +698,11 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         ),
       );
       if (!job) {
-        throw new Error(`Provider ${providerId} sync skipped: rate-limit cooldown active`);
+        throw new Error(
+          providerSyncDeferralMessage(
+            await providerRateLimitCooldownStore.getActive(providerId, context.userId),
+          ),
+        );
       }
       return jsonToolResult({
         providerId,

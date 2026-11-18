@@ -1,10 +1,17 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  type ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import type { SyncLogOrigin } from "../db/schema/events.ts";
 import { logSync } from "../db/sync-log.ts";
 import { captureException } from "../lib/error-reporting.ts";
-import { shouldReportProviderError } from "../lib/provider-error-reporting.ts";
+import {
+  providerSyncFailureKind,
+  shouldReportProviderError,
+} from "../lib/provider-error-reporting.ts";
 import {
   findProviderTransportError,
   isRetryingOpenBetaTransportFailure,
@@ -17,12 +24,17 @@ import { logger } from "../logger.ts";
 import { appendProcessingStageEvent } from "../processing/processing-event-store.ts";
 import {
   authFailureReasonFromError,
+  ProviderAccessDeniedError,
   type ProviderAuthFailureReason,
 } from "../providers/auth-errors.ts";
 import type { SyncError, SyncProvider } from "../providers/types.ts";
 import { syncDuration, syncErrorsTotal, syncOperationsTotal } from "../sync-metrics.ts";
 import { scheduleDelayedSyncJob } from "./enqueue-sync-job.ts";
-import { providerRateLimitCooldownStore } from "./provider-rate-limit-cooldown.ts";
+import {
+  type ProviderRateLimitCooldown,
+  providerCooldownLabel,
+  providerRateLimitCooldownStore,
+} from "./provider-rate-limit-cooldown.ts";
 import type { SyncJob } from "./queues.ts";
 import type { SyncJobContext } from "./sync-job-context.ts";
 import type { SyncProcessingOperation } from "./sync-processing-operation.ts";
@@ -39,13 +51,64 @@ function firstRetryableInfraSyncError(errors: SyncError[]): SyncError | null {
   );
 }
 
-function firstProviderRateLimitError(errors: SyncError[]): ProviderRateLimitError | null {
-  const rateLimitSyncError = errors.find(
-    (syncError) => syncError.cause instanceof ProviderRateLimitError,
-  );
-  return rateLimitSyncError?.cause instanceof ProviderRateLimitError
-    ? rateLimitSyncError.cause
+type ProviderDeferralError = ProviderRateLimitError | ProviderServiceUnavailableError;
+
+class DeferredSyncResultError extends AggregateError {
+  readonly otherFailures: SyncError[];
+
+  constructor(deferrals: ProviderDeferralError[], otherFailures: SyncError[]) {
+    super(deferrals, "Provider requested a sync delay");
+    this.otherFailures = otherFailures;
+  }
+}
+
+function providerSyncDeferralError(error: unknown): ProviderDeferralError | null {
+  if (error instanceof ProviderRateLimitError) return error;
+  const transportError = findProviderTransportError(error);
+  return transportError &&
+    "statusCode" in transportError &&
+    transportError.statusCode === 503 &&
+    (transportError.retryAfterSeconds ?? 0) > 0
+    ? transportError
     : null;
+}
+
+export function providerSyncDeferralErrors(error: unknown): ProviderDeferralError[] {
+  const failures: readonly unknown[] = error instanceof AggregateError ? error.errors : [error];
+  return failures.map(providerSyncDeferralError).filter((failure) => failure !== null);
+}
+
+export function recordProviderSyncFailures(
+  providerId: string,
+  origin: SyncLogOrigin,
+  failures: readonly unknown[],
+) {
+  const counts = new Map<ReturnType<typeof providerSyncFailureKind>, number>();
+  for (const failure of failures) {
+    const kind = providerSyncFailureKind(failure);
+    counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  }
+  for (const [failureKind, count] of counts) {
+    syncErrorsTotal.add(count, {
+      provider: providerId,
+      data_type: "sync",
+      failure_kind: failureKind,
+      origin,
+    });
+  }
+}
+
+export function reportSyncResultErrors(provider: SyncProvider, errors: readonly SyncError[]) {
+  for (const error of errors) {
+    logger.error(`[worker] ${provider.name} sync error: ${error.message}`);
+    const cause = error.cause ?? new Error(error.message);
+    if (shouldReportProviderError(cause)) {
+      captureException(cause, {
+        tags: { provider: provider.id },
+        ...(error.context ? { extra: error.context } : {}),
+      });
+    }
+  }
 }
 
 export function firstAuthFailureReason(errors: SyncError[]): ProviderAuthFailureReason | undefined {
@@ -68,6 +131,9 @@ export function providerSyncFailureEvent(
         : `${providerName} authorization needs attention. Reconnect ${providerName}, then try again.`,
     };
   }
+  if (failure instanceof ProviderAccessDeniedError) {
+    return { errorCode: "provider_sync_failed", errorMessage: failure.message };
+  }
   return {
     errorCode: "provider_sync_failed",
     errorMessage: pushOnly
@@ -89,35 +155,49 @@ function isProviderTransportError(error: unknown): boolean {
   return findProviderTransportError(error) !== null;
 }
 
-async function scheduleRateLimitRetry(
+async function scheduleProviderRetry(
   db: SyncDatabase,
   job: SyncJob,
-  error: ProviderRateLimitError,
+  providerId: string,
+  firstError: ProviderDeferralError,
+  otherErrors: readonly ProviderDeferralError[],
   since: Date,
   until: Date,
   signal?: AbortSignal,
-): Promise<string> {
-  const cooldown = await providerRateLimitCooldownStore.record(error, job.data.userId);
+): Promise<{ cooldown: ProviderRateLimitCooldown; retryAt: string }> {
+  let longest = await providerRateLimitCooldownStore.record(firstError, job.data.userId);
+  for (const error of otherErrors) {
+    const recorded = await providerRateLimitCooldownStore.record(error, job.data.userId);
+    if (recorded.expiresAt > longest.expiresAt) longest = recorded;
+  }
+  const active = await providerRateLimitCooldownStore.getActive(providerId, job.data.userId);
+  const cooldown = active && active.expiresAt >= longest.expiresAt ? active : longest;
   signal?.throwIfAborted();
   return withAccountErasureUserWriteFence(db, job.data.userId, async () => {
     signal?.throwIfAborted();
     const retryAt = await scheduleDelayedSyncJob(
       {
         ...job.data,
-        providerId: error.providerId,
+        providerId,
         sinceIso: since.toISOString(),
         untilIso: until.toISOString(),
       },
       cooldown,
     );
     signal?.throwIfAborted();
-    return retryAt;
+    return { cooldown, retryAt };
   });
 }
 
 export function throwRetryableSyncResultError(errors: SyncError[]): void {
-  const rateLimitError = firstProviderRateLimitError(errors);
-  if (rateLimitError) throw rateLimitError;
+  const deferralErrors: ProviderDeferralError[] = [];
+  const otherFailures: SyncError[] = [];
+  for (const error of errors) {
+    const deferrals = providerSyncDeferralErrors(error.cause);
+    if (deferrals.length === 0) otherFailures.push(error);
+    else deferralErrors.push(...deferrals);
+  }
+  if (deferralErrors.length > 0) throw new DeferredSyncResultError(deferralErrors, otherFailures);
   const infraError = firstRetryableInfraSyncError(errors);
   if (infraError)
     throw infraError.cause instanceof Error ? infraError.cause : new Error(infraError.message);
@@ -138,9 +218,17 @@ export async function handleSyncProviderFailure(
     throw err;
   }
   signal?.throwIfAborted();
+  const deferralErrors = providerSyncDeferralErrors(err);
+  const [deferralError, ...otherDeferralErrors] = deferralErrors;
+  const otherFailures = err instanceof DeferredSyncResultError ? err.otherFailures : [];
+  const failureCauses = deferralError
+    ? [...deferralErrors, ...otherFailures.map((error) => error.cause ?? new Error(error.message))]
+    : [err];
+  recordProviderSyncFailures(provider.id, job.data.origin ?? "unknown", failureCauses);
   const isOpenBetaTransportFailure = provider.id === "openbeta" && isProviderTransportError(err);
   const isZeppHttp500Failure = isZeppHttp500ServiceUnavailableError(err);
   if (
+    !deferralError &&
     isOpenBetaTransportFailure &&
     isRetryingOpenBetaTransportFailure(err, job.attemptsMade + 1, job.opts.attempts)
   ) {
@@ -155,23 +243,35 @@ export async function handleSyncProviderFailure(
     logger.warn(`[worker] ${provider.name} temporarily unavailable; retrying: ${String(err)}`);
     throw err;
   }
-  if (err instanceof ProviderRateLimitError) {
-    const retryAt = await scheduleRateLimitRetry(db, job, err, since, until, signal);
-    const message = `Rate limited; retry scheduled for ${retryAt}`;
+  if (deferralError) {
+    const { cooldown, retryAt } = await scheduleProviderRetry(
+      db,
+      job,
+      provider.id,
+      deferralError,
+      otherDeferralErrors,
+      since,
+      until,
+      signal,
+    );
+    const message = `${providerCooldownLabel(cooldown)}; retry scheduled for ${retryAt}`;
     context.completedCount++;
     context.providerStatus[provider.id] = { status: "running", message };
     await job.updateProgress({
       providers: context.providerStatus,
       percentage: context.percentage(0),
     });
-    logger.warn(`[worker] ${provider.name} rate limited; retry scheduled for ${retryAt}`);
+    logger.warn(`[worker] ${provider.name}: ${message}`);
+    reportSyncResultErrors(provider, otherFailures);
 
     const durationMs = Date.now() - syncStart;
     await logSync(db, {
       providerId: provider.id,
       dataType: "sync",
       status: "error",
-      errorMessage: err.message,
+      errorMessage: [...deferralErrors, ...otherFailures].map((error) => error.message).join("; "),
+      errorCauses: failureCauses,
+      authFailureReason: firstAuthFailureReason(otherFailures),
       durationMs,
       userId: job.data.userId,
       origin: job.data.origin ?? "unknown",
@@ -179,7 +279,6 @@ export async function handleSyncProviderFailure(
 
     syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status: "error" });
     syncDuration.record(durationMs, { provider: provider.id, data_type: "sync" });
-    syncErrorsTotal.add(1, { provider: provider.id, data_type: "sync" });
     return;
   }
 
@@ -262,6 +361,5 @@ export async function handleSyncProviderFailure(
 
   syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status: "error" });
   syncDuration.record(durationMs, { provider: provider.id, data_type: "sync" });
-  syncErrorsTotal.add(1, { provider: provider.id, data_type: "sync" });
   if (isExhaustedTransportFailure) throw err;
 }

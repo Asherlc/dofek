@@ -103,7 +103,8 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("dofek/jobs/provider-queue-config", () => ({
+vi.mock("dofek/jobs/provider-queue-config", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("dofek/jobs/provider-queue-config")>()),
   getConfiguredProviderIds: vi.fn(() => ["strava", "garmin", "whoop", "ziva"]),
 }));
 
@@ -176,7 +177,8 @@ vi.mock("dofek/db/account-erasure", () => ({
   withAccountErasureUserWriteFence: mockWithUserWriteFence,
 }));
 
-vi.mock("dofek/jobs/provider-rate-limit-cooldown", () => ({
+vi.mock("dofek/jobs/provider-rate-limit-cooldown", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("dofek/jobs/provider-rate-limit-cooldown")>()),
   providerRateLimitCooldownStore: {
     getActive: (...args: unknown[]) => mockGetActiveProviderCooldown(...args),
   },
@@ -388,14 +390,14 @@ describe("syncRouter", () => {
       try {
         mockGetAllProviders.mockReturnValue([
           {
-            id: "garmin",
-            name: "Garmin",
+            id: "thecrag",
+            name: "theCrag",
             validate: () => null,
             authSetup: () => oauthAuthSetup("https://connect.garmin.com"),
           },
         ]);
         mockGetActiveProviderCooldown.mockResolvedValue({
-          providerId: "garmin",
+          providerId: "thecrag",
           scope: "provider",
           userId: null,
           expiresAt: new Date("2026-09-04T04:32:46.000Z"),
@@ -406,17 +408,17 @@ describe("syncRouter", () => {
               .fn()
               .mockResolvedValueOnce([
                 {
-                  provider_id: "garmin",
+                  provider_id: "thecrag",
                   updated_at: new Date("2026-09-03T04:00:00.000Z"),
                   has_tokens: true,
                 },
               ])
               .mockResolvedValueOnce([
-                { provider_id: "garmin", last_synced: "2026-09-03T04:00:00.000Z" },
+                { provider_id: "thecrag", last_synced: "2026-09-03T04:00:00.000Z" },
               ])
               .mockResolvedValueOnce([])
               .mockResolvedValueOnce([
-                { provider_id: "garmin", last_synced: "2026-09-03T04:00:00.000Z" },
+                { provider_id: "thecrag", last_synced: "2026-09-03T04:00:00.000Z" },
               ])
               .mockResolvedValueOnce([]),
           },
@@ -426,12 +428,12 @@ describe("syncRouter", () => {
 
         const result = await caller.providers();
 
-        expect(result.find((provider) => provider.id === "garmin")?.syncFreshness).toEqual({
+        expect(result.find((provider) => provider.id === "thecrag")?.syncFreshness).toEqual({
           status: "deferred",
           label: "Sync deferred",
           description: "Rate limited until 2026-09-04T04:32:46.000Z.",
         });
-        expect(mockGetActiveProviderCooldown).toHaveBeenCalledWith("garmin", "user-1");
+        expect(mockGetActiveProviderCooldown).toHaveBeenCalledWith("thecrag", "user-1");
       } finally {
         vi.useRealTimers();
       }
@@ -1319,7 +1321,7 @@ describe("syncRouter", () => {
         {
           providerId: "garmin",
           status: "skippedCooldown",
-          message: "Provider sync skipped: rate-limit cooldown active",
+          message: "Sync was deferred. Try syncing again.",
         },
         {
           providerId: "wahoo",
@@ -1334,8 +1336,15 @@ describe("syncRouter", () => {
       expect(result.jobIds).toEqual(["wahoo:job-wahoo"]);
     });
 
-    it("returns skippedCooldown for a single provider instead of throwing rate limit errors", async () => {
+    it("explains an outage cooldown when a single-provider manual sync is deferred", async () => {
       mockGetAllProviders.mockReturnValue([{ id: "garmin", name: "Garmin", validate: () => null }]);
+      mockGetActiveProviderCooldown.mockResolvedValueOnce({
+        providerId: "garmin",
+        scope: "provider",
+        userId: null,
+        reason: "service_unavailable",
+        expiresAt: new Date("2026-11-25T12:00:00Z"),
+      });
       const enqueueSpy = vi
         .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
         .mockResolvedValueOnce(null);
@@ -1366,7 +1375,7 @@ describe("syncRouter", () => {
         {
           providerId: "garmin",
           status: "skippedCooldown",
-          message: "Provider sync skipped: rate-limit cooldown active",
+          message: "Service unavailable; sync deferred until 2026-11-25T12:00:00.000Z",
         },
       ]);
       expect(result.providerJobs).toEqual([]);
@@ -1791,7 +1800,7 @@ describe("syncRouter", () => {
         {
           providerId: "wahoo",
           status: "skippedCooldown",
-          message: "Provider sync skipped: rate-limit cooldown active",
+          message: "Sync was deferred. Try syncing again.",
         },
       ]);
     });

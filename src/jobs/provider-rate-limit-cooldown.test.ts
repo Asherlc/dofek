@@ -1,8 +1,12 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { providerAdaptiveRateLimitStore } from "../lib/provider-adaptive-rate-limit.ts";
 import {
   InMemoryProviderRateLimitCooldownStore,
+  parseProviderRateLimitCooldown,
   providerRateLimitCooldownJobId,
   providerRateLimitCooldownStore,
   providerRateLimitDelayMs,
@@ -26,7 +30,7 @@ function rateLimitError(options: {
   });
 }
 
-function createMockRedisStore(options?: { atomic?: boolean; execFailCount?: number }) {
+function createMockRedisStore(conflictCount = 0) {
   const values = new Map<string, string>();
   const setCalls: Array<{
     key: string;
@@ -34,72 +38,101 @@ function createMockRedisStore(options?: { atomic?: boolean; execFailCount?: numb
     mode: "PX";
     millisecondsToExpire: number;
   }> = [];
-  const watchCalls: string[] = [];
-  let execAttempts = 0;
-
+  const compareCalls: string[] = [];
   const client = {
-    set: async (key: string, value: string, mode: "PX", millisecondsToExpire: number) => {
-      setCalls.push({ key, value, mode, millisecondsToExpire });
-      values.set(key, value);
-      return "OK";
-    },
     get: async (key: string) => values.get(key) ?? null,
-    ...(options?.atomic
-      ? {
-          watch: async (key: string) => {
-            watchCalls.push(key);
-            return "OK";
-          },
-          unwatch: async () => "OK",
-          multi: () => {
-            let pending:
-              | {
-                  key: string;
-                  value: string;
-                  mode: "PX";
-                  millisecondsToExpire: number;
-                }
-              | undefined;
-            const chain = {
-              set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => {
-                pending = { key, value, mode, millisecondsToExpire };
-                return chain;
-              },
-              exec: async () => {
-                execAttempts++;
-                if (options.execFailCount && execAttempts <= options.execFailCount) {
-                  return null;
-                }
-                if (pending) {
-                  setCalls.push(pending);
-                  values.set(pending.key, pending.value);
-                }
-                return ["OK"];
-              },
-            };
-            return chain;
-          },
-        }
-      : {}),
+    eval: async (
+      _script: string,
+      _keys: number,
+      key: string,
+      hasPrevious: string,
+      previous: string,
+      next: string,
+      ttlMs: number,
+    ) => {
+      compareCalls.push(key);
+      const expected = hasPrevious === "1" ? previous : null;
+      if (compareCalls.length <= conflictCount || (values.get(key) ?? null) !== expected) return 0;
+      values.set(key, next);
+      setCalls.push({ key, value: next, mode: "PX", millisecondsToExpire: ttlMs });
+      return 1;
+    },
   };
-
-  const getRedisClient: ConstructorParameters<typeof RedisProviderRateLimitCooldownStore>[0] =
-    async () => client;
 
   return {
     values,
     setCalls,
-    watchCalls,
-    get execAttempts() {
-      return execAttempts;
-    },
-    store: new RedisProviderRateLimitCooldownStore(getRedisClient),
+    compareCalls,
+    store: new RedisProviderRateLimitCooldownStore(async () => client),
   };
 }
 
 describe("ProviderRateLimitCooldownStore", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("persists an explicit service outage delay with a distinct reason", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const { store } = createMockRedisStore();
+    await store.record(
+      new ProviderServiceUnavailableError({
+        message: "Provider unavailable",
+        providerId: "example",
+        statusCode: 503,
+        responseBody: "",
+        retryAfterSeconds: 300,
+      }),
+      "user-1",
+    );
+
+    expect(await store.getActive("example", "user-2")).toMatchObject({
+      reason: "service_unavailable",
+      scope: "provider",
+      expiresAt: new Date("2026-06-02T12:05:00Z"),
+    });
+  });
+
+  it.each([null, 0, -1])(
+    "rejects a service outage delay of %j before writing a cooldown",
+    async (retryAfterSeconds) => {
+      const { store, setCalls } = createMockRedisStore();
+      const outage = new ProviderServiceUnavailableError({
+        message: "Provider unavailable",
+        providerId: "example",
+        statusCode: 503,
+        responseBody: "",
+        retryAfterSeconds,
+      });
+
+      await expect(store.record(outage, "user-1")).rejects.toThrow(
+        "A service outage cooldown requires a positive Retry-After delay",
+      );
+      expect(setCalls).toHaveLength(0);
+    },
+  );
+
+  it("starts rate-limit escalation at the first hit after an outage", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+    await store.record(
+      new ProviderServiceUnavailableError({
+        message: "Provider unavailable",
+        providerId: "example",
+        statusCode: 503,
+        responseBody: "",
+        retryAfterSeconds: 60,
+      }),
+      "user-1",
+    );
+
+    await expect(
+      store.record(rateLimitError({ providerId: "example" }), "user-1"),
+    ).resolves.toMatchObject({
+      consecutiveHits: 1,
+      expiresAt: new Date("2026-06-02T12:30:00Z"),
+    });
+    vi.useRealTimers();
   });
 
   it("records provider-wide cooldown state using Retry-After when present", async () => {
@@ -569,16 +602,16 @@ describe("ProviderRateLimitCooldownStore", () => {
     }
   });
 
-  it("records cooldown state through the Redis WATCH/MULTI path when available", async () => {
+  it("records cooldown state through the Redis compare-and-set path when available", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
-    const { setCalls, store, watchCalls } = createMockRedisStore({ atomic: true });
+    const { setCalls, store, compareCalls } = createMockRedisStore();
 
     const cooldown = await store.record(
       rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
       "user-1",
     );
 
-    expect(watchCalls).toEqual(["provider-rate-limit:example:provider"]);
+    expect(compareCalls).toEqual(["provider-rate-limit:example:provider"]);
     expect(setCalls).toEqual([
       {
         key: "provider-rate-limit:example:provider",
@@ -597,12 +630,9 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.useRealTimers();
   });
 
-  it("throws when Redis WATCH/MULTI writes exceed the retry limit", async () => {
+  it("throws when Redis compare-and-set writes exceed the retry limit", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
-    const mock = createMockRedisStore({
-      atomic: true,
-      execFailCount: Number.POSITIVE_INFINITY,
-    });
+    const mock = createMockRedisStore(Number.POSITIVE_INFINITY);
 
     await expect(
       mock.store.record(
@@ -613,41 +643,24 @@ describe("ProviderRateLimitCooldownStore", () => {
       "Failed to persist rate-limit cooldown for provider-rate-limit:example:provider after 10 Redis transaction conflicts",
     );
 
-    expect(mock.execAttempts).toBe(10);
+    expect(mock.compareCalls.length).toBe(10);
     vi.useRealTimers();
   });
 
-  it("retries Redis WATCH/MULTI writes when exec reports a conflict", async () => {
+  it("retries Redis compare-and-set writes when another write wins", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
-    const mock = createMockRedisStore({
-      atomic: true,
-      execFailCount: 1,
-    });
+    const mock = createMockRedisStore(1);
 
     await mock.store.record(
       rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
       "user-1",
     );
 
-    expect(mock.watchCalls).toEqual([
+    expect(mock.compareCalls).toEqual([
       "provider-rate-limit:example:provider",
       "provider-rate-limit:example:provider",
     ]);
-    expect(mock.execAttempts).toBe(2);
-    vi.useRealTimers();
-  });
-
-  it("falls back to non-atomic Redis writes when WATCH/MULTI are unavailable", async () => {
-    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
-    const { setCalls, store } = createMockRedisStore();
-
-    const cooldown = await store.record(
-      rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
-      "user-1",
-    );
-
-    expect(setCalls).toHaveLength(1);
-    await expect(store.getActive("example", "user-1")).resolves.toEqual(cooldown);
+    expect(mock.compareCalls.length).toBe(2);
     vi.useRealTimers();
   });
 
@@ -660,16 +673,9 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.stubEnv("VITEST", "");
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
 
-    const transaction = {
-      set: vi.fn(),
-      exec: vi.fn().mockResolvedValue([["OK"]]),
-    };
-    transaction.set.mockReturnValue(transaction);
     const mockClient = {
       get: vi.fn<(key: string) => Promise<string | null>>().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue("OK"),
-      watch: vi.fn().mockResolvedValue("OK"),
-      multi: vi.fn().mockReturnValue(transaction),
+      eval: vi.fn().mockResolvedValue(1),
     };
     vi.doMock("./queues.ts", () => ({
       getRedisConnection: vi.fn().mockReturnValue({}),
@@ -699,18 +705,84 @@ describe("ProviderRateLimitCooldownStore", () => {
       providerId: "example",
       expiresAt: new Date("2026-06-02T12:10:00.000Z"),
     });
-    expect(mockClient.watch).toHaveBeenCalledWith("provider-rate-limit:example:provider");
-    expect(mockClient.multi).toHaveBeenCalledOnce();
-    expect(transaction.set).toHaveBeenCalledWith(
-      "provider-rate-limit:example:provider",
+    expect(mockClient.eval).toHaveBeenCalledWith(
       expect.any(String),
-      "PX",
+      1,
+      "provider-rate-limit:example:provider",
+      "0",
+      "",
+      expect.any(String),
       600_000,
     );
-    expect(transaction.exec).toHaveBeenCalledOnce();
 
     vi.unstubAllEnvs();
     vi.resetModules();
+  });
+});
+
+describe("parseProviderRateLimitCooldown", () => {
+  // Active fixtures keep these shape assertions independent of activeOrNull's expiry filtering.
+  const activeExpiry = "2099-06-02T12:10:00.000Z";
+  const legacyRecord = {
+    providerId: "example",
+    scope: "provider",
+    userId: null,
+    expiresAt: activeExpiry,
+  };
+
+  it("accepts an active legacy record with no reason or hit count", () => {
+    const cooldown = parseProviderRateLimitCooldown(JSON.stringify(legacyRecord));
+
+    expect(cooldown).toEqual({
+      ...legacyRecord,
+      expiresAt: new Date(activeExpiry),
+      reason: undefined,
+      consecutiveHits: undefined,
+    });
+  });
+
+  it("accepts an active supported record with a service-outage reason and hit count", () => {
+    const cooldown = parseProviderRateLimitCooldown(
+      JSON.stringify({ ...legacyRecord, reason: "service_unavailable", consecutiveHits: 3 }),
+    );
+
+    expect(cooldown).toEqual({
+      ...legacyRecord,
+      expiresAt: new Date(activeExpiry),
+      reason: "service_unavailable",
+      consecutiveHits: 3,
+    });
+  });
+
+  it.each(["rate_limited", null, 42])(
+    "normalizes an unknown active reason %j away without rejecting the record",
+    (reason) => {
+      const cooldown = parseProviderRateLimitCooldown(JSON.stringify({ ...legacyRecord, reason }));
+
+      expect(cooldown?.reason).toBeUndefined();
+      expect(cooldown?.expiresAt).toEqual(new Date(activeExpiry));
+    },
+  );
+
+  it.each(["3", null, true, {}])(
+    "normalizes malformed active consecutive hits %j without rejecting the record",
+    (consecutiveHits) => {
+      const cooldown = parseProviderRateLimitCooldown(
+        JSON.stringify({ ...legacyRecord, consecutiveHits }),
+      );
+
+      expect(cooldown?.consecutiveHits).toBeUndefined();
+      expect(cooldown?.expiresAt).toEqual(new Date(activeExpiry));
+    },
+  );
+
+  it("rejects an invalid expiry while keeping the remaining active fields valid", () => {
+    expect(
+      parseProviderRateLimitCooldown(JSON.stringify({ ...legacyRecord, expiresAt: "not-a-date" })),
+    ).toBeNull();
+    expect(
+      parseProviderRateLimitCooldown(JSON.stringify({ ...legacyRecord, expiresAt: 1 })),
+    ).toBeNull();
   });
 });
 
@@ -735,8 +807,38 @@ describe("provider rate-limit scheduling helpers", () => {
       expiresAt: new Date("2026-06-02T12:10:00Z"),
     };
 
-    const jobId = providerRateLimitCooldownJobId(cooldown, "user-1");
+    const jobId = providerRateLimitCooldownJobId(cooldown, { userId: "user-1" });
 
-    expect(jobId).toBe("provider-rate-limit-example-provider-1780402200000");
+    expect(jobId).toMatch(/^provider-rate-limit-example-provider-1780402200000-[a-f0-9]{24}$/);
+    expect(providerRateLimitCooldownJobId(cooldown, { userId: "user-2" })).not.toBe(jobId);
+  });
+
+  it("keeps distinct delayed requests for the same owner separate", () => {
+    const cooldown = {
+      providerId: "example",
+      scope: "provider" as const,
+      userId: null,
+      expiresAt: new Date("2026-06-02T12:10:00Z"),
+    };
+    const first = {
+      userId: "owner",
+      sinceIso: "2026-06-01T00:00:00Z",
+      checkpoint: { page: 1 },
+      processingOperationIds: { example: "operation-1" },
+    };
+    const jobId = providerRateLimitCooldownJobId(cooldown, first);
+    expect(providerRateLimitCooldownJobId(cooldown, { ...first })).toBe(jobId);
+    expect(
+      providerRateLimitCooldownJobId(cooldown, { ...first, sinceIso: "2026-05-01T00:00:00Z" }),
+    ).not.toBe(jobId);
+    expect(
+      providerRateLimitCooldownJobId(cooldown, { ...first, checkpoint: { page: 2 } }),
+    ).not.toBe(jobId);
+    expect(
+      providerRateLimitCooldownJobId(cooldown, {
+        ...first,
+        processingOperationIds: { example: "operation-2" },
+      }),
+    ).not.toBe(jobId);
   });
 });

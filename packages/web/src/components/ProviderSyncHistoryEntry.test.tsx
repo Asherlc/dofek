@@ -15,6 +15,30 @@ const expiredAuthorizationEntry = {
 };
 
 describe("ProviderSyncHistoryEntry", () => {
+  it("links to account settings when logbook access is denied", () => {
+    render(
+      <ProviderSyncHistoryEntry
+        providerName="theCrag"
+        entry={{
+          ...expiredAuthorizationEntry,
+          authFailureReason: null,
+          errorMessage:
+            "theCrag denied logbook access (400). Check your weekly token budget, supporter status, and API key. https://www.thecrag.com/settings/apikey/",
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "theCrag API Keys" })).toHaveAttribute(
+      "href",
+      "https://www.thecrag.com/settings/apikey/",
+    );
+    expect(
+      screen.getByText(
+        "theCrag denied logbook access (400). Check your weekly token budget, supporter status, and API key.",
+      ),
+    ).toBeVisible();
+  });
+
   it.each(["error", "degraded"])("renders one actionable message for a push %s", (status) => {
     render(
       <ProviderSyncHistoryEntry

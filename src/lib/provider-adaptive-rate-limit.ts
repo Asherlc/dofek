@@ -21,28 +21,12 @@ import type {
   ProviderRateLimitScope,
 } from "@dofek/provider-http/rate-limit";
 import { getSharedRedisConnection } from "../jobs/queues.ts";
+import { compareAndSetRedisValue, type RedisCompareAndSetClient } from "./redis-compare-and-set.ts";
 import {
   hasSyncStepAdmissionClaimed,
   isInsideSyncStepAdmission,
   tryClaimSyncStepAdmission,
 } from "./sync-step-admission-context.ts";
-
-interface RedisClient {
-  get: (key: string) => Promise<string | null>;
-  eval: (script: string, numberOfKeys: number, ...args: (string | number)[]) => Promise<unknown>;
-}
-
-// WATCH belongs to the connection, so concurrent callers must compare and write
-// in one Redis operation. Keep pacing calculations in the shared TypeScript code.
-const COMPARE_AND_SET_ADAPTIVE_STATE = `
-local current = redis.call('GET', KEYS[1])
-if (ARGV[1] == '0' and current ~= false) or
-   (ARGV[1] == '1' and current ~= ARGV[2]) then
-  return 0
-end
-redis.call('SET', KEYS[1], ARGV[3], 'PX', ARGV[4])
-return 1
-`;
 
 type LoadOrCreate = (
   providerId: string,
@@ -232,7 +216,7 @@ export class InMemoryAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
   }
 }
 
-async function getSharedRedisClient(): Promise<RedisClient> {
+async function getSharedRedisClient(): Promise<RedisCompareAndSetClient> {
   const connection = getSharedRedisConnection();
   const redisClient = await connection.client;
   return {
@@ -242,9 +226,9 @@ async function getSharedRedisClient(): Promise<RedisClient> {
 }
 
 export class RedisAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
-  readonly #getRedisClient: () => Promise<RedisClient>;
+  readonly #getRedisClient: () => Promise<RedisCompareAndSetClient>;
 
-  constructor(getRedisClient: () => Promise<RedisClient> = getSharedRedisClient) {
+  constructor(getRedisClient: () => Promise<RedisCompareAndSetClient> = getSharedRedisClient) {
     this.#getRedisClient = getRedisClient;
   }
 
@@ -274,16 +258,14 @@ export class RedisAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
       const raw = await redisClient.get(key);
       const state = loadAdaptiveStateFromRedis(raw, providerId, scope, userId, Date.now());
       const next = await update(state);
-      const saved = await redisClient.eval(
-        COMPARE_AND_SET_ADAPTIVE_STATE,
-        1,
+      const saved = await compareAndSetRedisValue(
+        redisClient,
         key,
-        raw === null ? "0" : "1",
-        raw ?? "",
+        raw,
         serializeAdaptiveRateState(next),
         ADAPTIVE_RATE_WINDOW_MS * 4,
       );
-      if (saved === 1) return;
+      if (saved) return;
     }
   }
 

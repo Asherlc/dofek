@@ -1,8 +1,8 @@
 import { logger } from "../logger.ts";
+import { providerPollingIntervalMinutes } from "./provider-queue-config.ts";
 import { createScheduledSyncQueue } from "./queues.ts";
 
 export const SCHEDULER_KEY = "scheduled-sync-all-users";
-export const DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES = 30;
 
 /**
  * Sets up a repeating BullMQ job scheduler that enqueues sync-all jobs
@@ -13,19 +13,25 @@ export const DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES = 30;
  * HealthKit data must be pushed from the iOS app.
  */
 export async function setupScheduledSync(
-  intervalMinutes = DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES,
+  regularMinutes = providerPollingIntervalMinutes("regular"),
 ) {
-  const queue = createScheduledSyncQueue();
-  const intervalMs = intervalMinutes * 60 * 1000;
-
-  await queue.upsertJobScheduler(
-    SCHEDULER_KEY,
-    { every: intervalMs },
-    {
-      name: "scheduled-sync",
-      data: { type: "scheduled-sync-all" as const },
-    },
-  );
-
-  logger.info(`[scheduled-sync] Registered repeatable sync every ${intervalMinutes} minutes`);
+  for (const cadence of ["regular", "daily"] as const) {
+    const queue = createScheduledSyncQueue(undefined, cadence);
+    const schedulerKey = cadence === "regular" ? SCHEDULER_KEY : `${SCHEDULER_KEY}-daily`;
+    const intervalMinutes =
+      cadence === "regular" ? regularMinutes : providerPollingIntervalMinutes(cadence);
+    try {
+      await queue.upsertJobScheduler(
+        schedulerKey,
+        { every: intervalMinutes * 60_000 },
+        {
+          name: "scheduled-sync",
+          data: { type: "scheduled-sync-all", cadence },
+        },
+      );
+    } finally {
+      await queue.close();
+    }
+    logger.info(`[scheduled-sync] Registered ${cadence} sync every ${intervalMinutes} minutes`);
+  }
 }

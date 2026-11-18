@@ -537,9 +537,9 @@ describe("theCrag official access failures", () => {
     await expect(
       caller.connect({ providerId: "thecrag", token: "private-key" }),
     ).rejects.toMatchObject({
-      code: "BAD_REQUEST",
+      code: "FORBIDDEN",
       message: expect.stringMatching(
-        /Check your API key, active supporter status and weekly usage budget/,
+        /Check your weekly token budget, supporter status, and API key/,
       ),
     });
     expect(mockConnectProviderWithTokens).not.toHaveBeenCalled();

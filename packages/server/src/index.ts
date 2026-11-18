@@ -302,6 +302,7 @@ function setupRoutes(
       new BullMQAdapter(zipEntryExtractQueue),
       new BullMQAdapter(exportQueue),
       new BullMQAdapter(scheduledSyncQueue),
+      new BullMQAdapter(createScheduledSyncQueue(undefined, "daily")),
       new BullMQAdapter(postSyncQueue),
       new BullMQAdapter(activityDeleteAnalyticsQueue),
     ],

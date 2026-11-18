@@ -7,7 +7,7 @@ import { runWithTokenUser } from "dofek/db/token-user-context";
 import { connectProviderWithTokens } from "dofek/db/tokens";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
-import { authFailureReasonFromError } from "dofek/providers/auth-errors";
+import { authFailureReasonFromError, ProviderAccessDeniedError } from "dofek/providers/auth-errors";
 import { getAllProviders } from "dofek/providers/registry";
 import type { TokenSet } from "dofek/providers/types";
 import { z } from "zod";
@@ -67,6 +67,9 @@ export const tokenAuthRouter = router({
             message: error.message,
             cause: error,
           });
+        }
+        if (error instanceof ProviderAccessDeniedError) {
+          throw new TRPCError({ code: "FORBIDDEN", message: error.message, cause: error });
         }
         if (authFailureReasonFromError(error)) {
           throw new TRPCError({

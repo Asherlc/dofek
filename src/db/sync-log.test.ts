@@ -5,6 +5,7 @@ import {
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProviderStreamAbortedError } from "../lib/provider-error-reporting.ts";
+import { ProviderAccessDeniedError } from "../providers/auth-errors.ts";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import { AccountErasureUserFencedError } from "./account-erasure.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
@@ -128,6 +129,7 @@ describe("logSync", () => {
       dataType: "sync",
       status: "error",
       errorMessage: "access token expired",
+      authFailureReason: "access_token_expired",
       userId: "user-123",
       origin: "scheduled",
     });
@@ -143,11 +145,101 @@ describe("logSync", () => {
         user_id: "user-123",
       },
       level: "warning",
+      fingerprint: ["scheduled-provider-sync", "amazfit-zepp", "authorization"],
       tags: {
         consecutive_failures: "2",
+        failure_kind: "authorization",
         operation: "scheduled-provider-sync",
         provider: "amazfit-zepp",
       },
+    });
+  });
+
+  it("fingerprints a repeated typed access denial as access_denied", async () => {
+    db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
+    const denial = new ProviderAccessDeniedError(
+      "theCrag denied logbook access (403). Check your API key.",
+    );
+
+    await logSync(db.db, {
+      providerId: "thecrag",
+      dataType: "sync",
+      status: "error",
+      errorMessage: denial.message,
+      errorCauses: [denial],
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      level: "warning",
+      fingerprint: ["scheduled-provider-sync", "thecrag", "access_denied"],
+      tags: {
+        provider: "thecrag",
+        operation: "scheduled-provider-sync",
+        consecutive_failures: "2",
+        failure_kind: "access_denied",
+      },
+      extra: { user_id: "user-123", error_message: denial.message },
+    });
+  });
+
+  it("fingerprints repeated distinct causes as mixed", async () => {
+    db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
+
+    await logSync(db.db, {
+      providerId: "provider",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "Provider failed",
+      errorCauses: [
+        new ProviderServiceUnavailableError({
+          message: "Provider returned HTTP 503",
+          providerId: "provider",
+          statusCode: 503,
+          responseBody: "unavailable",
+        }),
+        new SyntaxError("Invalid response JSON"),
+      ],
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      level: "warning",
+      fingerprint: ["scheduled-provider-sync", "provider", "mixed"],
+      tags: {
+        provider: "provider",
+        operation: "scheduled-provider-sync",
+        consecutive_failures: "2",
+        failure_kind: "mixed",
+      },
+      extra: { user_id: "user-123", error_message: "Provider failed" },
+    });
+  });
+
+  it("fingerprints a legacy failure row without recorded causes as unknown", async () => {
+    db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
+
+    await logSync(db.db, {
+      providerId: "whoop",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "legacy failure",
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      level: "warning",
+      fingerprint: ["scheduled-provider-sync", "whoop", "unknown"],
+      tags: {
+        provider: "whoop",
+        operation: "scheduled-provider-sync",
+        consecutive_failures: "2",
+        failure_kind: "unknown",
+      },
+      extra: { user_id: "user-123", error_message: "legacy failure" },
     });
   });
 

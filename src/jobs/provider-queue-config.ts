@@ -9,6 +9,7 @@
 
 /** How often a provider should be polled by the scheduler. */
 export type ProviderSyncTier = "realtime" | "frequent" | "daily" | "on-demand";
+export type ProviderPollingCadence = "regular" | "daily";
 
 /** BullMQ-compatible rate limiter shape. */
 export interface RateLimiterConfig {
@@ -106,6 +107,26 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
 /** Get the queue configuration for a provider, falling back to the default. */
 export function getProviderQueueConfig(providerId: string): ProviderQueueConfig {
   return PROVIDER_QUEUE_CONFIGS.get(providerId) ?? DEFAULT_QUEUE_CONFIG;
+}
+
+export function getProviderPollingCadence(providerId: string): ProviderPollingCadence | null {
+  const { syncTier } = getProviderQueueConfig(providerId);
+  if (syncTier === "on-demand") return null;
+  return syncTier === "daily" ? "daily" : "regular";
+}
+
+export function providerPollingIntervalMinutes(cadence: ProviderPollingCadence): number {
+  if (cadence === "daily") return 24 * 60;
+  const regularMinutes = process.env.SYNC_INTERVAL_MINUTES;
+  if (regularMinutes === undefined) return 30;
+
+  const minutes = Number(regularMinutes);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    throw new Error(
+      `SYNC_INTERVAL_MINUTES must be a finite positive number, received ${JSON.stringify(regularMinutes)}`,
+    );
+  }
+  return minutes;
 }
 
 /** Get all provider IDs that have explicit queue configurations. */

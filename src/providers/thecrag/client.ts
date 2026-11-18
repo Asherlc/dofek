@@ -1,7 +1,8 @@
 import { validateHeaderValue } from "node:http";
+import { theCragLogbookAccessErrorMessage } from "@dofek/providers/sync-log-presentation";
 import { z } from "zod";
 import { captureException } from "../../lib/error-reporting.ts";
-import { ProviderAuthError, ProviderTokenRejectedError } from "../auth-errors.ts";
+import { ProviderAccessDeniedError, ProviderTokenRejectedError } from "../auth-errors.ts";
 
 const integer = z
   .union([z.number(), z.string().regex(/^\d+$/).transform(Number)])
@@ -19,12 +20,6 @@ const pageSchema = z.object({
     perPage: integer.pipe(z.number().positive()),
   }),
 });
-const logbookAccessDenialSchema = z.object({
-  error: z.literal(
-    "You have insufficient access for the api endpoint '/api/logbook/ascents', minimum level logbook",
-  ),
-});
-
 export class TheCragClient {
   readonly #fetch: typeof fetch;
   readonly #key: string;
@@ -58,26 +53,26 @@ export class TheCragClient {
       headers: { Accept: "application/json", "X-CData-Key": `key=${this.#key}` },
       signal: options.signal,
     });
+    options.signal?.throwIfAborted();
     if (response.status === 401)
       throw new ProviderTokenRejectedError(
         "theCrag",
         "The logbook API returned 401. Check your key in theCrag Settings > API Keys and reconnect.",
       );
     if (response.status === 400 || response.status === 403) {
-      let message = `theCrag denied logbook access (${response.status}). Check your API key, active supporter status and weekly usage budget in theCrag Settings > API Keys.`;
-      if (response.headers.get("content-type")?.includes("application/json")) {
-        try {
-          const body: unknown = await response.json();
-          if (logbookAccessDenialSchema.safeParse(body).success)
-            message = `theCrag requires logbook access for this key (${response.status}). Check the key's access in theCrag Settings > API Keys.`;
-        } catch {
-          options.signal?.throwIfAborted();
-          captureException(new Error("theCrag returned invalid access-error JSON."), {
-            tags: { provider: "thecrag", phase: "logbook_response" },
-          });
-        }
-      }
-      throw new ProviderAuthError("authorization_failed", message);
+      // Initiate cancellation without awaiting it: an HTTP observer may still be draining a
+      // cloned stream, and a cleanup failure must never replace the denial.
+      void response.body?.cancel().catch((error: unknown) => {
+        captureException(
+          new Error("theCrag logbook response body cancellation failed", {
+            // Only a built-in category is retained; `name` is writable and the rejection may
+            // echo upstream response data.
+            cause: error instanceof TypeError ? "TypeError" : "unknown",
+          }),
+          { tags: { provider: "thecrag", phase: "logbook_response_cancel" } },
+        );
+      });
+      throw new ProviderAccessDeniedError(theCragLogbookAccessErrorMessage(response.status));
     }
     if (response.status === 429)
       throw new Error(

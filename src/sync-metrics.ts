@@ -29,7 +29,7 @@ export const syncDegradationsTotal = meter.createCounter("sync.degradations.tota
   unit: "{degradations}",
 });
 
-/** Total number of errors during sync or import (by provider, data_type). */
+/** Total number of sync errors (by provider, data_type, failure_kind, origin). */
 export const syncErrorsTotal = meter.createCounter("sync.errors.total", {
   description: "Total number of errors during sync or import",
   unit: "{errors}",

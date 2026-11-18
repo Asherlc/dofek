@@ -39303,6 +39303,63 @@ Local qualification and CI are separate from production throughput acceptance. T
   credential expiry with the first stream completion and capture the RSocket
   error or close reason before the SDK wraps it.
 
+## 2026-11-18 — theCrag logbook access denied after a successful sync
+
+- The connected logbook last synced successfully at 10:30:16 UTC. Dofek's
+  read-only provider status recorded seven consecutive failures through
+  14:00:15 UTC and flagged the connection for reauthorization. The latest
+  error says theCrag requires logbook access for the saved key (HTTP 400).
+- The [11:30:15 UTC production event](https://east-bay-software.sentry.io/issues/7748564988/events/a9654c0f2f434823aa20302e71a9cd23/)
+  fired after two scheduled failures. The [issue](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6E)
+  contains 19 occurrences across several providers and failure types. The
+  deployed [alert](https://github.com/Asherlc/dofek/blob/d15b8a89fc31a815a7bf9f183b87217d3a9541cd/src/db/sync-log.ts#L158-L170)
+  captures them at a shared stack frame with a provider tag and no explicit
+  fingerprint. Use the [provider-filtered events](https://east-bay-software.sentry.io/explore/discover/homepage/?dataset=errors&queryDataset=error-events&query=issue%3ADOFEK-SERVER-6E+environment%3Aproduction+provider%3Athecrag&project=4511073388593152&statsPeriod=90d)
+  and Dofek sync health to assess the current failure streak.
+- The upstream denial identifies the access boundary. The key's current
+  status, the account's supporter status, and its weekly budget remain
+  unverified. The owner can check them in theCrag **Settings > API Keys**.
+  Verify a successful Dofek sync after access is restored and keep the issue
+  open until then. This investigation used read-only Sentry and Dofek queries.
+  [theCrag personal API guide](https://www.thecrag.com/article/logbookreadapi).
+
+- The follow-up found the affected account's weekly token budget at **100% used**
+  and marked **exhausted** in the signed-in [theCrag API Keys settings](https://www.thecrag.com/settings/apikey/).
+  The owner confirmed the listed Logbook Read key is the one configured in
+  Dofek. Its listed expiration date was in the future. The exhausted budget
+  independently accounts for denied access under theCrag's documented checks.
+  The HTTP 400 response leaves the specific failed check unstated. The
+  14:30 UTC Dofek attempt recorded the eighth consecutive denial. Supporter
+  status and sync recovery after the weekly reset remain unverified.
+- The deployed [sync](https://github.com/Asherlc/dofek/blob/d15b8a89fc31a815a7bf9f183b87217d3a9541cd/src/providers/thecrag/provider.ts#L119-L135)
+  uses `since` once it has a saved cursor. Each incremental request still
+  consumes tokens from the account-wide budget. Check the signed-in budget
+  before interpreting a generic HTTP 400 as a key problem. No sync behavior,
+  credential, or account setting changed.
+- A read-only production query confirmed the cursor was saved at 10:30:16 UTC
+  under the current authorization. Its source epoch is `1791745301`. A bounded
+  sync using that cursor requests `since=1791745300` to replay the boundary
+  second. This verifies saved progress. It does not measure the request's cost.
+
+## 2026-11-18 — Provider sync PR blocked by mutation coverage
+
+- The [provider sync PR](https://github.com/Asherlc/dofek/pull/3412) was blocked
+  by six failures in GitHub Actions. The first fatal line in the shared
+  presentation shard's `Run Stryker` step was `Final mutation score 29.17 under
+  breaking threshold 75, setting exit code to 1 (failure)`. The failing shared
+  and server mutation shards also caused the downstream required test checks
+  to fail. Production continued running the existing release.
+  [Failing run](https://github.com/Asherlc/dofek/actions/runs/44344135952).
+- The affected suites lacked direct assertions for several new branches, and
+  the worker registration assertion relied on a module-level constructor call
+  that Stryker excludes as static. The repair adds coverage for logbook denial
+  messages, `Retry-After` parsing, scheduled alert grouping, outage status,
+  and sync failure metrics and classification. The registration test now
+  constructs the workers during the test. All six original shard ranges
+  passed locally and in GitHub Actions with scores from 79.66 to 100. All
+  required PR checks passed with the existing threshold of 75.
+  [Passing checks](https://github.com/Asherlc/dofek/actions/runs/44349246480).
+
 ## 2026-11-18 — WHOOP capture disk-write warnings recur on iOS
 
 - [DOFEK-MOBILE-2Q](https://east-bay-software.sentry.io/issues/7852012407/)

@@ -1,4 +1,7 @@
-import type { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import type {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../../db/index.ts";
@@ -14,6 +17,7 @@ export type MockCooldownRecord = {
   scope: "provider" | "user";
   userId: string | null;
   expiresAt: Date;
+  reason?: "service_unavailable";
 };
 
 export const MockJobDataSchema = z.object({
@@ -282,11 +286,20 @@ vi.mock("../provider-rate-limit-cooldown.ts", async (importOriginal) => {
   return {
     ...actual,
     providerRateLimitCooldownStore: {
-      record: async (error: ProviderRateLimitError, fallbackUserId: string) => {
+      record: async (
+        error: ProviderRateLimitError | ProviderServiceUnavailableError,
+        fallbackUserId: string,
+      ) => {
         const scope = error.scope;
         const userId = scope === "user" ? (error.userId ?? fallbackUserId) : null;
         const expiresAt = new Date(Date.now() + (error.retryAfterSeconds ?? 30 * 60) * 1000);
-        const cooldown = { providerId: error.providerId, scope, userId, expiresAt };
+        const cooldown: MockCooldownRecord = {
+          providerId: error.providerId,
+          scope,
+          userId,
+          expiresAt,
+          reason: error.statusCode === 503 ? "service_unavailable" : undefined,
+        };
         const key = cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId);
         const existing = activeCooldown(mockProviderRateLimitCooldownRecords.get(key) ?? null);
         const effective = laterCooldown(existing, cooldown) ?? cooldown;

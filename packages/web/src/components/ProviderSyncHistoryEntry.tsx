@@ -55,6 +55,14 @@ export function ProviderSyncHistoryEntry({
           {presentation.message ? (
             <p className="mt-0.5 text-xs text-muted">{presentation.message}</p>
           ) : null}
+          {presentation.action ? (
+            <a
+              className="mt-1 inline-block text-xs text-primary underline"
+              href={presentation.action.url}
+            >
+              {presentation.action.label}
+            </a>
+          ) : null}
         </div>
         <time className="text-xs text-subtle" dateTime={entry.syncedAt}>
           {formatTime(entry.syncedAt)}

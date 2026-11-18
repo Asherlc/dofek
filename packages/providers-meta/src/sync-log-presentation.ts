@@ -16,6 +16,36 @@ export interface ProviderSyncLogPresentation {
   heading: string;
   message: string | null;
   tone: ProviderSyncLogTone;
+  action?: { label: string; url: string };
+}
+
+const theCragAccessAction = {
+  label: "theCrag API Keys",
+  url: "https://www.thecrag.com/settings/apikey/",
+};
+
+function theCragAccessMessage(status: number): string {
+  return `theCrag denied logbook access (${status}). Check your weekly token budget, supporter status, and API key.`;
+}
+
+export function theCragLogbookAccessErrorMessage(status: number): string {
+  return `${theCragAccessMessage(status)} ${theCragAccessAction.url}`;
+}
+
+/** Interpret the current message and the two previously stored versions using only a trusted link. */
+export function providerSyncAccessIssue(errorMessage: string | null | undefined) {
+  for (const status of [400, 403]) {
+    if (
+      errorMessage === theCragLogbookAccessErrorMessage(status) ||
+      errorMessage ===
+        `theCrag requires logbook access for this key (${status}). Check the key's access in theCrag Settings > API Keys.` ||
+      errorMessage ===
+        `theCrag denied logbook access (${status}). Check your API key, active supporter status and weekly usage budget in theCrag Settings > API Keys.`
+    ) {
+      return { message: theCragAccessMessage(status), action: theCragAccessAction };
+    }
+  }
+  return null;
 }
 
 const AUTHORIZATION_EXPIRED_REASONS = new Set([
@@ -34,6 +64,11 @@ export function providerSyncLogPresentation(
 ): ProviderSyncLogPresentation {
   const dataTypeLabel = humanizeIdentifier(input.dataType);
   const updateLabel = input.dataType === "update" ? "Update" : `${dataTypeLabel} update`;
+  const accessIssue = providerSyncAccessIssue(input.errorMessage);
+
+  if (input.status === "error" && accessIssue) {
+    return { dataTypeLabel, heading: "Logbook access denied", tone: "danger", ...accessIssue };
+  }
 
   if (input.authFailureReason !== null) {
     let heading = "Sign-in failed";

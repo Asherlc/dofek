@@ -5,7 +5,7 @@ import {
 } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
-import { AccessTokenExpiredError } from "../providers/auth-errors.ts";
+import { AccessTokenExpiredError, ProviderAccessDeniedError } from "../providers/auth-errors.ts";
 import { SyncWindow } from "../providers/sync-window.ts";
 import type { SyncResult } from "../providers/types.ts";
 import type { SyncJob } from "./queues.ts";
@@ -20,6 +20,7 @@ import {
   mockEnqueueDebouncedPostSyncMaintenance,
   mockEnqueueDebouncedUserRefit,
   mockGetEnabledSyncProviders,
+  mockLoggerError,
   mockLogSync,
   mockProviderQueueAdd,
   mockSyncDuration,
@@ -192,7 +193,9 @@ describe("sync-provider-failure", () => {
       expect.objectContaining({
         attempts: 288,
         delay: 600_000,
-        jobId: "provider-rate-limit-example-provider-1780402200000",
+        jobId: expect.stringMatching(
+          /^provider-rate-limit-example-provider-1780402200000-[a-f0-9]{24}$/,
+        ),
       }),
     );
     expect(mockCaptureException).not.toHaveBeenCalledWith(
@@ -216,6 +219,7 @@ describe("sync-provider-failure", () => {
       dataType: "sync",
       status: "error",
       errorMessage: "Example API rate limit exceeded (429): limited",
+      errorCauses: [expect.any(ProviderRateLimitError)],
       durationMs: 0,
       userId: "user-1",
       origin: "unknown",
@@ -234,6 +238,8 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "example",
       data_type: "sync",
+      failure_kind: "rate_limited",
+      origin: "unknown",
     });
     vi.useRealTimers();
   });
@@ -361,11 +367,74 @@ describe("sync-provider-failure", () => {
       }),
       expect.objectContaining({
         delay: 600_000,
-        jobId: "provider-rate-limit-example-provider-1780402200000",
+        jobId: expect.stringMatching(
+          /^provider-rate-limit-example-provider-1780402200000-[a-f0-9]{24}$/,
+        ),
       }),
     );
     expect(mockCaptureException).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it("reports a returned parsing failure when the same sync is deferred", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const rateLimit = new ProviderRateLimitError({
+      message: "Rate limited",
+      providerId: "example",
+      statusCode: 429,
+      responseBody: "",
+      scope: "provider",
+      retryAfterSeconds: 600,
+    });
+    const parsingError = new SyntaxError("Invalid response JSON");
+    const provider = createMockProvider({
+      id: "example",
+      name: "Example",
+      sync: vi.fn().mockResolvedValue({
+        provider: "example",
+        recordsSynced: 0,
+        errors: [
+          { message: rateLimit.message, cause: rateLimit },
+          { message: parsingError.message, cause: parsingError, context: { page: 2 } },
+        ],
+        duration: 100,
+      } satisfies SyncResult),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "example" }), mockDb);
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledExactlyOnceWith(
+      "sync",
+      expect.objectContaining({ providerId: "example" }),
+      expect.objectContaining({ delay: 600_000 }),
+    );
+    expect(mockLogSync).toHaveBeenCalledExactlyOnceWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "example",
+        status: "error",
+        errorMessage: "Rate limited; Invalid response JSON",
+        errorCauses: [rateLimit, parsingError],
+      }),
+    );
+    const metricAttributes = { provider: "example", data_type: "sync", origin: "unknown" };
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledTimes(2);
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      ...metricAttributes,
+      failure_kind: "rate_limited",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      ...metricAttributes,
+      failure_kind: "unknown",
+    });
+    expect(mockLoggerError).toHaveBeenCalledExactlyOnceWith(
+      "[worker] Example sync error: Invalid response JSON",
+    );
+    expect(mockCaptureException).toHaveBeenCalledExactlyOnceWith(parsingError, {
+      tags: { provider: "example" },
+      extra: { page: 2 },
+    });
   });
 
   it("logs errors to sync log when provider.sync throws", async () => {
@@ -464,6 +533,93 @@ describe("sync-provider-failure", () => {
     );
   });
 
+  it("keeps a typed access denial actionable without prescribing a reconnect", async () => {
+    const denial = new ProviderAccessDeniedError(
+      "theCrag denied logbook access (403). Check your API key.",
+    );
+    const provider = createMockProvider({
+      id: "thecrag",
+      name: "theCrag",
+      sync: vi.fn().mockRejectedValue(denial),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "thecrag" }), mockDb);
+
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        stage: "ingest",
+        status: "failed",
+        errorCode: "provider_sync_failed",
+        errorMessage: denial.message,
+        idempotencyKey: "worker-failed",
+      }),
+    );
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "thecrag",
+        status: "error",
+        errorMessage: denial.message,
+        errorCauses: [denial],
+        authFailureReason: undefined,
+      }),
+    );
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "thecrag",
+      data_type: "sync",
+      failure_kind: "access_denied",
+      origin: "unknown",
+    });
+  });
+
+  it("treats a 502 with a positive Retry-After as an ordinary outage rather than a deferral", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const outage = new ProviderServiceUnavailableError({
+      message: "Example API service unavailable (502): bad gateway",
+      providerId: "example",
+      statusCode: 502,
+      responseBody: "bad gateway",
+      retryAfterSeconds: 600,
+    });
+    const provider = createMockProvider({
+      id: "example",
+      name: "Example",
+      sync: vi.fn().mockRejectedValue(outage),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({ providerId: "example" });
+
+    await runSyncJob(job, mockDb);
+
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: { example: { status: "error", message: outage.message } },
+      percentage: 100,
+    });
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_sync_failed",
+        errorMessage: "Example could not be synced. Try the sync again later.",
+        idempotencyKey: "worker-failed",
+      }),
+    );
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "example",
+        status: "error",
+        errorMessage: outage.message,
+        errorCauses: [outage],
+      }),
+    );
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it("rethrows retryable infrastructure errors so BullMQ retries the same job", async () => {
     const infraError = new Error("FATAL: the database system is in recovery mode");
     const provider = createMockProvider({
@@ -482,6 +638,12 @@ describe("sync-provider-failure", () => {
       level: "warning",
     });
     expect(mockLogSync).not.toHaveBeenCalled();
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "example",
+      data_type: "sync",
+      failure_kind: "infrastructure",
+      origin: "unknown",
+    });
     expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
     expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
   });
@@ -586,6 +748,8 @@ describe("sync-provider-failure", () => {
       expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
         provider: "openbeta",
         data_type: "sync",
+        failure_kind: "service_unavailable",
+        origin: "unknown",
       });
       expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
         provider: "openbeta",
@@ -688,6 +852,8 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "amazfit-zepp",
       data_type: "sync",
+      failure_kind: "service_unavailable",
+      origin: "unknown",
     });
     expect(mockCaptureException).not.toHaveBeenCalled(); // Terminal failed event owns the alert.
   });
@@ -717,8 +883,103 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "zwift",
       data_type: "sync",
+      failure_kind: "service_unavailable",
+      origin: "unknown",
     });
   });
+
+  it.each(["thrown", "returned"])("defers a %s 503 with explicit retry guidance", async (mode) => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const unavailable = new ProviderServiceUnavailableError({
+      message: "Example is unavailable",
+      providerId: "example",
+      statusCode: 503,
+      responseBody: "",
+      retryAfterSeconds: 600,
+    });
+    const provider = createMockProvider({
+      id: "example",
+      name: "Example",
+      sync:
+        mode === "thrown"
+          ? vi.fn().mockRejectedValue(unavailable)
+          : vi.fn().mockResolvedValue({
+              errors: [{ message: unavailable.message, cause: unavailable }],
+            }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({ providerId: "example" });
+
+    await runSyncJob(job, mockDb);
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({ providerId: "example" }),
+      expect.objectContaining({ delay: 600_000 }),
+    );
+    expect(job.updateProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providers: {
+          example: {
+            status: "running",
+            message: "Service unavailable; retry scheduled for 2026-06-02T12:10:00.000Z",
+          },
+        },
+      }),
+    );
+  });
+
+  it.each([false, true])(
+    "keeps both scopes when rate limits and outages arrive together (reverse=%s)",
+    async (reverse) => {
+      vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+      const outages = new ProviderServiceUnavailableError({
+        providerId: "example",
+        statusCode: 503,
+        message: "Service unavailable",
+        responseBody: "",
+        scope: "user",
+        retryAfterSeconds: 60,
+      });
+      const limited = new ProviderRateLimitError({
+        providerId: "example",
+        statusCode: 429,
+        message: "Rate limited",
+        responseBody: "",
+        scope: "provider",
+        retryAfterSeconds: 600,
+      });
+      const errors = (reverse ? [limited, outages] : [outages, limited]).map((cause) => ({
+        cause,
+        message: cause.message,
+      }));
+      const provider = createMockProvider({
+        id: "example",
+        sync: vi.fn().mockResolvedValue({ errors }),
+      });
+      mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+      await runSyncJob(createMockJob({ providerId: "example" }), mockDb);
+
+      expect(mockProviderQueueAdd).toHaveBeenCalledExactlyOnceWith(
+        "sync",
+        expect.anything(),
+        expect.objectContaining({ delay: 600_000 }),
+      );
+      expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ failure_kind: "rate_limited" }),
+      );
+      expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ failure_kind: "service_unavailable" }),
+      );
+      const { providerRateLimitCooldownStore } = await import("./provider-rate-limit-cooldown.ts");
+      await expect(
+        providerRateLimitCooldownStore.getActive("example", "another-owner"),
+      ).resolves.toMatchObject({ expiresAt: new Date("2026-06-02T12:10:00Z") });
+    },
+  );
 
   it("records a Zepp HTTP 503 service outage without retrying or reporting it to Sentry", async () => {
     const serviceUnavailableError = new ProviderServiceUnavailableError({
@@ -745,6 +1006,8 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "amazfit-zepp",
       data_type: "sync",
+      failure_kind: "service_unavailable",
+      origin: "unknown",
     });
   });
 
@@ -797,6 +1060,8 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "zwift",
       data_type: "sync",
+      failure_kind: "service_unavailable",
+      origin: "unknown",
     });
   });
 
@@ -820,6 +1085,8 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "zwift",
       data_type: "sync",
+      failure_kind: "service_unavailable",
+      origin: "unknown",
     });
   });
 
@@ -862,6 +1129,8 @@ describe("sync-provider-failure", () => {
     expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
       provider: "broken",
       data_type: "sync",
+      failure_kind: "unknown",
+      origin: "unknown",
     });
   });
 });

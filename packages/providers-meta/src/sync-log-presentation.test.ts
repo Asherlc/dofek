@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { providerSyncLogPresentation } from "./sync-log-presentation.ts";
+import {
+  providerSyncAccessIssue,
+  providerSyncLogPresentation,
+  theCragLogbookAccessErrorMessage,
+} from "./sync-log-presentation.ts";
 
 describe("providerSyncLogPresentation", () => {
   it("collapses repeated separators in a recorded data type", () => {
@@ -261,4 +265,81 @@ describe("providerSyncLogPresentation", () => {
       tone: "warning",
     });
   });
+});
+
+const theCragAction = {
+  label: "theCrag API Keys",
+  url: "https://www.thecrag.com/settings/apikey/",
+};
+
+function theCragMessage(status: number): string {
+  return `theCrag denied logbook access (${status}). Check your weekly token budget, supporter status, and API key.`;
+}
+
+function requiresAccessMessage(status: number): string {
+  return `theCrag requires logbook access for this key (${status}). Check the key's access in theCrag Settings > API Keys.`;
+}
+
+function deniedAccessMessage(status: number): string {
+  return `theCrag denied logbook access (${status}). Check your API key, active supporter status and weekly usage budget in theCrag Settings > API Keys.`;
+}
+
+describe("providerSyncAccessIssue", () => {
+  it("returns null for unrecognized or unsafe look-alike messages", () => {
+    expect(providerSyncAccessIssue(null)).toBeNull();
+    expect(providerSyncAccessIssue(undefined)).toBeNull();
+    expect(providerSyncAccessIssue("some other provider error")).toBeNull();
+    expect(providerSyncAccessIssue(theCragLogbookAccessErrorMessage(401))).toBeNull();
+    expect(
+      providerSyncAccessIssue(
+        `${theCragMessage(400)} https://www.thecrag.com.evil.example/settings/apikey/`,
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("providerSyncLogPresentation theCrag logbook access", () => {
+  const formats: Array<[string, (status: number) => string]> = [
+    ["current", theCragLogbookAccessErrorMessage],
+    ["legacy requires-access", requiresAccessMessage],
+    ["legacy denied-access", deniedAccessMessage],
+  ];
+
+  it.each(formats)(
+    "presents the %s denial for HTTP 400 and 403 even with a stored authorization reason",
+    (_format, build) => {
+      for (const status of [400, 403]) {
+        expect(
+          providerSyncLogPresentation({
+            providerName: "theCrag",
+            dataType: "logbook",
+            status: "error",
+            authFailureReason: "access_token_expired",
+            errorMessage: build(status),
+          }),
+        ).toEqual({
+          dataTypeLabel: "Logbook",
+          heading: "Logbook access denied",
+          message: theCragMessage(status),
+          tone: "danger",
+          action: theCragAction,
+        });
+      }
+    },
+  );
+
+  it.each(["degraded", "success", "unknown"])(
+    "does not present a recognized access message as a denial for a %s status",
+    (status) => {
+      expect(
+        providerSyncLogPresentation({
+          providerName: "theCrag",
+          dataType: "logbook",
+          status,
+          authFailureReason: null,
+          errorMessage: theCragLogbookAccessErrorMessage(403),
+        }).heading,
+      ).not.toBe("Logbook access denied");
+    },
+  );
 });

@@ -4,18 +4,41 @@ import { syncHealth } from "./sync-health.ts";
 describe("syncHealth", () => {
   afterEach(() => vi.useRealTimers());
 
+  it("uses the provider's daily schedule when deciding whether a sync is stale", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-02T12:00:00Z"));
+
+    expect(
+      syncHealth(
+        {
+          providerId: "thecrag",
+          lastSuccess: "2026-09-01T12:00:00Z",
+          lastAttempt: "2026-09-01T12:00:00Z",
+          lastError: null,
+          consecutiveFailures: 0,
+        },
+        undefined,
+        1440,
+      ),
+    ).toMatchObject({ expected_sync_interval_minutes: 1440, stale: false });
+  });
+
   it("reports a recent successful sync as fresh", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-02T12:00:00Z"));
 
     expect(
-      syncHealth({
-        providerId: "wahoo",
-        lastSuccess: "2026-09-02T11:00:00Z",
-        lastAttempt: "2026-09-02T11:00:00Z",
-        lastError: null,
-        consecutiveFailures: 0,
-      }),
+      syncHealth(
+        {
+          providerId: "wahoo",
+          lastSuccess: "2026-09-02T11:00:00Z",
+          lastAttempt: "2026-09-02T11:00:00Z",
+          lastError: null,
+          consecutiveFailures: 0,
+        },
+        undefined,
+        30,
+      ),
     ).toEqual({
       last_success: "2026-09-02T11:00:00Z",
       last_attempt: "2026-09-02T11:00:00Z",
@@ -27,7 +50,7 @@ describe("syncHealth", () => {
   });
 
   it("reports missing sync health as stale", () => {
-    expect(syncHealth(undefined)).toEqual({
+    expect(syncHealth(undefined, undefined, 30)).toEqual({
       last_success: null,
       last_attempt: null,
       last_error: null,
@@ -39,9 +62,13 @@ describe("syncHealth", () => {
 
   it("explains when a stale provider is deferred by an active rate-limit cooldown", () => {
     expect(
-      syncHealth(undefined, {
-        expiresAt: new Date("2026-09-04T04:32:46.000Z"),
-      }),
+      syncHealth(
+        undefined,
+        {
+          expiresAt: new Date("2026-09-04T04:32:46.000Z"),
+        },
+        30,
+      ),
     ).toEqual({
       last_success: null,
       last_attempt: null,

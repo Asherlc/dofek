@@ -13,6 +13,7 @@ import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
 import { enqueueSyncJob } from "./enqueue-sync-job.ts";
 import { reportJobProgress } from "./job-progress.ts";
+import { getProviderPollingCadence } from "./provider-queue-config.ts";
 import type { ScheduledSyncJobData, SyncJobData } from "./queues.ts";
 
 interface ScheduledSyncJob {
@@ -49,6 +50,7 @@ const scheduledSyncConnectionRowSchema = z.object({
 
 export async function processScheduledSyncJob(job: ScheduledSyncJob, db: ScheduledSyncDatabase) {
   const requestedAtIso = new Date().toISOString();
+  const cadence = job.data.cadence ?? "regular";
   await updateScheduledSyncProgress(job, 0, "Starting scheduled sync dispatch...");
   // Ensure provider registry is populated so provider metadata (type, auth) is available.
   const { ensureProvidersRegistered } = await import("./provider-registration.ts");
@@ -75,6 +77,7 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: Schedul
   for (const row of rows) {
     const userId = row.user_id;
     const providerId = row.provider_id;
+    if (getProviderPollingCadence(providerId) !== cadence) continue;
     const providers = userProviders.get(userId) ?? [];
     providers.push({ providerId, hasTokens: row.has_tokens });
     userProviders.set(userId, providers);

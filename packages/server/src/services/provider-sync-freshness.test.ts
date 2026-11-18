@@ -73,4 +73,20 @@ describe("evaluateProviderSyncFreshness", () => {
       description: "Rate limited until 2026-08-12T12:10:00.000Z.",
     });
   });
+
+  it("labels a service-outage cooldown with the outage reason and expiry time", () => {
+    expect(
+      evaluateProviderSyncFreshness({
+        now,
+        lastSuccessfulSyncAt: new Date("2026-08-12T11:15:00.000Z"),
+        intervalMinutes,
+        cooldownUntil: new Date("2026-08-12T12:10:00.000Z"),
+        cooldownReason: "service_unavailable",
+      }),
+    ).toEqual({
+      status: "deferred",
+      label: "Sync deferred",
+      description: "Service unavailable until 2026-08-12T12:10:00.000Z.",
+    });
+  });
 });
