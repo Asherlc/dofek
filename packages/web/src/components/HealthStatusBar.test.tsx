@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { UnitConverter } from "@dofek/format/units";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HealthStatusBar } from "./HealthStatusBar.tsx";
 
@@ -475,5 +475,100 @@ describe("HealthStatusBar", () => {
     render(<HealthStatusBar metrics={[]} />);
 
     expect(screen.getByText("No health status data for this period.")).toBeDefined();
+  });
+
+  it("groups each metric in one full-width disclosure containing its status, value and interpretation", () => {
+    const groupedMetrics = [
+      {
+        ...serverMetric,
+        metric: "hrv" as const,
+        label: "Heart Rate Variability (HRV)",
+        valueText: "52 ms",
+      },
+      { ...serverMetric, metric: "steps" as const, label: "Steps", valueText: "7,640" },
+    ];
+    render(<HealthStatusBar grouped metrics={groupedMetrics} />);
+
+    expect(screen.getAllByRole("button", { name: /details$/ })).toHaveLength(2);
+    for (const metric of groupedMetrics) {
+      const row = screen.getByRole("button", {
+        name: `${metric.label}, ${metric.valueText}, Near baseline. Show details`,
+      });
+      expect(row.getAttribute("aria-expanded")).toBe("false");
+      expect(row.getAttribute("aria-label")).toContain(metric.label);
+      expect(row.getAttribute("aria-label")).toContain(metric.valueText);
+      expect(row.getAttribute("aria-label")).toContain("Near baseline");
+      expect(within(row).getByText(metric.label)).toBeTruthy();
+      expect(within(row).getByText(metric.valueText)).toBeTruthy();
+      expect(within(row).getByText(/Near baseline/)).toBeTruthy();
+    }
+  });
+
+  it("keeps the grouped blocked action outside the disclosure and reuses expanded details", () => {
+    const action = "Sync steps data again to record a step count for this day.";
+    render(
+      <HealthStatusBar
+        grouped
+        metrics={[
+          {
+            ...serverMetric,
+            metric: "steps",
+            label: "Steps",
+            valueText: null,
+            value: null,
+            statusToken: "insufficient_data",
+            statusLabel: "Steps missing for this day",
+            baselineProgress: {
+              ...serverMetric.baselineProgress,
+              blocker: "missing_source_data",
+              action,
+            },
+          },
+        ]}
+      />,
+    );
+
+    const row = screen.getByRole("button", {
+      name: /^Steps, —, Steps missing for this day\. Show details$/,
+    });
+    expect(screen.getByText(action)).toBeTruthy();
+    expect(within(row).queryByText(action)).toBeNull();
+
+    fireEvent.click(row);
+    expect(row.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText(serverMetric.explanation)).toBeTruthy();
+  });
+
+  it("shows the exact baseline in grouped expanded details without baselineRelative context", () => {
+    render(
+      <HealthStatusBar
+        grouped
+        metrics={[
+          {
+            ...serverMetric,
+            metric: "steps",
+            label: "Steps",
+            value: 7640,
+            valueText: "7,640",
+            baseline: 6055,
+            baselineText: "6,055",
+            comparison: {
+              recentDays: 7,
+              baselineDays: 28,
+              recentMean: 6100,
+              baselineMean: 6055,
+              delta: 45,
+              direction: "increasing",
+            },
+          },
+        ]}
+      />,
+    );
+
+    const row = screen.getByRole("button", { name: /^Steps, 7,640, .*Show details$/ });
+    fireEvent.click(row);
+
+    expect(screen.getByText("6,055")).toBeTruthy();
+    expect(screen.getByText("7d avg 6100.0 vs prior 28d avg 6055.0 · +45.0")).toBeTruthy();
   });
 });

@@ -264,7 +264,7 @@ describe("TodayScreen independent loading states", () => {
     const { default: OverviewScreen } = await import("../../app/(tabs)/index");
     render(<OverviewScreen />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Show details for Skin Temperature" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Skin Temperature, .*Show details$/ }));
     expect(screen.getByText("7d avg 96.8°F vs prior 28d avg 95.0°F · +1.8°F")).toBeTruthy();
   });
 

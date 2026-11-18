@@ -135,6 +135,7 @@ export function Dashboard() {
         <HealthStatusBar
           baselineRelative={trendData?.baselineRelative}
           metrics={healthMetrics}
+          grouped
           loading={trends.isLoading}
           formatters={{
             spo2: formatSpO2Measurement,
