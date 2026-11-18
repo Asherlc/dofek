@@ -516,6 +516,13 @@ export async function main(): Promise<MainResult> {
   const clickHouseClient = createClickHouseClientFromEnv();
   await bootstrapClickHouseFromEnv(clickHouseClient);
   const sensorStore = new ClickHouseActivitySensorStore(clickHouseClient);
+  const readiness = await checkReadiness({ db, sensorStore });
+  if (readiness.status === "error") {
+    const unavailable = Object.entries(readiness.checks)
+      .filter(([, status]) => status === "error")
+      .map(([name]) => name);
+    throw new Error(`Web startup dependencies are unavailable: ${unavailable.join(", ")}`);
+  }
   let shuttingDown = false;
   const app = createApp(db, sensorStore, {
     accountErasureRestoreLedger,

@@ -15,6 +15,7 @@ import {
   runTopicPolicyFixture,
   runPeerdbMigrationFixture,
   runPipedashVerificationFixture,
+  runClickHouseReadinessFixture,
 } from "./deploy-web-stack-test-helpers.ts";
 import { deployTestDigest, deployTestOldImage, deployTestRepository, runDeployImageFixture } from "../../scripts/deploy-image-test-helpers.ts";
 import { spawnSync } from "node:child_process";
@@ -411,6 +412,13 @@ describe("deploy-web-stack workflow contract", () => {
       "steps.verify_peerdb_cdc_contract.conclusion == 'success'",
     );
     expect(workflowRunScript("Wait for pre-migration web convergence")).toContain("UpdateStatus.State");
+  });
+
+  it.each(["image", "config", "lifecycle", "updating", "no-op"] as const)("waits for ClickHouse readiness for %s", (change) => {
+    const result = runClickHouseReadinessFixture(workflowRunScript("Wait for ClickHouse"), change);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("ClickHouse is reachable");
+    expect(result.stdout.includes("ClickHouse readiness attempt 1/36")).toBe(change !== "no-op");
   });
 
   it("continues CDC gates after a terminal web rollback before failing the deployment", () => {
@@ -931,13 +939,6 @@ ${workflowRunScript("Select migration deployment mode from image histories")}
       web: { image: deployTestOldImage, env_file: ["old-web.env"], environment: { PASSWORD: "fixture$$token" } },
     });
     expect(result.calls.find((call) => call.slice(0, 2).join(" ") === "stack deploy")).not.toContain("--prune");
-  });
-  it("probes ClickHouse after Swarm completes its update", () => {
-    const result = runDeployImageFixture({ script: `sleep() { :; }\n${workflowRunScript("Wait for ClickHouse")}` });
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.calls.map((call) => call.slice(0, 2).join(" "))).toEqual([
-      "service inspect", "service inspect", "run --rm",
-    ]);
   });
   it("pins the selected maintenance boundary through dotenv loading", () => {
     const selectedBoundary = "0148_compute_climbing_attempt_outcome";
