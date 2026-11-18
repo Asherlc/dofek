@@ -387,6 +387,8 @@ The public DSN placeholder follows the app's
 The bridge suite runs the real Expo registration and JavaScript promise path in
 a UIKit test host. CocoaPods generates its host and XCTest target from the
 module's [test specification](https://guides.cocoapods.org/using/test-specs.html).
+The test host declares a window scene so it can launch on iOS 27 when built
+with the iOS 27 SDK. See [Apple's UIKit scene lifecycle requirements](https://developer.apple.com/documentation/uikit/transitioning-to-the-uikit-scene-based-life-cycle).
 It uses Expo's official
 [TestAppContext](https://github.com/expo/expo/tree/main/packages/expo-modules-test-core/ios/Runtime)
 with a Hermes runtime and JavaScript scheduling. The runner installs source
