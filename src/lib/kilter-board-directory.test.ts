@@ -41,6 +41,7 @@ vi.mock("@powersync/node", async (original) => ({
 }));
 
 import { KilterBoardDirectory } from "./kilter-board-directory.ts";
+import { shouldReportProviderError } from "./provider-error-reporting.ts";
 
 const wall = { wall_uuid: "wall", name: "Main board", gym_uuid: "gym" };
 const gym = { gym_uuid: "gym", name: "Climbing gym", latitude: 0, longitude: -122.1 };
@@ -375,8 +376,12 @@ describe("KilterBoardDirectory", () => {
     expect(existsSync(mirror())).toBe(false);
   });
 
-  it("propagates serialized sync errors as errors instead of waiting for reconnects", async () => {
-    const downloadError = { name: "Error", message: "Connection aborted", stack: "Error: at sdk" };
+  it.each([
+    { name: "Error", message: "Connection aborted", reportable: false },
+    { name: "Error", message: "Connection aborted during storage write", reportable: true },
+    { name: "TypeError", message: "Connection aborted", reportable: true },
+  ])("preserves the serialized $name: $message and applies reporting policy", async (failure) => {
+    const downloadError = { name: failure.name, message: failure.message, stack: "Error: at sdk" };
     sdk.subscription.waitForFirstSync.mockImplementationOnce(async () => {
       sdk.database.registerListener.mock.calls[0]?.[0].statusChanged({
         dataFlowStatus: { downloadError },
@@ -387,9 +392,10 @@ describe("KilterBoardDirectory", () => {
       .catch((caughtError: unknown) => caughtError);
     expect(error).toBeInstanceOf(Error);
     expect(error).toMatchObject({
-      message: "Kilter Board app sync failed: Connection aborted",
+      message: `Kilter Board app sync failed: ${failure.message}`,
       cause: downloadError,
     });
+    expect(shouldReportProviderError(error)).toBe(failure.reportable);
     expect(existsSync(mirror())).toBe(false);
   });
 

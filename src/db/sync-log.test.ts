@@ -4,6 +4,7 @@ import {
 } from "@dofek/provider-http/rate-limit";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ProviderStreamAbortedError } from "../lib/provider-error-reporting.ts";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import { AccountErasureUserFencedError } from "./account-erasure.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
@@ -189,6 +190,7 @@ describe("logSync", () => {
       responseBody: "unavailable",
     }),
     new ProviderRequestTimeoutError({ providerId: "provider", timeoutMs: 1000 }),
+    new ProviderStreamAbortedError("Kilter Board app sync failed: Connection aborted"),
   ])(
     "keeps the repeated-failure alert when $name is mixed with an unexpected cause",
     async (error) => {
@@ -233,6 +235,32 @@ describe("logSync", () => {
 
     expect(db.spies.values).toHaveBeenCalledWith(
       expect.objectContaining({ errorMessage: "Provider request timed out", status: "error" }),
+    );
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("keeps repeated Kilter stream aborts in sync status without a Sentry warning", async () => {
+    db = createMockDatabase({ executeResult: [{ consecutive_failures: "2" }] });
+    const error = new ProviderStreamAbortedError(
+      "Kilter Board app sync failed: Connection aborted",
+    );
+
+    await logSync(db.db, {
+      providerId: "kilter",
+      dataType: "sync",
+      status: "error",
+      errorMessage: error.message,
+      errorCauses: [error],
+      userId: "user-123",
+      origin: "scheduled",
+    });
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "kilter",
+        status: "error",
+        errorMessage: error.message,
+      }),
     );
     expect(captureException).not.toHaveBeenCalled();
   });

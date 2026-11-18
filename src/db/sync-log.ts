@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   isKnownProviderHttp5xxError,
+  ProviderStreamAbortedError,
   providerSyncFailureKind,
 } from "../lib/provider-error-reporting.ts";
 import { isProviderTimeoutOnly } from "../lib/provider-transport-error.ts";
@@ -156,7 +157,10 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
   const onlyKnownProviderTransportErrors =
     errorCauses.length > 0 &&
     errorCauses.every(
-      (cause) => isKnownProviderHttp5xxError(cause) || isProviderTimeoutOnly(cause),
+      (cause) =>
+        cause instanceof ProviderStreamAbortedError ||
+        isKnownProviderHttp5xxError(cause) ||
+        isProviderTimeoutOnly(cause),
     );
   if (consecutiveFailures === 2 && !onlyKnownProviderTransportErrors) {
     const failureKinds = new Set(errorCauses.map(providerSyncFailureKind));

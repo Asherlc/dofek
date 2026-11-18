@@ -112,7 +112,7 @@ reprocessing and historical-data limits.
 The provider worker emits `sync.errors.total` with `provider`, `data_type`,
 `origin`, and `failure_kind` dimensions. The failure categories are
 `access_denied`, `authorization`, `rate_limited`, `service_unavailable`,
-`timeout`, `infrastructure`, and `unknown`. Repeated scheduled failures use the
+`stream_aborted`, `timeout`, `infrastructure`, and `unknown`. Repeated scheduled failures use the
 provider and failure category in their [Sentry fingerprint](https://docs.sentry.io/platforms/javascript/guides/node/enriching-events/fingerprinting/).
 
 ## Provider Issue Emails
