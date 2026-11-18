@@ -814,30 +814,56 @@ jobs:
 
       - name: Wait for ClickHouse
         run: |
+          hash_task_spec() {
+            # The task API omits service defaults and lifecycle policy fields.
+            jq -ceS '
+              del(.Runtime)
+              | if .RestartPolicy == {Condition:"any", Delay:5000000000, MaxAttempts:0}
+                then del(.RestartPolicy) else . end
+              | if .ContainerSpec.StopGracePeriod == 10000000000
+                then del(.ContainerSpec.StopGracePeriod) else . end
+              | if .ContainerSpec.DNSConfig == {} then del(.ContainerSpec.DNSConfig) else . end
+            ' | sha256sum
+          }
+
+          clickhouse_service="${STACK_NAME}_clickhouse"
           for attempt in $(seq 1 36); do
-            # A requested image change can precede Swarm's update status.
-            update_state="$(docker service inspect "${STACK_NAME}_clickhouse" \
-              --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{else if and .PreviousSpec (ne .Spec.TaskTemplate.ContainerSpec.Image .PreviousSpec.TaskTemplate.ContainerSpec.Image)}}updating{{end}}')"
+            update_state="$(docker service inspect "$clickhouse_service" \
+              --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}')"
             case "$update_state" in
-              paused|rollback_*)
-                echo "::error::ClickHouse update did not converge: ${update_state}"
+              rollback_*|paused)
+                docker service ps "$clickhouse_service" --no-trunc
+                echo "::error::ClickHouse stack update failed: $update_state"
                 exit 1
                 ;;
             esac
-            if [ -z "$update_state" ] || [ "$update_state" = "completed" ]; then
-              clickhouse_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
-                postgres:18-alpine sh -euc \
-                "wget -qO- http://clickhouse:8123/ping" 2>&1 || true)
-              if [ "$clickhouse_output" = "Ok." ]; then
-                echo "ClickHouse is reachable."
-                break
+            task="$(docker service ps "$clickhouse_service" --no-trunc --filter desired-state=running \
+              --format '{{.ID}}|{{.CurrentState}}')"
+            if [[ "$task" == *"|Running "* && "$task" != *$'\n'* ]] && {
+              [ -z "$update_state" ] || [ "$update_state" = "completed" ]
+            }; then
+              # Swarm can still report the old task as running after it accepts
+              # a new service spec. Hash the templates without logging secrets.
+              desired_spec="$(docker service inspect "$clickhouse_service" \
+                --format '{{json .Spec.TaskTemplate}}' | hash_task_spec)"
+              running_spec="$(docker inspect --type task "${task%%|*}" \
+                --format '{{json .Spec}}' | hash_task_spec)"
+              if [ "$running_spec" = "$desired_spec" ]; then
+                clickhouse_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+                  postgres:18-alpine sh -euc \
+                  "wget -qO- http://clickhouse:8123/ping" 2>&1 || true)
+                if [ "$clickhouse_output" = "Ok." ]; then
+                  echo "ClickHouse is reachable after its stack update."
+                  break
+                fi
               fi
             fi
             if [ "$attempt" -eq 36 ]; then
-              echo "::error::ClickHouse did not converge and become reachable before migrations"
+              docker service ps "$clickhouse_service" --no-trunc
+              echo "::error::The requested ClickHouse task did not converge and become reachable before migrations"
               exit 1
             fi
-            echo "ClickHouse readiness attempt ${attempt}/36 (update=${update_state:-none}): retrying in 5s..."
+            echo "ClickHouse readiness attempt ${attempt}/36: retrying in 5s..."
             sleep 5
           done
 

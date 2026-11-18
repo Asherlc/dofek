@@ -10,6 +10,53 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { parse } from "yaml";
 
+export function runClickHouseReadinessFixture(
+  runScript: string,
+  change: "image" | "config" | "lifecycle" | "updating" | "no-op",
+) {
+  const dockerFixture = String.raw`
+poll=0
+sleep() { poll=$((poll + 1)); }
+timeout() { shift; "$@"; }
+docker() {
+  case "$1 $2" in
+    "service inspect")
+      case "$5" in
+        *TaskTemplate*)
+          if [ "$FIXTURE_CLICKHOUSE_CHANGE" = "lifecycle" ]; then
+            printf '{"ContainerSpec":{"Image":"requested","Configs":["current"],"StopGracePeriod":60000000000}}\n'
+          else
+            printf '{"Runtime":"container","RestartPolicy":{"Condition":"any","Delay":5000000000,"MaxAttempts":0},"ContainerSpec":{"StopGracePeriod":10000000000,"DNSConfig":{},"Image":"requested","Configs":["current"]}}\n'
+          fi ;;
+        *)
+          if [ "$poll" -eq 0 ] && [ "$FIXTURE_CLICKHOUSE_CHANGE" = "updating" ]; then
+            printf 'updating\n'
+          else
+            printf '\n'
+          fi ;;
+      esac ;;
+    "service ps") printf '%s\n' 'running-task|Running 1 minute ago' ;;
+    "inspect --type")
+      if [ "$poll" -eq 0 ] && [ "$FIXTURE_CLICKHOUSE_CHANGE" = "image" ]; then
+        printf '{"ContainerSpec":{"Image":"old","Configs":["current"]}}\n'
+      elif [ "$poll" -eq 0 ] && [ "$FIXTURE_CLICKHOUSE_CHANGE" = "config" ]; then
+        printf '{"ContainerSpec":{"Image":"requested","Configs":["old"]}}\n'
+      elif [ "$poll" -ne 0 ] && [ "$FIXTURE_CLICKHOUSE_CHANGE" = "lifecycle" ]; then
+        printf '{"ContainerSpec":{"Image":"requested","Configs":["current"],"StopGracePeriod":60000000000}}\n'
+      else
+        printf '{"ContainerSpec":{"Image":"requested","Configs":["current"]}}\n'
+      fi ;;
+    "run --rm") printf 'Ok.\n' ;;
+    *) return 64 ;;
+  esac
+}
+`;
+  return spawnSync("bash", ["-e", "-o", "pipefail", "-c", `${dockerFixture}\n${runScript}`], {
+    encoding: "utf8",
+    env: { ...process.env, STACK_NAME: "dofek", FIXTURE_CLICKHOUSE_CHANGE: change },
+  });
+}
+
 export async function runPipedashVerificationFixture(
   runScript: string,
   statuses: number[],

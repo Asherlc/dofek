@@ -110,6 +110,12 @@ infrastructure has been retired.
   workflow digest edits.
 - Traefik consumes the swarm provider and routes traffic from labels declared on stack services.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
+- Web startup checks Postgres, ClickHouse, and queue readiness before opening
+  its listening socket. Swarm then uses `/healthz` to check process liveness,
+  while `/readyz` continues to report dependency readiness. Existing tasks
+  can serve unaffected routes during a database restart.
+  [Server startup](../packages/server/src/index.ts) and
+  [Docker healthchecks](https://docs.docker.com/reference/dockerfile/#healthcheck).
 - The BullMQ worker has a 30-minute stop grace period. BullMQ's graceful `Worker.close()` stops accepting new jobs and waits for active jobs, while Docker otherwise sends `SIGKILL` after a 10-second default. Provider HTTP calls have a shared two-minute deadline, and provider-data deletion advances through one durable 1,000-row continuation job per batch, so the grace period covers bounded work instead of masking unbounded requests or multi-hour loops. The initial rollout convergence deadline is 35 minutes so CI can observe the full graceful-drain result. See [BullMQ graceful shutdown](https://docs.bullmq.io/guide/workers/graceful-shutdown), [Docker `stop_grace_period`](https://docs.docker.com/reference/compose-file/services/#stop_grace_period), and [Node.js `AbortSignal.timeout()`](https://nodejs.org/api/globals.html#static-method-abortsignaltimeoutdelay).
 - Analytics uses the same 30-minute stop grace so its existing consumer shutdown
   can finish the active dbt/projector cycle and release publication ownership.
@@ -262,6 +268,8 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
   [digest pinning](https://docs.docker.com/reference/cli/docker/image/pull/#pull-an-image-by-digest-immutable-identifier)
   and the [registry manifest descriptor](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/#json-output).
 - `docker stack deploy` is the only production rollout command for web deploys. It updates `web` and `worker` together from `deploy/docker-compose.yml`.
+- The stack pins the ClickHouse image by digest so the release uses the same
+  database image in each phase. [Docker image resolution](https://docs.docker.com/reference/cli/docker/stack/deploy/).
 - Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
 - Migrations run after the non-pruning pre-migration stack apply and after the
   existing PeerDB mapping identities have been reconciled and checked against
@@ -1020,8 +1028,8 @@ and [status reporting](https://docs.github.com/en/rest/deployments/statuses#crea
       detached `docker stack deploy`, the temporary five-service quiesce
       overlay, and the migration quiesce overlay. For rolling deploys, omit web
       from this apply so Swarm keeps the running web tasks while it updates
-      dependencies. Once Kafka is ready, Postgres is writable, and ClickHouse
-      has converged and answers `/ping` from the overlay network, apply the web
+      dependencies. Once Kafka is ready, Postgres is writable, and a ClickHouse
+      task matching the desired settings answers `/ping` from the overlay network, apply the web
       configuration alone using its existing immutable image and wait for both
       replicas to converge before migrations.
       See [Docker stack deploy](https://docs.docker.com/reference/cli/docker/stack/deploy/).
@@ -1308,6 +1316,9 @@ always applying the stack configuration before migrations, using the immutable
 references selected by the [image resolver](../scripts/resolve-deploy-image.ts):
 
 - On a rolling deploy, the initial non-pruning dependency apply omits web.
+  ClickHouse-backed requests can fail briefly during a database restart.
+  On a stack whose web healthcheck still uses `/readyz`, first release the
+  process healthcheck with the current ClickHouse image.
   After database and Kafka readiness checks, a separate non-pruning apply
   refreshes web configuration with its existing immutable image. The workflow
   verifies both web replicas before migrating. The migration quiesce overlay
