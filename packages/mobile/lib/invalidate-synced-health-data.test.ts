@@ -1,8 +1,33 @@
-import { QueryClient } from "@tanstack/react-query";
-import { describe, expect, it } from "vitest";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import { describe, expect, it, vi } from "vitest";
 import { invalidateSyncedHealthData } from "./invalidate-synced-health-data";
 
 describe("invalidateSyncedHealthData", () => {
+  it.each(["volumeIncrease", "attemptIncrease"])(
+    "refreshes %s when its first fetch overlaps a completed sync",
+    async (procedure) => {
+      const queryClient = new QueryClient();
+      const queryKey = [["climbing", procedure], { type: "query" }];
+      const initial = Promise.withResolvers<string>();
+      const queryFn = vi.fn().mockReturnValueOnce(initial.promise).mockResolvedValue("after sync");
+      const observer = new QueryObserver(queryClient, { queryKey, queryFn });
+      const unsubscribe = observer.subscribe(() => {});
+
+      try {
+        expect(observer.getCurrentResult()).toMatchObject({ data: undefined, isFetching: true });
+        const refresh = invalidateSyncedHealthData(queryClient);
+        initial.resolve("before sync");
+        await refresh;
+
+        expect(queryFn).toHaveBeenCalledTimes(2);
+        expect(observer.getCurrentResult().data).toBe("after sync");
+      } finally {
+        unsubscribe();
+        queryClient.clear();
+      }
+    },
+  );
+
   it("invalidates only query families derived from synchronized health data", async () => {
     const queryClient = new QueryClient();
     const syncedKeys = [
