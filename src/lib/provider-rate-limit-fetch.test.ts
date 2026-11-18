@@ -1,11 +1,24 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import {
+  createRateLimitAwareFetch,
+  ProviderRequestTimeoutError,
+} from "@dofek/provider-http/rate-limit";
 import { beforeEach, expect, it, vi } from "vitest";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { runTransactionEffects } from "../db/transaction-effects.ts";
 import { reportProviderAuthDiagnostic } from "./provider-diagnostics.ts";
 import { createProviderRateLimitFetch } from "./provider-rate-limit-fetch.ts";
 
-const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
+const { addTimeout, warn } = vi.hoisted(() => ({ addTimeout: vi.fn(), warn: vi.fn() }));
+vi.mock("@opentelemetry/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@opentelemetry/api")>()),
+  metrics: {
+    getMeter: () => ({
+      createCounter: (name: string) => ({
+        add: name === "provider.http.timeouts" ? addTimeout : vi.fn(),
+      }),
+    }),
+  },
+}));
 vi.mock("../logger.ts", () => ({ logger: { warn, debug: vi.fn() } }));
 vi.mock("./error-reporting.ts", () => ({ captureException: vi.fn() }));
 vi.mock("./provider-adaptive-rate-limit.ts", () => ({
@@ -60,6 +73,41 @@ it("keeps the canonical wrapper idempotent so diagnostics and admission are not 
 it("preserves package-level fetch wrapper idempotence", () => {
   const fetchFn = createRateLimitAwareFetch(vi.fn(), { providerId: "peloton" });
   expect(createProviderRateLimitFetch("peloton", fetchFn)).toBe(fetchFn);
+});
+
+it("counts a classified connection reset exactly once under its provider", async () => {
+  const reset = Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+  const failure = new TypeError("fetch failed", { cause: reset });
+  const fetchFn = createProviderRateLimitFetch("kaya", vi.fn().mockRejectedValue(failure), {
+    userId: "private-user",
+  });
+
+  await expect(
+    createProviderRateLimitFetch("kaya", fetchFn)("https://api.example.com"),
+  ).rejects.toMatchObject({ name: "ProviderRequestTimeoutError", cause: failure });
+  expect(addTimeout).toHaveBeenCalledExactlyOnceWith(1, { provider: "kaya" });
+});
+
+it("counts a request deadline and preserves unrelated failures and caller aborts", async () => {
+  const timeout = vi.spyOn(AbortSignal, "timeout");
+  const deadline = AbortSignal.abort(new DOMException("Deadline reached", "TimeoutError"));
+  const requestError = new Error("unexpected request failure");
+  const fetchFn = createProviderRateLimitFetch("openbeta", async (_input, init) => {
+    init?.signal?.throwIfAborted();
+    throw requestError;
+  });
+  try {
+    timeout.mockReturnValueOnce(deadline);
+    await expect(fetchFn("https://api.example.com")).rejects.toBeInstanceOf(
+      ProviderRequestTimeoutError,
+    );
+    await expect(fetchFn("https://api.example.com")).rejects.toBe(requestError);
+    const abort = AbortSignal.abort(new DOMException("Caller cancelled", "AbortError"));
+    await expect(fetchFn("https://api.example.com", { signal: abort })).rejects.toBe(abort.reason);
+    expect(addTimeout).toHaveBeenCalledExactlyOnceWith(1, { provider: "openbeta" });
+  } finally {
+    timeout.mockRestore();
+  }
 });
 
 it.each(["strava", "wahoo"])(

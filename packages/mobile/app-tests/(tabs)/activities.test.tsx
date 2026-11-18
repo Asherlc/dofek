@@ -1,208 +1,28 @@
 // @vitest-environment jsdom
 
-import { QueryClient, QueryClientProvider, useQuery as useLiveQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
 import { AccessibilityInfo, Alert, Platform } from "react-native";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   activity,
   activityListQuery,
   climbingSourceLocation,
-  emptyActivityOverviewQuery,
-  type MockOverviewQuery,
-  type MockQuery,
-  type MockWeekListQuery,
   recordedGpsLocation,
-  type WeekListQueryOptions,
 } from "../../app-fixtures/(tabs)/activities-test-helpers";
+import {
+  activityMocks,
+  mockImagesQuery,
+  routerPush,
+} from "../../app-fixtures/(tabs)/activities-test-setup";
 import { branchingActivitySourceTree } from "../../app-fixtures/activity-source-tree";
 import { activityImageFixture } from "../../components/activity-images-test-helpers";
 
-let mockQuery: MockWeekListQuery;
-const queryFixtureClient = new QueryClient();
-let liveQueryClient: QueryClient | undefined;
-let livePageFetch:
-  | ((input: { page?: number; pageSize?: number; weeks?: number }) => Promise<unknown>)
-  | undefined;
-let mockCalendarQuery: MockQuery;
-let mockOverviewQuery: MockOverviewQuery;
-let weekListInput: unknown;
-let weekListOptions: WeekListQueryOptions | undefined;
-let calendarDataInput: unknown;
-let calendarDataOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
-let overviewInput: unknown;
-let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
-let bulkDeleteMutateAsync: CallableVitestMock;
-let mergeMutateAsync: CallableVitestMock;
-let mockMergeShouldFail: boolean;
-let invalidateWeekList: CallableVitestMock;
-let invalidateActivityOverview: CallableVitestMock;
-let invalidateCalendarData: CallableVitestMock;
-let invalidateActivityList: CallableVitestMock;
-let invalidateDataHealth: CallableVitestMock;
-let mockDataHealthQuery: {
-  data: unknown;
-  isLoading: boolean;
-  error: Error | null;
-};
-let processingStatusInput: unknown;
-const routerPush = vi.fn();
-const mockImagesQuery = vi.hoisted(() => vi.fn());
-
-vi.mock("expo-router", () => ({
-  useRouter: () => ({ push: routerPush }),
-}));
-
-vi.mock("../../lib/trpc", () => ({
-  trpc: {
-    calendar: {
-      weekListV2: {
-        useQuery: (
-          input: { page?: number; pageSize?: number },
-          options: WeekListQueryOptions | undefined,
-        ) => {
-          weekListInput = input;
-          weekListOptions = options;
-          const liveQuery = useLiveQuery(
-            {
-              queryKey: ["activities", input],
-              queryFn: () => livePageFetch?.(input),
-              placeholderData: options?.placeholderData,
-              retry: false,
-              enabled: Boolean(livePageFetch),
-            },
-            liveQueryClient ?? queryFixtureClient,
-          );
-          if (livePageFetch) return liveQuery;
-          const page = input.page ?? 0;
-          const pageSize = input.pageSize ?? 20;
-          let offset = 0;
-          const days = mockQuery.data
-            ?.map((day) => {
-              const start = offset;
-              offset += day.activities.length;
-              return {
-                ...day,
-                activities: day.activities.filter(
-                  (_activity, index) =>
-                    start + index >= page * pageSize && start + index < (page + 1) * pageSize,
-                ),
-              };
-            })
-            .filter((day) => day.activities.length > 0);
-          return {
-            ...mockQuery,
-            data: days ? { days, totalCount: offset, page, pageSize } : undefined,
-          };
-        },
-      },
-      activityOverview: {
-        useQuery: (
-          input: unknown,
-          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
-        ) => {
-          overviewInput = input;
-          overviewOptions = options;
-          return mockOverviewQuery;
-        },
-      },
-      calendarData: {
-        useQuery: (
-          input: unknown,
-          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
-        ) => {
-          calendarDataInput = input;
-          calendarDataOptions = options;
-          return mockCalendarQuery;
-        },
-      },
-    },
-    activity: {
-      images: { useQuery: mockImagesQuery },
-      merge: {
-        useMutation: (options?: {
-          onSuccess?: () => Promise<void> | void;
-          onError?: (error: Error) => void;
-        }) => ({
-          mutate: mergeMutateAsync.mockImplementation(async () => {
-            if (mockMergeShouldFail) options?.onError?.(new Error("Merge failed"));
-            else await options?.onSuccess?.();
-          }),
-          isPending: false,
-          error: null,
-        }),
-      },
-      bulkDelete: {
-        useMutation: (options?: { onSuccess?: () => Promise<void> | void }) => ({
-          mutate: bulkDeleteMutateAsync.mockImplementation(async () => {
-            await options?.onSuccess?.();
-            return { success: true, deletedCount: 1 };
-          }),
-          isPending: false,
-          error: null,
-        }),
-      },
-    },
-    processing: {
-      status: {
-        useQuery: (input: unknown) => {
-          processingStatusInput = input;
-          return mockDataHealthQuery;
-        },
-      },
-      dismiss: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
-    },
-    useUtils: () => ({
-      calendar: {
-        weekListV2: {
-          invalidate: invalidateWeekList,
-          getData: (input: unknown) => liveQueryClient?.getQueryData(["activities", input]),
-        },
-        activityOverview: { invalidate: invalidateActivityOverview },
-        calendarData: { invalidate: invalidateCalendarData },
-      },
-      activity: {
-        list: { invalidate: invalidateActivityList },
-      },
-      processing: {
-        status: { invalidate: invalidateDataHealth },
-      },
-    }),
-  },
-}));
-
-vi.mock("../../lib/units", () => ({
-  useUnitConverter: () => ({
-    formatDistance: (km: number) => ({ text: `${km.toFixed(1)} km`, parts: [] }),
-    formatElevation: (meters: number) => ({ text: `${meters} m`, parts: [] }),
-    convertDistance: (km: number) => km,
-    distanceLabel: "km",
-  }),
-}));
-
-vi.mock("../../lib/useRefresh", () => ({
-  useRefresh: () => ({ refreshing: false, onRefresh: vi.fn() }),
-}));
-
-vi.mock("react-native-svg", () => ({
-  SvgXml: (props: Record<string, unknown>) => createElement("svg", props),
-  SvgUri: (props: Record<string, unknown>) => createElement("svg", props),
-  default: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) =>
-    createElement("svg", { ...props, "data-testid": props.testID }, children),
-  Circle: ({ testID, ...props }: Record<string, unknown>) =>
-    createElement("circle", { ...props, "data-testid": testID }),
-  Polyline: ({ testID, ...props }: Record<string, unknown>) =>
-    createElement("polyline", { ...props, "data-testid": testID }),
-}));
-
-import ActivitiesScreen from "../../app/(tabs)/activities";
-
-afterEach(() => vi.useRealTimers());
+const { default: ActivitiesScreen } = await import("../../app/(tabs)/activities");
 
 describe("ActivitiesScreen", () => {
   it("uses the primary climbing source for the icon over a cardio representative", () => {
-    mockQuery = activityListQuery([
+    activityMocks.mockQuery = activityListQuery([
       activity({ name: "Kaya climbing", activityType: "cardio", primaryActivityType: "climbing" }),
     ]);
     render(<ActivitiesScreen />);
@@ -212,7 +32,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("uses the primary activity type for unnamed activity titles and accessible actions", () => {
-    mockQuery = activityListQuery([
+    activityMocks.mockQuery = activityListQuery([
       activity({ name: null, activityType: "walking", primaryActivityType: "running" }),
     ]);
 
@@ -225,7 +45,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("labels an unknown duration as unavailable in the text and the accessible name", () => {
-    mockQuery = activityListQuery([
+    activityMocks.mockQuery = activityListQuery([
       activity({ name: "Kilter climbing", activityType: "climbing", durationMin: null }),
     ]);
 
@@ -239,7 +59,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("shows one downloaded photo for activities without a map", () => {
-    mockQuery = activityListQuery([activity({ location: null })]);
+    activityMocks.mockQuery = activityListQuery([activity({ location: null })]);
     mockImagesQuery.mockReturnValue({
       data: {
         images: [activityImageFixture, { ...activityImageFixture, id: "photo-2" }],
@@ -260,7 +80,9 @@ describe("ActivitiesScreen", () => {
   });
 
   it("keeps provider-removed activities visible without requesting their retired photos", () => {
-    mockQuery = activityListQuery([activity({ location: null, isProviderAbsent: true })]);
+    activityMocks.mockQuery = activityListQuery([
+      activity({ location: null, isProviderAbsent: true }),
+    ]);
     render(<ActivitiesScreen />);
     expect(screen.getByText("Trainer Ride")).toBeTruthy();
     expect(mockImagesQuery).not.toHaveBeenCalled();
@@ -269,7 +91,7 @@ describe("ActivitiesScreen", () => {
   it.each([recordedGpsLocation(), climbingSourceLocation(), { kind: "processing" }])(
     "keeps map cards focused on their map rather than fetching a photo",
     (location) => {
-      mockQuery = activityListQuery([activity({ location })]);
+      activityMocks.mockQuery = activityListQuery([activity({ location })]);
       render(<ActivitiesScreen />);
       expect(mockImagesQuery).not.toHaveBeenCalled();
       expect(screen.queryByLabelText("View from the summit")).toBeNull();
@@ -278,7 +100,7 @@ describe("ActivitiesScreen", () => {
   it.each([null, recordedGpsLocation()])(
     "keeps activity identity leading with a resolved source and location %j",
     (location) => {
-      mockQuery = activityListQuery([
+      activityMocks.mockQuery = activityListQuery([
         activity({
           location,
           source: {
@@ -313,7 +135,7 @@ describe("ActivitiesScreen", () => {
   );
 
   it("keeps a Garmin model thumbnail in its inline source disclosure", () => {
-    mockQuery = activityListQuery([
+    activityMocks.mockQuery = activityListQuery([
       activity({
         source: {
           origin: {
@@ -353,7 +175,7 @@ describe("ActivitiesScreen", () => {
   it.each([false, true])(
     "keeps photos and source details independent of card action in selection mode %s",
     (selectMode) => {
-      mockQuery = activityListQuery([
+      activityMocks.mockQuery = activityListQuery([
         activity({
           source: {
             tree: branchingActivitySourceTree,
@@ -401,360 +223,8 @@ describe("ActivitiesScreen", () => {
       }
     },
   );
-  beforeEach(() => {
-    queryFixtureClient.clear();
-    liveQueryClient?.clear();
-    liveQueryClient = undefined;
-    livePageFetch = undefined;
-    mockImagesQuery.mockReset();
-    mockImagesQuery.mockReturnValue({
-      data: { images: [], coverage: [], acquisition: [] },
-      error: null,
-      isLoading: false,
-      isFetching: false,
-      refetch: vi.fn(),
-    });
-    mockQuery = { data: [], isLoading: false, isError: false, error: null };
-    mockCalendarQuery = { data: [], isLoading: false, isError: false, error: null };
-    mockOverviewQuery = emptyActivityOverviewQuery();
-    weekListInput = undefined;
-    calendarDataInput = undefined;
-    calendarDataOptions = undefined;
-    overviewInput = undefined;
-    overviewOptions = undefined;
-    bulkDeleteMutateAsync = vi.fn();
-    mergeMutateAsync = vi.fn();
-    mockMergeShouldFail = false;
-    invalidateWeekList = vi.fn();
-    invalidateActivityOverview = vi.fn();
-    invalidateCalendarData = vi.fn();
-    invalidateActivityList = vi.fn();
-    mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
-    processingStatusInput = undefined;
-    invalidateDataHealth = vi.fn();
-    routerPush.mockReset();
-    vi.restoreAllMocks();
-  });
-
-  it("shows activity progress while summaries are updating", () => {
-    mockDataHealthQuery = {
-      data: {
-        overallStatus: "active",
-        generatedAt: "2026-06-30T08:00:00.000Z",
-        scope: { providerId: null, datasets: ["activity"] },
-        operations: [],
-        datasets: [
-          {
-            key: "activity",
-            label: "Activities",
-            rawRows: 12,
-            latestRawAt: "2026-06-30T07:00:00.000Z",
-            latestReadModelAt: null,
-            cdcLagSeconds: null,
-            readModelLagSeconds: null,
-            status: "active",
-            progressPercentage: 60,
-            message: "Activities are updating.",
-          },
-        ],
-      },
-      isLoading: false,
-      error: null,
-    };
-
-    render(<ActivitiesScreen />);
-
-    expect(processingStatusInput).toEqual({ datasets: ["activity"] });
-    expect(screen.getByText("Recomputing activities")).toBeDefined();
-  });
-
-  it("loads a server-owned, labeled activity heatmap for the selected weeks", () => {
-    mockCalendarQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activityCount: 1,
-          totalMinutes: 72,
-          activityTypes: ["running"],
-          trainingTimeBand: "high",
-          trainingTimeMeaning: "High training volume; compare with recovery.",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    render(<ActivitiesScreen />);
-
-    expect(calendarDataInput).toEqual({ days: 28 });
-    expect(calendarDataOptions?.placeholderData?.([])).toBeUndefined();
-    const previousCalendarData = [{ date: "2026-03-10" }];
-    expect(calendarDataOptions?.placeholderData?.(previousCalendarData)).toBe(previousCalendarData);
-    expect(screen.queryByText("Training time (minutes per day)")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /^Training time/ }));
-    expect(screen.getByText("Training time (minutes per day)")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /72 min/ })).toBeTruthy();
-  });
-
-  it("uses QueryStatePanel for overview loading state", () => {
-    mockOverviewQuery = { data: undefined, isLoading: true, isError: false, error: null };
-
-    render(<ActivitiesScreen />);
-
-    expect(screen.getByTestId("query-state-loading")).toBeDefined();
-  });
-
-  it("renders server-provided stat labels and values", () => {
-    mockQuery = activityListQuery([activity()]);
-
-    render(<ActivitiesScreen />);
-
-    expect(screen.getByText("Training Stress Score")).toBeDefined();
-    expect(screen.getByText("100")).toBeDefined();
-    expect(screen.queryByText("TSS")).toBeNull();
-  });
-
-  it("keeps placeholder activity data visible during background refetch errors", () => {
-    mockQuery = {
-      data: [{ date: "2026-03-18", activities: [activity({ name: "Cached Ride" })] }],
-      isLoading: false,
-      isError: true,
-      error: new Error("Refetch failed"),
-    };
-
-    render(<ActivitiesScreen />);
-
-    expect(screen.getByText("Cached Ride")).toBeDefined();
-    expect(screen.getByText("Refetch failed")).toBeDefined();
-  });
-
-  it("renders server-provided overview totals", () => {
-    mockOverviewQuery = {
-      data: {
-        activityCount: 12,
-        totalMinutes: 615,
-        totalDistanceMeters: 42300,
-        totalDistanceState: { status: "available" },
-        totalElevationGainM: 520,
-        totalElevationState: { status: "available" },
-        activityTypes: ["running", "cycling"],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    render(<ActivitiesScreen />);
-
-    fireEvent.click(screen.getByRole("button", { name: /^Training time/ }));
-    expect(screen.getByText("12")).toBeDefined();
-    expect(screen.getByText("10h 15m")).toBeDefined();
-    expect(screen.getByText("42.3 km")).toBeDefined();
-    expect(screen.getByText("520 m")).toBeDefined();
-  });
-
-  it("waits for matching training totals after a sport change", () => {
-    const overview = emptyActivityOverviewQuery();
-    const previousTotals = {
-      activityCount: 12,
-      totalMinutes: 615,
-      totalDistanceMeters: null,
-      totalDistanceState: { status: "missing", reason: "No distance recorded" },
-      totalElevationGainM: null,
-      totalElevationState: { status: "missing", reason: "No elevation recorded" },
-      activityTypes: ["running"],
-    } satisfies NonNullable<MockOverviewQuery["data"]>;
-    mockOverviewQuery = {
-      ...overview,
-      data: previousTotals,
-    };
-    const { rerender } = render(<ActivitiesScreen />);
-    const trainingTime = () => screen.getByRole("button", { name: /^Training time/ });
-    expect(trainingTime().textContent).toContain("12 activities");
-
-    fireEvent.click(screen.getByRole("button", { name: /^Sport,/ }));
-    mockOverviewQuery = { ...mockOverviewQuery, isPlaceholderData: true };
-    fireEvent.click(screen.getByText("Running"));
-    expect(trainingTime().textContent).toContain("Updating");
-    expect(trainingTime().textContent).not.toContain("12 activities");
-
-    mockOverviewQuery = {
-      ...mockOverviewQuery,
-      data: { ...previousTotals, activityCount: 1, totalMinutes: 60 },
-      isPlaceholderData: false,
-    };
-    rerender(<ActivitiesScreen />);
-    expect(trainingTime().textContent).toContain("1 activity");
-  });
-
-  it("renders server-computed changes from the previous comparable period", () => {
-    mockOverviewQuery = {
-      data: {
-        activityCount: 12,
-        totalMinutes: 615,
-        totalDistanceMeters: 42300,
-        totalDistanceState: { status: "available" },
-        totalElevationGainM: 520,
-        totalElevationState: { status: "available" },
-        activityTypes: ["running", "cycling"],
-        comparison: {
-          periodLabel: "previous 4 weeks",
-          activityCount: { magnitude: 1, trend: "higher" },
-          totalMinutes: { magnitude: 90, trend: "lower" },
-          totalDistanceMeters: {
-            magnitude: 0,
-            trend: "unchanged",
-            state: { status: "available" },
-          },
-          totalElevationGainM: {
-            magnitude: null,
-            trend: "unavailable",
-            state: { status: "missing", reason: "Previous period: Elevation gain not recorded" },
-          },
-        },
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    render(<ActivitiesScreen />);
-
-    fireEvent.click(screen.getByRole("button", { name: /^Training time/ }));
-    expect(screen.getByText("1 more vs previous 4 weeks")).toBeDefined();
-    expect(screen.getByText("1h 30m less vs previous 4 weeks")).toBeDefined();
-    expect(screen.getByText("No change vs previous 4 weeks")).toBeDefined();
-    expect(
-      screen.getByText("Comparison unavailable: Previous period: Elevation gain not recorded"),
-    ).toBeDefined();
-    expect(screen.getByLabelText("Activities 12. 1 more vs previous 4 weeks")).toBeDefined();
-    expect(screen.getByLabelText("Time 10h 15m. 1h 30m less vs previous 4 weeks")).toBeDefined();
-  });
-
-  it("distinguishes unavailable overview measurements from measured zero", () => {
-    mockOverviewQuery = {
-      data: {
-        activityCount: 2,
-        totalMinutes: 90,
-        totalDistanceMeters: null,
-        totalDistanceState: { status: "missing", reason: "Distance not recorded" },
-        totalElevationGainM: null,
-        totalElevationState: { status: "missing", reason: "Elevation not recorded" },
-        activityTypes: ["running"],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    const { rerender } = render(<ActivitiesScreen />);
-
-    fireEvent.click(screen.getByRole("button", { name: /^Training time/ }));
-    expect(screen.getByText("Distance not recorded")).toBeDefined();
-    expect(screen.getByText("Elevation unavailable")).toBeDefined();
-    expect(screen.queryByText("0.0 km")).toBeNull();
-    expect(screen.queryByText("0 m")).toBeNull();
-
-    mockOverviewQuery.data = {
-      activityCount: 2,
-      totalMinutes: 90,
-      totalDistanceMeters: 0,
-      totalDistanceState: { status: "available" },
-      totalElevationGainM: 0,
-      totalElevationState: { status: "available" },
-      activityTypes: ["running"],
-    };
-    rerender(<ActivitiesScreen />);
-
-    expect(screen.getByText("0.0 km")).toBeDefined();
-    expect(screen.getByText("0 m")).toBeDefined();
-  });
-
-  it("renders available partial overview measurements and comparisons", () => {
-    mockOverviewQuery = {
-      data: {
-        activityCount: 4,
-        totalMinutes: 280,
-        totalDistanceMeters: 12500,
-        totalDistanceState: { status: "available" },
-        totalElevationGainM: 180,
-        totalElevationState: { status: "available" },
-        activityTypes: ["running", "cycling"],
-        comparison: {
-          periodLabel: "previous 4 weeks",
-          activityCount: { magnitude: 1, trend: "higher" },
-          totalMinutes: { magnitude: 60, trend: "higher" },
-          totalDistanceMeters: {
-            magnitude: 2500,
-            trend: "higher",
-            state: { status: "available" },
-          },
-          totalElevationGainM: {
-            magnitude: 50,
-            trend: "higher",
-            state: { status: "available" },
-          },
-        },
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    render(<ActivitiesScreen />);
-
-    fireEvent.click(screen.getByRole("button", { name: /^Training time/ }));
-    expect(screen.getByText("12.5 km")).toBeDefined();
-    expect(screen.getByText("180 m")).toBeDefined();
-    expect(screen.getByText("2.5 km more vs previous 4 weeks")).toBeDefined();
-    expect(screen.getByText("50 m more vs previous 4 weeks")).toBeDefined();
-    expect(
-      screen.getByLabelText("Distance 12.5 km. 2.5 km more vs previous 4 weeks"),
-    ).toBeDefined();
-    expect(screen.getByLabelText("Elevation 180 m. 50 m more vs previous 4 weeks")).toBeDefined();
-  });
-
-  it("passes selected activity type to the activity list query", () => {
-    mockOverviewQuery = {
-      data: {
-        activityCount: 1,
-        totalMinutes: 60,
-        totalDistanceMeters: 5000,
-        totalDistanceState: { status: "available" },
-        totalElevationGainM: 120,
-        totalElevationState: { status: "available" },
-        activityTypes: ["running"],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByRole("button", { name: /^Sport,/ }));
-    fireEvent.click(screen.getByText("Running"));
-
-    expect(weekListInput).toEqual({
-      weeks: 4,
-      endDate: expect.any(String),
-      activityType: "running",
-      page: 0,
-      pageSize: 20,
-    });
-    expect(overviewInput).toEqual({
-      weeks: 4,
-      endDate: expect.any(String),
-      activityType: "running",
-    });
-    const previousOverview = { activityTypes: ["running"] };
-    expect(overviewOptions?.placeholderData?.(previousOverview)).toBe(previousOverview);
-    const previousWeekList = [{ date: "2026-03-18", activities: [] }];
-    expect(weekListOptions?.placeholderData?.(previousWeekList)).toBe(previousWeekList);
-  });
-
   it("navigates to activity detail when not selecting activities", () => {
-    mockQuery = activityListQuery([activity()]);
+    activityMocks.mockQuery = activityListQuery([activity()]);
 
     render(<ActivitiesScreen />);
     fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Trainer Ride,/ }));
@@ -763,7 +233,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("includes visible activity context in each accessible action name", () => {
-    mockQuery = activityListQuery([activity()]);
+    activityMocks.mockQuery = activityListQuery([activity()]);
 
     render(<ActivitiesScreen />);
 
@@ -774,7 +244,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("includes available route measurements in each accessible action name", () => {
-    mockQuery = activityListQuery([
+    activityMocks.mockQuery = activityListQuery([
       activity({
         activityType: "cycling",
         modality: "road",
@@ -801,7 +271,7 @@ describe("ActivitiesScreen", () => {
   ])(
     "uses training stats in visible and accessible $modality cycling cards with distance $distanceMeters",
     ({ modality, distanceMeters, elevationGainM }) => {
-      mockQuery = activityListQuery([
+      activityMocks.mockQuery = activityListQuery([
         activity({
           activityType: "cycling",
           modality,
@@ -844,7 +314,7 @@ describe("ActivitiesScreen", () => {
     { activityType: "cycling", modality: "road" },
     { activityType: "running", modality: "indoor" },
   ])("keeps measured zero in accessible $modality $activityType cards", (classification) => {
-    mockQuery = activityListQuery([
+    activityMocks.mockQuery = activityListQuery([
       activity({
         ...classification,
         distanceMeters: 0,
@@ -870,7 +340,7 @@ describe("ActivitiesScreen", () => {
   it.each([null, "Indoor Cycling"])(
     "labels an activity named %s without repeating its type",
     (name) => {
-      mockQuery = activityListQuery([activity({ name })]);
+      activityMocks.mockQuery = activityListQuery([activity({ name })]);
 
       render(<ActivitiesScreen />);
 
@@ -887,7 +357,7 @@ describe("ActivitiesScreen", () => {
   );
 
   it("toggles selected activities instead of navigating in select mode", () => {
-    mockQuery = activityListQuery([activity()]);
+    activityMocks.mockQuery = activityListQuery([activity()]);
 
     render(<ActivitiesScreen />);
     expect(screen.queryByText("Choose activities to merge or delete.")).toBeNull();
@@ -905,7 +375,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("announces selected activity count changes on iOS", async () => {
-    mockQuery = activityListQuery([activity()]);
+    activityMocks.mockQuery = activityListQuery([activity()]);
     vi.spyOn(Platform, "OS", "get").mockReturnValue("ios");
     const announceForAccessibility = vi
       .spyOn(AccessibilityInfo, "announceForAccessibility")
@@ -924,7 +394,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("bulk deletes selected activities after confirmation", async () => {
-    mockQuery = activityListQuery([activity()]);
+    activityMocks.mockQuery = activityListQuery([activity()]);
     vi.spyOn(Alert, "alert").mockImplementation((_title, _message, buttons) => {
       buttons?.find((button) => button.text === "Delete")?.onPress?.();
     });
@@ -935,16 +405,16 @@ describe("ActivitiesScreen", () => {
     fireEvent.click(screen.getByText("Delete"));
 
     await waitFor(() => {
-      expect(bulkDeleteMutateAsync).toHaveBeenCalledWith({ ids: ["activity-1"] });
-      expect(invalidateWeekList).toHaveBeenCalled();
-      expect(invalidateActivityOverview).toHaveBeenCalled();
-      expect(invalidateCalendarData).toHaveBeenCalled();
-      expect(invalidateActivityList).toHaveBeenCalled();
+      expect(activityMocks.bulkDeleteMutateAsync).toHaveBeenCalledWith({ ids: ["activity-1"] });
+      expect(activityMocks.invalidateWeekList).toHaveBeenCalled();
+      expect(activityMocks.invalidateActivityOverview).toHaveBeenCalled();
+      expect(activityMocks.invalidateCalendarData).toHaveBeenCalled();
+      expect(activityMocks.invalidateActivityList).toHaveBeenCalled();
     });
   });
 
   it("merges selected same-type activities after native confirmation", async () => {
-    mockQuery = activityListQuery([
+    activityMocks.mockQuery = activityListQuery([
       activity(),
       activity({ id: "activity-2", name: "Second Ride" }),
     ]);
@@ -958,16 +428,18 @@ describe("ActivitiesScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Second Ride,/ }));
     fireEvent.click(screen.getByText("Merge"));
     await waitFor(() => {
-      expect(mergeMutateAsync).toHaveBeenCalledWith({ ids: ["activity-1", "activity-2"] });
-      expect(invalidateWeekList).toHaveBeenCalled();
-      expect(invalidateActivityOverview).toHaveBeenCalled();
-      expect(invalidateCalendarData).toHaveBeenCalled();
-      expect(invalidateActivityList).toHaveBeenCalled();
+      expect(activityMocks.mergeMutateAsync).toHaveBeenCalledWith({
+        ids: ["activity-1", "activity-2"],
+      });
+      expect(activityMocks.invalidateWeekList).toHaveBeenCalled();
+      expect(activityMocks.invalidateActivityOverview).toHaveBeenCalled();
+      expect(activityMocks.invalidateCalendarData).toHaveBeenCalled();
+      expect(activityMocks.invalidateActivityList).toHaveBeenCalled();
     });
   });
 
   it("disables merge when fewer than two activities or mixed types are selected", () => {
-    mockQuery = activityListQuery([
+    activityMocks.mockQuery = activityListQuery([
       activity(),
       activity({ id: "activity-2", name: "Run", activityType: "running" }),
     ]);
@@ -983,8 +455,8 @@ describe("ActivitiesScreen", () => {
   });
 
   it("keeps selected activities selected when merge fails", async () => {
-    mockMergeShouldFail = true;
-    mockQuery = activityListQuery([
+    activityMocks.mockMergeShouldFail = true;
+    activityMocks.mockQuery = activityListQuery([
       activity(),
       activity({ id: "activity-2", name: "Second Ride" }),
     ]);
@@ -997,15 +469,17 @@ describe("ActivitiesScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Second Ride,/ }));
     fireEvent.click(screen.getByText("Merge"));
     await waitFor(() => {
-      expect(mergeMutateAsync).toHaveBeenCalledWith({ ids: ["activity-1", "activity-2"] });
+      expect(activityMocks.mergeMutateAsync).toHaveBeenCalledWith({
+        ids: ["activity-1", "activity-2"],
+      });
       expect(screen.getByText("2 activities selected")).toBeDefined();
       expect(Alert.alert).toHaveBeenCalledWith("Unable to merge activities", "Merge failed");
     });
   });
 
   it("clears selected activities when the activity type filter changes", () => {
-    mockQuery = activityListQuery([activity()]);
-    mockOverviewQuery = {
+    activityMocks.mockQuery = activityListQuery([activity()]);
+    activityMocks.mockOverviewQuery = {
       data: {
         activityCount: 1,
         totalMinutes: 60,
@@ -1031,7 +505,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("clears selected activities when the date range changes", () => {
-    mockQuery = activityListQuery([activity()]);
+    activityMocks.mockQuery = activityListQuery([activity()]);
 
     render(<ActivitiesScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
@@ -1044,9 +518,11 @@ describe("ActivitiesScreen", () => {
   });
 
   it("keeps cached cards and navigation after an uncached server page fails", async () => {
-    liveQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    activityMocks.liveQueryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     let failPage = true;
-    livePageFetch = async (input) => {
+    activityMocks.livePageFetch = async (input) => {
       if (input.page === 1 && failPage)
         throw new Error("Page two is unavailable. Retry the request.");
       return {
@@ -1062,7 +538,7 @@ describe("ActivitiesScreen", () => {
       };
     };
     render(
-      <QueryClientProvider client={liveQueryClient}>
+      <QueryClientProvider client={activityMocks.liveQueryClient}>
         <ActivitiesScreen />
       </QueryClientProvider>,
     );
@@ -1078,8 +554,10 @@ describe("ActivitiesScreen", () => {
   });
 
   it("does not label another range's cached cards as the failed selected range", async () => {
-    liveQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    livePageFetch = async (input) => {
+    activityMocks.liveQueryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    activityMocks.livePageFetch = async (input) => {
       if (input.weeks === 8) throw new Error("Selected range is unavailable.");
       return {
         days: [{ date: "2026-03-18", activities: [activity({ name: "Previous Range Ride" })] }],
@@ -1089,7 +567,7 @@ describe("ActivitiesScreen", () => {
       };
     };
     render(
-      <QueryClientProvider client={liveQueryClient}>
+      <QueryClientProvider client={activityMocks.liveQueryClient}>
         <ActivitiesScreen />
       </QueryClientProvider>,
     );
@@ -1101,7 +579,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("keeps selected activity types across server pages when checking merge eligibility", () => {
-    mockQuery = activityListQuery(
+    activityMocks.mockQuery = activityListQuery(
       Array.from({ length: 21 }, (_, index) =>
         activity({
           id: `ride-${index}`,
@@ -1119,11 +597,11 @@ describe("ActivitiesScreen", () => {
       screen.getByRole("button", { name: "Merge selected activities" }).hasAttribute("disabled"),
     ).toBe(true);
     expect(screen.getByText("Select activities of one type to merge.")).toBeDefined();
-    expect(overviewInput).toEqual({ weeks: 4, endDate: expect.any(String) });
+    expect(activityMocks.overviewInput).toEqual({ weeks: 4, endDate: expect.any(String) });
   });
 
   it("paginates the activity card history", () => {
-    mockQuery = activityListQuery(
+    activityMocks.mockQuery = activityListQuery(
       Array.from({ length: 21 }, (_, index) =>
         activity({
           id: `activity-${index + 1}`,
@@ -1139,13 +617,13 @@ describe("ActivitiesScreen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
 
-    expect(weekListInput).toMatchObject({ page: 1, pageSize: 20 });
+    expect(activityMocks.weekListInput).toMatchObject({ page: 1, pageSize: 20 });
     expect(screen.queryByText("Ride 1")).toBeNull();
     expect(screen.getByText("Ride 21")).toBeDefined();
   });
 
   it.each([1, 2])("shows %i source climbing points without inventing a route", (pointCount) => {
-    mockQuery.data = [
+    activityMocks.mockQuery.data = [
       {
         date: "2026-03-18",
         activities: [
@@ -1182,7 +660,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("replaces a failed map snapshot with a fallback", async () => {
-    mockQuery = activityListQuery([
+    activityMocks.mockQuery = activityListQuery([
       activity({
         location: recordedGpsLocation(),
         distanceMeters: 5000,
@@ -1204,7 +682,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("draws a route overlay using server-projected path points", () => {
-    mockQuery = activityListQuery([
+    activityMocks.mockQuery = activityListQuery([
       activity({
         location: recordedGpsLocation({
           routePath: [
@@ -1229,7 +707,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("does not duplicate distance and elevation badges over the map", () => {
-    mockQuery = activityListQuery([
+    activityMocks.mockQuery = activityListQuery([
       activity({
         location: recordedGpsLocation(),
         distanceMeters: 5000,
@@ -1246,7 +724,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("renders the native preview across the responsive viewport", async () => {
-    mockQuery = activityListQuery([
+    activityMocks.mockQuery = activityListQuery([
       activity({
         location: recordedGpsLocation({
           routePath: [
@@ -1273,7 +751,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("shows a full-width map processing state while server map geometry is pending", () => {
-    mockQuery.data = [
+    activityMocks.mockQuery.data = [
       { date: "2026-03-18", activities: [activity({ location: { kind: "processing" } })] },
     ];
     render(<ActivitiesScreen />);
@@ -1288,17 +766,19 @@ describe("ActivitiesScreen", () => {
   it("polls pending map geometry without polling settled or absent map states", () => {
     render(<ActivitiesScreen />);
     expect(
-      weekListOptions?.refetchInterval?.({
+      activityMocks.weekListOptions?.refetchInterval?.({
         state: {
           data: { days: [{ activities: [activity({ location: { kind: "processing" } })] }] },
         },
       }),
     ).toEqual(expect.any(Number));
     expect(
-      weekListOptions?.refetchInterval?.({
+      activityMocks.weekListOptions?.refetchInterval?.({
         state: { data: { days: [{ activities: [activity({ location: null })] }] } },
       }),
     ).toBe(false);
-    expect(weekListOptions?.refetchInterval?.({ state: { data: undefined } })).toBe(false);
+    expect(activityMocks.weekListOptions?.refetchInterval?.({ state: { data: undefined } })).toBe(
+      false,
+    );
   });
 });

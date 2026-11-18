@@ -2,6 +2,16 @@ import { StyleSheet } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
 export const styles = StyleSheet.create({
+  searchRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm },
+  searchInput: {
+    flex: 1,
+    minWidth: 140,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    color: colors.text,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,

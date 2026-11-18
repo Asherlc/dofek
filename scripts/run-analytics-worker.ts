@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import { pathToFileURL } from "node:url";
 import * as Sentry from "@sentry/node";
 import { z } from "zod";
+import { createActivitySearchIndexFromEnv } from "../src/activity-search/config.ts";
 import { runAnalyticsRefreshJobs } from "../src/analytics-refresh-queue.ts";
 import type { AnalyticsRefreshStep } from "../src/analytics-worker.ts";
 import { AnalyticsWorker, createAnalyticsWorkerHealthServer } from "../src/analytics-worker.ts";
@@ -109,6 +110,7 @@ export function createAnalyticsWorkerFromEnvironment(
 export async function runAnalyticsWorker(): Promise<void> {
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
   initProductionSentry(sentryDsn);
+  const activitySearchIndex = createActivitySearchIndexFromEnv("ACTIVITY_SEARCH_WRITE_URL");
 
   const refreshQueue = createAnalyticsRefreshQueue();
   const reportQueueFailure = (error: Error) => {
@@ -127,7 +129,7 @@ export async function runAnalyticsWorker(): Promise<void> {
     },
     runAnalyticsBuildFromEnvironment: async () => {
       const { runAnalyticsBuildFromEnvironment } = await import("./run-analytics-build.ts");
-      await runAnalyticsBuildFromEnvironment();
+      await runAnalyticsBuildFromEnvironment(activitySearchIndex);
     },
     sleep,
     runRefreshJobs: (processRefresh, intervalMilliseconds, signal) =>

@@ -58,6 +58,48 @@ describe("captureException dual reporting", () => {
     expect(posthogMocks.captureException).not.toHaveBeenCalled();
   });
 
+  it("keeps direct, wrapped, and aggregate provider timeouts out of exception tracking", async () => {
+    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
+    const { initProductionPostHog } = await import("./posthog.ts");
+    const { captureException } = await import("./error-reporting.ts");
+    const { captureException: sentryCaptureException } = await import("@sentry/node");
+    const { ProviderRequestTimeoutError } = await import("@dofek/provider-http/rate-limit");
+    const { CatalogueSearchError } = await import("@dofek/climbing-catalogue");
+    initProductionPostHog();
+    const timeout = new ProviderRequestTimeoutError({ providerId: "kaya", timeoutMs: 120_000 });
+    const wrapped = new Error("request failed", { cause: timeout });
+    const catalogue = new CatalogueSearchError([{ providerId: "kaya", error: wrapped }], []);
+
+    captureException(timeout);
+    captureException(wrapped);
+    captureException(catalogue, { tags: { phase: "climbing-catalogue-refresh" } });
+    captureException(new AggregateError([catalogue, timeout]));
+
+    expect(sentryCaptureException).not.toHaveBeenCalled();
+    expect(posthogMocks.captureException).not.toHaveBeenCalled();
+  });
+
+  it("reports mixed aggregates and preserves unclassified errors", async () => {
+    const { captureException } = await import("./error-reporting.ts");
+    const { captureException: sentryCaptureException } = await import("@sentry/node");
+    const { ProviderRequestTimeoutError } = await import("@dofek/provider-http/rate-limit");
+    const timeout = new ProviderRequestTimeoutError({ providerId: "kaya", timeoutMs: 120_000 });
+    const invalidResponse = new SyntaxError("Invalid catalogue response");
+    const cycle = new Error("Cyclic cause");
+    cycle.cause = cycle;
+    const failures = [
+      new AggregateError([timeout, invalidResponse]),
+      new AggregateError([timeout], "another failure", { cause: invalidResponse }),
+      new AggregateError([]),
+      new Error("provider request timed out"),
+      cycle,
+    ];
+
+    for (const failure of failures) captureException(failure);
+
+    expect(vi.mocked(sentryCaptureException).mock.calls).toEqual(failures.map((error) => [error]));
+  });
+
   it("flattens capture context fields for PostHog", async () => {
     vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
     const { initProductionPostHog } = await import("./posthog.ts");

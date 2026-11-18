@@ -20,7 +20,10 @@ export function ClimbingVolumeOverTimeChart({
   const [metric, setMetric] = useState<"attempts" | "time">("attempts");
   const maxMinutes = data.reduce((max, row) => Math.max(max, row.minutes ?? 0), 0);
   const useHours = metric === "time" && maxMinutes >= 60;
-  const label = metric === "attempts" ? "Attempts" : useHours ? "Time (h:mm)" : "Time (minutes)";
+  const timeUnit = useHours ? "h:mm" : "minutes";
+  const label = metric === "attempts" ? "Attempts" : `Time (${timeUnit})`;
+  const tooltipLabel =
+    metric === "attempts" ? "Recorded attempts" : `Total climbing session time (${timeUnit})`;
   const formatValue = useHours
     ? formatDurationHoursMinutes
     : (value: number) => formatNumber(value, 0);
@@ -54,7 +57,7 @@ export function ClimbingVolumeOverTimeChart({
               const row = index == null ? undefined : data[index];
               const point = index == null ? undefined : points[index];
               if (!row || !point) return "";
-              return `${escapeTooltipHtml(row.week)}<br/>${label}: ${point.displayValue}`;
+              return `Week starting ${escapeTooltipHtml(row.week)}<br/>${tooltipLabel}: ${point.displayValue}`;
             },
           }),
           xAxis: dofekAxis.time({ show: true }),

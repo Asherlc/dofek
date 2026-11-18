@@ -51,6 +51,7 @@ let mockOverviewQuery: {
   error: Error | null;
 };
 let weekListInput: unknown;
+const titleSearchQuery = vi.hoisted(() => vi.fn());
 interface WeekListOptions {
   placeholderData?: (previousData: unknown) => unknown;
   refetchInterval?: (query: {
@@ -112,6 +113,7 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     calendar: {
+      searchActivities: { useInfiniteQuery: titleSearchQuery },
       weekListV2: {
         useQuery: (
           input: { page?: number; pageSize?: number },
@@ -216,6 +218,7 @@ vi.mock("../lib/trpc.ts", () => ({
           getData: (input: unknown) => liveQueryClient?.getQueryData(["activities", input]),
         },
         activityOverview: { invalidate: invalidateActivityOverview },
+        searchActivities: { invalidate: vi.fn() },
         calendarData: { invalidate: invalidateCalendarData },
       },
       activity: {
@@ -339,6 +342,8 @@ describe("ActivitiesPage", () => {
       error: null,
     });
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
+    titleSearchQuery.mockReset();
+    titleSearchQuery.mockReturnValue({ data: undefined, isPending: false });
     mockOverviewQuery = {
       data: {
         activityCount: 0,
@@ -366,6 +371,56 @@ describe("ActivitiesPage", () => {
     mockBulkDeleteShouldFail = false;
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
     processingStatusInput = undefined;
+  });
+
+  it("searches titles outside the browsing date range and returns to the list when cleared", () => {
+    const fetchNextPage = vi.fn();
+    titleSearchQuery.mockImplementation((_input, options) => ({
+      data: options.enabled
+        ? {
+            pages: [
+              {
+                activities: [activity({ id: "old", name: "Golden Hill Ride", date: "2021-05-14" })],
+              },
+            ],
+          }
+        : undefined,
+      hasNextPage: true,
+      fetchNextPage,
+    }));
+    render(<ActivitiesPage />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search activity titles" }), {
+      target: { value: " golden hi " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    expect(titleSearchQuery).toHaveBeenLastCalledWith(
+      { title: "golden hi", pageSize: 20 },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(screen.getByRole("link", { name: "Golden Hill Ride" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(fetchNextPage).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.queryByRole("link", { name: "Golden Hill Ride" })).toBeNull();
+  });
+
+  it("shows a retryable search error when refreshing an empty result fails", () => {
+    const refetch = vi.fn();
+    titleSearchQuery.mockReturnValue({
+      data: { pages: [{ activities: [] }] },
+      isError: true,
+      error: new Error("Activity search is temporarily unavailable."),
+      refetch,
+    });
+    render(<ActivitiesPage />);
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search activity titles" }), {
+      target: { value: "golden hill" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    expect(screen.queryByText("No matching activities.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refetch).toHaveBeenCalledOnce();
   });
 
   it("loads one photo only for visible cards without a map", () => {

@@ -342,7 +342,7 @@ services:
           memory: 2G
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.6.1.1193-alpine
+    image: clickhouse/clickhouse-server:26.10.3.7-alpine
     environment:
       CLICKHOUSE_DB: fitness
       CLICKHOUSE_USER: default
@@ -572,7 +572,7 @@ services:
     # service's own name deadlocks the first start (the task cannot resolve
     # itself and never becomes a task). The S3 API still binds 0.0.0.0:9000.
     # https://github.com/seaweedfs/seaweedfs/releases/tag/4.47
-    image: chrislusf/seaweedfs:4.52@sha256:57877e32bb90073b37dc109b438ba66e84fd5ed9ced5f5c04f56444ef243ce59
+    image: chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
     environment:
       # Credential names retained for PeerDB client env wiring; SeaweedFS accepts
       # these as S3 access/secret keys for path-style clients.
@@ -616,7 +616,7 @@ services:
           memory: 512M
 
   peerdb-minio-lifecycle:
-    image: amazon/aws-cli:2.39.6@sha256:eccdb3ec77e159d43ca6a750a70738c546883138be7f094498294a1477ec7e42
+    image: amazon/aws-cli:2.40.0@sha256:0da258e32b17cc468b2e8812c8d93f5732561b901357c43a207baae0567b195a
     environment:
       AWS_ACCESS_KEY_ID: peerdb
       AWS_SECRET_ACCESS_KEY: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
@@ -806,7 +806,7 @@ services:
         failure_action: rollback
 
   collector:
-    image: otel/opentelemetry-collector-contrib:0.149.0
+    image: otel/opentelemetry-collector-contrib:0.165.0
     user: "0:0"
     env_file: ${COLLECTOR_ENV_FILE:?COLLECTOR_ENV_FILE is required}
     volumes:
