@@ -173,6 +173,13 @@ transaction; an invalid stream rolls back that notification's samples and counte
 together. Capture never buffers across notifications, and FULL synchronous
 durability remains enabled. Grouping transaction work follows Apple's
 [disk-write guidance](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
+The queue uses 1 KiB SQLite pages to reduce bytes written per notification.
+Opening an older queue rebuilds it in place once, before capture or upload uses
+it, then restores WAL mode. If startup is interrupted, the next open resumes
+from the persisted page size. The one-time rebuild requires temporary free
+space and preserves pending batches, account ownership, and the erasure cutoff.
+[SQLite WAL format](https://www.sqlite.org/fileformat2.html#wal_file_format) and
+[SQLite database rebuilds](https://www.sqlite.org/lang_vacuum.html).
 Rows survive app recreation and are not evicted at the old
 memory limits. Account changes and sign-out purge the old queue and cancel its
 tasks; account erasure also retains its monotonic device cutoff. Queue files and
