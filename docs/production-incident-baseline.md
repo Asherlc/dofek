@@ -39225,3 +39225,50 @@ Local qualification and CI are separate from production throughput acceptance. T
   deployment. Recurrence remains possible. On recurrence, correlate the
   credential expiry with the first stream completion and capture the RSocket
   error or close reason before the SDK wraps it.
+
+## 2026-11-18 — OpenSearch Terraform state blocked web releases
+
+- The 03:03 UTC [automatic release for `cff8ac3b`](https://github.com/Asherlc/dofek/actions/runs/44227403347/attempts/1)
+  failed before the Swarm rollout. Four subsequent server releases were blocked
+  by pending deployment `7872858882`. The homepage and auth API returned HTTP
+  200, and both web replicas and the worker stayed healthy on the previously
+  [verified release `d15b8a89`](https://github.com/Asherlc/dofek/actions/runs/44190360444).
+- The [Terraform Apply job](https://github.com/Asherlc/dofek/actions/runs/44227403347/job/134544652156)
+  ran `terraform apply -auto-approve -lock-timeout=5m` from `cff8ac3b`.
+  Its first fatal error was `The argument "url" is required, but was not set.`
+  The production workspace already tracked the OpenSearch resources from
+  local qualification. The selected source predated the configuration in
+  [PR #3389](https://github.com/Asherlc/dofek/pull/3389), so Terraform could
+  not configure the provider for those resources. The [next release](https://github.com/Asherlc/dofek/actions/runs/44228055525)
+  contained the OpenSearch configuration and stopped at the pending receipt.
+- The [read-only production plan](https://github.com/Asherlc/dofek/actions/runs/44340472652)
+  for `d344324a` reported no changes. The exact failed attempt was complete
+  and had skipped its stack and finalization jobs. Swarm task revisions and
+  digests matched the last verified receipt. At 15:53:38 UTC, the operator
+  appended an inactive status to `7872858882` with the original attempt URL.
+  [GitHub deployment status API](https://docs.github.com/en/rest/deployments/statuses#create-a-deployment-status).
+- The [next automatic release](https://github.com/Asherlc/dofek/actions/runs/44343743471/attempts/1)
+  passed admission and Terraform Apply. The dependency stack applied the
+  ClickHouse 26.10.3.7 upgrade and restarted web on its previous image in the
+  same phase. The web logs first showed `ECONNREFUSED` on port 8123, then
+  `getaddrinfo ENOTFOUND clickhouse` and a task startup failure. The [stack job](https://github.com/Asherlc/dofek/actions/runs/44343743471/job/134942094952)
+  stopped at **Wait for pre-migration web convergence** with
+  `dofek_web did not finish the pre-migration deployment; update_state=rollback_started`.
+  Swarm briefly reported zero ready web replicas. It restored both replicas
+  on the previous image by 16:18:25 UTC. The worker, analytics worker,
+  reconciliation service, and three ClickHouse sinks remained quiesced.
+- ClickHouse reached its requested version and completed its update at
+  16:17:38 UTC. After verifying its health and the completed web rollback, the
+  operator restarted only the failed stack job in the [same release](https://github.com/Asherlc/dofek/actions/runs/44343743471/attempts/2)
+  to preserve the validated source and pending receipt `7888915927`.
+- The second attempt passed the web convergence, migrations, replication
+  canary, and full stack checks. The stack job finished at 16:49:36 UTC and
+  the receipt recorded success at 16:50:50 UTC. Both web replicas and the
+  worker were healthy on the receipt's source `a6961e4` and image digest.
+  The analytics worker, ClickHouse sinks, and reconciliation service resumed.
+  The homepage and auth API returned HTTP 200.
+- Before applying a new provider configuration to production Terraform state,
+  merge the configuration and let releases using earlier revisions finish.
+  For the next ClickHouse image change, qualify the order of the database and
+  pre-migration web updates. Starting them together can cause another web
+  rollback. The recovery used the existing checks with their original limits.
