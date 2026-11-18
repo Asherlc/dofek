@@ -5,7 +5,7 @@ import {
 } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
-import { AccessTokenExpiredError } from "../providers/auth-errors.ts";
+import { AccessTokenExpiredError, ProviderAccessDeniedError } from "../providers/auth-errors.ts";
 import { SyncWindow } from "../providers/sync-window.ts";
 import type { SyncResult } from "../providers/types.ts";
 import type { SyncJob } from "./queues.ts";
@@ -469,6 +469,93 @@ describe("sync-provider-failure", () => {
         errorMessage: "Wahoo authorization needs attention. Reconnect Wahoo, then try again.",
       }),
     );
+  });
+
+  it("keeps a typed access denial actionable without prescribing a reconnect", async () => {
+    const denial = new ProviderAccessDeniedError(
+      "theCrag denied logbook access (403). Check your API key.",
+    );
+    const provider = createMockProvider({
+      id: "thecrag",
+      name: "theCrag",
+      sync: vi.fn().mockRejectedValue(denial),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "thecrag" }), mockDb);
+
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        stage: "ingest",
+        status: "failed",
+        errorCode: "provider_sync_failed",
+        errorMessage: denial.message,
+        idempotencyKey: "worker-failed",
+      }),
+    );
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "thecrag",
+        status: "error",
+        errorMessage: denial.message,
+        errorCauses: [denial],
+        authFailureReason: undefined,
+      }),
+    );
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "thecrag",
+      data_type: "sync",
+      failure_kind: "access_denied",
+      origin: "unknown",
+    });
+  });
+
+  it("treats a 502 with a positive Retry-After as an ordinary outage rather than a deferral", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const outage = new ProviderServiceUnavailableError({
+      message: "Example API service unavailable (502): bad gateway",
+      providerId: "example",
+      statusCode: 502,
+      responseBody: "bad gateway",
+      retryAfterSeconds: 600,
+    });
+    const provider = createMockProvider({
+      id: "example",
+      name: "Example",
+      sync: vi.fn().mockRejectedValue(outage),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({ providerId: "example" });
+
+    await runSyncJob(job, mockDb);
+
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: { example: { status: "error", message: outage.message } },
+      percentage: 100,
+    });
+    expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        errorCode: "provider_sync_failed",
+        errorMessage: "Example could not be synced. Try the sync again later.",
+        idempotencyKey: "worker-failed",
+      }),
+    );
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "example",
+        status: "error",
+        errorMessage: outage.message,
+        errorCauses: [outage],
+      }),
+    );
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it("rethrows retryable infrastructure errors so BullMQ retries the same job", async () => {

@@ -39263,3 +39263,21 @@ Local qualification and CI are separate from production throughput acceptance. T
   under the current authorization. Its source epoch is `1791745301`. A bounded
   sync using that cursor requests `since=1791745300` to replay the boundary
   second. This verifies saved progress. It does not measure the request's cost.
+
+## 2026-11-18 — Provider sync PR blocked by mutation coverage
+
+- The [provider sync PR](https://github.com/Asherlc/dofek/pull/3412) was blocked
+  by six failures in GitHub Actions. The first fatal line in the shared
+  presentation shard's `Run Stryker` step was `Final mutation score 29.17 under
+  breaking threshold 75, setting exit code to 1 (failure)`. The failing shared
+  and server mutation shards also caused the downstream required test checks
+  to fail. Production continued running the existing release.
+  [Failing run](https://github.com/Asherlc/dofek/actions/runs/44344135952).
+- The affected suites lacked direct assertions for several new branches, and
+  the worker registration assertion relied on a module-level constructor call
+  that Stryker excludes as static. The repair adds coverage for logbook denial
+  messages, `Retry-After` parsing, scheduled alert grouping, outage status,
+  and sync failure metrics and classification. The registration test now
+  constructs the workers during the test. All six original shard ranges
+  passed locally with scores from 79.66 to 100. Keep the threshold at 75
+  and verify the six affected shards on the PR before deployment.
