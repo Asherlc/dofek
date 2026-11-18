@@ -33,6 +33,7 @@ import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { ActivitySearchControls, type ActivitySearchSelection } from "./ActivitySearchControls.tsx";
 
 const DEFAULT_WEEKS = 4;
 const ACTIVITY_PAGE_SIZE = 20;
@@ -47,9 +48,19 @@ export function ActivitiesPage() {
   const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
   const [showHidden, setShowHidden] = useState(false);
-  const [searchDraft, setSearchDraft] = useState("");
-  const [searchTitle, setSearchTitle] = useState<string>();
-  const searching = searchTitle !== undefined;
+  const [searchSelection, setSearchSelection] = useState<ActivitySearchSelection>();
+  const searchTitle = searchSelection?.kind === "title" ? searchSelection.name : undefined;
+  const searchLocation =
+    searchSelection?.kind === "nearby"
+      ? {
+          kind: "nearby" as const,
+          latitude: searchSelection.latitude,
+          longitude: searchSelection.longitude,
+        }
+      : searchSelection?.kind === "name"
+        ? { kind: "name" as const, name: searchSelection.name }
+        : undefined;
+  const searching = searchSelection !== undefined;
   const [selectMode, setSelectMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmMerge, setConfirmMerge] = useState(false);
@@ -79,15 +90,35 @@ export function ActivitiesPage() {
     [weeks, endDate, selectedActivityType, showHidden],
   );
   const trpcUtils = trpc.useUtils();
-  const searchQuery = trpc.calendar.searchActivities.useInfiniteQuery(
+  const titleSearchQuery = trpc.calendar.searchActivities.useInfiniteQuery(
     { title: searchTitle ?? "", activityType: selectedActivityType, pageSize: ACTIVITY_PAGE_SIZE },
     {
-      enabled: searching,
+      enabled: searchTitle !== undefined,
       getNextPageParam: (page) => page.next ?? undefined,
       gcTime: 0,
       meta: { persist: false },
     },
   );
+  const locationSearchQuery = trpc.activityLocation.search.useInfiniteQuery(
+    {
+      location: searchLocation ?? { kind: "name", name: "" },
+      activityType: selectedActivityType,
+      pageSize: ACTIVITY_PAGE_SIZE,
+    },
+    {
+      enabled: searchLocation !== undefined,
+      getNextPageParam: (page) => page.next ?? undefined,
+      refetchInterval: (query) =>
+        query.state.data?.pages.some((page) =>
+          page.activities.some((activity) => activity.location?.kind === "processing"),
+        )
+          ? processingPollInterval("active")
+          : false,
+      gcTime: 0,
+      meta: { persist: false },
+    },
+  );
+  const searchQuery = searchLocation ? locationSearchQuery : titleSearchQuery;
   const pageInput = useMemo(
     () => ({ ...queryInput, page: activityPage, pageSize: ACTIVITY_PAGE_SIZE }),
     [queryInput, activityPage],
@@ -126,6 +157,7 @@ export function ActivitiesPage() {
       await Promise.all([
         trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.searchActivities.invalidate(),
+        trpcUtils.activityLocation.search.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.activity.list.invalidate(),
       ]);
@@ -148,6 +180,7 @@ export function ActivitiesPage() {
       await Promise.all([
         trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.searchActivities.invalidate(),
+        trpcUtils.activityLocation.search.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.calendar.calendarData.invalidate(),
         trpcUtils.activity.list.invalidate(),
@@ -162,6 +195,7 @@ export function ActivitiesPage() {
       await Promise.all([
         trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.searchActivities.invalidate(),
+        trpcUtils.activityLocation.search.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.activity.list.invalidate(),
       ]);
@@ -272,40 +306,13 @@ export function ActivitiesPage() {
         loading={processingStatus.isLoading}
       />
       <div className="space-y-4">
-        <form
-          className="flex flex-wrap items-center gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setSearchTitle(searchDraft.trim() || undefined);
+        <ActivitySearchControls
+          selection={searchSelection}
+          onSearch={(selection) => {
+            setSearchSelection(selection);
             cancelSelection();
           }}
-        >
-          <input
-            type="search"
-            aria-label="Search activity titles"
-            placeholder="Search activity titles"
-            value={searchDraft}
-            maxLength={200}
-            onChange={(event) => setSearchDraft(event.target.value)}
-            className="min-w-40 flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm"
-          />
-          <button type="submit" className="rounded-md bg-accent px-3 py-2 text-sm text-on-accent">
-            Search
-          </button>
-          {searching ? (
-            <button
-              type="button"
-              className="px-2 py-2 text-sm text-muted"
-              onClick={() => {
-                setSearchDraft("");
-                setSearchTitle(undefined);
-                cancelSelection();
-              }}
-            >
-              Clear search
-            </button>
-          ) : null}
-        </form>
+        />
         <ActivityControls
           activityTypes={overviewQuery.data?.activityTypes ?? []}
           activityType={activityType}

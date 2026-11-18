@@ -12,7 +12,9 @@ import {
 } from "../../app-fixtures/(tabs)/activities-test-helpers";
 import {
   activityMocks,
+  locationSearchQuery,
   mockImagesQuery,
+  placeLookupQuery,
   routerPush,
 } from "../../app-fixtures/(tabs)/activities-test-setup";
 import { branchingActivitySourceTree } from "../../app-fixtures/activity-source-tree";
@@ -21,6 +23,96 @@ import { activityImageFixture } from "../../components/activity-images-test-help
 const { default: ActivitiesScreen } = await import("../../app/(tabs)/activities");
 
 describe("ActivitiesScreen", () => {
+  it("searches recorded locations, chooses a nearby place, and loads more results", () => {
+    const fetchNextPage = vi.fn();
+    if (activityMocks.mockOverviewQuery.data) {
+      activityMocks.mockOverviewQuery.data.activityTypes = ["running"];
+    }
+    locationSearchQuery.mockImplementation((input, options) => ({
+      data: options.enabled
+        ? {
+            pages: [
+              {
+                activities: [
+                  activity({
+                    name: input.location.kind === "nearby" ? "Oakland Run" : "Gym Session",
+                    date: "2026-03-18",
+                  }),
+                ],
+              },
+            ],
+          }
+        : undefined,
+      hasNextPage: true,
+      fetchNextPage,
+    }));
+    placeLookupQuery.mockImplementation((_input, options) => ({
+      data: options.enabled
+        ? [
+            { id: "ca", label: "Oakland, CA", latitude: 37.8, longitude: -122.3 },
+            { id: "or", label: "Oakland, OR", latitude: 43.4, longitude: -123.3 },
+          ]
+        : undefined,
+    }));
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Location" }));
+    fireEvent.change(screen.getByLabelText("Search activity locations"), {
+      target: { value: "Oakland" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    expect(screen.getByText("Gym Session")).toBeDefined();
+    expect(placeLookupQuery.mock.lastCall?.[1].enabled).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Look up a place" }));
+    fireEvent.click(screen.getByRole("button", { name: "Oakland, CA" }));
+    expect(screen.getByText("Oakland Run")).toBeDefined();
+    expect(locationSearchQuery).toHaveBeenLastCalledWith(
+      {
+        location: { kind: "nearby", latitude: 37.8, longitude: -122.3 },
+        pageSize: 20,
+      },
+      expect.objectContaining({ enabled: true }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(fetchNextPage).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Sport, All activities" }));
+    fireEvent.click(screen.getByRole("button", { name: "Running" }));
+    expect(locationSearchQuery).toHaveBeenLastCalledWith(
+      {
+        location: { kind: "nearby", latitude: 37.8, longitude: -122.3 },
+        activityType: "running",
+        pageSize: 20,
+      },
+      expect.objectContaining({ enabled: true }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.queryByText("Oakland Run")).toBeNull();
+  });
+
+  it("keeps named search available when public place lookup fails", () => {
+    const refetch = vi.fn();
+    placeLookupQuery.mockImplementation((_input, options) =>
+      options.enabled
+        ? { isError: true, error: new Error("Place lookup is temporarily unavailable."), refetch }
+        : {},
+    );
+    locationSearchQuery.mockImplementation((_input, options) => ({
+      data: options.enabled
+        ? { pages: [{ activities: [activity({ name: "Gym Session", date: "2026-03-18" })] }] }
+        : undefined,
+    }));
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Location" }));
+    fireEvent.change(screen.getByLabelText("Search activity locations"), {
+      target: { value: "East Bay" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Look up a place" }));
+    expect(screen.getByText("Gym Session")).toBeDefined();
+    expect(screen.getByText("Place lookup is temporarily unavailable.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Retry place lookup" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
   it("uses the primary climbing source for the icon over a cardio representative", () => {
     activityMocks.mockQuery = activityListQuery([
       activity({ name: "Kaya climbing", activityType: "cardio", primaryActivityType: "climbing" }),
@@ -780,5 +872,11 @@ describe("ActivitiesScreen", () => {
     expect(activityMocks.weekListOptions?.refetchInterval?.({ state: { data: undefined } })).toBe(
       false,
     );
+    const searchInterval = locationSearchQuery.mock.lastCall?.[1].refetchInterval;
+    const readyPage = { activities: [activity({ location: null })] };
+    const pendingPage = { activities: [activity({ location: { kind: "processing" } })] };
+    expect(searchInterval?.({ state: { data: { pages: [readyPage, pendingPage] } } })).toBe(3000);
+    expect(searchInterval?.({ state: { data: { pages: [readyPage] } } })).toBe(false);
+    expect(searchInterval?.({ state: {} })).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { accountErasureRouter } from "./routers/account-erasure.ts";
 import { activityRouter } from "./routers/activity.ts";
+import { activityLocationRouter } from "./routers/activity-location.ts";
 import { adminRouter } from "./routers/admin.ts";
 import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { authRouter } from "./routers/auth.ts";
@@ -63,6 +64,7 @@ const appRouterProcedures = {
   inertialMeasurementUnitSync: inertialMeasurementUnitSyncRouter,
   watchAltitudeSync: watchAltitudeSyncRouter,
   activity: activityRouter,
+  activityLocation: activityLocationRouter,
   anomalyDetection: anomalyDetectionRouter,
   billing: billingRouter,
   bleHeartRateSync: bleHeartRateSyncRouter,

@@ -9,7 +9,7 @@ import {
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { formatActivityTypeLabel } from "@dofek/training/training";
-import { useRouter } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -53,6 +53,10 @@ const DATE_RANGE_OPTIONS = [
   { value: 12, label: "12 weeks" },
 ] as const;
 
+type ActivitySearchSelection =
+  | { kind: "title" | "name"; name: string }
+  | { kind: "nearby"; latitude: number; longitude: number; label: string };
+
 export default function ActivitiesScreen() {
   const router = useRouter();
   const units = useUnitConverter();
@@ -60,9 +64,25 @@ export default function ActivitiesScreen() {
   const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
   const [trainingTimeExpanded, setTrainingTimeExpanded] = useState(false);
+  const [searchMode, setSearchMode] = useState<"title" | "location">("title");
   const [searchDraft, setSearchDraft] = useState("");
-  const [searchTitle, setSearchTitle] = useState<string>();
-  const searching = searchTitle !== undefined;
+  const [searchSelection, setSearchSelection] = useState<ActivitySearchSelection>();
+  const [placeLookup, setPlaceLookup] = useState<string>();
+  const searchTitle = searchSelection?.kind === "title" ? searchSelection.name : undefined;
+  const searchLocation =
+    searchSelection?.kind === "nearby"
+      ? {
+          kind: "nearby" as const,
+          latitude: searchSelection.latitude,
+          longitude: searchSelection.longitude,
+        }
+      : searchSelection?.kind === "name"
+        ? { kind: "name" as const, name: searchSelection.name }
+        : undefined;
+  const searching = searchSelection !== undefined;
+  const searchName = searchDraft.trim();
+  const searchLabel =
+    searchMode === "location" ? "Search activity locations" : "Search activity titles";
   const [selectMode, setSelectMode] = useState(false);
   const [selectedActivities, setSelectedActivities] = useState<Map<string, string>>(new Map());
   const selectedActivityIds = new Set(selectedActivities.keys());
@@ -77,11 +97,41 @@ export default function ActivitiesScreen() {
     [weeks, endDate, selectedActivityType],
   );
   const trpcUtils = trpc.useUtils();
-  const searchQuery = trpc.calendar.searchActivities.useInfiniteQuery(
+  const titleSearchQuery = trpc.calendar.searchActivities.useInfiniteQuery(
     { title: searchTitle ?? "", activityType: selectedActivityType, pageSize: ACTIVITY_PAGE_SIZE },
     {
-      enabled: searching,
+      enabled: searchTitle !== undefined,
       getNextPageParam: (page) => page.next ?? undefined,
+      gcTime: 0,
+      meta: { persist: false },
+    },
+  );
+  const locationSearchQuery = trpc.activityLocation.search.useInfiniteQuery(
+    {
+      location: searchLocation ?? { kind: "name", name: "" },
+      activityType: selectedActivityType,
+      pageSize: ACTIVITY_PAGE_SIZE,
+    },
+    {
+      enabled: searchLocation !== undefined,
+      getNextPageParam: (page) => page.next ?? undefined,
+      refetchInterval: (query) =>
+        query.state.data?.pages.some((page) =>
+          page.activities.some((activity) => activity.location?.kind === "processing"),
+        )
+          ? processingPollInterval("active")
+          : false,
+      gcTime: 0,
+      meta: { persist: false },
+    },
+  );
+  const searchQuery = searchLocation ? locationSearchQuery : titleSearchQuery;
+  const places = trpc.activityLocation.places.useQuery(
+    { query: placeLookup ?? "" },
+    {
+      enabled: placeLookup !== undefined,
+      staleTime: Number.POSITIVE_INFINITY,
+      retry: false,
       gcTime: 0,
       meta: { persist: false },
     },
@@ -131,6 +181,7 @@ export default function ActivitiesScreen() {
     onSuccess: async () => {
       await trpcUtils.calendar.weekListV2.invalidate();
       await trpcUtils.calendar.searchActivities.invalidate();
+      await trpcUtils.activityLocation.search.invalidate();
       await trpcUtils.calendar.activityOverview.invalidate();
       await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
@@ -142,6 +193,7 @@ export default function ActivitiesScreen() {
     onSuccess: async () => {
       await trpcUtils.calendar.weekListV2.invalidate();
       await trpcUtils.calendar.searchActivities.invalidate();
+      await trpcUtils.activityLocation.search.invalidate();
       await trpcUtils.calendar.activityOverview.invalidate();
       await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
@@ -155,6 +207,7 @@ export default function ActivitiesScreen() {
       Promise.all([
         trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.searchActivities.invalidate(),
+        trpcUtils.activityLocation.search.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.calendar.calendarData.invalidate(),
         trpcUtils.activity.list.invalidate(),
@@ -195,7 +248,19 @@ export default function ActivitiesScreen() {
     setSelectMode(false);
   };
   const submitSearch = () => {
-    setSearchTitle(searchDraft.trim() || undefined);
+    setPlaceLookup(undefined);
+    setSearchSelection(
+      searchName
+        ? { kind: searchMode === "location" ? "name" : "title", name: searchName }
+        : undefined,
+    );
+    cancelSelection();
+  };
+
+  const clearSearch = () => {
+    setSearchDraft("");
+    setSearchSelection(undefined);
+    setPlaceLookup(undefined);
     cancelSelection();
   };
   const updateActivityType = (nextActivityType: string) => {
@@ -257,13 +322,35 @@ export default function ActivitiesScreen() {
       />
 
       <View style={styles.searchRow}>
+        {(["title", "location"] as const).map((mode) => (
+          <TouchableOpacity
+            key={mode}
+            style={styles.filterChip}
+            accessibilityRole="button"
+            accessibilityState={{ selected: mode === searchMode }}
+            onPress={() => {
+              if (mode === searchMode) return;
+              setSearchMode(mode);
+              clearSearch();
+            }}
+          >
+            <Text style={[styles.filterChipText, mode === searchMode && styles.filterCurrent]}>
+              {mode === "title" ? "Title" : "Location"}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={styles.searchRow}>
         <TextInput
-          accessibilityLabel="Search activity titles"
-          placeholder="Search activity titles"
+          accessibilityLabel={searchLabel}
+          placeholder={searchLabel}
           placeholderTextColor={colors.textSecondary}
           value={searchDraft}
           maxLength={200}
-          onChangeText={setSearchDraft}
+          onChangeText={(value) => {
+            setSearchDraft(value);
+            setPlaceLookup(undefined);
+          }}
           onSubmitEditing={submitSearch}
           returnKeyType="search"
           style={styles.searchInput}
@@ -275,20 +362,78 @@ export default function ActivitiesScreen() {
         >
           <Text style={styles.selectButtonText}>Search</Text>
         </TouchableOpacity>
+        {searchMode === "location" ? (
+          <TouchableOpacity
+            style={styles.selectButton}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !searchName }}
+            disabled={!searchName}
+            onPress={() => {
+              setSearchSelection({ kind: "name", name: searchName });
+              setPlaceLookup(searchName);
+              cancelSelection();
+            }}
+          >
+            <Text style={styles.selectButtonText}>Look up a place</Text>
+          </TouchableOpacity>
+        ) : null}
         {searching ? (
           <TouchableOpacity
             style={styles.selectButton}
             accessibilityRole="button"
-            onPress={() => {
-              setSearchDraft("");
-              setSearchTitle(undefined);
-              cancelSelection();
-            }}
+            onPress={clearSearch}
           >
             <Text style={styles.selectButtonText}>Clear search</Text>
           </TouchableOpacity>
         ) : null}
       </View>
+      {placeLookup && places.isFetching && !places.data ? (
+        <QueryStatePanel variant="loading" minHeight={44} />
+      ) : placeLookup && places.isError ? (
+        <QueryStatePanel
+          variant="error"
+          message={places.error?.message}
+          minHeight={60}
+          retryLabel="Retry place lookup"
+          onRetry={() => void places.refetch()}
+        />
+      ) : placeLookup && places.data?.length === 0 ? (
+        <Text style={styles.selectionGuidance} accessibilityLiveRegion="polite">
+          No places found.
+        </Text>
+      ) : placeLookup && places.data ? (
+        <View style={styles.controlsPanel}>
+          <Text style={styles.selectionGuidance}>
+            Choose a place to find nearby GPS activities.
+          </Text>
+          {places.data.map(({ id, label, latitude, longitude }) => (
+            <TouchableOpacity
+              key={id}
+              style={styles.selectButton}
+              accessibilityRole="button"
+              onPress={() => {
+                setPlaceLookup(undefined);
+                setSearchSelection({ kind: "nearby", latitude, longitude, label });
+                cancelSelection();
+              }}
+            >
+              <Text style={styles.selectButtonText}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+      {searchSelection?.kind === "nearby" ? (
+        <Text style={styles.selectionGuidance} accessibilityLiveRegion="polite">
+          Near {searchSelection.label}
+        </Text>
+      ) : null}
+      {(placeLookup && !!places.data?.length) || searchSelection?.kind === "nearby" ? (
+        <Text style={styles.selectionGuidance}>
+          Place lookup by <Link href="https://www.geoapify.com/">Geoapify</Link>
+          {" · "}
+          <Link href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</Link>
+        </Text>
+      ) : null}
 
       <ActivityControls
         activityTypes={overviewQuery.data?.activityTypes ?? []}

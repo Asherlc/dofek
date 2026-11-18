@@ -258,7 +258,7 @@ function setupRoutes(
     let logPathSearch = req.originalUrl;
     try {
       const logUrl = new URL(req.originalUrl, "http://localhost");
-      for (const sensitiveParameter of ["session", "code", "token"]) {
+      for (const sensitiveParameter of ["session", "code", "token", "input"]) {
         if (logUrl.searchParams.has(sensitiveParameter)) {
           logUrl.searchParams.set(sensitiveParameter, "[REDACTED]");
         }

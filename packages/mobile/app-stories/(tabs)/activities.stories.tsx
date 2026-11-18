@@ -376,6 +376,36 @@ function createMockObservable(
         observer.next?.({ result: { data: storyData.processingStatus } });
       } else if (path === "activity.images") {
         observer.next?.({ result: { data: storyData.activityImages } });
+      } else if (path === "activityLocation.search") {
+        observer.next?.({
+          result: {
+            data: {
+              activities: storyData.weekListV2.days.flatMap(({ date, activities }) =>
+                activities.map((activity) => ({ ...activity, date })),
+              ),
+              next: null,
+            },
+          },
+        });
+      } else if (path === "activityLocation.places") {
+        observer.next?.({
+          result: {
+            data: [
+              {
+                id: "oakland-ca",
+                label: "Oakland, CA, United States",
+                latitude: 37.8,
+                longitude: -122.3,
+              },
+              {
+                id: "oakland-or",
+                label: "Oakland, OR, United States",
+                latitude: 43.4,
+                longitude: -123.3,
+              },
+            ],
+          },
+        });
       } else {
         throw new Error(`Unhandled activities story tRPC operation: ${path}`);
       }
@@ -511,6 +541,19 @@ async function checkFullWidthMap(canvasElement: HTMLElement, activityName: strin
 
 export const Default: Story = {
   play: async ({ canvasElement }) => checkFullWidthMap(canvasElement, "Morning Ride"),
+};
+
+export const LocationSearch: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Location" }));
+    await userEvent.type(canvas.getByLabelText("Search activity locations"), "Oakland");
+    await userEvent.click(canvas.getByRole("button", { name: "Look up a place" }));
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Oakland, CA, United States" }),
+    );
+    await expect(canvas.getByText("Near Oakland, CA, United States")).toBeVisible();
+  },
 };
 
 export const TrainingTimeExpanded: Story = {

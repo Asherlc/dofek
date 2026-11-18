@@ -1,11 +1,5 @@
-import {
-  activityDataStateSchema,
-  activityDataStateUnavailableStatusSchema,
-} from "@dofek/format/activity-data-state";
+import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { activityOverviewComparisonSchema } from "@dofek/format/activity-overview";
-import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
-import { activityOriginSchema } from "@dofek/providers/activity-origin";
-import { activitySourceTreeSchema } from "@dofek/providers/activity-source-tree";
 import {
   ACTIVITY_HEATMAP_BAND_IDS,
   type ActivityHeatmapBandId,
@@ -15,16 +9,17 @@ import { TRPCError } from "@trpc/server";
 import { createActivitySearchIndexFromEnv } from "dofek/activity-search/config";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
-import { activityLocationSchema } from "../contracts/activity-location.ts";
+import {
+  calendarActivityEntrySchema,
+  datedCalendarActivityEntrySchema,
+} from "../contracts/calendar-activity-entry.ts";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { endDateSchema } from "../lib/date-window.ts";
-import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 import { ActivitiesCalendarRepository } from "../repositories/activities-calendar-repository.ts";
 import { ActivityOverviewRepository } from "../repositories/activity-overview-repository.ts";
-import {
-  activityTitleCursorSchema,
-  searchActivityTitles,
-} from "../repositories/activity-title-search.ts";
+import { activitySearchCursorSchema } from "../repositories/activity-search-pagination.ts";
+import { searchActivityTitles } from "../repositories/activity-title-search.ts";
 import { CalendarRepository } from "../repositories/calendar-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
@@ -37,60 +32,6 @@ export interface CalendarDay {
   trainingTimeBand: ActivityHeatmapBandId;
   trainingTimeMeaning: string;
 }
-
-const activityStatSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("available"),
-    label: z.string(),
-    value: z.string(),
-  }),
-  z.object({
-    status: activityDataStateUnavailableStatusSchema,
-    label: z.string(),
-    reason: z.string().trim().min(1),
-  }),
-]);
-
-const activityListSourceSchema = z.object({
-  origin: activityOriginSchema,
-  primarySourceLabel: z.string().nullable(),
-  sourceCount: z.number().int().positive(),
-  overlapSummary: z.string().nullable(),
-  tree: activitySourceTreeSchema,
-});
-
-const calendarActivityEntrySchema = z.object({
-  id: z.string(),
-  name: z.string().nullable(),
-  activityType: z.string(),
-  primaryActivityType: z.string().nullable(),
-  modality: z.string().nullable(),
-  startedAt: timestampStringSchema,
-  endedAt: timestampStringSchema.nullable(),
-  localTimeContext: recordLocalTimeContextSchema,
-  durationMin: z.number().nullable(),
-  source: activityListSourceSchema,
-  lastProcessedAt: timestampStringSchema.nullable(),
-  distanceMeters: z.number().nullable(),
-  distanceState: activityDataStateSchema,
-  elevationGainM: z.number().nullable(),
-  elevationState: activityDataStateSchema,
-  location: activityLocationSchema.nullable(),
-  tss: z.number().nullable(),
-  stats: z.array(activityStatSchema),
-  isProviderAbsent: z.boolean().optional(),
-  providerId: z.string().optional(),
-  providerAbsentAt: timestampStringSchema.nullable().optional(),
-  partialAbsentSources: z
-    .array(
-      z.object({
-        providerId: z.string(),
-        providerAbsentAt: timestampStringSchema.nullable(),
-        subsource: z.string().nullable().optional(),
-      }),
-    )
-    .optional(),
-});
 
 const calendarDayActivitiesSchema = z.object({
   date: dateStringSchema,
@@ -214,14 +155,14 @@ export const calendarRouter = router({
       z.object({
         title: z.string().trim().min(1).max(200),
         activityType: z.string().min(1).optional(),
-        cursor: activityTitleCursorSchema.nullish(),
+        cursor: activitySearchCursorSchema.nullish(),
         pageSize: z.number().int().min(1).max(50).default(20),
       }),
     )
     .output(
       z.object({
-        activities: z.array(calendarActivityEntrySchema.extend({ date: dateStringSchema })),
-        next: activityTitleCursorSchema.nullable(),
+        activities: z.array(datedCalendarActivityEntrySchema),
+        next: activitySearchCursorSchema.nullable(),
       }),
     )
     .query(async ({ ctx, input }) => {

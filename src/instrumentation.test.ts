@@ -353,6 +353,14 @@ describe("instrumentation", () => {
       expectedUrl: "https://apis.garmin.com:8443/file?token=REDACTED",
     },
     { request: { host: "api.example.test" }, expectedUrl: "http://api.example.test/" },
+    {
+      request: {
+        protocol: "https:",
+        hostname: "clickhouse.example",
+        path: `/?param_activityIds=${encodeURIComponent("[private-id]")}&param_latitude=37.8`,
+      },
+      expectedUrl: "https://clickhouse.example/?param_activityIds=REDACTED&param_latitude=REDACTED",
+    },
   ])(
     "preserves legacy host and default HTTP request options: $expectedUrl",
     async ({ request, expectedUrl }) => {
@@ -369,33 +377,47 @@ describe("instrumentation", () => {
     },
   );
 
-  it("redacts fetch span attributes through the Undici start-span hook", async () => {
-    const { startInstrumentation } = await import("./instrumentation.ts");
-    startInstrumentation({
-      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://collector.example/v1/traces",
-    });
-    const config = vi.mocked(getNodeAutoInstrumentations).mock.calls.at(-1)?.[0]?.[
-      "@opentelemetry/instrumentation-undici"
-    ];
-    const attributes = config?.startSpanHook?.({
+  it.each([
+    {
       origin: "https://apis.garmin.com",
       path: "/file?token=synthetic-fetch-secret&feed=fit",
-      method: "GET",
-      headers: [],
-      addHeader: vi.fn(),
-      throwOnError: false,
-      completed: false,
-      aborted: false,
-      idempotent: true,
-      contentLength: null,
-      contentType: null,
-      body: null,
-    });
+      expectedUrl: "https://apis.garmin.com/file?token=REDACTED&feed=fit",
+    },
+    {
+      origin: "https://api.geoapify.com",
+      path: "/v1/geocode/search?apiKey=synthetic-fetch-secret&text=Private+Gym",
+      expectedUrl: "https://api.geoapify.com/v1/geocode/search?apiKey=REDACTED&text=REDACTED",
+    },
+  ])(
+    "redacts fetch span attributes through the Undici hook for $origin",
+    async ({ origin, path, expectedUrl }) => {
+      const { startInstrumentation } = await import("./instrumentation.ts");
+      startInstrumentation({
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://collector.example/v1/traces",
+      });
+      const config = vi.mocked(getNodeAutoInstrumentations).mock.calls.at(-1)?.[0]?.[
+        "@opentelemetry/instrumentation-undici"
+      ];
+      const attributes = config?.startSpanHook?.({
+        origin,
+        path,
+        method: "GET",
+        headers: [],
+        addHeader: vi.fn(),
+        throwOnError: false,
+        completed: false,
+        aborted: false,
+        idempotent: true,
+        contentLength: null,
+        contentType: null,
+        body: null,
+      });
 
-    expect(attributes?.["url.full"]).toBe("https://apis.garmin.com/file?token=REDACTED&feed=fit");
-    expect(attributes?.["url.query"]).toContain("token=REDACTED");
-    expect(JSON.stringify(attributes)).not.toContain("synthetic-fetch-secret");
-  });
+      expect(attributes?.["url.full"]).toBe(expectedUrl);
+      expect(attributes?.["url.query"]).toBe(new URL(expectedUrl).search.slice(1));
+      expect(JSON.stringify(attributes)).not.toContain("synthetic-fetch-secret");
+    },
+  );
 
   it("adds the PostHog trace and AI processors in production", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");

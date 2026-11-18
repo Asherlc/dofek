@@ -113,6 +113,12 @@ of distance and elevation for indoor and virtual rides, including reported zeros
 See [the card](src/components/ActivityCardContent.tsx) and the
 [shared cycling classification](../training/src/endurance-types.ts).
 
+On Activities, choose **Location** and submit a gym or crag name to search
+recorded climbing areas. **Look up a place** offers public place choices for
+finding nearby GPS activities. The sport filter applies to both. Select
+**Clear search** to return to the dated activity list.
+[Activities search controls](src/pages/ActivitySearchControls.tsx)
+
 The [activity detail header](src/pages/activity-detail/components/ActivityDetailHeader.tsx) also omits distance
 for indoor and virtual cycling. Rides show **Energy Output** in kJ from the
 server's full recorded power samples, following the selected power source.

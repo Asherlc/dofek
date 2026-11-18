@@ -290,6 +290,15 @@ the resolved primary activity type, falling back to the representative type when
 primary identity is unresolved. This matches web and mobile card icons while
 preserving the representative's sensor and metric responsibilities.
 
+The Activities [location router](src/routers/activity-location.ts) searches the
+recorded climbing area path in PostgreSQL or finds route centroids within
+25 km of the selected public place. It applies the selected sport and
+entitlement window, then rechecks visibility when loading the activity cards.
+Public place lookup sends the submitted place name to Geoapify. Recorded
+activity locations stay in Dofek.
+[ClickHouse geographic distance](https://clickhouse.com/docs/reference/functions/regular-functions/geo/coordinates#geodistance) ·
+[Geoapify forward geocoding](https://apidocs.geoapify.com/docs/geocoding/)
+
 ### Activity map readiness contract
 
 `calendar.weekList` and activity lists use the shared

@@ -52,6 +52,8 @@ let mockOverviewQuery: {
 };
 let weekListInput: unknown;
 const titleSearchQuery = vi.hoisted(() => vi.fn());
+const locationSearchQuery = vi.hoisted(() => vi.fn());
+const placeLookupQuery = vi.hoisted(() => vi.fn());
 interface WeekListOptions {
   placeholderData?: (previousData: unknown) => unknown;
   refetchInterval?: (query: {
@@ -112,6 +114,10 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
+    activityLocation: {
+      places: { useQuery: placeLookupQuery },
+      search: { useInfiniteQuery: locationSearchQuery },
+    },
     calendar: {
       searchActivities: { useInfiniteQuery: titleSearchQuery },
       weekListV2: {
@@ -212,6 +218,7 @@ vi.mock("../lib/trpc.ts", () => ({
       dismiss: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
     },
     useUtils: () => ({
+      activityLocation: { search: { invalidate: vi.fn() } },
       calendar: {
         weekListV2: {
           invalidate: invalidateWeekList,
@@ -344,6 +351,10 @@ describe("ActivitiesPage", () => {
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
     titleSearchQuery.mockReset();
     titleSearchQuery.mockReturnValue({ data: undefined, isPending: false });
+    locationSearchQuery.mockReset();
+    locationSearchQuery.mockReturnValue({});
+    placeLookupQuery.mockReset();
+    placeLookupQuery.mockReturnValue({});
     mockOverviewQuery = {
       data: {
         activityCount: 0,
@@ -421,6 +432,58 @@ describe("ActivitiesPage", () => {
     expect(screen.queryByText("No matching activities.")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("uses the selected place, retains sport, and supports pagination and clearing", () => {
+    const fetchNextPage = vi.fn();
+    const refetch = vi.fn();
+    if (mockOverviewQuery.data) mockOverviewQuery.data.activityTypes = ["running"];
+    placeLookupQuery.mockImplementation((_input, options) => ({
+      data: options.enabled
+        ? [{ id: "oakland", label: "Oakland, CA", latitude: 37.8, longitude: -122.3 }]
+        : undefined,
+    }));
+    locationSearchQuery.mockImplementation((input, options) => {
+      if (input.activityType) {
+        return {
+          isError: true,
+          error: new Error("Location search is temporarily unavailable."),
+          refetch,
+        };
+      }
+      return {
+        data:
+          options.enabled && input.location.kind === "nearby"
+            ? { pages: [{ activities: [activity({ name: "Oakland Run", date: "2026-03-18" })] }] }
+            : undefined,
+        hasNextPage: true,
+        fetchNextPage,
+      };
+    });
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Location" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Oakland" } });
+    fireEvent.click(screen.getByRole("button", { name: "Look up a place" }));
+    fireEvent.click(screen.getByRole("button", { name: "Oakland, CA" }));
+    expect(screen.getByRole("link", { name: "Oakland Run" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(fetchNextPage).toHaveBeenCalledOnce();
+    fireEvent.change(screen.getByRole("combobox", { name: "Activity type" }), {
+      target: { value: "running" },
+    });
+    expect(locationSearchQuery).toHaveBeenLastCalledWith(
+      {
+        location: { kind: "nearby", latitude: 37.8, longitude: -122.3 },
+        activityType: "running",
+        pageSize: 20,
+      },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(screen.getByText("Location search is temporarily unavailable.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refetch).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.queryByText("Near Oakland, CA")).toBeNull();
   });
 
   it("loads one photo only for visible cards without a map", () => {
@@ -585,6 +648,12 @@ describe("ActivitiesPage", () => {
       false,
     );
     expect(interval?.({ state: {} })).toBe(false);
+    const searchInterval = locationSearchQuery.mock.lastCall?.[1].refetchInterval;
+    const readyPage = { activities: [{ location: { kind: "recorded_gps" } }] };
+    const pendingPage = { activities: [{ location: { kind: "processing" } }] };
+    expect(searchInterval?.({ state: { data: { pages: [readyPage, pendingPage] } } })).toBe(3000);
+    expect(searchInterval?.({ state: { data: { pages: [readyPage] } } })).toBe(false);
+    expect(searchInterval?.({ state: {} })).toBe(false);
   });
 
   it("keeps placeholder activity data visible during background refetch errors", () => {

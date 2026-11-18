@@ -119,7 +119,10 @@ show the [Activities stories](<app-stories/(tabs)/activities.stories.tsx>) at a
 
 The Activities list keeps date and sport controls above a collapsed training
 time summary. Expand it for period comparisons and the daily training-time
-calendar. The [activity detail](<app/activity/[id].tsx>) opens on key stats and
+calendar. Choose **Location** to search recorded gym or crag names, or use
+**Look up a place** and select a result to find nearby GPS activities. Search
+uses the current sport filter and pages through accessible history.
+The [activity detail](<app/activity/[id].tsx>) opens on key stats and
 the activity's route, exercises, or climbs when available. Performance shows
 one metric at a time with the recording source and exact chart data. Scrubbing
 an activity with GPS still updates the route position. The actions beside the

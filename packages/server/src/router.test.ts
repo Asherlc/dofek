@@ -12,6 +12,7 @@ vi.mock("./routers/inertial-measurement-unit-sync.ts", () => ({
   inertialMeasurementUnitSyncRouter: mockRouter,
 }));
 vi.mock("./routers/activity.ts", () => ({ activityRouter: mockRouter }));
+vi.mock("./routers/activity-location.ts", () => ({ activityLocationRouter: mockRouter }));
 vi.mock("./routers/anomaly-detection.ts", () => ({ anomalyDetectionRouter: mockRouter }));
 vi.mock("./routers/account-erasure.ts", () => ({ accountErasureRouter: mockRouter }));
 vi.mock("./routers/auth.ts", () => ({ authRouter: mockRouter }));
@@ -114,6 +115,7 @@ describe("appRouter", () => {
       "inertialMeasurementUnitSync",
       "watchAltitudeSync",
       "activity",
+      "activityLocation",
       "anomalyDetection",
       "accountErasure",
       "auth",

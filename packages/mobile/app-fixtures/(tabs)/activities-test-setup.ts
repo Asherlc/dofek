@@ -14,6 +14,8 @@ const queryFixtureClient = new QueryClient();
 export const routerPush = vi.fn();
 export const mockImagesQuery = vi.fn();
 export const titleSearchQuery = vi.fn();
+export const placeLookupQuery = vi.fn();
+export const locationSearchQuery = vi.fn();
 export const activityMocks: {
   mockQuery: MockWeekListQuery;
   liveQueryClient: QueryClient | undefined;
@@ -64,10 +66,16 @@ export const activityMocks: {
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: routerPush }),
+  Link: ({ href, children }: { href: string; children: ReactNode }) =>
+    createElement("a", { href }, children),
 }));
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    activityLocation: {
+      places: { useQuery: placeLookupQuery },
+      search: { useInfiniteQuery: locationSearchQuery },
+    },
     calendar: {
       searchActivities: { useInfiniteQuery: titleSearchQuery },
       weekListV2: {
@@ -167,6 +175,7 @@ vi.mock("../../lib/trpc", () => ({
       dismiss: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
     },
     useUtils: () => ({
+      activityLocation: { search: { invalidate: vi.fn() } },
       calendar: {
         weekListV2: {
           invalidate: activityMocks.invalidateWeekList,
@@ -229,6 +238,10 @@ beforeEach(() => {
   activityMocks.mockQuery = { data: [], isLoading: false, isError: false, error: null };
   titleSearchQuery.mockReset();
   titleSearchQuery.mockReturnValue({ data: undefined, isPending: false });
+  placeLookupQuery.mockReset();
+  placeLookupQuery.mockReturnValue({});
+  locationSearchQuery.mockReset();
+  locationSearchQuery.mockReturnValue({});
   activityMocks.mockCalendarQuery = { data: [], isLoading: false, isError: false, error: null };
   activityMocks.mockOverviewQuery = emptyActivityOverviewQuery();
   activityMocks.weekListInput = undefined;

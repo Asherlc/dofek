@@ -545,6 +545,22 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     );
   });
 
+  it("passes the Geoapify key only to the Activities web API", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(
+      sourcePath,
+      dotenv({ ...completeDeployEnvironment(), GEOAPIFY_API_KEY: "geoapify-key" }),
+    );
+
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+    const servicesWithTheKey = Object.entries(paths).flatMap(([service, path]) => {
+      const key = parseEnv(readFileSync(path, "utf8")).GEOAPIFY_API_KEY;
+      return key ? [[service, key]] : [];
+    });
+    expect(servicesWithTheKey).toEqual([["web", "geoapify-key"]]);
+  });
+
   it("fails before worker startup when a worker-only contract is incomplete", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");

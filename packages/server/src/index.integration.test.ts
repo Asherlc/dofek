@@ -1,7 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../src/db/test-helpers.ts";
 import { createSession } from "./auth/session.ts";
 import { createApp } from "./index.ts";
+import { logger } from "./logger.ts";
 import type { ActivitySensorStore } from "./repositories/activity-repository.ts";
 
 const noopSensorStore = {
@@ -99,6 +100,35 @@ describe("tRPC API", () => {
       expect(data).toHaveLength(1);
       expect(Array.isArray(data[0].result.data)).toBe(true);
     });
+  });
+
+  it("redacts location search input from HTTP access logs for GET clients", async () => {
+    const log = vi.spyOn(logger, "info");
+    try {
+      const input = encodeURIComponent(
+        JSON.stringify({ location: { kind: "name", name: "Private Gym" } }),
+      );
+      const result = await fetch(`${baseUrl}/api/trpc/activityLocation.search?input=${input}`, {
+        headers: { Cookie: sessionCookie },
+      });
+      expect(result.status).toBe(200);
+      await expect(result.json()).resolves.toMatchObject({
+        result: { data: { activities: [], next: null } },
+      });
+      const accessLogs = log.mock.calls
+        .flat()
+        .filter(
+          (value) =>
+            typeof value === "string" &&
+            value.startsWith("[web] GET /api/trpc/activityLocation.search?"),
+        );
+      expect(accessLogs).toEqual([
+        expect.stringContaining(`input=${encodeURIComponent("[REDACTED]")}`),
+      ]);
+      expect(accessLogs.join()).not.toContain("Private");
+    } finally {
+      log.mockRestore();
+    }
   });
 
   describe("Prometheus metrics", () => {

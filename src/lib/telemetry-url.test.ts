@@ -31,6 +31,40 @@ describe("telemetry URL redaction", () => {
     expect(redactTelemetryUrl("GET /health")).toBe("GET /health");
   });
 
+  it("keeps geocoding credentials and lookup text out of outgoing URL and query attributes", () => {
+    const url =
+      "https://api.geoapify.com/v1/geocode/search?apiKey=synthetic&text=Place&format=json";
+    expect(telemetryHttpAttributes(url)).toEqual({
+      "url.full":
+        "https://api.geoapify.com/v1/geocode/search?apiKey=REDACTED&text=REDACTED&format=json",
+      "http.url":
+        "https://api.geoapify.com/v1/geocode/search?apiKey=REDACTED&text=REDACTED&format=json",
+      "http.target": "/v1/geocode/search?apiKey=REDACTED&text=REDACTED&format=json",
+      "url.query": "apiKey=REDACTED&text=REDACTED&format=json",
+    });
+  });
+
+  it("redacts ClickHouse location, cursor, and activity hydration parameters", () => {
+    const query = new URLSearchParams({
+      param_latitude: "37.8",
+      param_longitude: "-122.3",
+      param_cursorId: "synthetic",
+      param_cursorStartedAt: "2026-03-15",
+      param_activityIds: "[private-id]",
+      param_limit: "20",
+    }).toString();
+    expect(redactTelemetryQuery(query)).toBe(
+      "param_latitude=REDACTED&param_longitude=REDACTED&param_cursorId=REDACTED&param_cursorStartedAt=REDACTED&param_activityIds=REDACTED&param_limit=20",
+    );
+  });
+
+  it("redacts serialized tRPC GET input while retaining the batch marker", () => {
+    const url = "/api/trpc/activityLocation.search?batch=1&input=%7B%22name%22%3A%22Private%22%7D";
+    expect(redactTelemetryUrl(url)).toBe(
+      "/api/trpc/activityLocation.search?batch=1&input=REDACTED",
+    );
+  });
+
   it("keeps fragment boundaries when redacting a URL query", () => {
     expect(redactTelemetryUrl("https://example.test/file?token=synthetic#section")).toBe(
       "https://example.test/file?token=REDACTED#section",
