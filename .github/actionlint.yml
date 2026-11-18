@@ -1,0 +1,6 @@
+---
+# The pinned actionlint release predates this GitHub-hosted ARM64 label.
+# https://github.blog/changelog/2026-10-15-xcode-27-runner-image-generally-available/
+self-hosted-runner:
+  labels:
+    - xcode-27

@@ -1,5 +1,20 @@
 # Production Incident Baseline
 
+## 2026-11-18 — TestFlight upload used the iOS 26.5 SDK
+
+- **Impact.** App Store Connect accepted Dofek 1.0.0 build `1795025515` and
+  sent `ITMS-90725`. Apple starts requiring the iOS 27 SDK in April 2027.
+  [Successful upload](https://github.com/Asherlc/dofek/actions/runs/44372372817/job/135042452011)
+  · [Apple submission requirements](https://developer.apple.com/app-store/submitting/)
+- **Cause and fix.** The signed `xcodebuild archive` step inherited Xcode 26.6
+  and its iOS 26.5 SDK from `macos-latest`. The iOS archive and export jobs
+  now select Xcode 27.2 on GitHub's `xcode-27` image. The archive job logs
+  the selected Xcode and iOS SDK versions.
+  [Original archive](https://github.com/Asherlc/dofek/actions/runs/44365854019/job/135020785278)
+  · [Runner toolchains](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md#xcode)
+- **Follow-up.** Confirm the signed archive reports the iOS 27.2 SDK and
+  check App Store Connect processing on the next TestFlight upload.
+
 ## 2026-11-17 — Authenticated Kaya climb-detail enrichment regressed
 
 - **Impact.** Sentry grouped 45 occurrences under `DOFEK-SERVER-7V`. The

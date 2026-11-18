@@ -51,8 +51,10 @@ concurrency:
 jobs:
   deploy:
     name: Upload to TestFlight
-    runs-on: macos-latest
+    runs-on: xcode-27
     timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     permissions:
       contents: read
       actions: read

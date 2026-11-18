@@ -76,8 +76,10 @@ jobs:
     name: Archive signed iOS app
     needs: [check]
     if: needs.check.outputs.should_deploy == 'true'
-    runs-on: macos-latest
+    runs-on: xcode-27
     timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     permissions:
       contents: read
       actions: read
@@ -94,6 +96,10 @@ jobs:
       - name: Resolve checked-out commit SHA
         id: checked-out-sha
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Record release toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
         with:
