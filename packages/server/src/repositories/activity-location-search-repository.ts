@@ -112,10 +112,17 @@ export class ActivityLocationSearchRepository extends BaseRepository {
     limit: number,
   ) {
     const activityDate = clickHouseActivityCalendarDate("activity");
-    const access =
+    const history =
       this.accessWindow.kind === "limited"
-        ? `AND ${activityDate} >= {startDate:Date} AND ${activityDate} < {endDateExclusive:Date}`
-        : "";
+        ? {
+            timezone: this.timezone,
+            startDate: this.accessWindow.startDate,
+            endDateExclusive: this.accessWindow.endDateExclusive,
+          }
+        : undefined;
+    const access = history
+      ? `AND ${activityDate} >= {startDate:Date} AND ${activityDate} < {endDateExclusive:Date}`
+      : "";
     const sport = activityType
       ? "AND coalesce(activity.primary_canonical_type, activity.canonical_type) = {activityType:String}"
       : "";
@@ -147,13 +154,7 @@ export class ActivityLocationSearchRepository extends BaseRepository {
         longitude,
         distance: nearbyDistanceMeters,
         limit,
-        ...(this.accessWindow.kind === "limited"
-          ? {
-              timezone: this.timezone,
-              startDate: this.accessWindow.startDate,
-              endDateExclusive: this.accessWindow.endDateExclusive,
-            }
-          : {}),
+        ...history,
         ...(activityType ? { activityType } : {}),
         ...(after ? { cursorStartedAt: after.startedAt, cursorId: after.id } : {}),
       },
