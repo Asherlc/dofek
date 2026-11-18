@@ -39163,3 +39163,23 @@ Local qualification and CI are separate from production throughput acceptance. T
   inventory identified both listeners as other workspaces' Postgres ports.
   The fixtures now bind to the same IPv4 loopback address as the clients,
   following the [prior listener diagnosis](#2026-10-11--local-http-test-reached-a-docker-postgres-listener).
+
+## 2026-11-18 — theCrag logbook access denied after a successful sync
+
+- The connected logbook last synced successfully at 10:30:16 UTC. Dofek's
+  read-only provider status recorded seven consecutive failures through
+  14:00:15 UTC and flagged the connection for reauthorization. The latest
+  error says theCrag requires logbook access for the saved key (HTTP 400).
+- The [11:30:15 UTC production event](https://east-bay-software.sentry.io/issues/7748564988/events/a9654c0f2f434823aa20302e71a9cd23/)
+  fired after two scheduled failures. The [issue](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6E)
+  contains 19 occurrences across several providers and failure types. The
+  deployed [alert](https://github.com/Asherlc/dofek/blob/d15b8a89fc31a815a7bf9f183b87217d3a9541cd/src/db/sync-log.ts#L158-L170)
+  captures them at a shared stack frame with a provider tag and no explicit
+  fingerprint. Use the [provider-filtered events](https://east-bay-software.sentry.io/explore/discover/homepage/?dataset=errors&queryDataset=error-events&query=issue%3ADOFEK-SERVER-6E+environment%3Aproduction+provider%3Athecrag&project=4511073388593152&statsPeriod=90d)
+  and Dofek sync health to assess the current failure streak.
+- The upstream denial identifies the access boundary. The key's current
+  status, the account's supporter status, and its weekly budget remain
+  unverified. The owner can check them in theCrag **Settings > API Keys**.
+  Verify a successful Dofek sync after access is restored and keep the issue
+  open until then. This investigation used read-only Sentry and Dofek queries.
+  [theCrag personal API guide](https://www.thecrag.com/article/logbookreadapi).
