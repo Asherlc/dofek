@@ -323,14 +323,13 @@ depend on shell activation because `.mcp.json` launches it through
 
 ## Storybook through a development tunnel
 
-Web and mobile Storybook allow `.trycloudflare.com` hosts so a Cloudflare quick
-tunnel can forward its public hostname. Host validation stays enabled for other
-public domains. Storybook configures this reverse-proxy access through
-[`core.allowedHosts`](https://storybook.js.org/docs/api/main-config/main-config-core#allowedhosts).
-Start the usual Storybook command, then run `paseo-quick-tunnel <port>` if that
-helper is installed on your workstation; keep the tunnel running while reviewing
-the UI. Cloudflare describes the generated public hostname and tunnel lifetime
-in its [quick tunnel guide](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
+Install **Ports** on the Paseo host with `paseo plugin add zedobaia/ports`.
+Start `pnpm storybook:web` or `pnpm storybook:mobile` from the workspace. In
+Paseo's Command Center, choose **Show open ports**, select the Storybook port,
+then choose **Share publicly** and confirm with **Random address** selected.
+Use the generated `trycloudflare.com` HTTPS URL with the specific story's path.
+Copy the password as well if password protection is enabled. The link closes
+when Storybook stops. [Ports plugin documentation](https://paseo.sh/plugins/zedobaia/ports)
 
 ## Development Policy
 
