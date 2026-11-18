@@ -143,10 +143,10 @@ export function ActivitySourceDisclosure({
   );
 
   return (
-    <View style={heading ? styles.headerContainer : styles.container}>
-      {heading ? <View style={styles.heading}>{heading}</View> : null}
+    <View style={heading ? styles.stackedContainer : styles.container}>
+      {heading}
       <Pressable
-        style={[styles.trigger, heading ? styles.headerTrigger : undefined]}
+        style={[styles.trigger, heading ? styles.inlineTrigger : undefined]}
         accessibilityRole="button"
         accessibilityLabel={primary ? `Lineage: ${primary.label}` : "Lineage"}
         accessibilityHint={open ? "Hide activity lineage" : "Show activity lineage"}
@@ -167,7 +167,7 @@ export function ActivitySourceDisclosure({
             <SourceLabel node={primary} />
           </View>
         ) : null}
-        <View style={styles.sourceControl}>
+        <View style={[styles.sourceControl, heading ? styles.inlineSourceControl : undefined]}>
           <Text style={styles.controlLabel}>Lineage</Text>
           <Text style={styles.chevron} accessibilityElementsHidden importantForAccessibility="no">
             {open ? "⌃" : "⌄"}
@@ -229,14 +229,7 @@ const styles = StyleSheet.create({
   dialogHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   dialogTitle: { color: colors.text, fontSize: 16, fontWeight: "600" },
   closeButton: { minHeight: 44, minWidth: 44, justifyContent: "center", alignItems: "center" },
-  headerContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "flex-start",
-    gap: spacing.sm,
-  },
-  heading: { flexGrow: 1, flexBasis: 180, minWidth: 0 },
-  headerTrigger: { maxWidth: "100%", paddingHorizontal: 0 },
+  stackedContainer: { gap: spacing.sm },
   fullWidth: { width: "100%" },
   container: {
     borderTopWidth: 1,
@@ -252,6 +245,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
   },
+  inlineTrigger: { justifyContent: "flex-start", paddingHorizontal: 0 },
   primary: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexShrink: 1 },
   sourceControl: {
     flexDirection: "row",
@@ -259,6 +253,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginLeft: "auto",
   },
+  inlineSourceControl: { marginLeft: 0 },
   controlLabel: { color: colors.textSecondary, fontSize: 12 },
   chevron: { color: colors.textSecondary, fontSize: 16 },
   label: { color: colors.text, fontSize: 13, fontWeight: "600", flexShrink: 1 },

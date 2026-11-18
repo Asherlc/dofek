@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { Linking } from "react-native";
+import { Linking, Pressable, Text } from "react-native";
 import { userEvent } from "storybook/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { garminActivitySourceTree } from "../../app-fixtures/activity-source-tree";
+import { activityImageFixture } from "../activity-images-test-helpers";
 import { ActivityDetailHeader } from "./ActivityDetailHeader";
 import { detailHeaderActivity, removedDetailHeaderActivity } from "./ActivityDetailHeader.fixtures";
 
@@ -261,5 +262,33 @@ describe("ActivityDetailHeader", () => {
     );
     expect(screen.getAllByText("Strava")).toHaveLength(2);
     expect(screen.getByText("Removed from provider sync")).toBeDefined();
+  });
+
+  it("puts the source trigger below the identity so a long title keeps its width beside the photo and actions", () => {
+    const longName = "Kaya gym session with an unusually long activity title";
+    render(
+      <ActivityDetailHeader
+        activity={{ ...detailHeaderActivity, name: longName }}
+        photos={{ images: [activityImageFixture], onRetry: () => undefined }}
+        actions={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Activity actions"
+            onPress={() => undefined}
+          >
+            <Text>⋯</Text>
+          </Pressable>
+        }
+      />,
+    );
+
+    const title = screen.getByText(longName);
+    const trigger = screen.getByRole("button", { name: "Lineage: Garmin Edge 530" });
+    const stacked = trigger.parentElement;
+    if (!stacked) throw new Error("Expected the source trigger to sit in a stacked container");
+    expect(stacked.firstElementChild?.textContent).toContain(longName);
+    expect(title.contains(trigger)).toBe(false);
+    expect(screen.getByRole("button", { name: "View 1 photo" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Activity actions" })).toBeTruthy();
   });
 });

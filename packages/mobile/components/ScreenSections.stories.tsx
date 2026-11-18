@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
-import { fn } from "storybook/test";
+import { expect, fn, within } from "storybook/test";
 import { ScreenSections } from "./ScreenSections";
 
 const meta = {
@@ -34,5 +34,28 @@ export const PerformanceMetrics: StoryObj<typeof meta> = {
       { id: "skinTemperature", title: "Skin Temperature" },
     ],
     selected: "skinTemperature",
+  },
+};
+
+export const CompactPerformanceMetrics: StoryObj<typeof meta> = {
+  args: {
+    ...PerformanceMetrics.args,
+    compact: true,
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    const trigger = await canvas.findByRole("button", {
+      name: "Performance metrics: Skin Temperature",
+    });
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(trigger);
+    await expect(canvas.getByRole("dialog", { name: "Performance metrics" })).toBeVisible();
+    await expect(canvas.getByRole("radio", { name: "Skin Temperature" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await expect(canvas.getByRole("button", { name: "Cancel" })).toBeVisible();
+    await userEvent.click(canvas.getByRole("radio", { name: "Power" }));
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
   },
 };

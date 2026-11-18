@@ -838,6 +838,7 @@ function ActivityDetailScreen({ id }: { id: string }) {
               label="Performance metrics"
               sections={availableMetrics}
               selected={activeMetric}
+              compact
               onSelect={(metric) => {
                 setRequestedMetric(metric);
                 handleHoverIndex(null);

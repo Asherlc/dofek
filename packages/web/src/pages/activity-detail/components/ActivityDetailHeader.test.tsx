@@ -299,3 +299,19 @@ it("expands distinct server source branches and preserves unresolved recording a
   expect(strava).toHaveTextContent("Apple Health");
   expect(screen.getByRole("region", { name: "Other" })).toHaveTextContent("WHOOP");
 });
+
+it("stacks a labeled lineage trigger under a long title so the title keeps its width", () => {
+  const longName = "Kaya gym session with an unusually long activity title";
+  render(
+    <ActivityHeader
+      activity={{ ...baseActivity, name: longName, sourceTree: detailSourceTree }}
+      units={new UnitConverter("metric")}
+    />,
+  );
+
+  const heading = screen.getByRole("heading", { name: longName });
+  const trigger = screen.getByRole("button", { name: "Garmin Edge 530 Lineage" });
+  expect(heading.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(trigger).toHaveTextContent("Garmin Edge 530");
+  expect(trigger).toHaveTextContent("Lineage");
+});

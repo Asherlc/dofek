@@ -44,7 +44,7 @@ export function ActivitySourceDisclosure({
       aria-label={primary ? `${primary.label} Lineage` : "Lineage"}
       className={
         heading
-          ? "flex min-h-8 max-w-64 items-center gap-2 rounded px-2 text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent"
+          ? "flex min-h-8 w-fit max-w-full items-center gap-2 rounded px-2 text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent"
           : "flex min-h-12 w-full items-center gap-2 px-4 py-3 text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent sm:px-5"
       }
     >
@@ -124,7 +124,7 @@ export function ActivitySourceDisclosure({
       <div
         className={
           heading
-            ? "relative z-20 grid min-w-0 grid-cols-1 items-start gap-x-3 gap-y-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto]"
+            ? "relative z-20 grid min-w-0 grid-cols-1 items-start gap-y-2 text-sm"
             : "relative z-20 min-w-0 border-t border-border/60 text-sm"
         }
       >

@@ -154,12 +154,18 @@ beforeEach(() => {
   });
 });
 
+function selectPerformanceMetric(metric: string) {
+  const trigger = screen.queryByRole("button", { name: /^Performance metrics:/ });
+  if (!trigger) return;
+  fireEvent.click(trigger);
+  const choice = screen.queryByRole("radio", { name: metric });
+  if (choice) fireEvent.click(choice);
+  else fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+}
+
 function openPerformance(metric?: string) {
   fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
-  if (metric) {
-    const metricTab = screen.queryByRole("tab", { name: metric });
-    if (metricTab) fireEvent.click(metricTab);
-  }
+  if (metric) selectPerformanceMetric(metric);
 }
 
 describe("ActivityDetailScreen", () => {
@@ -169,7 +175,7 @@ describe("ActivityDetailScreen", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
     expect(screen.getByRole("button", { name: "View Heart Rate data" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "View Power data" })).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: "Power" }));
+    selectPerformanceMetric("Power");
     expect(screen.getByRole("button", { name: "View Power data" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "View Heart Rate data" })).toBeNull();
 
@@ -997,4 +1003,73 @@ it("keeps sparse temperature charts on the activity timeline and supports GPS ho
   expect(
     view.container.querySelector("[data-scroll-enabled]")?.getAttribute("data-scroll-enabled"),
   ).toBe("true");
+});
+
+it("uses one compact trigger for every available performance metric and keeps the selection", () => {
+  renderActivityDetail();
+  fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
+
+  expect(screen.queryByRole("tablist", { name: "Performance metrics" })).toBeNull();
+  const trigger = screen.getByRole("button", { name: /^Performance metrics: Heart Rate/ });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  const choices = screen.getAllByRole("radio").map((radio) => radio.getAttribute("aria-label"));
+  expect(choices).toContain("Heart Rate");
+  expect(choices).toContain("Power");
+
+  fireEvent.click(screen.getByRole("radio", { name: "Power" }));
+  expect(screen.getByRole("button", { name: "View Power data" })).toBeTruthy();
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+  fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
+  expect(screen.getByRole("button", { name: /^Performance metrics: Power/ })).toBeTruthy();
+});
+
+it("omits the compact metric trigger when only one metric is available", () => {
+  mocks.streamQuery.mockReturnValue(
+    defaultObserver([
+      {
+        recordedAt: "2026-04-14T10:00:00.000Z",
+        heartRate: 140,
+        power: null,
+        speed: null,
+        cadence: null,
+        altitude: null,
+        skinTemperature: null,
+        lat: null,
+        lng: null,
+      },
+    ]),
+  );
+  renderActivityDetail();
+  fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
+
+  expect(screen.queryByRole("button", { name: /^Performance metrics:/ })).toBeNull();
+  expect(screen.getByRole("button", { name: "View Heart Rate data" })).toBeTruthy();
+});
+
+it("keeps the performance section empty when no metric is available", () => {
+  mocks.streamQuery.mockReturnValue(
+    defaultObserver([
+      {
+        recordedAt: "2026-04-14T10:00:00.000Z",
+        heartRate: null,
+        power: null,
+        speed: null,
+        cadence: null,
+        altitude: null,
+        skinTemperature: null,
+        lat: null,
+        lng: null,
+      },
+    ]),
+  );
+  renderActivityDetail();
+  fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
+
+  expect(screen.queryByRole("button", { name: /^Performance metrics:/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /View .* data/ })).toBeNull();
 });
