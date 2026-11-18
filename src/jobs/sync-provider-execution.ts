@@ -6,10 +6,7 @@ import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { captureException } from "../lib/error-reporting.ts";
-import {
-  isKnownProviderHttp5xxError,
-  shouldReportProviderError,
-} from "../lib/provider-error-reporting.ts";
+import { isKnownProviderHttp5xxError } from "../lib/provider-error-reporting.ts";
 import { logger } from "../logger.ts";
 import { ProviderAccessDeniedError } from "../providers/auth-errors.ts";
 import { isPushProvider, isWebhookProvider, type SyncProvider } from "../providers/types.ts";
@@ -28,6 +25,7 @@ import {
   providerSyncDeferralErrors,
   providerSyncFailureEvent,
   recordProviderSyncFailures,
+  reportSyncResultErrors,
   throwRetryableSyncResultError,
 } from "./sync-provider-failure.ts";
 
@@ -190,18 +188,7 @@ export async function executeSyncProvider(
       percentage: context.percentage(0),
     });
 
-    if (hasErrors) {
-      for (const err of result.errors) {
-        logger.error(`[worker] ${provider.name} sync error: ${err.message}`);
-        const reportableError = err.cause ?? new Error(err.message);
-        if (shouldReportProviderError(reportableError)) {
-          captureException(reportableError, {
-            tags: { provider: provider.id },
-            ...(err.context ? { extra: err.context } : {}),
-          });
-        }
-      }
-    }
+    reportSyncResultErrors(provider, result.errors);
 
     await processingOperation.finish(hasErrors ? failureEvent : undefined);
 

@@ -20,6 +20,7 @@ import {
   mockEnqueueDebouncedPostSyncMaintenance,
   mockEnqueueDebouncedUserRefit,
   mockGetEnabledSyncProviders,
+  mockLoggerError,
   mockLogSync,
   mockProviderQueueAdd,
   mockSyncDuration,
@@ -373,6 +374,67 @@ describe("sync-provider-failure", () => {
     );
     expect(mockCaptureException).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it("reports a returned parsing failure when the same sync is deferred", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const rateLimit = new ProviderRateLimitError({
+      message: "Rate limited",
+      providerId: "example",
+      statusCode: 429,
+      responseBody: "",
+      scope: "provider",
+      retryAfterSeconds: 600,
+    });
+    const parsingError = new SyntaxError("Invalid response JSON");
+    const provider = createMockProvider({
+      id: "example",
+      name: "Example",
+      sync: vi.fn().mockResolvedValue({
+        provider: "example",
+        recordsSynced: 0,
+        errors: [
+          { message: rateLimit.message, cause: rateLimit },
+          { message: parsingError.message, cause: parsingError, context: { page: 2 } },
+        ],
+        duration: 100,
+      } satisfies SyncResult),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "example" }), mockDb);
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledExactlyOnceWith(
+      "sync",
+      expect.objectContaining({ providerId: "example" }),
+      expect.objectContaining({ delay: 600_000 }),
+    );
+    expect(mockLogSync).toHaveBeenCalledExactlyOnceWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "example",
+        status: "error",
+        errorMessage: "Rate limited; Invalid response JSON",
+        errorCauses: [rateLimit, parsingError],
+      }),
+    );
+    const metricAttributes = { provider: "example", data_type: "sync", origin: "unknown" };
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledTimes(2);
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      ...metricAttributes,
+      failure_kind: "rate_limited",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      ...metricAttributes,
+      failure_kind: "unknown",
+    });
+    expect(mockLoggerError).toHaveBeenCalledExactlyOnceWith(
+      "[worker] Example sync error: Invalid response JSON",
+    );
+    expect(mockCaptureException).toHaveBeenCalledExactlyOnceWith(parsingError, {
+      tags: { provider: "example" },
+      extra: { page: 2 },
+    });
   });
 
   it("logs errors to sync log when provider.sync throws", async () => {

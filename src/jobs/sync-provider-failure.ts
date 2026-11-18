@@ -53,6 +53,15 @@ function firstRetryableInfraSyncError(errors: SyncError[]): SyncError | null {
 
 type ProviderDeferralError = ProviderRateLimitError | ProviderServiceUnavailableError;
 
+class DeferredSyncResultError extends AggregateError {
+  readonly otherFailures: SyncError[];
+
+  constructor(deferrals: ProviderDeferralError[], otherFailures: SyncError[]) {
+    super(deferrals, "Provider requested a sync delay");
+    this.otherFailures = otherFailures;
+  }
+}
+
 function providerSyncDeferralError(error: unknown): ProviderDeferralError | null {
   if (error instanceof ProviderRateLimitError) return error;
   const transportError = findProviderTransportError(error);
@@ -86,6 +95,19 @@ export function recordProviderSyncFailures(
       failure_kind: failureKind,
       origin,
     });
+  }
+}
+
+export function reportSyncResultErrors(provider: SyncProvider, errors: readonly SyncError[]) {
+  for (const error of errors) {
+    logger.error(`[worker] ${provider.name} sync error: ${error.message}`);
+    const cause = error.cause ?? new Error(error.message);
+    if (shouldReportProviderError(cause)) {
+      captureException(cause, {
+        tags: { provider: provider.id },
+        ...(error.context ? { extra: error.context } : {}),
+      });
+    }
   }
 }
 
@@ -168,11 +190,14 @@ async function scheduleProviderRetry(
 }
 
 export function throwRetryableSyncResultError(errors: SyncError[]): void {
-  const deferralErrors = errors.flatMap((error) => providerSyncDeferralErrors(error.cause));
-  if (deferralErrors.length > 1)
-    throw new AggregateError(deferralErrors, "Provider requested a sync delay");
-  const [deferralError] = deferralErrors;
-  if (deferralError) throw deferralError;
+  const deferralErrors: ProviderDeferralError[] = [];
+  const otherFailures: SyncError[] = [];
+  for (const error of errors) {
+    const deferrals = providerSyncDeferralErrors(error.cause);
+    if (deferrals.length === 0) otherFailures.push(error);
+    else deferralErrors.push(...deferrals);
+  }
+  if (deferralErrors.length > 0) throw new DeferredSyncResultError(deferralErrors, otherFailures);
   const infraError = firstRetryableInfraSyncError(errors);
   if (infraError)
     throw infraError.cause instanceof Error ? infraError.cause : new Error(infraError.message);
@@ -195,11 +220,11 @@ export async function handleSyncProviderFailure(
   signal?.throwIfAborted();
   const deferralErrors = providerSyncDeferralErrors(err);
   const [deferralError, ...otherDeferralErrors] = deferralErrors;
-  recordProviderSyncFailures(
-    provider.id,
-    job.data.origin ?? "unknown",
-    deferralError ? deferralErrors : [err],
-  );
+  const otherFailures = err instanceof DeferredSyncResultError ? err.otherFailures : [];
+  const failureCauses = deferralError
+    ? [...deferralErrors, ...otherFailures.map((error) => error.cause ?? new Error(error.message))]
+    : [err];
+  recordProviderSyncFailures(provider.id, job.data.origin ?? "unknown", failureCauses);
   const isOpenBetaTransportFailure = provider.id === "openbeta" && isProviderTransportError(err);
   const isZeppHttp500Failure = isZeppHttp500ServiceUnavailableError(err);
   if (
@@ -237,14 +262,16 @@ export async function handleSyncProviderFailure(
       percentage: context.percentage(0),
     });
     logger.warn(`[worker] ${provider.name}: ${message}`);
+    reportSyncResultErrors(provider, otherFailures);
 
     const durationMs = Date.now() - syncStart;
     await logSync(db, {
       providerId: provider.id,
       dataType: "sync",
       status: "error",
-      errorMessage: deferralErrors.map((error) => error.message).join("; "),
-      errorCauses: deferralErrors,
+      errorMessage: [...deferralErrors, ...otherFailures].map((error) => error.message).join("; "),
+      errorCauses: failureCauses,
+      authFailureReason: firstAuthFailureReason(otherFailures),
       durationMs,
       userId: job.data.userId,
       origin: job.data.origin ?? "unknown",

@@ -1,6 +1,10 @@
 import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { authFailureReasonFromError, ProviderTokenRejectedError } from "../auth-errors.ts";
+import {
+  authFailureReasonFromError,
+  ProviderAccessDeniedError,
+  ProviderTokenRejectedError,
+} from "../auth-errors.ts";
 import { TheCragClient } from "./client.ts";
 import { apiAscent, logbookPage } from "./test-helpers.ts";
 
@@ -154,6 +158,91 @@ describe("theCrag official logbook client", () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response);
     await expect(new TheCragClient(fetchFn, "private-key").fetchPage(1)).rejects.toThrow(
       /theCrag denied logbook access \(403\).*weekly token budget/,
+    );
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  // MSW responses do not expose response-body cancellation to their handlers, so these
+  // use a fixture Response whose underlying stream reports cancellation directly.
+  function denialResponse(status: number, onCancel: () => void | Promise<void>): Response {
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"error":"private notes private-key"}'));
+        },
+        cancel: onCancel,
+      }),
+      { status, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  it.each([400, 403])(
+    "cancels the unread denial body before throwing for HTTP %s",
+    async (status) => {
+      const cancel = vi.fn(async () => {});
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(denialResponse(status, cancel));
+
+      await expect(new TheCragClient(fetchFn, "private-key").fetchPage(1)).rejects.toBeInstanceOf(
+        ProviderAccessDeniedError,
+      );
+
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(captureException).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { ErrorType: Error, diagnostic: "unknown" },
+    { ErrorType: TypeError, diagnostic: "TypeError" },
+  ])(
+    "keeps the denial and reports only the $diagnostic cleanup category",
+    async ({ ErrorType, diagnostic }) => {
+      const error = new ErrorType("private-key cleanup secret");
+      error.name = "private-key-cleanup-secret";
+      const cancel = vi.fn(async () => {
+        throw error;
+      });
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(denialResponse(400, cancel));
+
+      await expect(new TheCragClient(fetchFn, "private-key").fetchPage(1)).rejects.toBeInstanceOf(
+        ProviderAccessDeniedError,
+      );
+
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+        tags: { provider: "thecrag", phase: "logbook_response_cancel" },
+      });
+      expect(captureException.mock.calls[0]?.[0]).toHaveProperty("cause", diagnostic);
+      expect(inspect(captureException.mock.calls, { depth: null })).not.toMatch(
+        /private-key|private notes|cleanup secret|cleanup-secret/,
+      );
+    },
+  );
+
+  it("throws the denial without waiting for pending body cleanup", async () => {
+    let completeCleanup!: () => void;
+    const cleanup = new Promise<void>((resolve) => {
+      completeCleanup = resolve;
+    });
+    const cancel = vi.fn(() => cleanup);
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(denialResponse(403, cancel));
+
+    try {
+      await expect(new TheCragClient(fetchFn, "private-key").fetchPage(1)).rejects.toBeInstanceOf(
+        ProviderAccessDeniedError,
+      );
+
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(captureException).not.toHaveBeenCalled();
+    } finally {
+      completeCleanup();
+    }
+  });
+
+  it("throws the denial for a 403 with no response body", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 403 }));
+    await expect(new TheCragClient(fetchFn, "private-key").fetchPage(1)).rejects.toBeInstanceOf(
+      ProviderAccessDeniedError,
     );
     expect(captureException).not.toHaveBeenCalled();
   });

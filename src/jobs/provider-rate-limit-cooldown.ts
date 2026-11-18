@@ -3,6 +3,7 @@ import {
   ProviderRateLimitError,
   type ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
+import { z } from "zod";
 import { providerAdaptiveRateLimitStore } from "../lib/provider-adaptive-rate-limit.ts";
 import {
   compareAndSetRedisValue,
@@ -10,19 +11,26 @@ import {
 } from "../lib/redis-compare-and-set.ts";
 import { getSharedRedisConnection, type SyncJobData } from "./queues.ts";
 
-export type ProviderRateLimitCooldownScope = "provider" | "user";
-type ProviderDeferralError = ProviderRateLimitError | ProviderServiceUnavailableError;
+const providerRateLimitCooldownScopeSchema = z.enum(["provider", "user"]);
+export type ProviderRateLimitCooldownScope = z.infer<typeof providerRateLimitCooldownScopeSchema>;
 
-export interface ProviderRateLimitCooldown {
-  providerId: string;
-  scope: ProviderRateLimitCooldownScope;
-  userId: string | null;
-  expiresAt: Date;
+const providerRateLimitCooldownSchema = z.object({
+  providerId: z.string(),
+  scope: providerRateLimitCooldownScopeSchema,
+  userId: z.string().nullable(),
+  // Validated as a string before transforming so any date string accepted by `new Date` stays valid.
+  expiresAt: z
+    .string()
+    .transform((value) => new Date(value))
+    .pipe(z.date()),
   /** Absent on rate-limit records, including records written by previous workers. */
-  reason?: "service_unavailable";
+  reason: z.literal("service_unavailable").optional().catch(undefined),
   /** Number of consecutive rate-limit hits; used to escalate cooldown duration. */
-  consecutiveHits?: number;
-}
+  consecutiveHits: z.number().optional().catch(undefined),
+});
+export type ProviderRateLimitCooldown = z.infer<typeof providerRateLimitCooldownSchema>;
+
+type ProviderDeferralError = ProviderRateLimitError | ProviderServiceUnavailableError;
 
 export interface ProviderRateLimitCooldownStore {
   record(error: ProviderDeferralError, fallbackUserId: string): Promise<ProviderRateLimitCooldown>;
@@ -97,30 +105,8 @@ export function parseProviderRateLimitCooldown(
 ): ProviderRateLimitCooldown | null {
   if (!raw) return null;
   const parsed: unknown = JSON.parse(raw);
-  if (typeof parsed !== "object" || parsed === null) return null;
-  const providerId = Reflect.get(parsed, "providerId");
-  const scope = Reflect.get(parsed, "scope");
-  const userId = Reflect.get(parsed, "userId");
-  const expiresAtValue = Reflect.get(parsed, "expiresAt");
-  const reason = Reflect.get(parsed, "reason");
-  const consecutiveHits = Reflect.get(parsed, "consecutiveHits");
-  if (typeof providerId !== "string") return null;
-  if (scope !== "provider" && scope !== "user") return null;
-  if (userId !== null && typeof userId !== "string") return null;
-  if (typeof expiresAtValue !== "string") return null;
-  const expiresAt = new Date(expiresAtValue);
-  if (Number.isNaN(expiresAt.getTime())) return null;
-  return {
-    providerId,
-    scope,
-    userId,
-    expiresAt,
-    ...(reason === "service_unavailable" ? { reason } : {}),
-    consecutiveHits:
-      typeof consecutiveHits === "number" && Number.isFinite(consecutiveHits)
-        ? consecutiveHits
-        : undefined,
-  };
+  const result = providerRateLimitCooldownSchema.safeParse(parsed);
+  return result.success ? result.data : null;
 }
 
 function laterCooldown(

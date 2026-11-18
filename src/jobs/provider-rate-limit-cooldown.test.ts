@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { providerAdaptiveRateLimitStore } from "../lib/provider-adaptive-rate-limit.ts";
 import {
   InMemoryProviderRateLimitCooldownStore,
+  parseProviderRateLimitCooldown,
   providerRateLimitCooldownJobId,
   providerRateLimitCooldownStore,
   providerRateLimitDelayMs,
@@ -90,6 +91,48 @@ describe("ProviderRateLimitCooldownStore", () => {
       scope: "provider",
       expiresAt: new Date("2026-06-02T12:05:00Z"),
     });
+  });
+
+  it.each([null, 0, -1])(
+    "rejects a service outage delay of %j before writing a cooldown",
+    async (retryAfterSeconds) => {
+      const { store, setCalls } = createMockRedisStore();
+      const outage = new ProviderServiceUnavailableError({
+        message: "Provider unavailable",
+        providerId: "example",
+        statusCode: 503,
+        responseBody: "",
+        retryAfterSeconds,
+      });
+
+      await expect(store.record(outage, "user-1")).rejects.toThrow(
+        "A service outage cooldown requires a positive Retry-After delay",
+      );
+      expect(setCalls).toHaveLength(0);
+    },
+  );
+
+  it("starts rate-limit escalation at the first hit after an outage", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+    await store.record(
+      new ProviderServiceUnavailableError({
+        message: "Provider unavailable",
+        providerId: "example",
+        statusCode: 503,
+        responseBody: "",
+        retryAfterSeconds: 60,
+      }),
+      "user-1",
+    );
+
+    await expect(
+      store.record(rateLimitError({ providerId: "example" }), "user-1"),
+    ).resolves.toMatchObject({
+      consecutiveHits: 1,
+      expiresAt: new Date("2026-06-02T12:30:00Z"),
+    });
+    vi.useRealTimers();
   });
 
   it("records provider-wide cooldown state using Retry-After when present", async () => {
@@ -674,6 +717,72 @@ describe("ProviderRateLimitCooldownStore", () => {
 
     vi.unstubAllEnvs();
     vi.resetModules();
+  });
+});
+
+describe("parseProviderRateLimitCooldown", () => {
+  // Active fixtures keep these shape assertions independent of activeOrNull's expiry filtering.
+  const activeExpiry = "2099-06-02T12:10:00.000Z";
+  const legacyRecord = {
+    providerId: "example",
+    scope: "provider",
+    userId: null,
+    expiresAt: activeExpiry,
+  };
+
+  it("accepts an active legacy record with no reason or hit count", () => {
+    const cooldown = parseProviderRateLimitCooldown(JSON.stringify(legacyRecord));
+
+    expect(cooldown).toEqual({
+      ...legacyRecord,
+      expiresAt: new Date(activeExpiry),
+      reason: undefined,
+      consecutiveHits: undefined,
+    });
+  });
+
+  it("accepts an active supported record with a service-outage reason and hit count", () => {
+    const cooldown = parseProviderRateLimitCooldown(
+      JSON.stringify({ ...legacyRecord, reason: "service_unavailable", consecutiveHits: 3 }),
+    );
+
+    expect(cooldown).toEqual({
+      ...legacyRecord,
+      expiresAt: new Date(activeExpiry),
+      reason: "service_unavailable",
+      consecutiveHits: 3,
+    });
+  });
+
+  it.each(["rate_limited", null, 42])(
+    "normalizes an unknown active reason %j away without rejecting the record",
+    (reason) => {
+      const cooldown = parseProviderRateLimitCooldown(JSON.stringify({ ...legacyRecord, reason }));
+
+      expect(cooldown?.reason).toBeUndefined();
+      expect(cooldown?.expiresAt).toEqual(new Date(activeExpiry));
+    },
+  );
+
+  it.each(["3", null, true, {}])(
+    "normalizes malformed active consecutive hits %j without rejecting the record",
+    (consecutiveHits) => {
+      const cooldown = parseProviderRateLimitCooldown(
+        JSON.stringify({ ...legacyRecord, consecutiveHits }),
+      );
+
+      expect(cooldown?.consecutiveHits).toBeUndefined();
+      expect(cooldown?.expiresAt).toEqual(new Date(activeExpiry));
+    },
+  );
+
+  it("rejects an invalid expiry while keeping the remaining active fields valid", () => {
+    expect(
+      parseProviderRateLimitCooldown(JSON.stringify({ ...legacyRecord, expiresAt: "not-a-date" })),
+    ).toBeNull();
+    expect(
+      parseProviderRateLimitCooldown(JSON.stringify({ ...legacyRecord, expiresAt: 1 })),
+    ).toBeNull();
   });
 });
 

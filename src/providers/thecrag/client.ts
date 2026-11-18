@@ -59,8 +59,21 @@ export class TheCragClient {
         "theCrag",
         "The logbook API returned 401. Check your key in theCrag Settings > API Keys and reconnect.",
       );
-    if (response.status === 400 || response.status === 403)
+    if (response.status === 400 || response.status === 403) {
+      // Initiate cancellation without awaiting it: an HTTP observer may still be draining a
+      // cloned stream, and a cleanup failure must never replace the denial.
+      void response.body?.cancel().catch((error: unknown) => {
+        captureException(
+          new Error("theCrag logbook response body cancellation failed", {
+            // Only a built-in category is retained; `name` is writable and the rejection may
+            // echo upstream response data.
+            cause: error instanceof TypeError ? "TypeError" : "unknown",
+          }),
+          { tags: { provider: "thecrag", phase: "logbook_response_cancel" } },
+        );
+      });
       throw new ProviderAccessDeniedError(theCragLogbookAccessErrorMessage(response.status));
+    }
     if (response.status === 429)
       throw new Error(
         "theCrag limited logbook access (429). Check your weekly usage budget in theCrag Settings > API Keys and try again when access is available.",
