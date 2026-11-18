@@ -20,6 +20,7 @@
     "NSURL",
     "PowerSync",
     "Aiven", "tieredstorage", "AAAAAAAAAAAAAAAAAAAAAQ",
+    "aivenv", "forcemerge", "opensearch",
     "timeindex", "txnindex",
     "Oxia", "offloader", "javac", "metaformat", "chgrp",
     "pyproject",

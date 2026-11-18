@@ -2,6 +2,7 @@ import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { isKnownProviderHttp5xxError } from "../lib/provider-error-reporting.ts";
+import { isProviderTimeoutOnly } from "../lib/provider-transport-error.ts";
 import { logger } from "../logger.ts";
 import {
   authFailureReasonFromError,
@@ -149,9 +150,12 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
   }
 
   const errorCauses = entry.errorCauses ?? [];
-  const onlyKnownHttp5xxErrors =
-    errorCauses.length > 0 && errorCauses.every(isKnownProviderHttp5xxError);
-  if (consecutiveFailures === 2 && !onlyKnownHttp5xxErrors) {
+  const onlyKnownProviderTransportErrors =
+    errorCauses.length > 0 &&
+    errorCauses.every(
+      (cause) => isKnownProviderHttp5xxError(cause) || isProviderTimeoutOnly(cause),
+    );
+  if (consecutiveFailures === 2 && !onlyKnownProviderTransportErrors) {
     captureException(new Error(`Provider ${entry.providerId} failed two scheduled syncs`), {
       level: "warning",
       tags: {

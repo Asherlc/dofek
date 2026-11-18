@@ -10,7 +10,7 @@ import type { ClimbingTraitSource } from "@dofek/training/climbing-strengths";
 export interface ClimbingCatalogueTrait {
   dimension: "wall_angle" | "hold_type" | "style";
   value: string;
-  source: Omit<ClimbingTraitSource, "trait">;
+  source: Omit<ClimbingTraitSource, "trait" | "name"> & { name: string | null };
 }
 const holds: Record<string, string> = {
   crimp: "crimp",
@@ -101,7 +101,7 @@ export function catalogueStrengthTraits(
         !(match.evidence ?? []).some((e) => /conflict/i.test(e));
       const routeSource = {
         providerId: candidate.providerId,
-        name: candidate.name ?? seed.name ?? "Unnamed climb",
+        name: candidate.name,
         url: candidate.url,
         scope: "route" as const,
       };

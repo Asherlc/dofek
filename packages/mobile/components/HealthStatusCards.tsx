@@ -8,8 +8,10 @@ import { colors, radius, spacing } from "../theme";
 
 interface HealthStatusCardsProps {
   metrics: HealthStatusMetric[];
+  compact?: boolean;
   formatValue?: (metric: HealthStatusMetric) => string;
   formatComparisonValue?: (metric: HealthStatusMetric, value: number) => string;
+  formatComparisonDelta?: (metric: HealthStatusMetric, value: number) => string;
 }
 
 function statusColor(status: HealthStatusMetric["statusColor"]): string {
@@ -40,16 +42,18 @@ function statusSymbol(status: HealthStatusMetric["statusToken"]): string {
 
 export function HealthStatusCards({
   metrics,
+  compact = false,
   formatValue,
   formatComparisonValue,
+  formatComparisonDelta,
 }: HealthStatusCardsProps) {
   const [expandedMetric, setExpandedMetric] = useState<HealthStatusMetric["metric"] | null>(null);
 
   if (metrics.length === 0) return null;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>HEALTH STATUS</Text>
+    <View style={[styles.container, compact && styles.compactGrid]}>
+      {compact ? null : <Text style={styles.heading}>HEALTH STATUS</Text>}
       {metrics.map((metric) => {
         const baseline = metric.baselineText;
         const provenance = metric.provenance;
@@ -57,7 +61,7 @@ export function HealthStatusCards({
         const blocked = metric.baselineProgress.blocker !== null;
         const interpretation = formatHealthStatusLabel(metric);
         return (
-          <View key={metric.metric} style={styles.card}>
+          <View key={metric.metric} style={[styles.card, compact && styles.compactCard]}>
             <View style={styles.titleRow}>
               <Text
                 accessibilityLabel={`${metric.statusLabel} status`}
@@ -122,6 +126,9 @@ export function HealthStatusCards({
                     {formatComparisonContext(metric.comparison, {
                       formatValue: (value) =>
                         formatComparisonValue?.(metric, value) ?? String(value),
+                      formatDelta: formatComparisonDelta
+                        ? (value) => formatComparisonDelta(metric, value)
+                        : undefined,
                       missingMeans: "values",
                     })}
                   </Text>
@@ -149,6 +156,14 @@ export function HealthStatusCards({
 }
 
 const styles = StyleSheet.create({
+  compactGrid: { flexDirection: "row", flexWrap: "wrap" },
+  compactCard: {
+    flexBasis: "46%",
+    flexGrow: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+  },
   container: {
     gap: spacing.sm,
   },

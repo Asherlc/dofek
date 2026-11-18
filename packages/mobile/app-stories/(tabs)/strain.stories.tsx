@@ -8,7 +8,7 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { z } from "zod";
-import { TrainingScreen } from "../../app/(tabs)/strain";
+import { TrainingAnalysis } from "../../app/strain";
 import { createFixtureDates, type FixtureDates } from "../../app-fixtures/(tabs)/fixture-dates";
 import {
   createProcessingStatusStoryLink,
@@ -376,7 +376,7 @@ function MockProviders({
 
 const meta = {
   title: "Pages/Strain",
-  component: TrainingScreen,
+  component: TrainingAnalysis,
   args: { isFocused: true },
   parameters: {
     layout: "fullscreen",
@@ -390,7 +390,7 @@ const meta = {
       </MockProviders>
     ),
   ],
-} satisfies Meta<typeof TrainingScreen>;
+} satisfies Meta<typeof TrainingAnalysis>;
 
 export default meta;
 

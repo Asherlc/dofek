@@ -75,7 +75,7 @@ between a load index and validated recovery prediction.
 Release this API retirement with the matching mobile client. Older builds that
 call the retired ramp-rate or monotony procedures need to update; those routes
 do not return fabricated empty datasets. See the [router](src/routers/cycling-advanced.ts)
-and [mobile training screen](../mobile/app/(tabs)/strain.tsx).
+and [mobile training screen](../mobile/app/strain.tsx).
 
 - **tRPC API**: The primary interface for both web and mobile clients. Defined in `src/router.ts`.
 - **Express Server**: Hosts the tRPC middleware and supplementary REST routes for webhooks, file uploads, and authentication.
@@ -360,7 +360,7 @@ and no processing blocker takes precedence,
 the server identifies the missing reading and asks only for that reading; historical coverage stays
 available in Details. Steps reports `Steps missing for this day` and asks for that day's step count.
 The [web dashboard](../web/src/pages/Dashboard.tsx) and
-[mobile Recovery screen](<../mobile/app/(tabs)/recovery.tsx>) automatically request today's local
+[mobile Recovery screen](../mobile/app/recovery.tsx) automatically request today's local
 date; historical API requests refer to their supplied end date. Steps requires an observation on
 that date so an older daily total does not appear as current progress. See the
 [status builder](./src/services/health-status.ts),

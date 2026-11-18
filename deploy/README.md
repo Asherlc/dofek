@@ -365,6 +365,38 @@ uploads. The token must be able to manage releases for both `dofek-web` and
 and deployment workflows:
 [Sentry API permissions](https://docs.sentry.io/api/permissions/).
 
+### Activities search
+
+`activity-search.tf` adopts the existing `dofek/dofek-opensearch` service.
+The index receives canonical activity titles from the analytics worker. The web
+service ranks matches in OpenSearch and checks current ownership, visibility,
+and history access before returning activity cards.
+
+Set a current Aiven management credential in Infisical production as
+`AIVEN_TOKEN` for Terraform. Grant its application user provisioning permissions
+in the `dofek` project and the `read_only` role required by the service plan
+metadata endpoint. Terraform creates separate index credentials and
+writes `ACTIVITY_SEARCH_READ_URL`, `ACTIVITY_SEARCH_WRITE_URL`, and
+`ACTIVITY_SEARCH_ERASE_URL` to Infisical. Supply
+`ACTIVITY_SEARCH_RETENTION_TOKEN` from a separate Aiven application user granted
+only `read_only` in the `dofek` project. The deploy renderer sends each runtime
+credential only to its owning service. The erasure worker requires its index URL
+and retention token together.
+[Aiven roles and permissions](https://aiven.io/docs/platform/concepts/permissions)
+and [OpenSearch index ACLs](https://aiven.io/docs/products/opensearch/concepts/access_control).
+The [Aiven Go client](https://pkg.go.dev/github.com/aiven/go-client-codegen/handler/project#ProjectHandler.ProjectServicePlanSpecsGet)
+lists the roles accepted by the service plan endpoint.
+
+Before setting `ACTIVITY_SEARCH_ENABLED=true` in Infisical production, verify
+the scoped credentials with synthetic activity documents. Check ranked search,
+replayed updates, account erasure through the index's segment statistics, and
+the backup-list API through the runtime retention token. Verify that the service
+is covered by the [account erasure runbook](../docs/account-erasure-runbook.md#activities-search).
+The scheduled analytics worker starts the history backfill on its next
+publication. Search becomes available after the initial backfill completes.
+Keep both erasure credentials configured while the service holds activity data,
+including periods when search and publishing are paused.
+
 ### Flow Diagram
 
 ```text
@@ -1315,7 +1347,7 @@ If a recent body measurement is missing from ClickHouse-backed reads, use:
 ## Management UIs
 
 Pipedash is the enabled GitHub Actions dashboard at the configured hostname
-`https://actions.dofek.fit`. It uses native password authentication, a dedicated
+`https://pipedash.dofek.fit`. It uses native password authentication, a dedicated
 Dofek-scoped GitHub token and a persistent SQLite volume. The
 [Pipedash runbook](pipedash/README.md) covers setup, focused views, credentials,
 upgrades and access verification; see the upstream

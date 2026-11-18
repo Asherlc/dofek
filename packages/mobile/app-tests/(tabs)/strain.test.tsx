@@ -5,12 +5,15 @@ import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultMockTrainingData,
+  noPolarizationWeeks,
   recentCyclingActivityFixture,
+  sectionExpectations,
 } from "../../app-fixtures/(tabs)/strain-test-helpers";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
 import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 import { intervalRun, runningData } from "../../components/running-training-test-helpers";
+import { trainingSections } from "../../lib/training-sections";
 
 let mockTodayQueryDate = "2026-03-28";
 let mockRunningData: unknown;
@@ -46,8 +49,18 @@ type MockRangeQueryOptions = {
   }) => number | false;
   placeholderData?: (previousData: unknown) => unknown;
 };
+type MockRangeQueryName =
+  | "running"
+  | "training"
+  | "hrZones"
+  | "polarization"
+  | "locationMap"
+  | "strengths"
+  | "climbingVolume"
+  | "strengthVolume"
+  | "sportVolume";
 let mockRangeQueryCalls: Record<
-  "running" | "training" | "hrZones" | "polarization" | "locationMap" | "strengths",
+  MockRangeQueryName,
   Array<{ input: { days: number | null; endDate?: string }; options: MockRangeQueryOptions }>
 >;
 let mockTimeRangePreference = {
@@ -154,13 +167,10 @@ vi.mock("../../lib/trpc", () => ({
       attemptIncrease: { useQuery: mockAttemptIncreaseQuery },
       volumeIncrease: { useQuery: mockVolumeIncreaseQuery },
       volumeOverTime: {
-        useQuery: () => ({
-          data: [],
-          isLoading: false,
-          isFetching: false,
-          isError: false,
-          error: null,
-        }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.climbingVolume.push({ input, options });
+          return { data: [], isLoading: false, isFetching: false, isError: false, error: null };
+        },
       },
       strengths: {
         useQuery: (input: { days: number | null }, options: MockRangeQueryOptions) => {
@@ -177,13 +187,10 @@ vi.mock("../../lib/trpc", () => ({
     },
     strength: {
       volumeOverTime: {
-        useQuery: () => ({
-          data: [],
-          isLoading: false,
-          isFetching: false,
-          isError: false,
-          error: null,
-        }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.strengthVolume.push({ input, options });
+          return { data: [], isLoading: false, isFetching: false, isError: false, error: null };
+        },
       },
     },
     mobileDashboard: {
@@ -205,7 +212,10 @@ vi.mock("../../lib/trpc", () => ({
     },
     training: {
       sportVolume: {
-        useQuery: () => ({ data: undefined, isLoading: false, isFetching: false, error: null }),
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.sportVolume.push({ input, options });
+          return { data: undefined, isLoading: false, isFetching: false, error: null };
+        },
       },
       hrZones: {
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
@@ -300,13 +310,13 @@ import { captureException } from "../../lib/telemetry";
 describe("StrainScreen", () => {
   it("requests current running response for the selected range", async () => {
     mockTimeRangePreference.days = 30;
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
     expect(mockRangeQueryCalls.running.at(-1)?.input).toEqual({ days: 30, responseVersion: 2 });
   });
   it("reports malformed restored running data once and shows the actionable error", async () => {
     mockRunningData = { data: runningData.data, availability: runningData.availability };
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     const view = render(<StrainScreen />);
     expect(
       screen.getByText(
@@ -322,7 +332,7 @@ describe("StrainScreen", () => {
     mockRunningData = runningData;
     mockRunningLoading = true;
     mockRunningError = new Error("Running sync is still processing. Try again shortly.");
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
     expect(screen.getByText(mockRunningError.message)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open Park Run" })).toBeTruthy();
@@ -330,7 +340,7 @@ describe("StrainScreen", () => {
   });
   it("shows running cadence and form on the training screen", async () => {
     mockRunningData = { ...runningData, data: [intervalRun] };
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
     expect(screen.getByText("Running Form")).toBeTruthy();
     expect(screen.getByText("200 spm")).toBeTruthy();
@@ -379,6 +389,9 @@ describe("StrainScreen", () => {
       strengths: [],
       hrZones: [],
       polarization: [],
+      climbingVolume: [],
+      strengthVolume: [],
+      sportVolume: [],
     };
     mockTimeRangePreference = {
       days: 90,
@@ -388,13 +401,50 @@ describe("StrainScreen", () => {
     resetMockTrainingState();
   });
 
+  it.each(trainingSections.map(({ id }) => [id, sectionExpectations[id]] as const))(
+    "shows only the training panels and enables only the queries for %s",
+    async (section, { queries, cards }) => {
+      mockPolarizationState.data = noPolarizationWeeks;
+      const unrelatedError = new Error("Unrelated data failed");
+      if (section === "endurance") {
+        mockRunningError = unrelatedError;
+      } else {
+        Object.assign(mockHrZonesState, { isError: true, error: unrelatedError });
+      }
+      const { TrainingAnalysis } = await import("../../app/strain");
+      render(<TrainingAnalysis section={section} isFocused />);
+
+      const enabled = Object.entries(mockRangeQueryCalls)
+        .filter(([, calls]) => calls.at(-1)?.options.enabled)
+        .map(([name]) => name);
+      expect(enabled.sort()).toEqual([...queries].sort());
+      expect(mockVolumeIncreaseQuery.mock.lastCall?.[1]?.enabled).toBe(section === "climbing");
+      expect(mockAttemptIncreaseQuery.mock.lastCall?.[1]?.enabled).toBe(section === "climbing");
+      if (section === "hiking") {
+        expect(mockRouteComparisonQuery).toHaveBeenCalledWith(
+          { days: 90 },
+          expect.objectContaining({ enabled: true }),
+        );
+      } else {
+        expect(mockRouteComparisonQuery).not.toHaveBeenCalled();
+      }
+      const allCards = new Set(Object.values(sectionExpectations).flatMap((entry) => entry.cards));
+      for (const card of allCards) {
+        expect(screen.queryAllByText(card).length > 0, card).toBe(cards.includes(card));
+      }
+      expect(screen.queryByText(unrelatedError.message)).toBeNull();
+    },
+  );
+
   it("does not consume cached default-range data during preference hydration", async () => {
     mockTimeRangePreference.isHydrated = false;
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     const view = render(<StrainScreen />);
 
-    for (const calls of Object.values(mockRangeQueryCalls)) {
+    const { sportVolume, ...rangeQueries } = mockRangeQueryCalls;
+    expect(sportVolume).toHaveLength(0);
+    for (const calls of Object.values(rangeQueries)) {
       expect(calls.at(-1)?.options.enabled).toBe(false);
     }
     expect(screen.queryByText("16.0")).toBeNull();
@@ -403,7 +453,9 @@ describe("StrainScreen", () => {
     mockTimeRangePreference.isHydrated = true;
     view.rerender(<StrainScreen />);
 
-    for (const calls of Object.values(mockRangeQueryCalls)) {
+    expect(sportVolume.at(-1)?.input.days).toBe(30);
+    expect(sportVolume.at(-1)?.options.enabled).toBe(true);
+    for (const calls of Object.values(rangeQueries)) {
       expect(calls.at(-1)?.input.days).toBe(30);
       expect(calls.at(-1)?.options.enabled).toBe(true);
       expect(calls.at(-1)?.options.placeholderData).toBeUndefined();
@@ -421,7 +473,7 @@ describe("StrainScreen", () => {
   });
 
   it("toggles area metadata and polls pending enrichment without losing previous data", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toMatchObject({
       includeAreaMetadata: true,
@@ -439,7 +491,7 @@ describe("StrainScreen", () => {
     );
   });
   it("offers all time for strengths without changing the other training ranges", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
     fireEvent.click(screen.getByRole("radio", { name: "All time" }));
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
@@ -453,7 +505,7 @@ describe("StrainScreen", () => {
     expect(mockRangeQueryCalls.strengths.at(-1)?.input.days).toBe(90);
   });
   it("updates the strengths query anchor at local midnight and retains explicit date anchors", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     const { rerender } = render(<StrainScreen />);
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
@@ -481,7 +533,7 @@ describe("StrainScreen", () => {
 
   it("keeps the climbing refresh status space through polling cycles", async () => {
     mockStrengthsState.isFetching = true;
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     const { rerender } = render(<StrainScreen />);
     const status = screen.getByText("Updating climbing strengths…");
     for (const isFetching of [false, true, false]) {
@@ -496,7 +548,7 @@ describe("StrainScreen", () => {
 
   it("keeps cached strengths visible with an updating indicator while a new population loads", async () => {
     mockStrengthsState.isFetching = true;
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
@@ -515,7 +567,7 @@ describe("StrainScreen", () => {
 
   it("rejects malformed restored strengths with a visible error and reports it once per payload", async () => {
     mockStrengthsState.data = { panels: [{}] };
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     const { rerender } = render(<StrainScreen />);
     expect(
       screen.getByText("Climbing strengths data could not be read. Pull to refresh to reload it."),
@@ -533,7 +585,7 @@ describe("StrainScreen", () => {
   });
 
   it("sends climbing selections to the server while keeping other training queries unchanged", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
     fireEvent.click(screen.getByRole("button", { name: "More filters" }));
@@ -566,7 +618,7 @@ describe("StrainScreen", () => {
       },
       error: null,
     });
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     const { rerender } = render(<StrainScreen />);
     expect(screen.getByText("Climbing volume increased")).toBeTruthy();
     expect(
@@ -595,7 +647,7 @@ describe("StrainScreen", () => {
       data: { status: "increase", recentAttempts: 50, baselineAttempts: 40, increasePercent: 25 },
       error: null,
     });
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
     expect(screen.getByText("Recorded climbing attempts increased")).toBeTruthy();
     expect(screen.getByText(/50 climbing attempts in the last 7 days, up 25%/)).toBeTruthy();
@@ -604,16 +656,22 @@ describe("StrainScreen", () => {
     expect(mockAttemptIncreaseInvalidate).toHaveBeenCalledOnce();
   });
 
-  it("reloads a stale comparison when the Training tab regains focus", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+  it("reloads stale comparisons when Training regains focus", async () => {
+    const { default: StrainScreen } = await import("../../app/strain");
     const { rerender } = render(<StrainScreen />);
     mockTrainingScreenFocused = false;
     rerender(<StrainScreen />);
     expect(mockVolumeIncreaseQuery.mock.lastCall?.[1]).toMatchObject({ enabled: false });
+    expect(mockAttemptIncreaseQuery.mock.lastCall?.[1]).toMatchObject({ enabled: false });
 
     mockTrainingScreenFocused = true;
     rerender(<StrainScreen />);
     expect(mockVolumeIncreaseQuery.mock.lastCall?.[1]).toMatchObject({
+      enabled: true,
+      staleTime: 0,
+      refetchOnWindowFocus: true,
+    });
+    expect(mockAttemptIncreaseQuery.mock.lastCall?.[1]).toMatchObject({
       enabled: true,
       staleTime: 0,
       refetchOnWindowFocus: true,
@@ -628,7 +686,7 @@ describe("StrainScreen", () => {
       increasePercent: 42.86,
     };
     mockVolumeIncreaseQuery.mockReturnValue({ data, isFetching: true, error: null });
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     const { rerender } = render(<StrainScreen />);
     expect(screen.getByText("Climbing volume increased")).toBeTruthy();
 
@@ -643,7 +701,7 @@ describe("StrainScreen", () => {
   });
 
   it("refreshes training, intensity, polarization, and processing status together", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(mockRefreshInvalidate).toBeTypeOf("function");
@@ -666,7 +724,7 @@ describe("StrainScreen", () => {
       error: null,
     });
     mockTimeRangePreference.days = 30;
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
     expect(screen.getByText("Route comparison")).toBeTruthy();
     expect(mockRouteComparisonQuery.mock.calls.at(-1)?.[0]).toEqual({ days: 30 });
@@ -720,7 +778,7 @@ describe("StrainScreen", () => {
       ],
     };
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
     render(<StrainScreen />);
 
@@ -746,7 +804,7 @@ describe("StrainScreen", () => {
     mockPolarizationState.isError = true;
     mockPolarizationState.error = new Error("Cycling polarization failed");
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.getByText("Intensity distribution failed")).toBeTruthy();
@@ -762,7 +820,7 @@ describe("StrainScreen", () => {
     mockPolarizationState.isError = true;
     mockPolarizationState.error = new Error("User cancelled");
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(captureException).not.toHaveBeenCalled();
@@ -782,28 +840,11 @@ describe("StrainScreen", () => {
     };
     mockHrZonesState.isError = true;
     mockHrZonesState.error = new Error("Intensity refresh failed");
-    mockPolarizationState.data = {
-      model: "treff-three-zone",
-      activityScope: "cycling",
-      threshold: 2,
-      maxHr: 190,
-      explanation: "Cached mobile polarization.",
-      method: {
-        formula: "Cached Treff formula.",
-        zoneBasis: "Cached Treff zones.",
-        calculationChoice: "Cached calculation choice.",
-        interpretation: "Cached descriptive interpretation.",
-        source: {
-          title: "Treff source",
-          url: "https://doi.org/10.3389/fphys.2019.00707",
-        },
-      },
-      weeks: [],
-    };
+    mockPolarizationState.data = noPolarizationWeeks;
     mockPolarizationState.isError = true;
     mockPolarizationState.error = new Error("Polarization refresh failed");
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.getByText("Intensity refresh failed")).toBeTruthy();
@@ -815,7 +856,7 @@ describe("StrainScreen", () => {
     mockTrainingState.isLoading = true;
     mockTrainingState.data = undefined;
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.getByText("30d")).toBeTruthy();
@@ -827,7 +868,7 @@ describe("StrainScreen", () => {
     mockTrainingState.isLoading = true;
     mockTrainingState.data = undefined;
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.getByTestId("query-state-loading")).toBeTruthy();
@@ -842,7 +883,7 @@ describe("StrainScreen", () => {
       activities: [recentCyclingActivityFixture()],
     };
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
@@ -876,7 +917,7 @@ describe("StrainScreen", () => {
       verticalAscent: [],
     };
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.getByText("Recent-to-baseline workload ratio")).toBeTruthy();
@@ -891,7 +932,7 @@ describe("StrainScreen", () => {
   });
 
   it("constrains training load metrics to equal columns with centered wrapping labels", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     for (const label of [
@@ -911,7 +952,7 @@ describe("StrainScreen", () => {
     mockTrainingState.isError = true;
     mockTrainingState.error = new Error("Training refresh failed");
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.getByText("No Hangboarding sessions to display.")).toBeTruthy();
@@ -952,7 +993,7 @@ describe("StrainScreen", () => {
       ],
     };
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.getByText("Back Squat")).toBeTruthy();
@@ -964,7 +1005,7 @@ describe("StrainScreen", () => {
     mockTrainingState.isError = true;
     mockTrainingState.error = new Error("Training data failed to load");
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
@@ -991,7 +1032,7 @@ describe("StrainScreen", () => {
       },
     };
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
@@ -1011,7 +1052,7 @@ describe("StrainScreen", () => {
     mockHrZonesState.isError = true;
     mockHrZonesState.error = new Error("Training analytics unavailable");
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.getAllByText("Training analytics unavailable")).toHaveLength(2);
@@ -1031,7 +1072,7 @@ describe("StrainScreen", () => {
     mockTrainingState.isError = true;
     mockTrainingState.error = new Error("Climbing refresh failed");
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.queryByText("Climbing refresh failed")).toBeNull();
@@ -1045,7 +1086,7 @@ describe("StrainScreen", () => {
     mockTrainingState.isError = true;
     mockTrainingState.error = cachedError;
 
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { default: StrainScreen } = await import("../../app/strain");
     const firstRender = render(<StrainScreen />);
     firstRender.unmount();
     render(<StrainScreen />);

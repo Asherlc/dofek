@@ -1,5 +1,60 @@
 # Production Incident Baseline
 
+## 2026-11-17 — Kaya and OpenBeta failures interrupt climbing catalogue refresh
+
+- **Symptoms / impact:** A production background refresh failed at 19:46:33
+  UTC with both Kaya and OpenBeta errors. The failure affected optional
+  catalogue enrichment. The worker had one attempt per refresh, and the
+  service cached an error with any successful results from the same search,
+  or preserved the existing cached results when no source succeeded. Sentry
+  recorded no user identity for this event, so user impact is unquantified.
+  [Sentry event](https://east-bay-software.sentry.io/issues/7853079286/events/e29c243a97374bfa8c12ed40362e71ab/)
+  · [Deployed refresh code](https://github.com/Asherlc/dofek/blob/970b1117b48b7a059b957399536f1b2e89140784/src/climbing-catalogue.ts#L54-L112)
+  · [Queue settings](https://github.com/Asherlc/dofek/blob/970b1117b48b7a059b957399536f1b2e89140784/src/jobs/queues.ts#L755-L770)
+- **Evidence / cause:** OpenBeta's GraphQL climb-detail request returned HTTP
+  `502`. Kaya returned HTTP `200` for the public search requests in the
+  breadcrumbs, and the adapter threw `Kaya catalogue returned an invalid or
+  rejected search response; retry later.` That branch handles both an invalid
+  response shape and a GraphQL error. The event does not distinguish them.
+  Axiom `dofek-logs` recorded seven `Job failed` entries involving OpenBeta
+  `502` from 19:46:33 through 19:50:12 UTC, including the combined failure.
+  The causes inside the providers remain unresolved.
+  [Kaya response check](https://github.com/Asherlc/dofek/blob/970b1117b48b7a059b957399536f1b2e89140784/packages/climbing-catalogue/src/kaya.ts#L354-L367)
+- **Mitigation / validation:** A read-only OpenBeta GraphQL health query
+  returned HTTP `200` from the workstation. Recovery of the affected
+  climb-detail request and completion of the failed refresh remain unverified.
+  The investigation made no production changes or manual retries.
+- **Retrospective / follow-up:** The Sentry event and worker logs confirmed
+  the provider failures and their scope. If Kaya public search failures recur,
+  distinguish GraphQL error responses from response schema failures in
+  telemetry without recording query text, response bodies, or credentials.
+- **Direct application fix:** Replaying a public Kaya lookup reproduced HTTP
+  `200` with GraphQL `INTERNAL_SERVER_ERROR` on a later page. The same page
+  succeeded on a repeat request. A public OpenBeta search and its detail
+  requests also succeeded on replay. The worker now retries once after 60
+  seconds when every failure is a typed provider HTTP `5xx` or a confirmed
+  Kaya GraphQL internal server error. The delay gives brief outages time to
+  recover while BullMQ releases the worker for other jobs. Known outages go
+  to logs and catalogue status, and only unexpected causes go to Sentry.
+  [Catalogue job policy](../src/jobs/README.md#configuration)
+- **Fix validation:** Regression tests reproduced both exception capture paths
+  before the change. Local BullMQ with Redis kept the job pending for the
+  delayed retry, retained the healthy source, and published all sources on
+  the second attempt. A separate Redis run confirmed that alternating provider
+  failures retain both sources and expose the terminal error. Review regressions
+  cover worker guard failures and malformed Kaya GraphQL errors. Production
+  deployment and the original lookup remain unverified. For future provider
+  incidents, trace both the operation's reporting and the worker's failed-event
+  listener before attributing an alert.
+- **CI follow-up:** The first PR run's `Run Stryker` step scored 66.67 for
+  Kaya, 72.73 for worker queues, and 74.19 for worker events against a required
+  75. The mutation report attributed the module-level Kaya error schema to
+  unrelated import-time tests. Moving validation into the response failure
+  path let the GraphQL fixtures exercise the mutations. The worker tests now
+  exercise global maintenance, refit failures, and alert reporting outside a
+  known catalogue aggregate. All three changed-line shards scored 100 locally.
+  [First PR run](https://github.com/Asherlc/dofek/actions/runs/44166944418)
+
 ## 2026-11-16 — HealthKit permission request interrupted by backgrounding
 
 - **Symptoms / impact:** DOFEK-MOBILE-2P recorded one failed Apple Health Connect
@@ -38996,3 +39051,93 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Approved exception / remaining risk:** The user declined a patch and explicitly approved a single advisory exception for GHSA-fc5q-39xc-vjpf. This accepts the unresolved ReDoS risk to unblock CI and the canonical release; it does not repair or mitigate picomatch. All other audit findings and existing dependency-security regressions retain enforcement. Production input reachability is unverified. See the [risk acceptance and removal criteria](dependency-security-patches.md#accepted-picomatch-advisory-exception). No manual server change was applied.
 - **Local validation:** The production audit reproduced the high-severity failure before the exception, then exited successfully with exactly one high finding ignored. Frozen installation, existing dependency-security regressions, full lint and recursive workspace typechecks passed. No package version, lockfile or runtime patch changed; hosted checks and release verification remain pending.
 - **Follow-up / retrospective:** Validate the exception and repeat the canonical release only after review and merge approval. Adopt a published fixed release across every affected production dependency path and remove the exception after exploit and compatibility verification. A green audit is a point-in-time result and, with this exception, does not establish picomatch safety. Verify that a recommended patched version is actually published before selecting an upgrade. No retry or timeout tuning can repair a vulnerable dependency.
+
+## 2026-11-17 — KAYA provider timeout sent a Sentry alert
+
+- [DOFEK-SERVER-8D](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-8D) recorded one failed climbing catalogue refresh at 20:01:07 UTC. [The high-priority issue rule](https://east-bay-software.sentry.io/monitors/alerts/3187357/) sent an email. Axiom `dofek-logs` recorded the failed worker attempt in the same window. The number of user-visible failures was unverified.
+- The shared HTTP wrapper classified a KAYA Fetch failure with cause `read ECONNRESET` as a `ProviderRequestTimeoutError`. The catalogue wrapped it in a `CatalogueSearchError` and sent the aggregate to exception tracking. The failed-job handler also attempted to report it.
+- The provider HTTP wrapper counts each classified request in the Axiom `provider.http.timeouts` counter, labelled by provider. Mixed aggregates with unexpected failures still go to exception tracking. Scheduled syncs persist their failures and apply the same timeout classification before raising a repeated-failure warning. Local regressions reproduced the missing counter and exception reporting, including the separate scheduled warning, and passed with the fix.
+- In [the first hosted Stryker run](https://github.com/Asherlc/dofek/actions/runs/44170477713/job/134350146870), `Run Stryker` reported `Final mutation score 66.67 under breaking threshold 75` because removing the timeout counter's unit and description escaped the tests. A registration assertion covered that case and the same shard killed all three active mutants locally.
+- After deployment, use the next observed provider timeout to verify metric arrival and absence of a timeout-only Sentry event. The [Sentry runbook](sentry.md#handled-operational-failures) explains how to match the provider and time window in Axiom and Sentry.
+
+## 2026-11-17 — Search PR blocked by a mock credential
+
+- **Symptoms / impact:** PR #3389 failed GitGuardian Security Checks and Spell Check. The failure blocked PR validation. Production was unaffected.
+- **Evidence / root cause:** GitGuardian incident 40222139 identified a fixed Basic authorization header in an MSW test for a reserved test domain. The header represented the fixture's own credentials. GitGuardian scans the commits in a pull request, so the finding persisted after the literal was removed from the latest file. The spelling check also rejected the new OpenSearch and Aiven API terms. [GitGuardian pull request scans](https://docs.gitguardian.com/internal-monitoring/prevent/detect-secrets-in-real-time-in-github).
+- **Direct fix / verification:** Commit `44836494a` generates the mock credential at test time and registers the API terms with CSpell. The eight focused tests, lint, workspace typechecks, and local and hosted spelling checks passed. The user approved the test-credential classification, and GitGuardian recorded it. The GitHub check and suite rerequest calls returned HTTP 404. A new commit triggered a [passing GitGuardian scan](https://github.com/Asherlc/dofek/runs/134437177818).
+- **Mutation gate:** The same [application CI run](https://github.com/Asherlc/dofek/actions/runs/44194726490) had six Stryker shards below the 75% threshold because the unit tier did not cover search setup, API routing, candidate hydration, publication, OpenSearch response handling, and erasure orchestration. Added tests for those behaviors. All six exact changed-line selections passed locally with scores from 79.43% to 100%. The 116 focused tests, lint, workspace typechecks, and spelling also passed.
+- **Integration isolation:** [Integration shard 1](https://github.com/Asherlc/dofek/actions/runs/44194726490/job/134434822323) failed ten Kilter fixture tests with `Kilter Board app sync failed: Connection aborted`. The search handler registered providers in the shared Vitest process before Kilter could install its PowerSync mock. Running both suites locally reproduced all ten failures. Removed the redundant registration from the search handler because server startup already registers providers. Both suites then passed together, with 31 tests passing and the existing test isolation configuration in effect.
+- **Retrospective:** Generate mock authorization headers from test-only inputs and check spelling for newly introduced provider terms. Verify the result on the PR head after correcting the scanner's incident classification.
+
+## 2026-11-17 — Pipedash hostname change blocked by mismatched release revisions
+
+- **Symptoms and impact.** [PR #3387](https://github.com/Asherlc/dofek/pull/3387)
+  merged as `4b3e596c` to move Pipedash to `pipedash.dofek.fit`. An earlier
+  automatic server rollout failed its final Pipedash check. Its pending
+  receipt `7866654393` blocked the [rename release's admission](https://github.com/Asherlc/dofek/actions/runs/44180627975/job/134383772120).
+  The old dashboard served requests until the DNS cutover. The new dashboard
+  returned 404 while the new route was being installed.
+- **Root cause and evidence.** [The failed job](https://github.com/Asherlc/dofek/actions/runs/44179111488/job/134379933047)
+  ran **Verify Pipedash health and authentication** with the hardcoded host
+  from control revision `e0ed27f2`. The deployed source `649e8c6e` still defined
+  `actions.dofek.fit`. The first fatal error was
+  `getaddrinfo ENOTFOUND pipedash.dofek.fit`. [PR #3388](https://github.com/Asherlc/dofek/pull/3388)
+  makes the check use the router from the deployed source. The mixed revision
+  regression failed before the change, and 132 focused workflow tests passed
+  after it, along with actionlint, lint, and recursive typechecks.
+- **Recovery.** Read-only checks confirmed that every live web and worker task
+  matched the failed receipt. The guarded [recovery](https://github.com/Asherlc/dofek/actions/runs/44185571665/attempts/2)
+  selected its validated descendant `4b3e596c`. Attempt 1 stopped before admission:
+  GHCR returned HTTP 403 while downloading a cache layer after a registry
+  authorizer timeout. An authenticated read of the same layer then returned
+  HTTP 200 and its expected digest. Attempt 2 reran the failed scan and passed.
+  The [Terraform apply](https://github.com/Asherlc/dofek/actions/runs/44190141767)
+  renamed the one existing DNS record after guarded admission.
+- **Verification and retrospective.** Recovery verified the stack, CDC,
+  dashboard health, and access controls. Receipt `7868022809` recorded success
+  at 22:53:23 UTC, and `7866654393` became inactive one second later. The new
+  hostname served the original saved views and all 40 Dofek workflows, with
+  anonymous and incorrect-password requests receiving HTTP 401. Deployment
+  checks whose target varies by source should read the checked-out target
+  configuration. Keep exact-source health checks and guarded receipt recovery
+  in the release runbook. No retry or timeout settings changed.
+
+## 2026-11-17 — Activities search Terraform qualification
+
+- The first local plan stopped at `ProjectServicePlanSpecsGet` with HTTP 403.
+  The Terraform identity could read the service and its connection credentials,
+  while the provider's plan metadata endpoint required a legacy project role.
+  A full workspace run also required the separately managed GitHub Terraform
+  environment credential for Cloudflare R2. The Activities plan targeted its
+  Infisical URL resources and their dependencies in the existing workspace.
+  [Aiven client permissions](https://pkg.go.dev/github.com/aiven/go-client-codegen/handler/project#ProjectHandler.ProjectServicePlanSpecsGet)
+  and [Terraform resource targeting](https://developer.hashicorp.com/terraform/cli/commands/plan#resource-targeting).
+- Granting the Terraform identity `read_only` in the `dofek` project cleared
+  the 403. The local apply adopted the existing Aiven service and created the
+  index, ACLs, and three scoped Infisical URLs. A second plan tried to replace
+  the index because the OpenSearch provider read back inherited mappings. It
+  stopped at `prevent_destroy`. Declaring those mappings on the index and
+  matching the template settings to OpenSearch's returned form allowed an
+  in-place template update.
+- Synthetic queries verified ranking, account and activity-type filters, and
+  credential scoping. The hosted erasure retry found zero deleted segments
+  after the shard's retention lease advanced. The backup identity read the
+  hosted backup inventory. Production search remained disabled and no customer
+  activity titles were indexed.
+
+## 2026-11-17 — Climbing alert PR checks and cold iOS archive
+
+- PR #3385's Server Unit and Mobile Tests jobs failed. The Drizzle snapshots
+  still expected the log source inside a literal SQL chunk, and activity-detail
+  fixtures lacked `climbing.attemptIncrease.invalidate()`. The resulting
+  unhandled rejection also broke the Stryker dry run for the web detail hook.
+  The fix updates the four affected snapshots and both fixtures.
+- The [iOS Native Build](https://github.com/Asherlc/dofek/actions/runs/44210424729/job/134491823662)
+  missed the Pods, DerivedData, and ccache restores. Compilation was still
+  running when GitHub stopped `Archive (Release, no signing)` at 25 minutes.
+  ccache recorded 538 misses and zero hits. The archive had passed on the
+  [earlier PR revision](https://github.com/Asherlc/dofek/actions/runs/44167991176)
+  and on [main](https://github.com/Asherlc/dofek/actions/runs/44230514635).
+  The reason for the missing cache entries is unresolved. The merged revision
+  will trigger a new hosted check. A fully cold archive within 25 minutes
+  remains unverified.

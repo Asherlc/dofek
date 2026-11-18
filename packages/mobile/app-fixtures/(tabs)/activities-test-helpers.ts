@@ -17,6 +17,7 @@ export interface WeekListQueryOptions {
 }
 
 export interface MockOverviewQuery {
+  isPlaceholderData?: boolean;
   data:
     | {
         activityCount: number;

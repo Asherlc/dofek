@@ -95,7 +95,8 @@ describe("queues", () => {
       "climbing-catalogue",
       { type: "climbing-catalogue", userId: "user-a", logEntryId: "log-a", seed: catalogueSeed },
       expect.objectContaining({
-        attempts: 1,
+        attempts: 2,
+        backoff: { type: "fixed", delay: 60_000 },
         removeOnComplete: true,
         removeOnFail: true,
         jobId: "climbing-catalogue-user-a-log-a",

@@ -664,6 +664,9 @@ function AuthGate() {
                 title: "Nutrition Analytics",
               }}
             />
+            <Stack.Screen name="food" options={{ title: "Nutrition" }} />
+            <Stack.Screen name="recovery" options={{ title: "Recovery" }} />
+            <Stack.Screen name="strain" options={{ title: "Training" }} />
             <Stack.Screen
               name="sleep"
               options={{

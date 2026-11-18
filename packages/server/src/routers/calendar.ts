@@ -12,6 +12,7 @@ import {
   ActivityHeatmapDataError,
 } from "@dofek/training/activity-heatmap";
 import { TRPCError } from "@trpc/server";
+import { createActivitySearchIndexFromEnv } from "dofek/activity-search/config";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { activityLocationSchema } from "../contracts/activity-location.ts";
@@ -20,8 +21,12 @@ import { endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { ActivitiesCalendarRepository } from "../repositories/activities-calendar-repository.ts";
 import { ActivityOverviewRepository } from "../repositories/activity-overview-repository.ts";
+import {
+  activityTitleCursorSchema,
+  searchActivityTitles,
+} from "../repositories/activity-title-search.ts";
 import { CalendarRepository } from "../repositories/calendar-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 export interface CalendarDay {
@@ -202,6 +207,58 @@ export const calendarRouter = router({
         ctx.accessWindow,
       );
       return repo.getPage(input);
+    }),
+
+  searchActivities: protectedProcedure
+    .input(
+      z.object({
+        title: z.string().trim().min(1).max(200),
+        activityType: z.string().min(1).optional(),
+        cursor: activityTitleCursorSchema.nullish(),
+        pageSize: z.number().int().min(1).max(50).default(20),
+      }),
+    )
+    .output(
+      z.object({
+        activities: z.array(calendarActivityEntrySchema.extend({ date: dateStringSchema })),
+        next: activityTitleCursorSchema.nullable(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const index = createActivitySearchIndexFromEnv("ACTIVITY_SEARCH_READ_URL");
+        if (!index) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Activity search is unavailable in this environment.",
+          });
+        }
+        const calendar = new ActivitiesCalendarRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.sensorStore,
+          ctx.accessWindow,
+        );
+        return await searchActivityTitles(
+          index,
+          (ids) => calendar.findByIds(ids, input.activityType),
+          {
+            ...input,
+            cursor: input.cursor ?? undefined,
+            userId: ctx.userId,
+            timezone: ctx.timezone,
+            accessWindow: ctx.accessWindow,
+          },
+        );
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        captureException(error, { tags: { trpcPath: "calendar.searchActivities" } });
+        throw new TRPCError({
+          code: "SERVICE_UNAVAILABLE",
+          message: "Activity search is temporarily unavailable. Try again in a minute.",
+        });
+      }
     }),
 
   activityOverview: cachedProtectedQuery({

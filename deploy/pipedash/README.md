@@ -1,7 +1,7 @@
 # Dofek Actions dashboard
 
 Pipedash provides a focused view of Dofek's GitHub Actions runs at the configured
-hostname `https://actions.dofek.fit`. It uses the existing production Traefik
+hostname `https://pipedash.dofek.fit`. It uses the existing production Traefik
 proxy and the canonical Dofek Swarm release workflow.
 
 The stack pins the published, multi-platform Pipedash **0.14.0** image by digest.

@@ -2,11 +2,14 @@ import {
   type ActivityMetricSource,
   activityMetricSourcePresentation,
 } from "@dofek/providers/activity-metric-source";
+import { providerSourceLabel } from "@dofek/providers/providers";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, within } from "storybook/test";
 import { ActivityMetricSourcePicker } from "./ActivityMetricSourcePicker.tsx";
 
+const bluetoothDeviceId = "A050E4D0-67D0-4F4D-9A43-756F7D343DA1";
+const bluetoothLabel = providerSourceLabel("whoop_ble", bluetoothDeviceId);
 const sources: ActivityMetricSource[] = [
   {
     id: "peloton-copy",
@@ -40,13 +43,8 @@ const sources: ActivityMetricSource[] = [
   },
   {
     id: "whoop-bluetooth",
-    label: "WHOOP (Bluetooth)",
-    presentation: {
-      displayName: "WHOOP",
-      providerId: "whoop_ble",
-      sourceName: null,
-      attribution: { kind: "bluetooth", label: "Bluetooth" },
-    },
+    label: bluetoothLabel,
+    presentation: activityMetricSourcePresentation("whoop_ble", bluetoothDeviceId, bluetoothLabel),
   },
   {
     id: "fit-file",
@@ -123,18 +121,23 @@ export const ProviderLogos: Story = {
       name: "Power source",
     });
     await expect(within(dropdown).getByRole("radio", { name: "Peloton" })).toBeChecked();
-    await expect(within(dropdown).getByText("Peloton Bike")).toBeVisible();
+    const bike = within(dropdown).getByRole("radio", { name: "Strava · recorded by Peloton Bike" });
+    await expect(bike.closest("label")).toHaveTextContent(/^$/);
   },
 };
 
 export const OpenDropdown: Story = {
-  args: { selectedId: "whoop-cloud" },
+  args: { selectedId: "whoop-bluetooth" },
   play: async ({ canvasElement, userEvent }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: /Heart Rate source/ }));
+    const trigger = within(canvasElement).getByRole("button", { name: /Heart Rate source/ });
+    await expect(trigger).toHaveTextContent(/^$/);
+    await userEvent.click(trigger);
     const dropdown = within(canvasElement.ownerDocument.body).getByRole("dialog", {
       name: "Heart Rate source",
     });
     await expect(dropdown).toBeVisible();
-    await expect(within(dropdown).getByRole("radio", { name: "WHOOP (Cloud)" })).toBeChecked();
+    const bluetooth = within(dropdown).getByRole("radio", { name: bluetoothLabel });
+    await expect(bluetooth).toBeChecked();
+    await expect(bluetooth.closest("label")).toHaveTextContent(/^$/);
   },
 };

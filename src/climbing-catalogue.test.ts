@@ -1,4 +1,5 @@
 import type { CatalogueCandidate } from "@dofek/climbing-catalogue/contracts";
+import { KayaCatalogueUnavailableError } from "@dofek/climbing-catalogue/kaya";
 import { MountainProjectCatalogueAdapter } from "@dofek/climbing-catalogue/mountain-project";
 import {
   ProviderRateLimitError,
@@ -9,8 +10,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClimbingCatalogueService } from "./climbing-catalogue.ts";
 import { MemoryCacheStore } from "./lib/cache.ts";
 import { captureException } from "./lib/error-reporting.ts";
+import { logger } from "./logger.ts";
 
 vi.mock("./lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
+vi.mock("./logger.ts", () => ({ logger: { warn: vi.fn() } }));
 
 const seed = {
   userId: "user-a",
@@ -98,14 +101,126 @@ describe("ClimbingCatalogueService", () => {
           ],
         },
       };
-      expect(captureException).toHaveBeenCalledWith(
-        expect.objectContaining({ errors: [failure] }),
-        context,
-      );
       await service.markFailed(seed, failure);
-      expect(captureException).toHaveBeenLastCalledWith(failure, context);
+      if (statusCode === 502) {
+        expect(captureException).not.toHaveBeenCalled();
+        expect(logger.warn).toHaveBeenCalledWith(
+          "[climbing-catalogue] Upstream service unavailable: %j",
+          context.extra.providerFailures,
+        );
+        expect(await service.read(seed)).toMatchObject({ status: "error", error: failure.message });
+      } else {
+        expect(captureException).toHaveBeenCalledWith(
+          expect.objectContaining({ errors: [failure] }),
+          context,
+        );
+        expect(captureException).toHaveBeenLastCalledWith(failure, context);
+      }
     },
   );
+  it("reports unexpected causes separately when another provider returns HTTP 5xx", async () => {
+    const outage = new ProviderServiceUnavailableError({
+      providerId: "openbeta",
+      statusCode: 502,
+      message: "OpenBeta temporarily unavailable",
+      responseBody: "gateway page",
+    });
+    const invalid = new Error("Kaya catalogue response is invalid");
+    const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+      { providerId: "openbeta", search: vi.fn().mockRejectedValue(outage) },
+      { providerId: "kaya", search: vi.fn().mockRejectedValue(invalid) },
+    ]);
+    await expect(service.refresh(seed)).rejects.toMatchObject({ errors: [outage, invalid] });
+    expect(captureException).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ errors: [invalid] }),
+      expect.objectContaining({ tags: { phase: "climbing-catalogue-refresh" } }),
+    );
+    expect(await service.read(seed)).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("OpenBeta temporarily unavailable"),
+    });
+  });
+
+  it("keeps healthy results from a failed attempt and clears the error on recovery", async () => {
+    const outage = new ProviderServiceUnavailableError({
+      providerId: "openbeta",
+      statusCode: 502,
+      message: "OpenBeta temporarily unavailable",
+      responseBody: "gateway page",
+    });
+    const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+      { providerId: "thecrag", search: async () => ({ candidates: [candidate], complete: true }) },
+      {
+        providerId: "kaya",
+        search: vi
+          .fn()
+          .mockRejectedValueOnce(new KayaCatalogueUnavailableError())
+          .mockResolvedValue({ candidates: [], complete: true }),
+      },
+      {
+        providerId: "openbeta",
+        search: vi
+          .fn()
+          .mockRejectedValueOnce(outage)
+          .mockResolvedValue({ candidates: [], complete: true }),
+      },
+    ]);
+    await expect(service.refresh(seed)).rejects.toThrow(outage.message);
+    expect(await service.read(seed)).toMatchObject({
+      status: "error",
+      sources: [{ providerId: "thecrag", matches: [{ candidate }] }],
+    });
+    await expect(service.refresh(seed)).resolves.toMatchObject({ status: "ready", error: null });
+    expect((await service.read(seed)).sources.map((source) => source.providerId)).toEqual([
+      "thecrag",
+      "kaya",
+      "openbeta",
+    ]);
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("retains results from both attempts when different providers fail", async () => {
+    const outage = new ProviderServiceUnavailableError({
+      providerId: "openbeta",
+      statusCode: 502,
+      message: "OpenBeta temporarily unavailable",
+      responseBody: "gateway page",
+    });
+    const openBetaCandidate = {
+      ...candidate,
+      providerId: "openbeta" as const,
+      url: "https://openbeta.io/climb/cragmont-crack",
+    };
+    const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+      {
+        providerId: "kaya",
+        search: vi
+          .fn()
+          .mockRejectedValueOnce(new KayaCatalogueUnavailableError())
+          .mockResolvedValueOnce({ candidates: [], complete: true }),
+      },
+      {
+        providerId: "openbeta",
+        search: vi
+          .fn()
+          .mockResolvedValueOnce({ candidates: [openBetaCandidate], complete: true })
+          .mockRejectedValueOnce(outage),
+      },
+    ]);
+    await expect(service.refresh(seed)).rejects.toThrow(
+      "Kaya catalogue is temporarily unavailable",
+    );
+    const first = await service.read(seed);
+    expect(first.sources).toMatchObject([
+      { providerId: "openbeta", matches: [{ candidate: openBetaCandidate }] },
+    ]);
+    await expect(service.refresh(seed)).rejects.toThrow(outage.message);
+    expect(await service.read(seed)).toMatchObject({
+      status: "error",
+      sources: [...first.sources, { providerId: "kaya", matches: [] }],
+    });
+    expect(captureException).not.toHaveBeenCalled();
+  });
   it("retains unnamed native source information without inventing discovery names", async () => {
     const { KayaCatalogueAdapter } = await import("@dofek/climbing-catalogue/kaya");
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(

@@ -93,7 +93,7 @@ function PickerHarness({ initialId = "watch-recording" }: { initialId?: string }
 afterEach(cleanup);
 
 describe("ActivityMetricSourcePicker", () => {
-  it("opens an anchored dropdown with attribution icons in each option", () => {
+  it("opens an anchored dropdown with icons and no visible source names", () => {
     render(<PickerHarness />);
     fireEvent.click(screen.getByRole("button", { name: /Heart Rate source/ }));
     const dropdown = screen.getByRole("dialog", { name: "Heart Rate source" });
@@ -101,17 +101,10 @@ describe("ActivityMetricSourcePicker", () => {
     expect(dropdown).not.toHaveAttribute("aria-modal", "true");
     for (const source of sources) {
       const option = screen.getByRole("radio", { name: source.label }).closest("label");
-      expect(option?.textContent).toBe(
-        source.id === "watch-recording"
-          ? "Asher’s Apple Watch"
-          : whoopBleSources.some((whoopSource) => whoopSource.id === source.id)
-            ? source.presentation.displayName
-            : "",
-      );
+      expect(option?.textContent).toBe("");
       expect(
         option?.querySelector(`[title="${source.presentation.attribution?.label}"]`),
       ).not.toBeNull();
-      expect(option).not.toHaveTextContent(source.label);
     }
   });
 
@@ -158,18 +151,13 @@ describe("ActivityMetricSourcePicker", () => {
     expect(cloud).toBeChecked();
     expect(bluetooth).not.toBeChecked();
     expect(secondBluetooth).not.toBeChecked();
-    expect(within(dialog).getByText("Asher’s Apple Watch")).toBeVisible();
-    expect(bluetooth.closest("label")).toHaveTextContent(whoopBleSource.presentation.displayName);
-    expect(secondBluetooth.closest("label")).toHaveTextContent(
-      secondWhoopBleSource.presentation.displayName,
-    );
     await waitFor(() => expect(cloud).toHaveFocus());
     fireEvent.click(bluetooth);
     expect(screen.getByLabelText("Selected recording")).toHaveTextContent(whoopBleSource.id);
     const bluetoothTrigger = screen.getByRole("button", {
       name: `Heart Rate source: ${whoopBleSource.label}`,
     });
-    expect(bluetoothTrigger).toHaveTextContent(whoopBleSource.presentation.displayName);
+    expect(bluetoothTrigger.textContent).toBe("");
     expect(bluetoothTrigger.querySelector('[title="Bluetooth"]')).not.toBeNull();
     await waitFor(() => expect(trigger).toHaveFocus());
 
@@ -182,7 +170,7 @@ describe("ActivityMetricSourcePicker", () => {
     expect(screen.getByLabelText("Selected recording")).toHaveTextContent(secondWhoopBleSource.id);
     expect(
       screen.getByRole("button", { name: `Heart Rate source: ${secondWhoopBleSource.label}` }),
-    ).toHaveTextContent(secondWhoopBleSource.presentation.displayName);
+    ).not.toHaveTextContent(secondWhoopBleSource.presentation.displayName);
   });
 
   it.each(["Escape", "Enter"])(
@@ -227,7 +215,7 @@ describe("ActivityMetricSourcePicker", () => {
     },
   );
 
-  it("shows the compact device name and retains full provenance in the tooltip", () => {
+  it("retains full provenance in the option tooltip", () => {
     render(
       <ActivityMetricSourcePicker
         label="Power"
@@ -255,10 +243,9 @@ describe("ActivityMetricSourcePicker", () => {
       "title",
       "Garmin Edge 1050 · Recorded by Garmin Edge 1050 · FIT file creator Garmin",
     );
-    expect(option.closest("label")?.textContent).toBe("Garmin Edge 1050");
   });
 
-  it("uses provider logos with device names and keeps complete source descriptions accessible", () => {
+  it("uses provider icons and keeps complete source descriptions accessible", () => {
     const pelotonSources: ActivityMetricSource[] = [
       {
         id: "peloton",
@@ -310,11 +297,11 @@ describe("ActivityMetricSourcePicker", () => {
     const strava = screen
       .getByRole("radio", { name: "Strava · recorded by Peloton Bike" })
       .closest("label");
-    expect(strava?.textContent).toBe("Peloton Bike");
+    expect(strava?.textContent).toBe("");
     expect(strava).toHaveAttribute("title", "Strava · recorded by Peloton Bike");
     expect(strava?.querySelector('img[src="/logos/strava.svg"]')).not.toBeNull();
     expect(
-      screen.getByRole("radio", { name: "Imported recording" }).closest("label"),
-    ).toHaveTextContent("Imported recording");
+      screen.getByRole("radio", { name: "Imported recording" }).closest("label")?.textContent,
+    ).toBe("U");
   });
 });

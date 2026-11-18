@@ -11,12 +11,19 @@ import {
   setProviderTokenDiagnostic,
 } from "./provider-token-diagnostic-context.ts";
 
-const providerAuthEvents = metrics
-  .getMeter("dofek-providers")
-  .createCounter("provider.auth.events", {
-    description: "Provider credential lifecycle outcomes",
-    unit: "{events}",
-  });
+const meter = metrics.getMeter("dofek-providers");
+const providerAuthEvents = meter.createCounter("provider.auth.events", {
+  description: "Provider credential lifecycle outcomes",
+  unit: "{events}",
+});
+const providerHttpTimeouts = meter.createCounter("provider.http.timeouts", {
+  description: "Provider HTTP requests classified as timeouts",
+  unit: "{requests}",
+});
+
+export function recordProviderHttpTimeout(providerId: string): void {
+  providerHttpTimeouts.add(1, { provider: providerId });
+}
 
 type ProviderAuthEvent =
   | "tokens_loaded"

@@ -1,6 +1,6 @@
 import {
   type ActivityMetricSource,
-  activityMetricSourceText,
+  activityMetricSourceTriggerText,
 } from "@dofek/providers/activity-metric-source";
 import { providerSourceLogo } from "@dofek/providers/providers";
 import * as Popover from "@radix-ui/react-popover";
@@ -69,7 +69,7 @@ export function ActivityMetricSourcePicker({
   const selected = sources.find((source) => source.id === selectedId);
   if (!selected) return null;
   const { presentation } = selected;
-  const selectedText = activityMetricSourceText(presentation);
+  const selectedText = activityMetricSourceTriggerText(presentation);
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -131,10 +131,8 @@ export function ActivityMetricSourcePicker({
                   }
                   sourceName={source.presentation.sourceName}
                   size={22}
+                  className="mr-auto"
                 />
-                <span className="min-w-0 flex-1 break-words text-sm font-medium">
-                  {activityMetricSourceText(source.presentation)}
-                </span>
                 <AttributionIcon attribution={source.presentation.attribution} />
                 <input
                   aria-label={source.label}

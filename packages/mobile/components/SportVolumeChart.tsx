@@ -14,8 +14,16 @@ import { colors } from "../theme";
 import { QueryStatePanel } from "./QueryStatePanel";
 import { WeeklyVolumeBars } from "./WeeklyVolumeBars";
 
-export function SportVolumeChart({ days, enabled }: { days: number | null; enabled: boolean }) {
-  const [sport, setSport] = useState<string>();
+export function SportVolumeChart({
+  days,
+  enabled,
+  initialSport,
+}: {
+  days: number | null;
+  enabled: boolean;
+  initialSport?: string;
+}) {
+  const [sport, setSport] = useState(initialSport);
   const [metric, setMetric] = useState<SportVolumeMetric>("time");
   const units = useUnitConverter();
   const query = trpc.training.sportVolume.useQuery(

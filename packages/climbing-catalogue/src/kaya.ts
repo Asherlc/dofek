@@ -253,6 +253,31 @@ function candidate(climb: ClassifiedClimb): CatalogueCandidate {
   });
 }
 
+/** Kaya can return a server-side failure in an HTTP 200 GraphQL response. */
+export class KayaCatalogueUnavailableError extends Error {
+  constructor() {
+    super("Kaya catalogue is temporarily unavailable. Try again later.");
+    this.name = "KayaCatalogueUnavailableError";
+  }
+}
+
+function throwKayaResponseError(body: unknown, message: string): never {
+  const internalError = z
+    .object({
+      errors: z
+        .array(
+          z.object({
+            message: z.string(),
+            extensions: z.object({ code: z.literal("INTERNAL_SERVER_ERROR") }),
+          }),
+        )
+        .nonempty(),
+    })
+    .safeParse(body);
+  if (internalError.success) throw new KayaCatalogueUnavailableError();
+  throw new Error(message);
+}
+
 export class KayaCatalogueAdapter implements ClimbingCatalogueAdapter {
   readonly providerId = "kaya";
   readonly #fetchFn: typeof fetch;
@@ -297,15 +322,15 @@ export class KayaCatalogueAdapter implements ClimbingCatalogueAdapter {
     token: string,
     publicClimb?: ClassifiedClimb,
   ): Promise<CatalogueCandidate> {
-    const result = nativeSchema.safeParse(
-      await this.#request(
-        `query CatalogueClimb { climb(id:"${id}") { ${nativeClimbFields} lead is_trad tags { id name tag_type_id } } }`,
-        {},
-        token,
-      ),
+    const body = await this.#request(
+      `query CatalogueClimb { climb(id:"${id}") { ${nativeClimbFields} lead is_trad tags { id name tag_type_id } } }`,
+      {},
+      token,
     );
+    const result = nativeSchema.safeParse(body);
     if (!result.success || result.data.errors?.length)
-      throw new Error(
+      throwKayaResponseError(
+        body,
         "Kaya authenticated catalogue lookup returned invalid or rejected climb details; sync or reconnect Kaya and retry.",
       );
     if (result.data.data.climb.id !== id)
@@ -361,7 +386,8 @@ export class KayaCatalogueAdapter implements ClimbingCatalogueAdapter {
       });
       const parsed = searchSchema.safeParse(body);
       if (!parsed.success || parsed.data.errors?.length)
-        throw new Error(
+        throwKayaResponseError(
+          body,
           "Kaya catalogue returned an invalid or rejected search response; retry later.",
         );
       const rows = parsed.data.data.webSearchForClimb;

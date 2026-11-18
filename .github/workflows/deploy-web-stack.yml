@@ -1595,23 +1595,29 @@ jobs:
 
       - name: Verify Pipedash health and authentication
         if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
-        env:
-          PIPEDASH_URL: https://actions.dofek.fit
         run: |
           node <<'NODE'
           (async () => {
           const { readFileSync } = require('node:fs');
           const { parseEnv } = require('node:util');
+          const { parse } = require('yaml');
+          // The control workflow and the deployed source can be different revisions.
+          const stack = parse(readFileSync('deploy/docker-compose.yml', 'utf8'));
+          const labels = stack.services?.pipedash?.deploy?.labels ?? [];
+          const router = labels.find(label => label.startsWith('traefik.http.routers.pipedash.rule='));
+          const host = /^traefik\.http\.routers\.pipedash\.rule=Host\(`([a-z0-9-]+\.dofek\.fit)`\)$/.exec(router ?? '')?.[1];
+          if (!host) throw new Error('Pipedash requires a single dofek.fit router hostname');
           const environment = parseEnv(readFileSync(process.env.PIPEDASH_ENV_FILE, 'utf8'));
           const password = environment.PIPEDASH_VAULT_PASSWORD;
           if (!password) throw new Error('PIPEDASH_VAULT_PASSWORD is required');
-          const base = process.env.PIPEDASH_URL;
+          const base = 'https://' + host;
           const health = await fetch(base + '/api/v1/health');
           if (health.status !== 200) throw new Error('Pipedash health failed: HTTP ' + health.status);
           const anonymous = await fetch(base + '/api/v1/providers');
           if (anonymous.status !== 401) throw new Error('Pipedash must reject anonymous access: HTTP ' + anonymous.status);
           const authenticated = await fetch(base + '/api/v1/providers', {
             headers: { Authorization: 'Bearer ' + password },
+            redirect: 'error',
           });
           if (authenticated.status !== 200) throw new Error('Pipedash authenticated access failed: HTTP ' + authenticated.status);
           })();

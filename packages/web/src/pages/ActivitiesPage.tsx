@@ -47,6 +47,9 @@ export function ActivitiesPage() {
   const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
   const [showHidden, setShowHidden] = useState(false);
+  const [searchDraft, setSearchDraft] = useState("");
+  const [searchTitle, setSearchTitle] = useState<string>();
+  const searching = searchTitle !== undefined;
   const [selectMode, setSelectMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmMerge, setConfirmMerge] = useState(false);
@@ -76,6 +79,15 @@ export function ActivitiesPage() {
     [weeks, endDate, selectedActivityType, showHidden],
   );
   const trpcUtils = trpc.useUtils();
+  const searchQuery = trpc.calendar.searchActivities.useInfiniteQuery(
+    { title: searchTitle ?? "", activityType: selectedActivityType, pageSize: ACTIVITY_PAGE_SIZE },
+    {
+      enabled: searching,
+      getNextPageParam: (page) => page.next ?? undefined,
+      gcTime: 0,
+      meta: { persist: false },
+    },
+  );
   const pageInput = useMemo(
     () => ({ ...queryInput, page: activityPage, pageSize: ACTIVITY_PAGE_SIZE }),
     [queryInput, activityPage],
@@ -85,6 +97,7 @@ export function ActivitiesPage() {
     undefined,
   );
   const query = trpc.calendar.weekListV2.useQuery(pageInput, {
+    enabled: !searching,
     placeholderData: (previousData) => previousData,
     refetchInterval: (query) =>
       query.state.data?.days.some((day) =>
@@ -112,6 +125,7 @@ export function ActivitiesPage() {
     onSuccess: async () => {
       await Promise.all([
         trpcUtils.calendar.weekListV2.invalidate(),
+        trpcUtils.calendar.searchActivities.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.activity.list.invalidate(),
       ]);
@@ -133,6 +147,7 @@ export function ActivitiesPage() {
     onSuccess: async () => {
       await Promise.all([
         trpcUtils.calendar.weekListV2.invalidate(),
+        trpcUtils.calendar.searchActivities.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.calendar.calendarData.invalidate(),
         trpcUtils.activity.list.invalidate(),
@@ -146,6 +161,7 @@ export function ActivitiesPage() {
     onSuccess: async () => {
       await Promise.all([
         trpcUtils.calendar.weekListV2.invalidate(),
+        trpcUtils.calendar.searchActivities.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.activity.list.invalidate(),
       ]);
@@ -156,14 +172,20 @@ export function ActivitiesPage() {
   });
 
   const dayGroups = useMemo(() => {
-    if (!pageData) return undefined;
-    return pageData.days
-      .map((day) => ({
+    const days = searching
+      ? searchQuery.data?.pages.flatMap(({ activities }) =>
+          activities.map(({ date, ...activity }) => ({ date, activities: [activity] })),
+        )
+      : pageData?.days;
+    return days
+      ?.map((day) => ({
         ...day,
         activities: day.activities.filter((activity) => !deletedActivityIds.has(activity.id)),
       }))
       .filter((day) => day.activities.length > 0);
-  }, [pageData, deletedActivityIds]);
+  }, [pageData, deletedActivityIds, searching, searchQuery.data]);
+  const listQuery = searching ? searchQuery : query;
+  const hasListData = searching ? !!searchQuery.data : !!pageData;
   const hiddenActivityIds = new Set(
     [...selectedActivities].filter(([, activity]) => activity.isProviderAbsent).map(([id]) => id),
   );
@@ -250,11 +272,46 @@ export function ActivitiesPage() {
         loading={processingStatus.isLoading}
       />
       <div className="space-y-4">
+        <form
+          className="flex flex-wrap items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setSearchTitle(searchDraft.trim() || undefined);
+            cancelSelection();
+          }}
+        >
+          <input
+            type="search"
+            aria-label="Search activity titles"
+            placeholder="Search activity titles"
+            value={searchDraft}
+            maxLength={200}
+            onChange={(event) => setSearchDraft(event.target.value)}
+            className="min-w-40 flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm"
+          />
+          <button type="submit" className="rounded-md bg-accent px-3 py-2 text-sm text-on-accent">
+            Search
+          </button>
+          {searching ? (
+            <button
+              type="button"
+              className="px-2 py-2 text-sm text-muted"
+              onClick={() => {
+                setSearchDraft("");
+                setSearchTitle(undefined);
+                cancelSelection();
+              }}
+            >
+              Clear search
+            </button>
+          ) : null}
+        </form>
         <ActivityControls
           activityTypes={overviewQuery.data?.activityTypes ?? []}
           activityType={activityType}
           weeks={weeks}
-          showHidden={showHidden}
+          showHidden={showHidden && !searching}
+          searching={searching}
           canSelect={hasActivities}
           selectMode={selectMode}
           confirmDelete={confirmDelete}
@@ -287,7 +344,7 @@ export function ActivitiesPage() {
         {restoreProviderAbsent.error ? (
           <QueryStatePanel error={restoreProviderAbsent.error} height={80} />
         ) : null}
-        {overviewQuery.isLoading && !overviewQuery.data ? (
+        {searching ? null : overviewQuery.isLoading && !overviewQuery.data ? (
           <QueryStatePanel variant="loading" height={120} />
         ) : overviewQuery.isError && !overviewQuery.data ? (
           <QueryStatePanel error={overviewQuery.error} height={120} />
@@ -300,37 +357,39 @@ export function ActivitiesPage() {
           </>
         )}
       </div>
-      {query.isLoading && !pageData ? (
+      {listQuery.isLoading && !hasListData ? (
         <QueryStatePanel variant="loading" height={400} />
-      ) : query.isError && !pageData ? (
+      ) : listQuery.isError && (!hasListData || (searching && !hasActivities)) ? (
         <QueryStatePanel
-          error={query.error}
+          error={listQuery.error}
           height={200}
-          onRetry={() => void query.refetch()}
-          retrying={query.isFetching}
+          onRetry={() => void listQuery.refetch()}
+          retrying={listQuery.isFetching}
         />
-      ) : !dayGroups || dayGroups.length === 0 ? (
+      ) : !hasActivities && !(searching && searchQuery.hasNextPage) ? (
         <QueryStatePanel
           variant="empty"
           message={
-            showHidden
-              ? `No activities in the last ${weeks} weeks, including hidden ones.`
-              : `No activities in the last ${weeks} weeks.`
+            searching
+              ? "No matching activities."
+              : showHidden
+                ? `No activities in the last ${weeks} weeks, including hidden ones.`
+                : `No activities in the last ${weeks} weeks.`
           }
           height={200}
         />
       ) : (
         <div className="space-y-7">
-          {query.isError ? (
+          {listQuery.isError ? (
             <QueryStatePanel
-              error={query.error}
+              error={listQuery.error}
               height={72}
-              onRetry={() => void query.refetch()}
-              retrying={query.isFetching}
+              onRetry={() => void listQuery.refetch()}
+              retrying={listQuery.isFetching}
             />
           ) : null}
           {visibleDayGroups?.map((day) => (
-            <section key={day.date}>
+            <section key={searching ? day.activities[0]?.id : day.date}>
               <div className="mb-2 flex items-center gap-3">
                 <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">
                   {formatDayHeader(day.date)}
@@ -351,13 +410,26 @@ export function ActivitiesPage() {
               </div>
             </section>
           ))}
-          <PaginationControls
-            page={currentActivityPage}
-            pageSize={ACTIVITY_PAGE_SIZE}
-            totalItems={activityCount}
-            itemLabel="activities"
-            onPageChange={setActivityPage}
-          />
+          {searching ? (
+            searchQuery.hasNextPage ? (
+              <button
+                type="button"
+                disabled={searchQuery.isFetching}
+                className="rounded-md border border-border px-3 py-2 text-sm"
+                onClick={() => void searchQuery.fetchNextPage()}
+              >
+                {searchQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+              </button>
+            ) : null
+          ) : (
+            <PaginationControls
+              page={currentActivityPage}
+              pageSize={ACTIVITY_PAGE_SIZE}
+              totalItems={activityCount}
+              itemLabel="activities"
+              onPageChange={setActivityPage}
+            />
+          )}
         </div>
       )}
     </PageLayout>
@@ -369,6 +441,7 @@ interface ActivityControlsProps {
   activityType: string;
   weeks: number;
   showHidden: boolean;
+  searching: boolean;
   canSelect: boolean;
   selectMode: boolean;
   confirmDelete: boolean;
@@ -400,6 +473,7 @@ function ActivityControls({
   activityType,
   weeks,
   showHidden,
+  searching,
   canSelect,
   selectMode,
   confirmDelete,
@@ -547,29 +621,33 @@ function ActivityControls({
             Select activities
           </button>
         ) : null}
-        <label className="flex items-center gap-2 text-xs text-muted">
-          <input
-            type="checkbox"
-            checked={showHidden}
-            onChange={(event) => onShowHiddenChange(event.target.checked)}
-            className="h-4 w-4 accent-accent cursor-pointer"
-          />
-          Show hidden activities
-        </label>
-        <label className="flex items-center gap-2 text-xs text-muted">
-          Date range
-          <select
-            value={weeks}
-            onChange={(event) => onWeeksChange(Number(event.target.value))}
-            className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
-          >
-            {DATE_RANGE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!searching ? (
+          <>
+            <label className="flex items-center gap-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                checked={showHidden}
+                onChange={(event) => onShowHiddenChange(event.target.checked)}
+                className="h-4 w-4 accent-accent cursor-pointer"
+              />
+              Show hidden activities
+            </label>
+            <label className="flex items-center gap-2 text-xs text-muted">
+              Date range
+              <select
+                value={weeks}
+                onChange={(event) => onWeeksChange(Number(event.target.value))}
+                className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
+              >
+                {DATE_RANGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : null}
         <label className="flex items-center gap-2 text-xs text-muted">
           Activity type
           <select

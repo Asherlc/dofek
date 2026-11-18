@@ -65,7 +65,7 @@ jobs:
       - name: Load credentials through Infisical OIDC
         uses: ./.github/actions/load-infisical-secrets
         with:
-          keys: EXPO_APP_ID,TF_API_TOKEN,CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID
+          keys: EXPO_APP_ID,TF_API_TOKEN,CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,AIVEN_TOKEN
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
         with:
@@ -91,6 +91,7 @@ jobs:
           test -n "$TF_VAR_cloudflare_terraform_r2_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_TERRAFORM_R2_API_TOKEN" >&2; exit 1; }
           test -n "$TF_VAR_oracle_server_host" || { echo "ERROR: missing required GitHub variable ORACLE_SERVER_HOST" >&2; exit 1; }
           test -n "$EXPO_APP_ID" || { echo "ERROR: EXPO_APP_ID is required" >&2; exit 1; }
+          test -n "$AIVEN_TOKEN" || { echo "ERROR: missing required Infisical secret AIVEN_TOKEN" >&2; exit 1; }
           export TF_VAR_expo_app_id="$EXPO_APP_ID"
 
           case "$TF_OPERATION" in

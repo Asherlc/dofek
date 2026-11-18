@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  ACTIVITY_SEARCH_PUBLICATION_OWNER,
+  activitySearchPublicationExists,
+} from "../activity-search/publication.ts";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import {
   createTestBarrier,
@@ -33,6 +37,50 @@ describe("analytics query owner database boundaries", () => {
     return context.db.execute(sql`SELECT quiescent,intent_id,query_id,query_terminal
       FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`);
   }
+
+  it("blocks a successor after an unacknowledged search mutation while leaving analytics available", async () => {
+    const search = ACTIVITY_SEARCH_PUBLICATION_OWNER;
+    const analytics = { resourceId: randomUUID(), intentId: "analytics-build" };
+    const lateRequest = createTestBarrier();
+    const timeout = new Error("bulk response timed out");
+    let applied = false;
+    const remoteResult = lateRequest.promise.then(() => {
+      applied = true;
+    });
+    let requestId: string | undefined;
+    await expect(activitySearchPublicationExists(context.db)).resolves.toBe(false);
+    await expect(
+      withAnalyticsQueryOwner(context.db, client, search, (owner) =>
+        owner.runSynchronousRequest(async (opaqueId) => {
+          requestId = opaqueId;
+          expect(await ownerState(search.resourceId)).toMatchObject([
+            { query_id: opaqueId, query_terminal: false },
+          ]);
+          throw timeout;
+        }),
+      ),
+    ).rejects.toBe(timeout);
+
+    expect(applied).toBe(false);
+    await expect(activitySearchPublicationExists(context.db)).resolves.toBe(true);
+    expect(await ownerState(search.resourceId)).toMatchObject([
+      { query_id: requestId, quiescent: false, query_terminal: false },
+    ]);
+    const erase = vi.fn(async () => undefined);
+    await expect(withAnalyticsQueryOwner(context.db, client, search, erase)).rejects.toThrow(
+      "BLOCKED",
+    );
+    expect(erase).not.toHaveBeenCalled();
+    await expect(
+      withAnalyticsQueryOwner(context.db, client, analytics, async () => undefined),
+    ).resolves.toBeUndefined();
+    lateRequest.resolve();
+    await remoteResult;
+    expect(applied).toBe(true);
+    await expect(withAnalyticsQueryOwner(context.db, client, search, erase)).rejects.toThrow(
+      "BLOCKED",
+    );
+  });
 
   it("allows the same erasure request to retry a terminal failure before admitting another account", async () => {
     const resourceId = randomUUID();

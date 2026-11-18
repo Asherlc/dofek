@@ -1,3 +1,44 @@
+import type { TrainingSection } from "../../lib/training-sections";
+
+export const noPolarizationWeeks = {
+  model: "treff-three-zone",
+  activityScope: "cycling",
+  threshold: 2,
+  maxHr: 190,
+  explanation: "Cached mobile polarization.",
+  method: {
+    formula: "Cached Treff formula.",
+    zoneBasis: "Cached Treff zones.",
+    calculationChoice: "Cached calculation choice.",
+    interpretation: "Cached descriptive interpretation.",
+    source: {
+      title: "Treff source",
+      url: "https://doi.org/10.3389/fphys.2019.00707",
+    },
+  },
+  weeks: [],
+};
+
+export const sectionExpectations = {
+  overview: { queries: ["training", "sportVolume"], cards: ["Training Load", "Weekly Volume"] },
+  endurance: {
+    queries: ["hrZones", "polarization", "sportVolume"],
+    cards: ["Weekly Volume", "Easy-to-hard training balance"],
+  },
+  cycling: {
+    queries: ["training", "sportVolume"],
+    cards: ["Weekly Volume", "Vertical Ascent Rate"],
+  },
+  running: { queries: ["running", "sportVolume"], cards: ["Running", "Weekly Volume"] },
+  strength: { queries: ["training", "strengthVolume"], cards: ["Strength Volume"] },
+  hiking: { queries: ["sportVolume"], cards: ["Route comparison", "Weekly Volume"] },
+  climbing: {
+    queries: ["training", "strengths", "locationMap", "climbingVolume"],
+    cards: ["Climbing Volume", "Climbing strengths"],
+  },
+  recovery: { queries: ["training"], cards: ["Training Load"] },
+} satisfies Record<TrainingSection, { queries: string[]; cards: string[] }>;
+
 export function defaultMockTrainingData(): Record<string, unknown> {
   return {
     workloadRatio: {

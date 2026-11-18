@@ -13,21 +13,26 @@ import { trendDirection as computeTrend } from "@dofek/scoring/scoring";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { BodyDecisionContext } from "../../components/BodyDecisionContext";
-import { Card } from "../../components/Card";
-import { SparkLine } from "../../components/charts/SparkLine";
-import { DaySelector } from "../../components/DaySelector";
-import { HealthStatusCards } from "../../components/HealthStatusCards";
-import { MetricCard } from "../../components/MetricCard";
-import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
-import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
-import { trpc } from "../../lib/trpc";
-import { useUnitConverter } from "../../lib/units";
-import { useProcessingStatus } from "../../lib/useProcessingStatus";
-import { useRefresh } from "../../lib/useRefresh";
-import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
-import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
-import { colors } from "../../theme";
+import { BodyDecisionContext } from "../components/BodyDecisionContext";
+import { Card } from "../components/Card";
+import { SparkLine } from "../components/charts/SparkLine";
+import { DaySelector } from "../components/DaySelector";
+import { HealthStatusCards } from "../components/HealthStatusCards";
+import { MetricCard } from "../components/MetricCard";
+import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget";
+import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
+import {
+  formatHealthCardComparison,
+  formatHealthCardComparisonDelta,
+  formatHealthCardValue,
+} from "../lib/health-status-format";
+import { trpc } from "../lib/trpc";
+import { useUnitConverter } from "../lib/units";
+import { useProcessingStatus } from "../lib/useProcessingStatus";
+import { useRefresh } from "../lib/useRefresh";
+import { useTimeRangePreference } from "../lib/useTimeRangePreference";
+import { useTodayQueryDate } from "../lib/useTodayQueryDate";
+import { colors } from "../theme";
 
 function TrendMetricGridItem({
   label,
@@ -48,7 +53,7 @@ function TrendMetricGridItem({
   );
 }
 
-export default function RecoveryScreen() {
+export default function RecoveryScreen({ body = false }: { body?: boolean }) {
   const router = useRouter();
   const units = useUnitConverter();
   const utils = trpc.useUtils();
@@ -175,17 +180,13 @@ export default function RecoveryScreen() {
       {recoveryQuery.isError ? (
         <QueryStatePanel
           variant="error"
-          title={
-            recoveryData == null
-              ? "Recovery data is unavailable"
-              : "Recovery data could not refresh"
-          }
+          title={`${body ? "Body" : "Recovery"} data ${recoveryData == null ? "is unavailable" : "could not refresh"}`}
           message={getQueryErrorMessage(recoveryQuery.error)}
           minHeight={96}
           onRetry={() => {
             void recoveryQuery.refetch();
           }}
-          retryLabel="Retry recovery data"
+          retryLabel={body ? "Retry body data" : "Retry recovery data"}
           retrying={recoveryQuery.isFetching}
         />
       ) : null}
@@ -193,35 +194,13 @@ export default function RecoveryScreen() {
       {recoveryData != null && (
         <HealthStatusCards
           metrics={recoveryData.healthStatus}
-          formatValue={(metric) => {
-            if (metric.metric === "trend_weight") {
-              return formatMeasurementText(units.formatWeight(metric.value));
-            }
-            if (metric.metric === "skin_temperature") {
-              return formatMeasurementText(units.formatTemperature(metric.value));
-            }
-            if (metric.metric === "spo2") return formatSpO2(metric.value);
-            if (metric.metric === "respiratory_rate") {
-              return metric.value == null ? "—" : `${formatNumber(metric.value)} breaths/min`;
-            }
-            if (metric.metric === "sleep_efficiency") {
-              return metric.value == null ? "—" : `${formatNumber(metric.value)}%`;
-            }
-            if (metric.value == null) return "—";
-            if (metric.metric === "body_fat_percentage") {
-              return `${formatBodyCompositionNumber(metric.value)}%`;
-            }
-            return `${formatNumber(metric.value, 0)} bpm`;
-          }}
-          formatComparisonValue={(metric, value) => {
-            if (metric.metric === "skin_temperature") {
-              return formatMeasurementText(units.formatTemperatureDelta(value));
-            }
-            if (metric.metric === "spo2") return formatSpO2(value);
-            if (metric.metric === "hrv") return formatHRV(value);
-            if (metric.metric === "steps") return formatNumber(value, 0);
-            return formatNumber(value);
-          }}
+          formatValue={(metric) => formatHealthCardValue(metric, units)}
+          formatComparisonValue={(metric, value) =>
+            formatHealthCardComparison(metric, value, units)
+          }
+          formatComparisonDelta={(metric, value) =>
+            formatHealthCardComparisonDelta(metric, value, units)
+          }
         />
       )}
 
@@ -583,37 +562,40 @@ export default function RecoveryScreen() {
             </Card>
           )}
 
-          {/* Navigation links */}
-          <TouchableOpacity
-            style={styles.navLink}
-            onPress={() => router.push("/sleep")}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Sleep Detail"
-          >
-            <Text style={styles.navLinkText}>Sleep Detail</Text>
-            <Text style={styles.navChevron}>{"\u203A"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.navLink}
-            onPress={() => router.push("/correlation")}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Correlation Explorer"
-          >
-            <Text style={styles.navLinkText}>Correlation Explorer</Text>
-            <Text style={styles.navChevron}>{"\u203A"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.navLink}
-            onPress={() => router.push("/daily-heart-rate")}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Heart Rate by Source"
-          >
-            <Text style={styles.navLinkText}>Heart Rate by Source</Text>
-            <Text style={styles.navChevron}>{"\u203A"}</Text>
-          </TouchableOpacity>
+          {!body ? (
+            <>
+              <TouchableOpacity
+                style={styles.navLink}
+                onPress={() => router.push("/sleep")}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Sleep Detail"
+              >
+                <Text style={styles.navLinkText}>Sleep Detail</Text>
+                <Text style={styles.navChevron}>{"\u203A"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.navLink}
+                onPress={() => router.push("/correlation")}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Correlation Explorer"
+              >
+                <Text style={styles.navLinkText}>Correlation Explorer</Text>
+                <Text style={styles.navChevron}>{"\u203A"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.navLink}
+                onPress={() => router.push("/daily-heart-rate")}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Heart Rate by Source"
+              >
+                <Text style={styles.navLinkText}>Heart Rate by Source</Text>
+                <Text style={styles.navChevron}>{"\u203A"}</Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
         </>
       ) : null}
     </ScrollView>

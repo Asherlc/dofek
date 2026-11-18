@@ -8,10 +8,13 @@ responses that lack interval durations.
 
 The mobile app for Dofek. Built with Expo and React Native, with native Swift modules for HealthKit and WHOOP BLE synchronization.
 
-The [Today route](<app/(tabs)/index.tsx>) retains recorded sleep and processing
-status. [Recovery](<app/(tabs)/recovery.tsx>) and
-[Training](<app/(tabs)/strain.tsx>) retain observed measurements, personal
-baselines, and descriptive workload data. Custom recovery, 0–21 strain, and
+The [Overview](<app/(tabs)/index.tsx>) shows the key relationship, resting
+heart rate trend, Health Monitor, and last recorded night. It uses the same
+evidence queries as the [web Overview](../web/src/pages/Dashboard.tsx).
+[Training](<app/(tabs)/training.tsx>) groups the existing analyses by sport and
+includes Recovery. The [More tab](<app/(tabs)/more.tsx>) opens Body, Nutrition,
+Correlation, Data Sources, and Settings. [Body](app/body.tsx) groups vitals,
+body composition, and heart rate by source. Custom recovery, 0–21 strain, and
 sleep-performance scores and their dependent recommendations are retired;
 see the [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-scores-design.md).
 
@@ -114,6 +117,14 @@ The [GPS-route preview](../../docs/screenshots/mobile-activity-route.png) and
 show the [Activities stories](<app-stories/(tabs)/activities.stories.tsx>) at a
 390-pixel browser viewport.
 
+The Activities list keeps date and sport controls above a collapsed training
+time summary. Expand it for period comparisons and the daily training-time
+calendar. The [activity detail](<app/activity/[id].tsx>) opens on key stats and
+the activity's route, exercises, or climbs when available. Performance shows
+one metric at a time with the recording source and exact chart data. Scrubbing
+an activity with GPS still updates the route position. The actions beside the
+title open export, recompute, and delete, and Details opens recording lineage.
+
 Activity details show downloaded photos in [ActivityImages](components/ActivityImages.tsx),
 with tappable thumbnails, captions, source labels, and a full-screen
 [native Modal](https://reactnative.dev/docs/modal). Cards without a map show the
@@ -181,7 +192,7 @@ in [ActivityImages](./components/ActivityImages.tsx). The
 [activity tests](./app-tests/activity/[id].test.tsx) cover selection, route refresh
 states, attachments, and opening/closing the exact occurrence details.
 
-The [Training route](<app/(tabs)/strain.tsx>) requests
+The [Training route](<app/strain.tsx>) requests
 `mobileDashboard.trainingV2` using the combined climbing progression
 [output contract](../server/src/contracts/mobile-dashboard-contracts.ts).
 The [server router](../server/src/routers/mobile-dashboard.ts) retains the original
@@ -205,7 +216,7 @@ The [strengths chart](components/ClimbingStrengthsChart.tsx) offers Styles with 
 
 Page-wide filters show a compact type/setting summary. Filters opens a [native modal](https://reactnative.dev/docs/modal) with independent checkbox groups for every filter; each All checkbox selects or clears its group and exposes partial selections with the [WAI mixed checkbox state](https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/). Type includes Bouldering, Lead, Top rope, Follow, and Unroped, replacing the overlapping kind/method selectors. The broader Discipline selector is omitted. Attempt scope, Solo status, Protection used, and Route protection stay under More filters with the same checkbox style. The [shared server projection](../server/src/repositories/climbing-rock-observations.ts) matches any selected value within each group and intersects groups; Whole climb remains the default scope, with both scopes selectable explicitly.
 
-Values and source-climb details use the [server-computed contract](../training/src/climbing-strengths.ts). The card offers the current training period or All time through the [Training route](<app/(tabs)/strain.tsx>), preserving its explicit end date and access restrictions in the [server query](../server/src/routers/climbing.ts).
+Values and source-climb details use the [server-computed contract](../training/src/climbing-strengths.ts). The card offers the current training period or All time through the [Training route](<app/strain.tsx>), preserving its explicit end date and access restrictions in the [server query](../server/src/routers/climbing.ts).
 Unknown angle units remain
 unclassified, while known degrees retain their recorded numeric labels.
 Source categories retain provider attribution and use the same server-computed
@@ -214,7 +225,7 @@ including unfamiliar labels, through the
 [shared presentation helper](../training/src/climbing-tag-presentation.ts).
 Catalogue tags stay inside their reference disclosure and do not affect
 strengths, as defined by the [source coverage contract](../../docs/climbing-trait-coverage.md).
-The [Training route](<app/(tabs)/strain.tsx>) includes its existing local date
+The [Training route](<app/strain.tsx>) includes its existing local date
 anchor in the query key, validates restored responses with the shared schema,
 and labels retained data while it refreshes. Successful attachment actions
 invalidate strengths alongside the affected climbing detail queries; see the
@@ -835,9 +846,9 @@ using React Native's [Pressable](https://reactnative.dev/docs/pressable) and
 ## Activity metric sources
 
 Activity views offer independent [source controls](components/activity/ActivityMetricSourcePicker.tsx)
-for heart rate, power, speed, cadence, elevation, and skin temperature. Provider logos, short device
-names where needed, and attribution icons keep the controls and chooser concise.
-Unknown sources retain identifying text; accessible names retain the complete
+for heart rate, power, speed, cadence, elevation, and skin temperature. Chooser rows
+display provider and attribution icons. The selected source button also shows readable
+device names where needed and omits raw UUIDs. Accessible names retain the complete
 source wording using React Native's [accessibility labels](https://reactnative.dev/docs/accessibility#accessibilitylabel).
 Each control preselects its existing priority winner
 without an Auto option. Choices distinguish providers and devices and apply

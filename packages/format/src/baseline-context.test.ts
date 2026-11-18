@@ -5,6 +5,7 @@ import {
   formatComparisonPeriod,
 } from "./baseline-context.ts";
 import { formatHRVMeasurement } from "./format.ts";
+import { UnitConverter } from "./units.ts";
 
 it("labels the recent and prior comparison periods without conflating their windows", () => {
   expect(formatComparisonPeriod({ recentDays: 7, baselineDays: 28 })).toBe("7d vs prior 28d");
@@ -25,6 +26,20 @@ describe("formatComparisonContext", () => {
     expect(formatComparisonContext(comparison, { formatValue, missingMeans: "summary" })).toBe(
       "7d avg 66 ms vs prior 28d avg 61 ms · +9 ms",
     );
+  });
+
+  it("formats Fahrenheit means and their difference with separate conversions", () => {
+    const units = new UnitConverter("imperial");
+    expect(
+      formatComparisonContext(
+        { ...comparison, recentMean: 36, baselineMean: 35, delta: 1 },
+        {
+          formatValue: (value: number) => units.formatTemperature(value).text,
+          formatDelta: (value: number) => units.formatTemperatureDelta(value).text,
+          missingMeans: "summary",
+        },
+      ),
+    ).toBe("7d avg 96.8°F vs prior 28d avg 95.0°F · +1.8°F");
   });
 
   it.each([

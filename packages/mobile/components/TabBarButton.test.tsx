@@ -3,6 +3,11 @@ import type { BottomTabBarButtonProps } from "expo-router/tabs";
 import { Pressable, Text } from "react-native";
 import { describe, expect, it, vi } from "vitest";
 import { TabBarButton } from "./TabBarButton";
+import { InteractiveNavigation, LandscapeNavigation } from "./TabBarButton.stories";
+
+vi.mock("@expo/vector-icons", () => ({
+  Ionicons: () => null,
+}));
 
 vi.mock("expo-router/react-navigation", () => ({
   PlatformPressable: (props: BottomTabBarButtonProps) => (
@@ -63,4 +68,17 @@ describe("TabBarButton", () => {
 
     expect(screen.getByRole("button", { name: "Today" }).style.flexDirection).toBe("row");
   });
+
+  it.each([InteractiveNavigation, LandscapeNavigation])(
+    "renders and switches tabs in navigation preview %#",
+    (story) => {
+      render(<story.render />);
+      for (const tab of ["Overview", "Training", "Activities", "Sleep", "More"]) {
+        expect(screen.getByRole("button", { name: tab })).toBeTruthy();
+      }
+      const activities = screen.getByRole("button", { name: "Activities" });
+      fireEvent.click(activities);
+      expect(activities.getAttribute("aria-selected")).toBe("true");
+    },
+  );
 });

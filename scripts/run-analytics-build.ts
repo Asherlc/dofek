@@ -3,11 +3,18 @@ import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { ActivitySearchIndex } from "../src/activity-search/opensearch.ts";
+import { ACTIVITY_SEARCH_PUBLICATION_OWNER } from "../src/activity-search/publication.ts";
+import {
+  listChangedActivityTitles,
+  publishActivitySearchChanges,
+} from "../src/activity-search/publisher.ts";
 import {
   ANALYTICS_PUBLICATION_RESOURCE,
   withAnalyticsQueryOwner,
 } from "../src/analytics/analytics-query-owner.ts";
 import { runOwnedDbtBuild } from "../src/analytics/dbt-build.ts";
+import { withAccountErasureUserWriteFence } from "../src/db/account-erasure.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import {
@@ -196,7 +203,9 @@ function runDbtProcess(argumentsList: readonly string[]): Promise<number> {
   });
 }
 
-export async function runAnalyticsBuildFromEnvironment(): Promise<void> {
+export async function runAnalyticsBuildFromEnvironment(
+  activitySearchIndex?: ActivitySearchIndex,
+): Promise<void> {
   const { mkdtemp } = await import("node:fs/promises");
   const artifactDirectory = await mkdtemp(join(tmpdir(), "dofek-dbt-artifacts-"));
   try {
@@ -244,6 +253,27 @@ export async function runAnalyticsBuildFromEnvironment(): Promise<void> {
             );
           },
         );
+        if (activitySearchIndex) {
+          await withAnalyticsQueryOwner(
+            database,
+            clickHouse,
+            ACTIVITY_SEARCH_PUBLICATION_OWNER,
+            (owner) =>
+              publishActivitySearchChanges({
+                assertActive: () => owner.assertActive(),
+                loadBatch: (checkpoint) => listChangedActivityTitles(owner.client, checkpoint),
+                withWriteFence: (userId, write) =>
+                  withAccountErasureUserWriteFence(database, userId, write),
+                index: {
+                  loadState: () => activitySearchIndex.loadState(),
+                  saveState: (state) =>
+                    activitySearchIndex.saveState(state, owner.runSynchronousRequest),
+                  applyChanges: (changes) =>
+                    activitySearchIndex.applyChanges(changes, owner.runSynchronousRequest),
+                },
+              }),
+          );
+        }
       } finally {
         await clickHouse.close?.();
       }

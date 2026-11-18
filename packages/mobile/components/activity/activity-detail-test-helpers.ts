@@ -611,8 +611,46 @@ export function makeTrpcMock() {
           sessionSummary: { invalidate: mocks.climbingSessionSummaryInvalidate },
           strengths: { invalidate: mocks.climbingStrengthsInvalidate },
           volumeByGrade: { invalidate: mocks.climbingVolumeByGradeInvalidate },
+          attemptIncrease: { invalidate: vi.fn().mockResolvedValue(undefined) },
         },
       }),
     },
+  };
+}
+
+export function mockGarminHeartRateFailure(streamPoints: unknown) {
+  const originalStream = routeMocks.streamQuery.getMockImplementation();
+  let garminReadFailed = false;
+  routeMocks.streamQuery.mockImplementation((input?: unknown, options?: unknown) => {
+    if (
+      input &&
+      typeof input === "object" &&
+      "sources" in input &&
+      input.sources &&
+      typeof input.sources === "object" &&
+      "heartRate" in input.sources &&
+      input.sources.heartRate === "garmin"
+    ) {
+      if (!garminReadFailed) {
+        return {
+          data: streamPoints,
+          error: null,
+          isLoading: false,
+          isFetching: true,
+          isPlaceholderData: true,
+        };
+      }
+      return {
+        data: undefined,
+        error: new Error("Garmin samples could not be read"),
+        isLoading: false,
+        isFetching: false,
+        isPlaceholderData: false,
+      };
+    }
+    return originalStream?.(input, options) ?? defaultObserver([]);
+  });
+  return () => {
+    garminReadFailed = true;
   };
 }

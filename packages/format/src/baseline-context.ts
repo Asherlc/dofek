@@ -35,6 +35,7 @@ export function formatComparisonContext(
   comparison: ComparisonContext,
   options: {
     formatValue: (value: number) => string;
+    formatDelta?: (value: number) => string;
     missingMeans: "summary" | "values";
   },
 ): string {
@@ -47,7 +48,8 @@ export function formatComparisonContext(
 
   const formatValue = (value: number | null): string =>
     value == null ? "—" : options.formatValue(value);
-  const delta = formatValue(comparison.delta);
+  const delta =
+    comparison.delta == null ? "—" : (options.formatDelta ?? options.formatValue)(comparison.delta);
   const signedDelta = comparison.delta != null && comparison.delta > 0 ? `+${delta}` : delta;
   return `${comparison.recentDays}d avg ${formatValue(comparison.recentMean)} vs prior ${comparison.baselineDays}d avg ${formatValue(comparison.baselineMean)} · ${signedDelta}`;
 }

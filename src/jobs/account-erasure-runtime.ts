@@ -46,6 +46,12 @@ import {
   type AccountErasureRemoteSnapshot,
   decryptAccountErasureSnapshot,
 } from "../account-erasure/remote-snapshot.ts";
+import { createAivenSearchRetentionVerifier } from "../activity-search/aiven-retention.ts";
+import { createActivitySearchErasureIndexFromEnv } from "../activity-search/config.ts";
+import {
+  ACTIVITY_SEARCH_PUBLICATION_OWNER,
+  activitySearchPublicationExists,
+} from "../activity-search/publication.ts";
 import {
   ANALYTICS_PUBLICATION_RESOURCE,
   withAnalyticsQueryOwner,
@@ -86,6 +92,18 @@ export async function createAccountErasureRuntime(
 ): Promise<AccountErasureRuntime> {
   const startupCleanup: Array<() => Promise<void>> = [() => workPurger.close()];
   try {
+    const activitySearchIndex = createActivitySearchErasureIndexFromEnv();
+    const assertSearchErasureConfigured = async () => {
+      if (!activitySearchIndex && (await activitySearchPublicationExists(database))) {
+        throw new Error(
+          "ACTIVITY_SEARCH_ERASE_URL and ACTIVITY_SEARCH_RETENTION_TOKEN are required after activity search publication.",
+        );
+      }
+    };
+    await assertSearchErasureConfigured();
+    const verifyActivitySearchRetention = activitySearchIndex
+      ? createAivenSearchRetentionVerifier()
+      : undefined;
     await ensureProvidersRegistered();
     const providers = getAllProviders();
     const r2Client = createR2Client();
@@ -231,8 +249,8 @@ export async function createAccountErasureRuntime(
           { userId: input.userId, stage: input.stage, store: identifiers(input) },
           options,
         ),
-      eraseClickHouse: (input) =>
-        withAnalyticsQueryOwner(
+      eraseClickHouse: async (input) => {
+        await withAnalyticsQueryOwner(
           database,
           clickHouseClient,
           {
@@ -240,7 +258,17 @@ export async function createAccountErasureRuntime(
             intentId: `account-erasure:${input.requestId}`,
           },
           (owner) => eraseClickHouseAccount(owner, identifiers(input), input),
-        ),
+        );
+        await assertSearchErasureConfigured();
+        if (activitySearchIndex) {
+          await withAnalyticsQueryOwner(
+            database,
+            clickHouseClient,
+            ACTIVITY_SEARCH_PUBLICATION_OWNER,
+            (owner) => activitySearchIndex.eraseAccount(input.userId, owner.runSynchronousRequest),
+          );
+        }
+      },
       erasePostgres: (requestId, userId) => erasePostgresAccount(database, requestId, userId),
       eraseProcessors: (snapshot, progress) =>
         eraseAccountProcessors(snapshot, processorConfig, progress),
@@ -281,7 +309,12 @@ export async function createAccountErasureRuntime(
           requestedAt: input.requestedAt,
           retentionDays: DATABASE_BACKUP_RETENTION_DAYS,
         }),
-      verifyProcessorRetention: () => verifyProcessorRetentionPolicies(processorRetentionConfig),
+      verifyProcessorRetention: async (input) => {
+        await assertSearchErasureConfigured();
+        const processors = await verifyProcessorRetentionPolicies(processorRetentionConfig);
+        if (!verifyActivitySearchRetention) return processors;
+        return { ...processors, activitySearch: await verifyActivitySearchRetention(input) };
+      },
       verifyPeerDbStagingRetention: (input) =>
         verifyPeerDbStagingRetention(peerDbStaging.storage, input),
       verifyProcessors: (snapshot, initialCheckpoint, progress) =>

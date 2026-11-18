@@ -49,9 +49,7 @@ describe("ClimbingCatalogueRepository", () => {
     mocks.enqueue.mockResolvedValue(undefined);
     mocks.refreshState.mockResolvedValue(null);
   });
-  const setup = () => {
-    const cache = new MemoryCacheStore();
-    const service = new ClimbingCatalogueService(cache, []);
+  const setup = (service = new ClimbingCatalogueService(new MemoryCacheStore(), [])) => {
     const repository = new ClimbingCatalogueRepository(
       Object.create(null),
       "user-a",
@@ -112,6 +110,23 @@ describe("ClimbingCatalogueRepository", () => {
     expect(await service.read(seed)).toEqual(cached);
     mocks.refreshState.mockResolvedValue(null);
     expect(await repository.read("log-a")).toEqual(cached);
+  });
+  it("shows cached context during a pending retry and exposes the error when retries end", async () => {
+    const { repository, service } = setup(
+      new ClimbingCatalogueService(new MemoryCacheStore(), [
+        { providerId: "thecrag", search: async () => ({ candidates: [], complete: true }) },
+      ]),
+    );
+    const cached = await service.refresh(seed);
+    await service.markFailed(seed, new Error("Catalogue provider is temporarily unavailable"));
+    mocks.refreshState.mockResolvedValue("pending");
+    expect(await repository.read("log-a")).toEqual({ ...cached, status: "pending", error: null });
+    mocks.refreshState.mockResolvedValue(null);
+    expect(await repository.read("log-a")).toEqual({
+      ...cached,
+      status: "error",
+      error: "Catalogue provider is temporarily unavailable",
+    });
   });
   it("uses the erasure-fenced transaction for refresh authorization", async () => {
     const { repository } = setup();
