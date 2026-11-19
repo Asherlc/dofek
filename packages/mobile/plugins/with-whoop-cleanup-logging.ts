@@ -18,7 +18,11 @@ const withWhoopCleanupLogging: ConfigPlugin = (config) =>
       contents = contents.replace(
         startup,
         (_call, indent: string) =>
-          `${indent}RNSentrySDK.start { options in\n${indent}  ${hook}\n${indent}}`,
+          `${indent}#if !targetEnvironment(simulator)\n` +
+          `${indent}RNSentrySDK.start { options in\n` +
+          `${indent}  ${hook}\n` +
+          `${indent}}\n` +
+          `${indent}#endif`,
       );
       if (!contents.includes("import ExpoWhoopBle")) {
         contents = contents.replace(

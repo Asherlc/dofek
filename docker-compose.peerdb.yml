@@ -31,7 +31,8 @@ services:
       peerdb-catalog:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "peerdb-temporal:7233"]
+      # search-attribute list only succeeds once the default namespace is registered and cached, which the initializer needs.
+      test: ["CMD", "temporal", "operator", "search-attribute", "list", "--address", "peerdb-temporal:7233", "--namespace", "default", "--output", "json"]
       interval: 10s
       timeout: 10s
       retries: 12

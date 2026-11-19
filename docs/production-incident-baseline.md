@@ -52,6 +52,23 @@
 - **Follow-up.** Confirm the signed archive reports the iOS 27.2 SDK and
   check App Store Connect processing on the next TestFlight upload.
 
+## 2026-11-18 — PeerDB integration CI raced Temporal namespace readiness
+
+- **Impact.** The `Run PeerDB CDC integration tests` step on PR #3419 stopped
+  before Vitest. Compose marked `peerdb-temporal` healthy at 23:35:42 UTC, then
+  the initializer's first `temporal operator search-attribute list` failed
+  with `Namespace default is not found.` and the initializer exited 1.
+  [Failed CI job](https://github.com/Asherlc/dofek/actions/runs/44421449445/job/135215863195)
+- **Cause and fix.** The cluster health check released the initializer while
+  Temporal was still populating its `default` namespace cache. The health
+  check now lists search attributes in `default`, the same operation the
+  initializer needs before it can register `MirrorName`.
+  [Compose startup ordering](https://docs.docker.com/compose/how-tos/startup-order/)
+- **Validation.** The rendered Compose configuration and YAML lint passed.
+  The initializer exited 0 in a fresh local stack and all five cases in
+  `pnpm test:peerdb-integration` passed. The PR's next CI run verifies the
+  same startup sequence on GitHub Actions.
+
 ## 2026-11-17 — Authenticated Kaya climb-detail enrichment regressed
 
 - **Impact.** Sentry grouped 45 occurrences under `DOFEK-SERVER-7V`. The

@@ -8,8 +8,10 @@ import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import * as Sentry from "@sentry/react-native";
 import Constants from "expo-constants";
 import { randomUUID } from "expo-crypto";
+import * as Device from "expo-device";
 import * as Updates from "expo-updates";
 import PostHog from "posthog-react-native";
+import { Platform } from "react-native";
 import { shouldSuppressBackgroundTransientNetworkError } from "./health-kit-errors";
 import { getVersionHeaders } from "./version-headers";
 
@@ -194,23 +196,41 @@ export function initTelemetry() {
     throw new Error("EXPO_PUBLIC_SENTRY_DSN is not set — Sentry cannot initialize");
   }
 
-  Sentry.init({
-    autoInitializeNativeSdk: false,
-    dsn: SENTRY_DSN,
-    ...(SENTRY_RELEASE ? { release: SENTRY_RELEASE } : {}),
-    ...(SENTRY_DIST ? { dist: SENTRY_DIST } : {}),
-    debug: __DEV__,
-    enableJsHangTracking: true,
-    // The V2 tracker covers watchdog terminations during foreground hangs that
-    // the legacy tracker can report only as an app hang.
-    _experiments: { enableWatchdogTerminationsV2: true },
-    tracesSampler: ({ name, inheritOrSampleWith }) =>
-      name === "App Start" || name === "Mobile Startup" ? 1 : inheritOrSampleWith(0),
-  });
+  // Limit the opt-out to iOS Simulators: expo-device reports isDevice=false there,
+  // but true on web, so other platforms keep their existing Sentry behavior.
+  if (Platform.OS !== "ios" || Device.isDevice) {
+    Sentry.init({
+      autoInitializeNativeSdk: false,
+      dsn: SENTRY_DSN,
+      ...(SENTRY_RELEASE ? { release: SENTRY_RELEASE } : {}),
+      ...(SENTRY_DIST ? { dist: SENTRY_DIST } : {}),
+      debug: __DEV__,
+      enableJsHangTracking: true,
+      // The V2 tracker covers watchdog terminations during foreground hangs that
+      // the legacy tracker can report only as an app hang.
+      _experiments: { enableWatchdogTerminationsV2: true },
+      tracesSampler: ({ name, inheritOrSampleWith }) =>
+        name === "App Start" || name === "Mobile Startup" ? 1 : inheritOrSampleWith(0),
+    });
+  }
 
   if (!__DEV__) {
     posthogClient = new PostHog(POSTHOG_API_KEY, {
       host: POSTHOG_HOST,
+      // Installing expo-device resolves PostHog's optional peer, so the SDK
+      // starts emitting device/OS app properties that were previously absent.
+      // Drop only those newly populated fields to keep the existing telemetry
+      // payload; every other app property (app version, locale, device type,
+      // ...) is preserved.
+      customAppProperties: (properties) => {
+        const withoutExpoDeviceProperties = { ...properties };
+        delete withoutExpoDeviceProperties.$device_manufacturer;
+        delete withoutExpoDeviceProperties.$device_name;
+        delete withoutExpoDeviceProperties.$os_name;
+        delete withoutExpoDeviceProperties.$os_version;
+        delete withoutExpoDeviceProperties.$is_emulator;
+        return withoutExpoDeviceProperties;
+      },
       errorTracking: {
         // Autocapture only genuine crashes. Console autocapture is
         // intentionally omitted: React logs recoverable, handled warnings
