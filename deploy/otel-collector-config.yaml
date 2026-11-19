@@ -43,6 +43,13 @@ processors:
     timeout: 5s
     send_batch_size: 1024
 
+  # Keep the router request counter. Traefik's HTTP duration metric labels
+  # measurements with the incoming Host header.
+  filter/traefik-request-counts:
+    error_mode: propagate
+    metric_conditions:
+      - 'resource.attributes["service.name"] == "traefik" and metric.name != "traefik_router_requests_total"'
+
   # Drop Winston console lines from Docker logs. App services already ship
   # structured logs via OTLP, so keeping both roughly doubles log ingest.
   filter/drop-app-console-logs:
@@ -137,5 +144,5 @@ service:
       exporters: [otlphttp/logs]
     metrics:
       receivers: [otlp]
-      processors: [batch]
+      processors: [filter/traefik-request-counts, batch]
       exporters: [otlphttp/metrics]

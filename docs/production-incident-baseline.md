@@ -39546,3 +39546,30 @@ Local qualification and CI are separate from production throughput acceptance. T
   and last successful publication before quiescence and checking them after
   rollout while task history is still available.
   [Production log skill](../.agents/skills/check-logs/SKILL.md).
+
+## 2026-11-19 — WHOOP uploads paused while production web was scaled to zero
+
+- From 03:55:17 to 03:55:45 UTC, three uploads from one iPhone received HTTP
+  404 on the sensor-records, inertial, and realtime routes. All three batches
+  (548 samples total) stayed in the device outbox. The uploader pauses a
+  stream on HTTP 404 and resumes it when the app configures the uploader again.
+  [Sentry events](https://east-bay-software.sentry.io/issues/7828344976/)
+  · [Uploader source](../packages/mobile/modules/whoop-ble/ios/WhoopBleBackgroundUploader.swift).
+- Swarm's previous web service spec recorded zero desired replicas on the
+  same image. Docker's journal recorded both serving containers exiting at
+  03:55:28. The same-image scale-up was recorded at 03:57:01, and both
+  replacement tasks reached the running state at 03:57:23. The latest GitHub
+  production release completed at 03:26:13. The source of the scale change
+  is unresolved. Traefik's exported access logs cover 5xx responses, so the
+  proxy has no retained access record for these 404s.
+  [Latest production release](https://github.com/Asherlc/dofek/actions/runs/44447473156)
+  · [Traefik log coverage](axiom-observability-runbook.md#traefik-server-error-access-logs).
+- After scale-up, web reported 2/2 replicas and public `/healthz` returned
+  HTTP 200. Axiom had no `upload_published` match for the three affected batch
+  IDs at inspection. An earlier HTTP 408 affected a different inertial batch,
+  which Axiom recorded publishing all 500 samples to Redpanda at 00:19:29.
+  For follow-up, correlate any later publication by the batch IDs in Sentry
+  after the phone reconfigures its uploader. To attribute the scale-down,
+  check the deployment or operator record for the Swarm service update.
+  [Earlier 408 event](https://east-bay-software.sentry.io/issues/7828344976/events/017f143cd1db4dbb8e4961954531c623/)
+  · [Axiom query runbook](axiom-observability-runbook.md#queries).
