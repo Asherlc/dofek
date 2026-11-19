@@ -39510,20 +39510,39 @@ Local qualification and CI are separate from production throughput acceptance. T
   returned HTTP 200 with `status=starting` and `lastSuccessAt=null`.
   [Ownership guard](../src/analytics/analytics-query-owner.ts) and
   [analytics recovery requirements](plans/2026-11-09-erasure-safety-decisions.md#recovery-cutover-and-key-changes).
-- The reservation predates the failed deploy's live-sink update at 16:16:39
-  and ClickHouse replacement beginning at 16:16:47 UTC. Axiom's last live-sink
-  batch before that update was at 16:16:27 UTC. Docker recorded forced exits
-  during the same minute, but the available records do not tie those exits
-  to this owner or establish what happened to its ClickHouse request. The
-  rollout is a candidate trigger. The exact interruption and publication
-  outcome remain unresolved.
+- The retained intent hashes to live Kafka partition 0, offset 57,376,735,
+  immediately after the last completed batch on sink `8f44ab44158d` at
+  16:16:27 UTC. The rollout requested the ClickHouse service update at
+  16:16:25 UTC and the live-sink update at 16:16:39. Docker recorded a forced
+  stop and task deletion for the old ClickHouse container at 16:16:39, while
+  the sink's task was still present. Containerd recorded the sink's task
+  deletion at 16:16:47. The dependency apply began while publishers could
+  still acquire ownership and stopped ClickHouse during the batch. The
+  original request's exact outcome remains unverified.
   [November 18 deploy log](https://github.com/Asherlc/dofek/actions/runs/44343743471/job/134942094952).
-- Recovery remains pending. Verify the exact executor and request termination,
-  then recover and replay the retained intent with its original reservation.
-  Confirm sink progress and a successful analytics build before closing the
-  issue. Replica counts and the readiness HTTP status alone did not establish
-  processing progress. For the next rollout, consider recording the active
-  owner, executor identity and last successful publication before quiescence
-  and checking them after rollout while task history is still available.
-  [Prior exact-owner recovery](evidence/kafka-retention-20261112/owner-recovery-notes.md)
-  and [production log skill](../.agents/skills/check-logs/SKILL.md).
+- The operator approved a brief web interruption for exact-owner recovery.
+  All seven managed services and the standalone activity resync were
+  stopped. The old sink task and Postgres backend had terminated, no account
+  erasure was unfinished, and ClickHouse reported zero other processes,
+  outstanding mutations, distribution files, and asynchronous inserts. One
+  advisory-locked conditional update marked the exact owner terminal and
+  quiescent while preserving the intent and its original reservation. The
+  live sink replayed offsets 57,376,735 through 57,378,483 at 03:56:50 UTC,
+  retired the intent, and moved the Kafka commit to 57,423,897 on the first
+  post-replay check. The original images and replica counts were restored,
+  the standalone resync restarted, and public web health returned HTTP 200.
+  The live sink had about 5.7 million queued records at the start of recovery.
+  The first analytics build passed 42 models at 04:07:13 UTC and the
+  downstream model at 04:07:25 UTC. Processing recorded 188 datasets with
+  zero failures at 04:07:35 UTC. The worker reported `status=ok` and
+  `lastSuccessAt=2026-11-19T04:08:13.679Z` after warming the query cache.
+  [Prior exact-owner recovery](evidence/kafka-retention-20261112/owner-recovery-notes.md).
+- The deployment change moves publisher drain ahead of dependency updates
+  and retains the post-apply quiescence check. Replica counts and HTTP 200
+  with analytics status `starting` did not establish processing progress.
+  The exact intent hash, Docker task journal, Kafka group position and Axiom
+  publication record established the interruption and the replay. Before
+  future deployments, consider recording the active owner, executor identity
+  and last successful publication before quiescence and checking them after
+  rollout while task history is still available.
+  [Production log skill](../.agents/skills/check-logs/SKILL.md).
