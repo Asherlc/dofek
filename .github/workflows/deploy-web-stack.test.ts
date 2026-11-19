@@ -461,7 +461,7 @@ describe("deploy-web-stack workflow contract", () => {
     expect(report?.if).toContain("steps.deploy_stack_quiesced.conclusion != 'success'");
     expect(report?.if).toContain("steps.deploy_stack_full.conclusion != 'success'");
     expect(report?.run).toContain("Migration publisher replicas may still be at zero");
-    expect(report?.run).toContain("No automatic restoration is performed");
+    expect(report?.run).toContain("Inspect the failed step before restarting the deployment.");
   });
 
   it("pins candidate and control checkout identities for the migration guard", () => {

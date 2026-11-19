@@ -1739,7 +1739,7 @@ jobs:
           else
             failure_summary="A deployment step failed after migration publishers stopped."
           fi
-          message="$failure_summary Migration publisher replicas may still be at zero. No automatic restoration is performed; inspect the failed step before restarting the deployment."
+          message="$failure_summary Migration publisher replicas may still be at zero. Inspect the failed step before restarting the deployment."
           echo "::error::$message"
           {
             echo "### Migration publishers may still be stopped"
