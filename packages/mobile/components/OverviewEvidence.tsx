@@ -1,5 +1,6 @@
 import { formatDateShort, shiftDateYmd } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import { isConnectionFailure } from "@dofek/format/user-facing-error";
 import type { AppRouterOutputs } from "dofek-server/router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -49,6 +50,7 @@ interface OverviewEvidenceProps {
   trends: QueryResult<Trends>;
   heartRate: QueryResult<HeartRate>;
   units: UnitConverter;
+  hideConnectionErrors?: boolean;
   openHeartRate: () => void;
   openBody: () => void;
   openCorrelation: () => void;
@@ -67,8 +69,21 @@ function LinkButton({ label, onPress }: { label: string; onPress: () => void }) 
   );
 }
 
-function SectionState({ query, empty }: { query: QueryResult<unknown>; empty?: string }) {
+function isGroupedNoData(hideConnectionErrors: boolean, query: QueryResult<unknown>): boolean {
+  return hideConnectionErrors && query.data == null && isConnectionFailure(query.error);
+}
+
+function SectionState({
+  query,
+  empty,
+  hideConnectionError = false,
+}: {
+  query: QueryResult<unknown>;
+  empty?: string;
+  hideConnectionError?: boolean;
+}) {
   if (query.error) {
+    if (hideConnectionError && isConnectionFailure(query.error)) return null;
     return (
       <QueryStatePanel variant="error" message={getQueryErrorMessage(query.error)} minHeight={62} />
     );
@@ -124,6 +139,7 @@ export function OverviewEvidence({
   trends,
   heartRate,
   units,
+  hideConnectionErrors = false,
   openHeartRate,
   openBody,
   openCorrelation,
@@ -146,111 +162,142 @@ export function OverviewEvidence({
   )?.baselineProgress;
   const startDate = shiftDateYmd(endDate, 1 - overviewDays);
   const dateOptions = { timeZone: "UTC" };
+  const hideInsightCard = isGroupedNoData(hideConnectionErrors, insights);
+  // A distinct heart rate failure still owns the trend card even when the
+  // grouped trend query has no data — keep the card so its error stays visible.
+  const hasDistinctHeartRateError =
+    heartRate.error != null && !isConnectionFailure(heartRate.error);
+  const hideTrendCard =
+    isGroupedNoData(hideConnectionErrors, trends) &&
+    heartRate.data == null &&
+    !hasDistinctHeartRateError;
+  const hideHealthMonitor = isGroupedNoData(hideConnectionErrors, trends);
   return (
     <View style={styles.content}>
       <Text style={styles.date}>
         {formatDateShort(startDate, dateOptions)} – {formatDateShort(endDate, dateOptions)}
       </Text>
-      <View style={styles.card}>
-        <Text style={styles.eyebrow}>{association ? "Key association" : "Key correlation"}</Text>
-        {topInsight ? (
-          <>
-            <Text style={styles.title} accessibilityRole="header">
-              {topInsight.message}
-            </Text>
-            <View style={styles.split}>
-              <View style={styles.readout}>
-                <Text style={styles.value}>
-                  {association
-                    ? (topInsight.evidence?.estimateLabel ?? "—")
-                    : topInsight.effectSize.toFixed(2)}
-                </Text>
-                <Text style={styles.description}>
-                  {topInsight.evidence?.label ??
-                    (association ? "Descriptive association" : "Descriptive correlation")}
-                </Text>
+      {hideInsightCard ? null : (
+        <View style={styles.card}>
+          <Text style={styles.eyebrow}>{association ? "Key association" : "Key correlation"}</Text>
+          {topInsight ? (
+            <>
+              <Text style={styles.title} accessibilityRole="header">
+                {topInsight.message}
+              </Text>
+              <View style={styles.split}>
+                <View style={styles.readout}>
+                  <Text style={styles.value}>
+                    {association
+                      ? (topInsight.evidence?.estimateLabel ?? "—")
+                      : topInsight.effectSize.toFixed(2)}
+                  </Text>
+                  <Text style={styles.description}>
+                    {topInsight.evidence?.label ??
+                      (association ? "Descriptive association" : "Descriptive correlation")}
+                  </Text>
+                </View>
+                <InsightScatter insight={topInsight} />
               </View>
-              <InsightScatter insight={topInsight} />
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ expanded: calculationOpen }}
-              onPress={() => setCalculationOpen((open) => !open)}
-              style={styles.link}
-            >
-              <Text style={styles.linkText}>Calculation details {calculationOpen ? "⌃" : "⌄"}</Text>
-            </Pressable>
-            {calculationOpen ? (
-              <>
-                <Text style={styles.description}>
-                  {topInsight.evidence?.method ?? topInsight.detail}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: calculationOpen }}
+                onPress={() => setCalculationOpen((open) => !open)}
+                style={styles.link}
+              >
+                <Text style={styles.linkText}>
+                  Calculation details {calculationOpen ? "⌃" : "⌄"}
                 </Text>
-                <LinkButton label="Open Correlation" onPress={openCorrelation} />
-              </>
-            ) : null}
-            <SectionState query={insights} />
-          </>
-        ) : (
-          <SectionState query={insights} empty="No insights to display" />
-        )}
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.eyebrow}>Recent trend</Text>
-        <Text style={styles.title} accessibilityRole="header">
-          Resting heart rate
-        </Text>
-        <View style={styles.split}>
-          <View style={styles.readout}>
-            <Text style={styles.value}>{latest == null ? "—" : Math.round(latest)}</Text>
-            <Text style={styles.description}>bpm</Text>
-            <Text style={styles.description}>
-              {trends.data?.restingHeartRateTrendLabel ?? "Waiting for baseline"}
-            </Text>
-          </View>
-          <View style={styles.figure}>
-            <Text style={styles.description}>7-day average</Text>
-            {hasTrend ? (
-              <SparkLine data={heartRateTrend} height={51} color={colors.accent} />
-            ) : (
-              <SectionState query={heartRate} empty="No trend available" />
-            )}
-          </View>
+              </Pressable>
+              {calculationOpen ? (
+                <>
+                  <Text style={styles.description}>
+                    {topInsight.evidence?.method ?? topInsight.detail}
+                  </Text>
+                  <LinkButton label="Open Correlation" onPress={openCorrelation} />
+                </>
+              ) : null}
+              <SectionState query={insights} hideConnectionError={hideConnectionErrors} />
+            </>
+          ) : (
+            <SectionState
+              query={insights}
+              empty="No insights to display"
+              hideConnectionError={hideConnectionErrors}
+            />
+          )}
         </View>
-        {hasTrend ? <SectionState query={heartRate} /> : null}
-        <LinkButton label="View heart rate data" onPress={openHeartRate} />
-        {baselineProgress && baselineProgress.blocker !== null ? (
-          <View style={styles.baseline}>
-            <Text style={styles.description}>{baselineProgress.requirement}</Text>
-            <Text style={styles.description}>{baselineProgress.summary}</Text>
-            {baselineProgress.blocker !== "syncing" ? (
-              <Text style={styles.description}>{baselineProgress.action}</Text>
-            ) : null}
+      )}
+      {hideTrendCard ? null : (
+        <View style={styles.card}>
+          <Text style={styles.eyebrow}>Recent trend</Text>
+          <Text style={styles.title} accessibilityRole="header">
+            Resting heart rate
+          </Text>
+          <View style={styles.split}>
+            <View style={styles.readout}>
+              <Text style={styles.value}>{latest == null ? "—" : Math.round(latest)}</Text>
+              <Text style={styles.description}>bpm</Text>
+              <Text style={styles.description}>
+                {trends.data?.restingHeartRateTrendLabel ?? "Waiting for baseline"}
+              </Text>
+            </View>
+            <View style={styles.figure}>
+              <Text style={styles.description}>7-day average</Text>
+              {hasTrend ? (
+                <SparkLine data={heartRateTrend} height={51} color={colors.accent} />
+              ) : (
+                <SectionState
+                  query={heartRate}
+                  empty="No trend available"
+                  hideConnectionError={hideConnectionErrors}
+                />
+              )}
+            </View>
           </View>
-        ) : null}
-      </View>
-      <View style={styles.monitorHeading}>
-        <Text style={styles.title} accessibilityRole="header">
-          Health monitor
-        </Text>
-        <LinkButton label="View Body" onPress={openBody} />
-      </View>
-      {healthStatus.length > 0 ? (
-        <HealthStatusCards
-          compact
-          metrics={healthStatus}
-          formatValue={(metric) => formatHealthCardValue(metric, units)}
-          formatComparisonValue={(metric, value) =>
-            formatHealthCardComparison(metric, value, units)
-          }
-          formatComparisonDelta={(metric, value) =>
-            formatHealthCardComparisonDelta(metric, value, units)
-          }
-        />
-      ) : null}
-      <SectionState
-        query={trends}
-        empty={healthStatus.length === 0 ? "No health measurements to display" : undefined}
-      />
+          {hasTrend ? (
+            <SectionState query={heartRate} hideConnectionError={hideConnectionErrors} />
+          ) : null}
+          <LinkButton label="View heart rate data" onPress={openHeartRate} />
+          {baselineProgress && baselineProgress.blocker !== null ? (
+            <View style={styles.baseline}>
+              <Text style={styles.description}>{baselineProgress.requirement}</Text>
+              <Text style={styles.description}>{baselineProgress.summary}</Text>
+              {baselineProgress.blocker !== "syncing" ? (
+                <Text style={styles.description}>{baselineProgress.action}</Text>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      )}
+      {hideHealthMonitor ? null : (
+        <>
+          <View style={styles.monitorHeading}>
+            <Text style={styles.title} accessibilityRole="header">
+              Health monitor
+            </Text>
+            <LinkButton label="View Body" onPress={openBody} />
+          </View>
+          {healthStatus.length > 0 ? (
+            <HealthStatusCards
+              compact
+              metrics={healthStatus}
+              formatValue={(metric) => formatHealthCardValue(metric, units)}
+              formatComparisonValue={(metric, value) =>
+                formatHealthCardComparison(metric, value, units)
+              }
+              formatComparisonDelta={(metric, value) =>
+                formatHealthCardComparisonDelta(metric, value, units)
+              }
+            />
+          ) : null}
+          <SectionState
+            query={trends}
+            empty={healthStatus.length === 0 ? "No health measurements to display" : undefined}
+            hideConnectionError={hideConnectionErrors}
+          />
+        </>
+      )}
     </View>
   );
 }

@@ -1,5 +1,6 @@
 import { formatDurationMinutes } from "@dofek/format/format";
 import { formatSummaryDateContext } from "@dofek/format/summary-date-context";
+import { isConnectionFailure, userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -53,6 +54,15 @@ export default function OverviewScreen() {
   });
   const isError = dashboardQuery.isError && dashboardData == null;
   const hasBackgroundError = dashboardQuery.isError && dashboardData != null;
+  const connectionFailures = [
+    providerGuide.error,
+    dashboardQuery.error,
+    insightsQuery.error,
+    trendsQuery.error,
+    heartRateQuery.error,
+    processingStatusQuery.error,
+  ].filter((error) => error != null && isConnectionFailure(error));
+  const sharedConnectionFailure = connectionFailures.length > 1;
 
   const { refreshing, onRefresh } = useRefresh({
     refresh: async () => {
@@ -88,7 +98,16 @@ export default function OverviewScreen() {
         <ProviderGuide onDismiss={providerGuide.dismiss} providers={providerGuide.providers} />
       )}
 
-      {providerGuide.error ? (
+      {sharedConnectionFailure ? (
+        <QueryStatePanel
+          variant="error"
+          message={userFacingErrorMessage(connectionFailures[0])}
+          minHeight={72}
+        />
+      ) : null}
+
+      {providerGuide.error &&
+      !(sharedConnectionFailure && isConnectionFailure(providerGuide.error)) ? (
         <QueryStatePanel
           variant="error"
           title="Could not refresh provider setup"
@@ -99,7 +118,11 @@ export default function OverviewScreen() {
 
       <ProcessingStatusWidget
         data={processingStatusQuery.data}
-        error={processingStatusQuery.error}
+        error={
+          sharedConnectionFailure && isConnectionFailure(processingStatusQuery.error)
+            ? undefined
+            : processingStatusQuery.error
+        }
         loading={processingStatusQuery.isLoading}
       />
 
@@ -109,19 +132,21 @@ export default function OverviewScreen() {
         trends={trendsQuery}
         heartRate={heartRateQuery}
         units={units}
+        hideConnectionErrors={sharedConnectionFailure}
         openBody={() => router.push("/body")}
         openHeartRate={() => router.push({ pathname: "/body", params: { section: "heart-rate" } })}
         openCorrelation={() => router.push("/correlation")}
       />
 
-      {isError ? (
+      {isError && !(sharedConnectionFailure && isConnectionFailure(dashboardQuery.error)) ? (
         <QueryStatePanel
           variant="error"
           message={getQueryErrorMessage(dashboardQuery.error, "Failed to load dashboard.")}
         />
       ) : null}
 
-      {hasBackgroundError ? (
+      {hasBackgroundError &&
+      !(sharedConnectionFailure && isConnectionFailure(dashboardQuery.error)) ? (
         <QueryStatePanel
           variant="error"
           message={getQueryErrorMessage(dashboardQuery.error, "Failed to refresh dashboard.")}

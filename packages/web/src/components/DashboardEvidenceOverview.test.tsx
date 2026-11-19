@@ -171,6 +171,27 @@ describe("DashboardEvidenceOverview", () => {
     ).toBe("/body/heart-rate");
   });
 
+  it("hides evidence cards with no data during a grouped connection failure", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: null, averageRestingHeartRate: null }}
+        hideInsightCard
+        hideTrendCard
+        hideHealthMonitor
+        healthMonitor={<div>Health monitor values</div>}
+      />,
+    );
+
+    expect(screen.queryByText("Key relationship")).toBeNull();
+    expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
+    expect(screen.queryByText("Recent trend")).toBeNull();
+    expect(screen.queryByText("Health monitor")).toBeNull();
+    expect(screen.queryByText("Health monitor values")).toBeNull();
+    expect(screen.getByRole("region", { name: "Dashboard overview" })).toBeTruthy();
+  });
+
   it("derives the dashboard relationship heading and value from conditional evidence", () => {
     render(
       <DashboardEvidenceOverview

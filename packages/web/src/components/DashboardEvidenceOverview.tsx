@@ -95,6 +95,9 @@ export function DashboardEvidenceOverview({
   restingHeartRateLoading = false,
   restingHeartRateError = null,
   healthMonitor,
+  hideInsightCard = false,
+  hideTrendCard = false,
+  hideHealthMonitor = false,
 }: {
   days: number;
   endDate: string;
@@ -104,6 +107,9 @@ export function DashboardEvidenceOverview({
   restingHeartRateLoading?: boolean;
   restingHeartRateError?: unknown;
   healthMonitor: ReactNode;
+  hideInsightCard?: boolean;
+  hideTrendCard?: boolean;
+  hideHealthMonitor?: boolean;
 }) {
   const units = useUnitConverter();
   const effectSize = topInsight?.effectSize;
@@ -148,106 +154,111 @@ export function DashboardEvidenceOverview({
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <EvidenceCard eyebrow={`Key ${relationshipHeading.toLowerCase()}`}>
-          {insightError ? (
-            insightError
-          ) : (
-            <div>
-              <h3 className="text-base font-medium leading-snug text-foreground">
-                {topInsight?.message ?? "Sleep consistency + Heart Rate Variability"}
-              </h3>
-              <div className="mt-5 grid grid-cols-[0.7fr_1fr] items-end gap-4">
-                <div>
-                  <p className="mt-1 font-mono text-4xl font-bold tabular-nums text-accent">
-                    {relationshipValue}
-                  </p>
-                  <p className="mt-1 text-xs font-semibold text-accent">
-                    {evidence?.label?.trim() || "Descriptive relationship"}
-                  </p>
+        {hideInsightCard ? null : (
+          <EvidenceCard eyebrow={`Key ${relationshipHeading.toLowerCase()}`}>
+            {insightError ? (
+              insightError
+            ) : (
+              <div>
+                <h3 className="text-base font-medium leading-snug text-foreground">
+                  {topInsight?.message ?? "Sleep consistency + Heart Rate Variability"}
+                </h3>
+                <div className="mt-5 grid grid-cols-[0.7fr_1fr] items-end gap-4">
+                  <div>
+                    <p className="mt-1 font-mono text-4xl font-bold tabular-nums text-accent">
+                      {relationshipValue}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-accent">
+                      {evidence?.label?.trim() || "Descriptive relationship"}
+                    </p>
+                  </div>
+                  <MiniChartFrame data={topInsight ? insightChartPoints : []}>
+                    {topInsight ? (
+                      <MiniScatter
+                        points={insightChartPoints}
+                        labels={{
+                          xAxis: topInsight.action,
+                          xMetric: topInsight.action,
+                          yAxis: topInsight.metric,
+                          yMetric: topInsight.metric,
+                        }}
+                      />
+                    ) : null}
+                  </MiniChartFrame>
                 </div>
-                <MiniChartFrame data={topInsight ? insightChartPoints : []}>
-                  {topInsight ? (
-                    <MiniScatter
-                      points={insightChartPoints}
-                      labels={{
-                        xAxis: topInsight.action,
-                        xMetric: topInsight.action,
-                        yAxis: topInsight.metric,
-                        yMetric: topInsight.metric,
-                      }}
-                    />
-                  ) : null}
+                {evidence && <InsightEvidenceDetails evidence={evidence} className="mt-4" />}
+              </div>
+            )}
+          </EvidenceCard>
+        )}
+        {hideTrendCard ? null : (
+          <EvidenceCard eyebrow="Recent trend">
+            <h3 className="text-base font-medium text-foreground">Resting heart rate</h3>
+            <div className="mt-7 grid grid-cols-[0.65fr_1fr] items-end gap-5">
+              <div>
+                <p
+                  className={`font-mono text-4xl font-bold tabular-nums ${restingHeartRateToneValue.className}`}
+                >
+                  {trend.latestRestingHeartRate != null
+                    ? Math.round(trend.latestRestingHeartRate)
+                    : "--"}
+                </p>
+                <p className="text-xs text-muted">bpm</p>
+                <p className="text-xs text-muted">{trendLabel}</p>
+              </div>
+              <div>
+                <p className="mb-1 text-xs text-muted">7-day average</p>
+                <MiniChartFrame
+                  data={restingHeartRatePoints.length > 1 ? restingHeartRatePoints : []}
+                  loading={restingHeartRateLoading}
+                  error={restingHeartRateError}
+                  height={112}
+                >
+                  <MiniTrend
+                    points={restingHeartRatePoints}
+                    averageRestingHeartRate={trend.averageRestingHeartRate}
+                    formatRestingHeartRate={formatRestingHeartRate}
+                    tone={restingHeartRateToneValue}
+                  />
                 </MiniChartFrame>
               </div>
-              {evidence && <InsightEvidenceDetails evidence={evidence} className="mt-4" />}
             </div>
-          )}
-        </EvidenceCard>
-
-        <EvidenceCard eyebrow="Recent trend">
-          <h3 className="text-base font-medium text-foreground">Resting heart rate</h3>
-          <div className="mt-7 grid grid-cols-[0.65fr_1fr] items-end gap-5">
-            <div>
-              <p
-                className={`font-mono text-4xl font-bold tabular-nums ${restingHeartRateToneValue.className}`}
-              >
-                {trend.latestRestingHeartRate != null
-                  ? Math.round(trend.latestRestingHeartRate)
-                  : "--"}
-              </p>
-              <p className="text-xs text-muted">bpm</p>
-              <p className="text-xs text-muted">{trendLabel}</p>
-            </div>
-            <div>
-              <p className="mb-1 text-xs text-muted">7-day average</p>
-              <MiniChartFrame
-                data={restingHeartRatePoints.length > 1 ? restingHeartRatePoints : []}
-                loading={restingHeartRateLoading}
-                error={restingHeartRateError}
-                height={112}
-              >
-                <MiniTrend
-                  points={restingHeartRatePoints}
-                  averageRestingHeartRate={trend.averageRestingHeartRate}
-                  formatRestingHeartRate={formatRestingHeartRate}
-                  tone={restingHeartRateToneValue}
-                />
-              </MiniChartFrame>
-            </div>
-          </div>
-          <Link
-            aria-label="View resting heart rate data"
-            className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-accent transition-colors hover:text-accent-secondary"
-            to="/body/heart-rate"
-          >
-            View data <span aria-hidden>→</span>
-          </Link>
-          {trend.restingHeartRateBaselineProgress &&
-          trend.restingHeartRateBaselineProgress.blocker !== null ? (
-            <section
-              aria-label="Resting heart rate baseline progress"
-              className="mt-4 space-y-1 border-t border-border pt-3 text-xs"
+            <Link
+              aria-label="View resting heart rate data"
+              className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-accent transition-colors hover:text-accent-secondary"
+              to="/body/heart-rate"
             >
-              <p className="font-medium text-muted">
-                {trend.restingHeartRateBaselineProgress.requirement}
-              </p>
-              <p className="text-subtle">{trend.restingHeartRateBaselineProgress.summary}</p>
-              {trend.restingHeartRateBaselineProgress.blocker !== "syncing" ? (
-                <p className="font-medium text-foreground">
-                  {trend.restingHeartRateBaselineProgress.action}
+              View data <span aria-hidden>→</span>
+            </Link>
+            {trend.restingHeartRateBaselineProgress &&
+            trend.restingHeartRateBaselineProgress.blocker !== null ? (
+              <section
+                aria-label="Resting heart rate baseline progress"
+                className="mt-4 space-y-1 border-t border-border pt-3 text-xs"
+              >
+                <p className="font-medium text-muted">
+                  {trend.restingHeartRateBaselineProgress.requirement}
                 </p>
-              ) : null}
-            </section>
-          ) : null}
-        </EvidenceCard>
+                <p className="text-subtle">{trend.restingHeartRateBaselineProgress.summary}</p>
+                {trend.restingHeartRateBaselineProgress.blocker !== "syncing" ? (
+                  <p className="font-medium text-foreground">
+                    {trend.restingHeartRateBaselineProgress.action}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
+          </EvidenceCard>
+        )}
       </div>
 
-      <div className="border-t border-border pt-4">
-        <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-muted">
-          Health monitor
-        </p>
-        {healthMonitor}
-      </div>
+      {hideHealthMonitor ? null : (
+        <div className="border-t border-border pt-4">
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-muted">
+            Health monitor
+          </p>
+          {healthMonitor}
+        </div>
+      )}
     </section>
   );
 }

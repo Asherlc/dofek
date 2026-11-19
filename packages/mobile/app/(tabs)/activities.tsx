@@ -6,7 +6,7 @@ import {
   isYesterday,
   parseValidDate,
 } from "@dofek/format/format";
-import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { isConnectionFailure, userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link, useRouter } from "expo-router";
@@ -223,6 +223,24 @@ export default function ActivitiesScreen() {
   const listQuery = searching ? searchQuery : query;
   const hasListData = searching ? !!searchQuery.data : !!pageData;
   const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
+  // Only count failures the person can actually see: overview and calendar are
+  // hidden while searching, and the calendar is hidden while collapsed.
+  const visibleQueries = [
+    ...(!searching ? [overviewQuery] : []),
+    ...(!searching && trainingTimeExpanded ? [calendarQuery] : []),
+    listQuery,
+    processingStatus,
+  ];
+  const connectionFailures = visibleQueries.filter(
+    (query) => query.error != null && isConnectionFailure(query.error),
+  );
+  const sharedConnectionFailure = connectionFailures.length > 1;
+  const isSharedConnectionFailure = (error: unknown) =>
+    sharedConnectionFailure && isConnectionFailure(error);
+  const retryConnectionFailures = () => {
+    for (const query of connectionFailures) void query.refetch?.();
+  };
+  const retryingConnectionFailures = connectionFailures.some((query) => query.isFetching === true);
   const activityCount = pageData?.totalCount ?? 0;
   const currentActivityPage = pageData?.page ?? activityPage;
   const visibleDayGroups = dayGroups;
@@ -317,9 +335,21 @@ export default function ActivitiesScreen() {
     >
       <ProcessingStatusWidget
         data={processingStatus.data}
-        error={processingStatus.error}
+        error={
+          isSharedConnectionFailure(processingStatus.error) ? undefined : processingStatus.error
+        }
         loading={processingStatus.isLoading}
       />
+
+      {sharedConnectionFailure ? (
+        <QueryStatePanel
+          variant="error"
+          message={userFacingErrorMessage(connectionFailures[0]?.error)}
+          minHeight={72}
+          onRetry={retryConnectionFailures}
+          retrying={retryingConnectionFailures}
+        />
+      ) : null}
 
       <View style={styles.searchRow}>
         {(["title", "location"] as const).map((mode) => (
@@ -489,7 +519,7 @@ export default function ActivitiesScreen() {
 
           {overviewQuery.isLoading && !overviewQuery.data ? (
             <QueryStatePanel variant="loading" minHeight={60} />
-          ) : overviewQuery.isError ? (
+          ) : overviewQuery.isError && !isSharedConnectionFailure(overviewQuery.error) ? (
             <QueryStatePanel
               variant="error"
               message={userFacingErrorMessage(overviewQuery.error)}
@@ -503,7 +533,7 @@ export default function ActivitiesScreen() {
               {calendarQuery.isLoading && !calendarQuery.data ? (
                 <QueryStatePanel variant="loading" minHeight={180} />
               ) : null}
-              {calendarQuery.isError ? (
+              {calendarQuery.isError && !isSharedConnectionFailure(calendarQuery.error) ? (
                 <QueryStatePanel
                   variant="error"
                   message={userFacingErrorMessage(calendarQuery.error)}
@@ -520,14 +550,18 @@ export default function ActivitiesScreen() {
 
       {listQuery.isLoading && !hasListData ? (
         <QueryStatePanel variant="loading" minHeight={200} />
-      ) : listQuery.isError && (!hasListData || (searching && !hasActivities)) ? (
+      ) : listQuery.isError &&
+        !isSharedConnectionFailure(listQuery.error) &&
+        (!hasListData || (searching && !hasActivities)) ? (
         <QueryStatePanel
           variant="error"
           message={userFacingErrorMessage(listQuery.error)}
           onRetry={() => void listQuery.refetch()}
           retrying={listQuery.isFetching}
         />
-      ) : !hasActivities && !(searching && searchQuery.hasNextPage) ? (
+      ) : !hasActivities &&
+        !(searching && searchQuery.hasNextPage) &&
+        !isSharedConnectionFailure(listQuery.error) ? (
         <QueryStatePanel
           variant="empty"
           message={
@@ -536,7 +570,7 @@ export default function ActivitiesScreen() {
         />
       ) : (
         <>
-          {listQuery.isError ? (
+          {listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
             <QueryStatePanel
               variant="error"
               message={userFacingErrorMessage(listQuery.error)}

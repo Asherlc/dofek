@@ -16,6 +16,7 @@ import {
   mockImagesQuery,
   placeLookupQuery,
   routerPush,
+  titleSearchQuery,
 } from "../../app-fixtures/(tabs)/activities-test-setup";
 import { branchingActivitySourceTree } from "../../app-fixtures/activity-source-tree";
 import { activityImageFixture } from "../../components/activity-images-test-helpers";
@@ -111,6 +112,93 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByText("Place lookup is temporarily unavailable.")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Retry place lookup" }));
     expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("shows one notice when activity and processing status queries fail from the same offline condition", () => {
+    activityMocks.mockOverviewQuery = {
+      ...activityMocks.mockOverviewQuery,
+      isError: true,
+      error: new Error("Failed to fetch"),
+    };
+    activityMocks.mockQuery = {
+      ...activityMocks.mockQuery,
+      isError: true,
+      error: new Error("Network request failed"),
+    };
+    activityMocks.mockDataHealthQuery = {
+      ...activityMocks.mockDataHealthQuery,
+      error: new Error("Failed to fetch"),
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(
+      screen.getAllByText("We couldn't reach the server. Check your connection and try again."),
+    ).toHaveLength(1);
+    expect(screen.queryByText(/No activities in the last/)).toBeNull();
+  });
+
+  it("shared connection retry refetches every failed visible query including the activity list", () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    const overviewRefetch = vi.fn();
+    const listRefetch = vi.fn();
+    const processingRefetch = vi.fn();
+    activityMocks.mockOverviewQuery = {
+      ...activityMocks.mockOverviewQuery,
+      isError: true,
+      error: new Error(message),
+      refetch: overviewRefetch,
+    };
+    activityMocks.mockQuery = {
+      ...activityMocks.mockQuery,
+      isError: true,
+      error: new Error(message),
+      refetch: listRefetch,
+    };
+    activityMocks.mockDataHealthQuery = {
+      ...activityMocks.mockDataHealthQuery,
+      error: new Error(message),
+      refetch: processingRefetch,
+    };
+
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(overviewRefetch).toHaveBeenCalledOnce();
+    expect(listRefetch).toHaveBeenCalledOnce();
+    expect(processingRefetch).toHaveBeenCalledOnce();
+  });
+
+  it("does not count hidden overview and calendar failures while searching", () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    const searchRefetch = vi.fn();
+    titleSearchQuery.mockReturnValue({
+      data: undefined,
+      isError: true,
+      error: new Error(message),
+      isFetching: false,
+      hasNextPage: false,
+      refetch: searchRefetch,
+    });
+    activityMocks.mockOverviewQuery = {
+      ...activityMocks.mockOverviewQuery,
+      isError: true,
+      error: new Error(message),
+    };
+    activityMocks.mockCalendarQuery = {
+      ...activityMocks.mockCalendarQuery,
+      isError: true,
+      error: new Error(message),
+    };
+
+    render(<ActivitiesScreen />);
+    fireEvent.change(screen.getByLabelText("Search activity titles"), {
+      target: { value: "Ride" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(searchRefetch).toHaveBeenCalledOnce();
   });
 
   it("uses the primary climbing source for the icon over a cardio representative", () => {
