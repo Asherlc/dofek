@@ -61,6 +61,83 @@ function workout(localEndTime: string): Activity {
 }
 
 describe("formatSeriesPage", () => {
+  it("reports each measured value with its own denominator across local days", () => {
+    const first = "2026-11-19";
+    const second = "2026-11-20";
+    const daily = (value: number | null) => ({
+      value,
+      status: value === null ? ("missing" as const) : ("observed" as const),
+      value_kind: "provider_supplied" as const,
+      source_providers: [],
+      provenance_scope: "daily_row" as const,
+    });
+    const weight = (kg: number | null) => ({
+      direct_status: kg === null ? ("missing" as const) : ("observed" as const),
+      direct_measurement_kind: kg === null ? ("unavailable" as const) : ("direct" as const),
+      direct_value_kg: kg,
+      direct_source_provider: kg === null ? null : "garmin",
+      nearby_evidence: { value_kg: null, reason: "No nearby estimate" },
+      rolling: { average_7d_kg: 71, average_28d_kg: 71, observed_days_7d: 2, observed_days_28d: 2 },
+    });
+    const rows: Row[] = [
+      {
+        date: first,
+        health: {
+          hrv: daily(null),
+          resting_hr: {
+            ...daily(48),
+            value_kind: "calculated_from_deduped_samples",
+            provenance_scope: "deduped_resting_hr_series",
+          },
+          respiratory_rate: daily(13),
+          steps: daily(null),
+        },
+        body_weight: weight(70),
+        nutrition: {
+          date: first,
+          total_calories: 1500,
+          protein_g: null,
+          carbs_g: 120,
+          fat_g: null,
+          fiber_g: 15,
+          meal_count: 2,
+          food_entry_count: 2,
+          recorded_meal_labels: ["lunch", "dinner"],
+          timed_food_entry_count: 0,
+          first_consumed_at: null,
+          last_consumed_at: null,
+          missing_nutrient_inputs: [],
+          logging_completeness: "unknown_completeness",
+          logging_completeness_reason: "No recorded completeness label",
+          resolution_status: "available",
+          resolution_message: "Source resolved",
+          source_provider: "dofek",
+          source_providers: ["dofek"],
+          contributing_providers: ["dofek"],
+          excluded_providers: [],
+        },
+      },
+      { date: second, body_weight: weight(null), nutrition: null },
+    ];
+    const page = formatSeriesPage(rows, ["health", "body_weight", "nutrition"], { limit: 1 });
+    expect(page.eligible_count).toBe(2);
+    expect(page.observed_counts).toEqual({
+      health: 1,
+      "health.hrv": 0,
+      "health.resting_hr": 1,
+      "health.respiratory_rate": 1,
+      "health.steps": 0,
+      body_weight: 1,
+      "body_weight.rolling.average_7d_kg": 2,
+      nutrition: 1,
+      "nutrition.total_calories": 1,
+      "nutrition.protein_g": 0,
+      "nutrition.carbs_g": 1,
+      "nutrition.fat_g": 0,
+      "nutrition.fiber_g": 1,
+    });
+  });
+
   it("counts recorded zero and partial load while omitting unobserved days", () => {
     function load(status: "available" | "partial" | "not_observed") {
       const channel = {
