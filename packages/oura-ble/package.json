@@ -1,0 +1,65 @@
+{
+  "name": "@dofek/oura-ble",
+  "version": "0.1.0",
+  "description": "Bluetooth pairing and event sync client for Oura Ring",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asherlc/dofek.git",
+    "directory": "packages/oura-ble"
+  },
+  "homepage": "https://github.com/Asherlc/dofek/tree/main/packages/oura-ble#readme",
+  "bugs": "https://github.com/Asherlc/dofek/issues",
+  "keywords": [
+    "oura",
+    "oura-ring",
+    "bluetooth",
+    "ble",
+    "expo",
+    "react-native"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./expo": "./src/expo.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./expo": {
+        "types": "./dist/expo.d.ts",
+        "import": "./dist/expo.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "pnpm run build",
+    "test": "vitest run src",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "expo": "58.0.26"
+  },
+  "peerDependencies": {
+    "expo": ">=58.0.0"
+  },
+  "peerDependenciesMeta": {
+    "expo": {
+      "optional": true
+    }
+  }
+}
