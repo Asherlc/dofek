@@ -14,6 +14,8 @@ export const activityDetailSimpleMocks = {
       distanceLabel: "km",
       convertSpeed: (speed: number) => speed,
       speedLabel: "km/h",
+      convertPace: (seconds: number) => seconds,
+      paceLabel: "/km",
       convertElevation: (elevation: number) => elevation,
       elevationLabel: "m",
       convertWeight: (kg: number) => kg,

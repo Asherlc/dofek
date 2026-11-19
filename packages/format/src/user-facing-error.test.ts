@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isConnectionFailure,
   isExpectedImportInputError,
   isExpectedUserInputError,
   userFacingErrorMessage,
@@ -192,5 +193,26 @@ describe("userFacingErrorMessage", () => {
 
   it("uses the supplied fallback for unknown values and unexpected diagnostics", () => {
     expect(userFacingErrorMessage("unexpected failure", "Upload failed")).toBe("Upload failed");
+  });
+});
+
+describe("isConnectionFailure", () => {
+  it.each([
+    "Failed to fetch",
+    "Network request failed",
+    "ENOTFOUND api.example.com",
+    "We couldn't reach the server. Check your connection and try again.",
+  ])("groups distinct diagnostics that normalize to one connection failure: %s", (message) => {
+    expect(isConnectionFailure(message)).toBe(true);
+    expect(isConnectionFailure(new Error(message))).toBe(true);
+  });
+
+  it.each([
+    "Request timed out",
+    "Provider setup status is temporarily unavailable",
+    "Reconnect your account and try again.",
+    null,
+  ])("keeps other failures distinct: %s", (message) => {
+    expect(isConnectionFailure(message)).toBe(false);
   });
 });

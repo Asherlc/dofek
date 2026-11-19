@@ -44,9 +44,3 @@ export const runningData = {
   availability: availableRunning,
   cadenceAvailability: availableRunning,
 };
-
-export const emptyRunningForm: TrainingChartAvailability = {
-  ...emptyRunning,
-  message:
-    "No running form measurements are available for these runs. Check the selected range and sync status.",
-};

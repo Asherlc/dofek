@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { AccessibilityInfo } from "react-native";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mockAttemptIncreaseInvalidate,
   mockAttemptIncreaseQuery,
   mockQueryState,
+  mockStrengthsState,
   mockVolumeIncreaseInvalidate,
   mockVolumeIncreaseQuery,
   resetStrainMocks,
@@ -81,6 +83,23 @@ describe("Training climbing alerts", () => {
       enabled: true,
       staleTime: 0,
       refetchOnWindowFocus: true,
+    });
+  });
+
+  it("suppresses the cached refresh announcement while Training is offscreen", async () => {
+    const announce = vi.mocked(AccessibilityInfo.announceForAccessibilityWithOptions);
+    announce.mockClear();
+    mockStrengthsState.isFetching = true;
+    mockQueryState.focused = false;
+    const { default: StrainScreen } = await import("../../app/strain");
+    const { rerender } = render(<StrainScreen />);
+    expect(screen.getByText("Climbing strengths")).toBeTruthy();
+    expect(announce).not.toHaveBeenCalled();
+
+    mockQueryState.focused = true;
+    rerender(<StrainScreen />);
+    expect(announce).toHaveBeenCalledExactlyOnceWith("Updating climbing strengths…", {
+      queue: true,
     });
   });
 

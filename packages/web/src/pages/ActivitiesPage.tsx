@@ -19,7 +19,7 @@ import {
   parseValidDate,
 } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
-import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { isConnectionFailure, userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
 import { formatActivityTypeLabel } from "@dofek/training/training";
@@ -224,6 +224,19 @@ export function ActivitiesPage() {
     [...selectedActivities].filter(([, activity]) => activity.isProviderAbsent).map(([id]) => id),
   );
   const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
+  // The overview panel is hidden while searching, so its failure must not be
+  // grouped with the failures the person can currently see.
+  const visibleQueries = [...(!searching ? [overviewQuery] : []), listQuery, processingStatus];
+  const connectionFailures = visibleQueries.filter(
+    (query) => query.error != null && isConnectionFailure(query.error),
+  );
+  const sharedConnectionFailure = connectionFailures.length > 1;
+  const isSharedConnectionFailure = (error: unknown) =>
+    sharedConnectionFailure && isConnectionFailure(error);
+  const retryConnectionFailures = () => {
+    for (const query of connectionFailures) void query.refetch?.();
+  };
+  const retryingConnectionFailures = connectionFailures.some((query) => query.isFetching === true);
   const activityCount = pageData?.totalCount ?? 0;
   const currentActivityPage = pageData?.page ?? activityPage;
   const visibleDayGroups = dayGroups;
@@ -302,7 +315,9 @@ export function ActivitiesPage() {
     <PageLayout title="Activities">
       <ProcessingStatusWidget
         data={processingStatus.data}
-        error={processingStatus.error}
+        error={
+          isSharedConnectionFailure(processingStatus.error) ? undefined : processingStatus.error
+        }
         loading={processingStatus.isLoading}
       />
       <div className="space-y-4">
@@ -354,26 +369,40 @@ export function ActivitiesPage() {
         {searching ? null : overviewQuery.isLoading && !overviewQuery.data ? (
           <QueryStatePanel variant="loading" height={120} />
         ) : overviewQuery.isError && !overviewQuery.data ? (
-          <QueryStatePanel error={overviewQuery.error} height={120} />
+          isSharedConnectionFailure(overviewQuery.error) ? null : (
+            <QueryStatePanel error={overviewQuery.error} height={120} />
+          )
         ) : (
           <>
-            {overviewQuery.isError ? (
+            {overviewQuery.isError && !isSharedConnectionFailure(overviewQuery.error) ? (
               <QueryStatePanel error={overviewQuery.error} height={72} />
             ) : null}
             <ActivityOverview overview={overviewQuery.data} units={units} />
           </>
         )}
       </div>
+      {sharedConnectionFailure ? (
+        <QueryStatePanel
+          error={connectionFailures[0]?.error}
+          height={72}
+          onRetry={retryConnectionFailures}
+          retrying={retryingConnectionFailures}
+        />
+      ) : null}
       {listQuery.isLoading && !hasListData ? (
         <QueryStatePanel variant="loading" height={400} />
-      ) : listQuery.isError && (!hasListData || (searching && !hasActivities)) ? (
+      ) : listQuery.isError &&
+        !isSharedConnectionFailure(listQuery.error) &&
+        (!hasListData || (searching && !hasActivities)) ? (
         <QueryStatePanel
           error={listQuery.error}
           height={200}
           onRetry={() => void listQuery.refetch()}
           retrying={listQuery.isFetching}
         />
-      ) : !hasActivities && !(searching && searchQuery.hasNextPage) ? (
+      ) : !hasActivities &&
+        !(searching && searchQuery.hasNextPage) &&
+        !isSharedConnectionFailure(listQuery.error) ? (
         <QueryStatePanel
           variant="empty"
           message={
@@ -387,7 +416,7 @@ export function ActivitiesPage() {
         />
       ) : (
         <div className="space-y-7">
-          {listQuery.isError ? (
+          {listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
             <QueryStatePanel
               error={listQuery.error}
               height={72}

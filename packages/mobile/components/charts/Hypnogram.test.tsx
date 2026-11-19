@@ -51,7 +51,7 @@ describe("Hypnogram", () => {
     const { container } = render(<Hypnogram data={stages} />);
     fireEvent(
       screen.getByTestId("sleep-stage-plot"),
-      new CustomEvent("layout", { detail: { width: 400, height: 216 } }),
+      new CustomEvent("layout", { detail: { width: 400, height: 184 } }),
     );
     const blocks = Array.from(container.querySelectorAll("rect"));
     expect(blocks).toHaveLength(4);
@@ -73,6 +73,61 @@ describe("Hypnogram", () => {
     fireEvent.click(awake);
     expect(screen.getByText(/Awake.*2m/)).toBeDefined();
   });
+  it("gives stage labels their own column so scaled text cannot cover the bars", () => {
+    const { container } = render(<Hypnogram data={stages} />);
+    fireEvent(
+      screen.getByTestId("sleep-stage-plot"),
+      new CustomEvent("layout", { detail: { width: 400, height: 184 } }),
+    );
+
+    const rects = Array.from(container.querySelectorAll("rect"));
+    expect(rects.length).toBeGreaterThan(0);
+    const firstBarX = Math.min(...rects.map((rect) => Number(rect.getAttribute("x") ?? NaN)));
+    expect(firstBarX).toBeLessThan(10);
+
+    const plot = screen.getByTestId("sleep-stage-plot");
+    expect(plot.parentElement?.getAttribute("style")).toContain("flex");
+    expect(plot.parentElement?.parentElement?.getAttribute("style")).toContain(
+      "flex-direction: row",
+    );
+
+    const lane = container.querySelector("line");
+    expect(Number(lane?.getAttribute("x2"))).toBe(400 - 12);
+  });
+
+  it("flows two-digit time anchors below the plot so enlarged text can wrap without covering the lanes", () => {
+    render(
+      <Hypnogram
+        data={[
+          {
+            stage: "light",
+            started_at: "2026-07-01T22:30:00",
+            ended_at: "2026-07-02T09:30:00",
+            duration_seconds: 39600,
+          },
+          {
+            stage: "awake",
+            started_at: "2026-07-02T09:30:00",
+            ended_at: "2026-07-02T11:30:00",
+            duration_seconds: 7200,
+          },
+        ]}
+      />,
+    );
+
+    const plot = screen.getByTestId("sleep-stage-plot");
+    const startLabel = screen.getByText("10:30 PM");
+    const endLabel = screen.getByText("11:30 AM");
+
+    // The anchors are siblings in a wrapping row below the measured plot, not
+    // absolutely positioned over the bottom of the lane bars.
+    expect(plot.contains(startLabel)).toBe(false);
+    expect(plot.contains(endLabel)).toBe(false);
+    expect(startLabel.parentElement).toBe(endLabel.parentElement);
+    expect(startLabel.parentElement?.getAttribute("style")).toContain("flex-wrap: wrap");
+    expect(startLabel.parentElement?.getAttribute("style")).not.toContain("position: absolute");
+  });
+
   it("allows exact-value selection and clears it when the night changes", () => {
     const { rerender } = render(<Hypnogram data={stages} />);
     fireEvent.click(screen.getByRole("button", { name: "View Sleep stages data" }));

@@ -56,7 +56,7 @@ describe("StrainScreen", () => {
     expect(mockCaptureException).toHaveBeenCalledOnce();
     view.rerender(<StrainScreen />);
     expect(mockCaptureException).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("button", { name: "Open Park Run" })).toBeNull();
+    expect(screen.queryByLabelText("Running cadence trend, steps per minute")).toBeNull();
   });
   it("preserves valid stale running rows and exact refetch error", async () => {
     mockQueryState.runningData = runningData;
@@ -65,17 +65,15 @@ describe("StrainScreen", () => {
     const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
     expect(screen.getByText(mockQueryState.runningError.message)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Open Park Run" })).toBeTruthy();
-    expect(screen.getByText("Steps · 30% coverage")).toBeTruthy();
+    expect(screen.getByLabelText("Running cadence trend, steps per minute")).toBeTruthy();
+    expect(screen.queryByText("Running Form")).toBeNull();
   });
-  it("shows running cadence and form on the training screen", async () => {
+  it("shows the running cadence trend on the training screen", async () => {
     mockQueryState.runningData = { ...runningData, data: [intervalRun] };
     const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
-    expect(screen.getByText("Running Form")).toBeTruthy();
-    expect(screen.getByText("200 spm")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Park Run/ }));
-    expect(mockRouterPush).toHaveBeenCalledWith("/activity/run-2");
+    expect(screen.getByLabelText("Running cadence trend, steps per minute")).toBeTruthy();
+    expect(screen.queryByText("Running Form")).toBeNull();
   });
 
   beforeEach(resetStrainMocks);
@@ -210,19 +208,34 @@ describe("StrainScreen", () => {
     });
   });
 
-  it("keeps the climbing refresh status space through polling cycles", async () => {
-    mockStrengthsState.isFetching = true;
+  it("shows transient climbing refresh progress only while fetching, leaving no idle gap", async () => {
+    mockStrengthsState.isFetching = false;
     const { default: StrainScreen } = await import("../../app/strain");
     const { rerender } = render(<StrainScreen />);
-    const status = screen.getByText("Updating climbing strengths…");
-    for (const isFetching of [false, true, false]) {
-      mockStrengthsState.isFetching = isFetching;
-      rerender(<StrainScreen />);
-      expect(status.isConnected).toBe(true);
-      expect(status.style.minHeight).toBe("50px");
-      expect(status.textContent).toBe(isFetching ? "Updating climbing strengths…" : "");
-      expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
-    }
+    expect(screen.queryByTestId("climbing-refresh-status")).toBeNull();
+    expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
+
+    mockStrengthsState.isFetching = true;
+    rerender(<StrainScreen />);
+    const status = screen.getByTestId("climbing-refresh-status");
+    expect(status.textContent).toBe("Updating climbing strengths…");
+    expect(status.getAttribute("accessibilityliveregion")).toBe("polite");
+    expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
+
+    mockStrengthsState.isFetching = false;
+    rerender(<StrainScreen />);
+    expect(screen.queryByTestId("climbing-refresh-status")).toBeNull();
+  });
+
+  it("renders the climbing refresh status inside the strengths card next to its heading", async () => {
+    mockStrengthsState.isFetching = true;
+    const { default: StrainScreen } = await import("../../app/strain");
+    render(<StrainScreen />);
+
+    const heading = screen.getByText("Climbing strengths");
+    const status = screen.getByTestId("climbing-refresh-status");
+    expect(heading.parentElement?.contains(status)).toBe(true);
+    expect(heading.nextElementSibling).toBe(status);
   });
 
   it("keeps cached strengths visible with an updating indicator while a new population loads", async () => {

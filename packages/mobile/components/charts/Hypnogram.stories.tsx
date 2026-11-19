@@ -48,6 +48,41 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+// Review at a 375pt device width with Accessibility Extra Large text enabled:
+// stage labels must keep their own column instead of covering the lane bars.
+export const Narrow375pt: Story = {
+  name: "Narrow 375pt · accessibility text",
+  args: {
+    data: [
+      {
+        stage: "deep",
+        started_at: "2026-07-01T22:30:00",
+        ended_at: "2026-07-01T23:30:00",
+        duration_seconds: 3600,
+      },
+      {
+        stage: "light",
+        started_at: "2026-07-01T23:30:00",
+        ended_at: "2026-07-02T09:30:00",
+        duration_seconds: 36000,
+      },
+      {
+        stage: "awake",
+        started_at: "2026-07-02T09:30:00",
+        ended_at: "2026-07-02T11:30:00",
+        duration_seconds: 7200,
+      },
+    ],
+  },
+  decorators: [
+    (Story) => (
+      <View style={{ width: 343, backgroundColor: "#f5f7f2" }}>
+        <Story />
+      </View>
+    ),
+  ],
+};
+
 export const GapsAndBriefAwakenings: Story = {
   args: {
     data: [

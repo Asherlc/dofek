@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { AccessibilityInfo } from "react-native";
 import { expect, it, vi } from "vitest";
 import { ClimbingStrengths } from "./ClimbingStrengths";
 import {
@@ -171,6 +172,44 @@ it("uses an observed hold-type panel by default and keeps missing dimensions nav
   openData();
   expect(screen.getByRole("button", { name: /^Crimps:/ })).toBeTruthy();
 });
+it("queues one iOS announcement per cached refresh and keeps the live region", () => {
+  const announce = vi.mocked(AccessibilityInfo.announceForAccessibilityWithOptions);
+  announce.mockClear();
+  const view = render(<ClimbingStrengths data={data} refreshing />);
+  expect(
+    screen.getByTestId("climbing-refresh-status").getAttribute("accessibilityliveregion"),
+  ).toBe("polite");
+  expect(announce).toHaveBeenCalledExactlyOnceWith("Updating climbing strengths…", {
+    queue: true,
+  });
+
+  view.rerender(<ClimbingStrengths data={{ ...data, enrichmentPending: true }} refreshing />);
+  expect(announce).toHaveBeenCalledOnce();
+
+  view.rerender(<ClimbingStrengths data={data} refreshing={false} />);
+  view.rerender(<ClimbingStrengths data={data} refreshing />);
+  expect(announce).toHaveBeenCalledTimes(2);
+});
+
+it("keeps one announcement across a polling gap while enrichment is pending", () => {
+  const announce = vi.mocked(AccessibilityInfo.announceForAccessibilityWithOptions);
+  announce.mockClear();
+  const view = render(<ClimbingStrengths data={data} refreshing />);
+  expect(announce).toHaveBeenCalledTimes(1);
+
+  view.rerender(
+    <ClimbingStrengths data={{ ...data, enrichmentPending: true }} refreshing={false} />,
+  );
+  expect(announce).toHaveBeenCalledTimes(1);
+
+  view.rerender(<ClimbingStrengths data={{ ...data, enrichmentPending: true }} refreshing />);
+  expect(announce).toHaveBeenCalledTimes(1);
+
+  view.rerender(<ClimbingStrengths data={data} refreshing={false} />);
+  view.rerender(<ClimbingStrengths data={data} refreshing />);
+  expect(announce).toHaveBeenCalledTimes(2);
+});
+
 it("separates initial loading, empty, error and cached refresh states", () => {
   const result = render(<ClimbingStrengths data={undefined} loading />);
   expect(screen.getByTestId("query-state-loading")).toBeTruthy();

@@ -2,7 +2,7 @@
 
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import type { RunningDynamicsRow, TrainingChartAvailability } from "dofek-server/types";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,11 +24,8 @@ vi.mock("echarts-for-react", () => ({
   },
 }));
 
-const mockNavigate = vi.fn();
-
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => null,
-  useNavigate: () => mockNavigate,
 }));
 
 const mockPaceCurveData = {
@@ -200,7 +197,6 @@ async function importRunningTab() {
 
 describe("RunningTab", () => {
   beforeEach(() => {
-    mockNavigate.mockReset();
     state.queryCalls.length = 0;
     state.selectedDays = 90;
     paceCurveQuery = { data: mockPaceCurveData, isLoading: false, error: null };
@@ -237,38 +233,6 @@ describe("RunningTab", () => {
         { name: "paceTrendV2", input: { days: null } },
         { name: "dynamicsV2", input: { days: null, responseVersion: 2 } },
       ]);
-    });
-  });
-
-  describe("RunningDynamicsTable unit display", () => {
-    it("navigates to activity detail on row click", async () => {
-      const RunningTab = await importRunningTab();
-      renderWithUnits(<RunningTab />);
-
-      const row = screen.getByText("Morning Run").closest("tr");
-      if (!row) throw new Error("Row not found");
-      fireEvent.click(row);
-
-      expect(mockNavigate).toHaveBeenCalledWith({
-        to: "/activity/$id",
-        params: { id: "activity-1" },
-      });
-    });
-
-    it("shows metric pace and distance labels", async () => {
-      const RunningTab = await importRunningTab();
-      renderWithUnits(<RunningTab />, "metric");
-      expect(screen.getAllByText(/\/km/).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText(/10\.0/).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText(/\bkm\b/).length).toBeGreaterThanOrEqual(1);
-    });
-
-    it("shows imperial pace and distance labels", async () => {
-      const RunningTab = await importRunningTab();
-      renderWithUnits(<RunningTab />, "imperial");
-      expect(screen.getAllByText(/\/mi/).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText(/6\.2/).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText(/\bmi\b/).length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -315,13 +279,12 @@ describe("RunningTab", () => {
       renderWithUnits(<RunningTab />);
 
       expect(screen.getAllByText("Transient refetch failure").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("Morning Run").length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByTestId("echarts").length).toBeGreaterThanOrEqual(3);
     });
   });
 
   describe("insufficient chart data", () => {
-    it("renders compact empty states for every running chart and table", async () => {
+    it("renders compact empty states for every running chart", async () => {
       paceCurveQuery = {
         data: {
           points: [],
@@ -377,9 +340,8 @@ describe("RunningTab", () => {
 
       expect(screen.getByText("Pace curve data is unavailable.")).toBeTruthy();
       expect(screen.getByText("Pace trend data is unavailable.")).toBeTruthy();
-      expect(screen.getByText("Running dynamics data is unavailable.")).toBeTruthy();
       expect(screen.getByText("No imported step intervals.")).toBeTruthy();
-      expect(screen.getAllByTestId("training-chart-empty-state")).toHaveLength(4);
+      expect(screen.getAllByTestId("training-chart-empty-state")).toHaveLength(3);
       expect(screen.queryAllByTestId("echarts")).toHaveLength(0);
     });
   });
@@ -452,74 +414,6 @@ describe("RunningTab", () => {
     expect(screen.getByText("No running pace data")).toBeTruthy();
     expect(screen.getByText("No running data")).toBeTruthy();
     expect(screen.getByText("No cadence samples or usable imported step intervals")).toBeTruthy();
-    expect(screen.getByText("No running dynamics data")).toBeTruthy();
-  });
-
-  it("shows interval basis and supplied coverage while keeping form when cadence and pace are missing", async () => {
-    const firstRun = mockDynamicsData[0];
-    if (!firstRun) throw new Error("Missing running fixture");
-    dynamicsQuery = {
-      data: {
-        data: [
-          {
-            ...firstRun,
-            cadence: 200,
-            cadenceBasis: "step_intervals",
-            cadenceObservedSeconds: 180,
-            cadenceCoveragePercent: 30,
-          },
-          {
-            ...firstRun,
-            activityId: "form-only",
-            activityName: "Form only",
-            cadence: null,
-            paceSecondsPerKm: null,
-            distanceKm: null,
-          },
-        ],
-        availability: mockDynamicsResponse.availability,
-        cadenceAvailability: mockDynamicsResponse.cadenceAvailability,
-      },
-      isLoading: true,
-      error: null,
-    };
-    const RunningTab = await importRunningTab();
-    renderWithUnits(<RunningTab />);
-    expect(screen.getByText("Steps · 30% coverage")).toBeTruthy();
-    expect(screen.getByText("Form only")).toBeTruthy();
-    expect(screen.getAllByText("--").length).toBeGreaterThanOrEqual(3);
-  });
-
-  it("marks absent optional running dynamics as unavailable", async () => {
-    dynamicsQuery = {
-      data: {
-        data: [
-          {
-            activityId: "activity-1",
-            date: "2026-03-15",
-            activityName: "Morning Run",
-            cadence: 180,
-            cadenceBasis: "cadence_samples",
-            cadenceObservedSeconds: null,
-            cadenceCoveragePercent: null,
-            paceSecondsPerKm: 300,
-            distanceKm: 10,
-            strideLengthMeters: null,
-            stanceTimeMs: null,
-            verticalOscillationMm: null,
-          },
-        ],
-        availability: mockDynamicsResponse.availability,
-        cadenceAvailability: mockDynamicsResponse.cadenceAvailability,
-      },
-      isLoading: false,
-      error: null,
-    };
-
-    const RunningTab = await importRunningTab();
-    renderWithUnits(<RunningTab />);
-
-    expect(screen.getAllByText("--")).toHaveLength(3);
   });
 });
 

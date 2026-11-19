@@ -51,6 +51,7 @@ export interface ActivitySensorQueryStore {
 export interface ActivitySensorReadStore extends ActivitySensorQueryStore {
   getActivitySummaries(
     activityIds: string[],
+    options?: { includeRunningForm?: boolean },
   ): Promise<z.infer<typeof activitySummaryReadModelRowSchema>[]>;
   getStream(
     window: ActivitySensorWindow,

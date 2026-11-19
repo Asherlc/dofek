@@ -40,12 +40,20 @@ const mockDashboardEvidenceOverview = vi.hoisted(() => vi.fn());
 const mockHealthStatusBar = vi.hoisted(() => vi.fn());
 
 vi.mock("../components/DashboardEvidenceOverview.tsx", () => ({
-  DashboardEvidenceOverview: (props: { healthMonitor?: ReactNode; insightError?: ReactNode }) => {
+  DashboardEvidenceOverview: (props: {
+    healthMonitor?: ReactNode;
+    insightError?: ReactNode;
+    restingHeartRateError?: Error | null;
+    hideInsightCard?: boolean;
+  }) => {
     mockDashboardEvidenceOverview(props);
     return (
       <section aria-label="Dashboard overview">
         {props.healthMonitor}
-        {props.insightError ?? <div>Sleep consistency + Heart Rate Variability</div>}
+        {props.restingHeartRateError ? <div>{props.restingHeartRateError.message}</div> : null}
+        {props.hideInsightCard
+          ? null
+          : (props.insightError ?? <div>Sleep consistency + Heart Rate Variability</div>)}
       </section>
     );
   },
@@ -154,6 +162,101 @@ describe("Dashboard", () => {
     });
     mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockDashboardEvidenceOverview.mockClear();
+  });
+
+  it("shows one notice when dashboard and processing status queries fail from the same offline condition", () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    mockTrendsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error(message),
+    });
+    mockInsightsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: new Error(message),
+    });
+    mockDataHealthQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error(message),
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
+    expect(mockDashboardEvidenceOverview).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        hideInsightCard: true,
+        hideTrendCard: true,
+        hideHealthMonitor: true,
+      }),
+    );
+  });
+
+  it("keeps a distinct resting heart rate failure visible when other queries share an offline failure", () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    const chartError = new Error("Heart rate service unavailable.");
+    mockTrendsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error(message),
+    });
+    mockInsightsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: new Error(message),
+    });
+    mockHeartRateBaselineQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: chartError,
+    });
+    mockDataHealthQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error(message),
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getByText("Heart rate service unavailable.")).toBeTruthy();
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(mockDashboardEvidenceOverview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hideTrendCard: false, restingHeartRateError: chartError }),
+    );
+  });
+
+  it("keeps a distinct insight failure visible beside the grouped connection notice", () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    mockTrendsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error(message),
+    });
+    mockInsightsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: new Error("Insight service unavailable"),
+    });
+    mockDataHealthQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error(message),
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getByText("Insight service unavailable")).toBeTruthy();
+    expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(mockDashboardEvidenceOverview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hideInsightCard: false }),
+    );
   });
 
   it("passes through the canonical server health status without recalculating it", () => {

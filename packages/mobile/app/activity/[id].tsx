@@ -4,7 +4,12 @@ import {
   formatActivityMetric,
   groupActivityMetrics,
 } from "@dofek/format/activity-data-state";
-import { formatDurationMinutes, formatDurationSeconds, formatNumber } from "@dofek/format/format";
+import {
+  formatDurationMinutes,
+  formatDurationSeconds,
+  formatNumber,
+  formatPace,
+} from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
@@ -34,7 +39,8 @@ import {
   type ActivityExportOption,
 } from "../../components/activity/ActivityExportMenu";
 import { RecomputeActivityButton } from "../../components/activity/RecomputeActivityButton";
-import { statsStyles, styles } from "../../components/activity/styles";
+import { RunningFormStats } from "../../components/activity/RunningFormStats";
+import { exerciseStyles, statsStyles, styles } from "../../components/activity/styles";
 import { useActivityClimbing } from "../../components/activity/useActivityClimbing";
 import { useActivityMapHover } from "../../components/activity/useActivityMapHover";
 import { useActivityMetrics } from "../../components/activity/useActivityMetrics";
@@ -229,80 +235,6 @@ function ExerciseBreakdown({
   );
 }
 
-const exerciseStyles = StyleSheet.create({
-  container: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-  },
-  exerciseCard: {
-    gap: 6,
-  },
-  exerciseHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  exerciseName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  badge: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  badgeText: {
-    fontSize: 10,
-    color: colors.textTertiary,
-    textTransform: "capitalize",
-  },
-  muscleGroupRow: {
-    flexDirection: "row",
-    gap: 4,
-    marginBottom: 2,
-  },
-  muscleGroupBadge: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-  },
-  muscleGroupText: {
-    fontSize: 10,
-    color: colors.textTertiary,
-  },
-  setRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 3,
-    paddingLeft: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
-  },
-  setNumber: {
-    fontSize: 12,
-    color: colors.textTertiary,
-    width: 18,
-    fontVariant: ["tabular-nums"],
-  },
-  setValue: {
-    fontSize: 13,
-    color: colors.text,
-    fontWeight: "500",
-    fontVariant: ["tabular-nums"],
-  },
-  setRpe: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    fontVariant: ["tabular-nums"],
-  },
-});
-
 const climbingStyles = StyleSheet.create({
   container: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 12 },
 });
@@ -363,6 +295,7 @@ function ActivityDetailScreen({ id }: { id: string }) {
   );
   const hardware = trpc.activity.hardware.useQuery({ id: id ?? "" }, { enabled: !!id });
   const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
+  const isRunning = detail.data?.activityType === "running";
   const isClimbingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
   const metrics = useActivityMetrics(id, { isCycling, isClimbing: isClimbingActivity });
@@ -442,6 +375,7 @@ function ActivityDetailScreen({ id }: { id: string }) {
   }
 
   const activity = detail.data;
+  const avgPaceSecondsPerKm = isRunning ? activity.avgPaceSecondsPerKm : undefined;
   const zones = hrZones.data ?? [];
 
   const routePoints = route.data?.status === "ready" ? route.data.points : EMPTY_ROUTE_POINTS;
@@ -595,10 +529,13 @@ function ActivityDetailScreen({ id }: { id: string }) {
   }
   stats.push(
     formatActivityMetric(
-      "Avg Speed",
+      avgPaceSecondsPerKm != null ? "Avg Pace" : "Avg Speed",
       activity.avgSpeed,
       activity.avgSpeedState,
-      (value) => `${formatNumber(units.convertSpeed(value * 3.6))} ${units.speedLabel}`,
+      (value) =>
+        avgPaceSecondsPerKm != null
+          ? `${formatPace(units.convertPace(avgPaceSecondsPerKm))} ${units.paceLabel}`
+          : `${formatNumber(units.convertSpeed(value * 3.6))} ${units.speedLabel}`,
     ),
     formatActivityMetric(
       "Avg Cadence",
@@ -699,21 +636,6 @@ function ActivityDetailScreen({ id }: { id: string }) {
         selected={section}
         onSelect={changeSection}
       />
-
-      {sourceControls.length > 0 && (
-        <Text
-          accessibilityLiveRegion="polite"
-          style={{ color: colors.textSecondary, minHeight: 20, lineHeight: 20 }}
-        >
-          {stream.isFetching ||
-          heartRateContext.isFetching ||
-          hrZones.isFetching ||
-          powerZones.isFetching ||
-          powerWork.isFetching
-            ? "Updating metrics…"
-            : null}
-        </Text>
-      )}
 
       {showOverview ? (
         <>
@@ -838,11 +760,24 @@ function ActivityDetailScreen({ id }: { id: string }) {
               label="Performance metrics"
               sections={availableMetrics}
               selected={activeMetric}
+              compact
               onSelect={(metric) => {
                 setRequestedMetric(metric);
                 handleHoverIndex(null);
               }}
             />
+          ) : null}
+          {(stream.isFetching ||
+            heartRateContext.isFetching ||
+            hrZones.isFetching ||
+            powerZones.isFetching ||
+            powerWork.isFetching) && (
+            <Text accessibilityLiveRegion="polite" style={{ color: colors.textSecondary }}>
+              Updating metrics…
+            </Text>
+          )}
+          {isRunning && activity.runningForm ? (
+            <RunningFormStats form={activity.runningForm} />
           ) : null}
           {metricSources.error && (
             <QueryStatePanel variant="error" message={metricSources.error.message} />
@@ -893,7 +828,10 @@ function ActivityDetailScreen({ id }: { id: string }) {
           {hasGps ? (
             <RouteMap points={routePoints} hoveredPosition={hoveredPosition} height={180} />
           ) : null}
-          {!activeMetric && !stream.isLoading && !stream.error ? (
+          {!activeMetric &&
+          !stream.isLoading &&
+          !stream.error &&
+          !(isRunning && activity.runningForm) ? (
             <QueryStatePanel variant="empty" message="No performance measurements recorded" />
           ) : null}
 

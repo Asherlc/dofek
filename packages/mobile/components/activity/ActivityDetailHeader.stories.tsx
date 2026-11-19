@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
-import { View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { expect, waitFor, within } from "storybook/test";
 import {
   garminActivitySourceHardware,
@@ -289,5 +289,64 @@ export const WithPhoto: Story = {
       ],
       onRetry: () => undefined,
     },
+  },
+};
+
+export const LongKayaTitleWithPhoto: Story = {
+  args: {
+    activity: {
+      ...detailHeaderActivity,
+      name: "Kaya gym session with an unusually long activity title",
+      activityType: "climbing",
+      primaryActivityType: "climbing",
+      climbingLogSessions: [],
+      sourceTree: {
+        primary: {
+          id: "kaya-recorded-climb",
+          providerId: "kaya",
+          sourceName: null,
+          label: "Kaya",
+          description: null,
+          url: null,
+          children: [],
+        },
+        otherSources: [
+          {
+            id: "whoop-climbing",
+            providerId: "whoop",
+            sourceName: null,
+            label: "WHOOP",
+            description: null,
+            url: null,
+            children: [],
+          },
+        ],
+      },
+    },
+    photos: {
+      images: [activityImageFixture],
+      onRetry: () => undefined,
+    },
+    actions: (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Activity actions"
+        onPress={() => undefined}
+      >
+        <Text>⋯</Text>
+      </Pressable>
+    ),
+  },
+  decorators: [(Story) => <View style={{ width: "100%", maxWidth: 390 }}>{Story()}</View>],
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await expect(
+      canvas.getByText("Kaya gym session with an unusually long activity title"),
+    ).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Lineage: Kaya" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "View 1 photo" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Activity actions" })).toBeVisible();
+    await userEvent.click(await canvas.findByRole("button", { name: "Lineage: Kaya" }));
+    await expect(canvas.getByText("WHOOP")).toBeVisible();
   },
 };

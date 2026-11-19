@@ -15,6 +15,7 @@ import { useCountUp } from "../hooks/useCountUp.ts";
 interface HealthStatusBarProps {
   baselineRelative?: BaselineRelativeMetric[];
   metrics: HealthStatusMetric[];
+  grouped?: boolean;
   loading?: boolean;
   formatters?: Partial<Record<HealthMetricKey, FormattedMeasurementFormatter>>;
   comparisonFormatters?: Partial<Record<HealthMetricKey, FormattedMeasurementFormatter>>;
@@ -122,6 +123,77 @@ function formatContextValue(
   return `${formatNumber(value)}${unit ? ` ${unit}` : ""}`;
 }
 
+function metricDetailText({
+  metric,
+  baselineContext,
+  formatter,
+  comparisonDeltaFormatter,
+  unit,
+}: {
+  metric: HealthStatusMetric;
+  baselineContext: BaselineRelativeMetric | undefined;
+  formatter: FormattedMeasurementFormatter | undefined;
+  comparisonDeltaFormatter: FormattedMeasurementFormatter | undefined;
+  unit: string | undefined;
+}): { baselineDetails: string; comparisonDetails: string } {
+  if (baselineContext) {
+    return {
+      baselineDetails: formatBaselineContext(baselineContext, { formatter, unit }),
+      comparisonDetails: "",
+    };
+  }
+  return {
+    baselineDetails: formatBaseline(metric, formatter),
+    comparisonDetails: metric.comparison
+      ? formatComparisonContext(metric.comparison, {
+          formatValue: (value) => formatContextValue(value, formatter, unit),
+          formatDelta: (value) => formatContextValue(value, comparisonDeltaFormatter, unit),
+          missingMeans: "summary",
+        })
+      : "",
+  };
+}
+
+function HealthMetricDetailsBody({
+  metric,
+  baselineDetails,
+  comparisonDetails,
+  showBlockedEvaluationRule = false,
+}: {
+  metric: HealthStatusMetric;
+  baselineDetails: string;
+  comparisonDetails: string;
+  showBlockedEvaluationRule?: boolean;
+}) {
+  const provenance = metric.provenance;
+  const blocked = metric.baselineProgress.blocker !== null;
+  return (
+    <>
+      {!blocked || showBlockedEvaluationRule ? (
+        <div className="font-medium text-muted">{metric.evaluationRule}</div>
+      ) : null}
+      <div>{metric.explanation}</div>
+      {blocked ? (
+        <>
+          <div>{metric.baselineProgress.requirement}</div>
+          <div>{metric.baselineProgress.summary}</div>
+        </>
+      ) : null}
+      {baselineDetails ? <div>{baselineDetails}</div> : null}
+      {comparisonDetails ? <div>{comparisonDetails}</div> : null}
+      {provenance ? (
+        <>
+          <div>Source: {formatHealthProvenanceSource(provenance)}</div>
+          <div>Latest recorded date: {provenance.latestDate ?? "Unavailable"}</div>
+          <div>
+            Coverage: {provenance.observedDays}/{provenance.windowDays} days
+          </div>
+        </>
+      ) : null}
+    </>
+  );
+}
+
 function HealthMetricDetails({
   metric,
   baselineDetails,
@@ -133,8 +205,6 @@ function HealthMetricDetails({
 }) {
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
-  const provenance = metric.provenance;
-  const blocked = metric.baselineProgress.blocker !== null;
   return (
     <div className="mt-1 text-[11px] text-subtle">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -151,31 +221,118 @@ function HealthMetricDetails({
       </div>
       <div id={detailsId} hidden={!expanded} className="mt-1 space-y-1 border-l border-border pl-2">
         {expanded ? (
-          <>
-            {!blocked ? (
-              <div className="font-medium text-muted">{metric.evaluationRule}</div>
-            ) : null}
-            <div>{metric.explanation}</div>
-            {blocked ? (
-              <>
-                <div>{metric.baselineProgress.requirement}</div>
-                <div>{metric.baselineProgress.summary}</div>
-              </>
-            ) : null}
-            {baselineDetails ? <div>{baselineDetails}</div> : null}
-            {comparisonDetails ? <div>{comparisonDetails}</div> : null}
-            {provenance ? (
-              <>
-                <div>Source: {formatHealthProvenanceSource(provenance)}</div>
-                <div>Latest recorded date: {provenance.latestDate ?? "Unavailable"}</div>
-                <div>
-                  Coverage: {provenance.observedDays}/{provenance.windowDays} days
-                </div>
-              </>
-            ) : null}
-          </>
+          <HealthMetricDetailsBody
+            metric={metric}
+            baselineDetails={baselineDetails}
+            comparisonDetails={comparisonDetails}
+          />
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function metricValueText(
+  metric: HealthStatusMetric,
+  formatter: FormattedMeasurementFormatter | undefined,
+  unit: string | undefined,
+): string {
+  if (metric.valueText != null) return metric.valueText;
+  if (formatter) return formatter(metric.value).text;
+  if (metric.value == null) return "—";
+  return `${formatNumber(metric.value)}${unit ? ` ${unit}` : ""}`;
+}
+
+function GroupedHealthStatusList({
+  metrics,
+  baselineRelative,
+  formatters,
+  comparisonFormatters,
+  units,
+}: {
+  metrics: HealthStatusMetric[];
+  baselineRelative: BaselineRelativeMetric[];
+  formatters: Partial<Record<HealthMetricKey, FormattedMeasurementFormatter>>;
+  comparisonFormatters: Partial<Record<HealthMetricKey, FormattedMeasurementFormatter>>;
+  units: Partial<Record<HealthMetricKey, string>>;
+}) {
+  const [expandedMetric, setExpandedMetric] = useState<HealthMetricKey | null>(null);
+  const idPrefix = useId();
+  return (
+    <div className="card divide-y divide-border overflow-hidden">
+      {metrics.map((metric) => {
+        const formatter = formatters[metric.metric];
+        const comparisonDeltaFormatter = comparisonFormatters[metric.metric] ?? formatter;
+        const baselineContext = baselineRelative.find(
+          (candidate) => candidate.metric === metric.metric,
+        );
+        const { baselineDetails, comparisonDetails } = metricDetailText({
+          metric,
+          baselineContext,
+          formatter,
+          comparisonDeltaFormatter,
+          unit: units[metric.metric],
+        });
+        const blocked = metric.baselineProgress.blocker !== null;
+        const interpretation = formatHealthStatusLabel(metric);
+        const expanded = expandedMetric === metric.metric;
+        const detailsId = `${idPrefix}-${metric.metric}`;
+        const accessibleName = `${metric.label}, ${metricValueText(metric, formatter, units[metric.metric])}, ${interpretation}. ${expanded ? "Hide" : "Show"} details`;
+        return (
+          <div key={metric.metric}>
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-controls={detailsId}
+              aria-label={accessibleName}
+              onClick={() => setExpandedMetric(expanded ? null : metric.metric)}
+              className="flex min-h-14 w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 text-left hover:bg-surface"
+            >
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-[11px] font-medium uppercase leading-tight tracking-wide text-muted">
+                  {metric.label}
+                </span>
+                <span className="text-[11px] leading-tight text-subtle">{interpretation}</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="font-mono text-base font-semibold tabular-nums">
+                  <MetricDisplay
+                    metric={metric}
+                    formatter={formatter}
+                    unit={units[metric.metric]}
+                  />
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={`inline-block text-base leading-none text-dim transition-transform ${expanded ? "rotate-90" : ""}`}
+                >
+                  ›
+                </span>
+              </span>
+            </button>
+            {blocked && metric.baselineProgress.blocker !== "syncing" ? (
+              <section
+                aria-label={`${metric.label} baseline progress`}
+                className="px-4 pb-3 text-[11px] font-medium text-foreground"
+              >
+                {metric.baselineProgress.action}
+              </section>
+            ) : null}
+            <div id={detailsId} hidden={!expanded} className="px-4 pb-3">
+              <div className="space-y-1 border-l border-border pl-2 text-[11px] text-subtle">
+                {expanded ? (
+                  <HealthMetricDetailsBody
+                    metric={metric}
+                    baselineDetails={baselineDetails}
+                    comparisonDetails={comparisonDetails}
+                    showBlockedEvaluationRule
+                  />
+                ) : null}
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -183,12 +340,24 @@ function HealthMetricDetails({
 export function HealthStatusBar({
   baselineRelative = [],
   metrics,
+  grouped = false,
   loading,
   formatters = {},
   comparisonFormatters = {},
   units = {},
 }: HealthStatusBarProps) {
   if (loading) {
+    if (grouped) {
+      return (
+        <div className="card divide-y divide-border overflow-hidden">
+          {["skeleton-1", "skeleton-2", "skeleton-3", "skeleton-4", "skeleton-5"].map((id) => (
+            <div key={id} className="h-14 px-4 py-3">
+              <div className="h-4 w-2/3 rounded shimmer" />
+            </div>
+          ))}
+        </div>
+      );
+    }
     return (
       <div className="flex gap-3">
         {["skeleton-1", "skeleton-2", "skeleton-3", "skeleton-4", "skeleton-5"].map((id) => (
@@ -206,6 +375,18 @@ export function HealthStatusBar({
     );
   }
 
+  if (grouped) {
+    return (
+      <GroupedHealthStatusList
+        metrics={metrics}
+        baselineRelative={baselineRelative}
+        formatters={formatters}
+        comparisonFormatters={comparisonFormatters}
+        units={units}
+      />
+    );
+  }
+
   return (
     <div className="flex gap-3 overflow-x-auto">
       {metrics.map((metric, index) => {
@@ -214,6 +395,13 @@ export function HealthStatusBar({
         const baselineContext = baselineRelative.find(
           (candidate) => candidate.metric === metric.metric,
         );
+        const { baselineDetails, comparisonDetails } = metricDetailText({
+          metric,
+          baselineContext,
+          formatter,
+          comparisonDeltaFormatter,
+          unit: units[metric.metric],
+        });
         const blocked = metric.baselineProgress.blocker !== null;
         const interpretation = formatHealthStatusLabel(metric);
         return (
@@ -257,25 +445,8 @@ export function HealthStatusBar({
             ) : null}
             <HealthMetricDetails
               metric={metric}
-              baselineDetails={
-                baselineContext
-                  ? formatBaselineContext(baselineContext, {
-                      formatter,
-                      unit: units[metric.metric],
-                    })
-                  : ""
-              }
-              comparisonDetails={
-                !baselineContext && metric.comparison
-                  ? formatComparisonContext(metric.comparison, {
-                      formatValue: (value) =>
-                        formatContextValue(value, formatter, units[metric.metric]),
-                      formatDelta: (value) =>
-                        formatContextValue(value, comparisonDeltaFormatter, units[metric.metric]),
-                      missingMeans: "summary",
-                    })
-                  : ""
-              }
+              baselineDetails={baselineDetails}
+              comparisonDetails={comparisonDetails}
             />
           </div>
         );

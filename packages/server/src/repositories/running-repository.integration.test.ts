@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  createActivityLocationMemberChangeSql,
+  createActivityLocationSampleSql,
+} from "../../../../src/db/activity-payload-dbt-microbatch-test-helpers.ts";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import {
   buildActivitySummaryRowsTableSql,
@@ -12,13 +16,18 @@ import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
+import { activityRouter } from "../routers/activity.ts";
+import { createTestCallerFactory } from "../routers/test-helpers.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
 import { RunningRepository } from "./running-repository.ts";
+
+const createActivityCaller = createTestCallerFactory(activityRouter);
 
 describe("running summary query", () => {
   let context: TestContext;
   let repository: RunningRepository;
-  const ids = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+  let store: ClickHouseActivitySensorStore;
+  const ids = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
   beforeAll(async () => {
     context = await setupTestDatabase();
     await ensureProvider(context.db, "apple_health", "Apple Health", undefined, userId);
@@ -49,6 +58,10 @@ describe("running summary query", () => {
     await client.command({ query: rewrite(buildActivitySummaryRowsTableSql()) });
     await client.command({ query: rewrite(buildCyclingPowerObservationRowsTableSql()) });
     await client.command({ query: rewrite(buildActivitySummaryViewSql()) });
+    // byId enriches detail rows with map readiness/route previews, so the
+    // private ClickHouse store needs the location read models too.
+    await client.command({ query: createActivityLocationSampleSql(database) });
+    await client.command({ query: createActivityLocationMemberChangeSql(database) });
     await client.insert?.({
       table: `${database}.activity_summary_rows`,
       format: "JSONEachRow",
@@ -106,6 +119,22 @@ describe("running summary query", () => {
           refresh_version: 1,
         },
         {
+          activity_id: ids[4],
+          user_id: userId,
+          canonical_type: "running",
+          name: "Cadence Samples Run",
+          started_at: "2026-10-01 08:00:00",
+          ended_at: "2026-10-01 08:20:00",
+          avg_cadence: 176,
+          cadence_basis: "cadence_samples",
+          cadence_observed_seconds: 540,
+          cadence_coverage_percent: 81,
+          avg_stride_length: 1.35,
+          avg_stance_time: 235,
+          avg_vertical_osc: 78,
+          refresh_version: 1,
+        },
+        {
           activity_id: randomUUID(),
           user_id: randomUUID(),
           canonical_type: "running",
@@ -116,7 +145,7 @@ describe("running summary query", () => {
         },
       ],
     });
-    const store = new ClickHouseActivitySensorStore({
+    store = new ClickHouseActivitySensorStore({
       command: (options) => client.command({ ...options, query: rewrite(options.query) }),
       query: (options) => client.query({ ...options, query: rewrite(options.query) }),
     });
@@ -173,7 +202,7 @@ describe("running summary query", () => {
   });
   it("retains owned form-only runs without manufacturing cadence, pace or distance", async () => {
     const data = (await repository.getDynamics(null)).map((row) => row.toDetail());
-    expect(data).toHaveLength(4);
+    expect(data).toHaveLength(5);
     expect(data.find((row) => row.activityId === ids[1])).toMatchObject({
       cadence: null,
       paceSecondsPerKm: null,
@@ -185,6 +214,81 @@ describe("running summary query", () => {
       paceSecondsPerKm: null,
       distanceKm: null,
       stanceTimeMs: 260,
+    });
+  });
+  it("decodes ground-contact form evidence in the bounded summary read used by activity detail", async () => {
+    const summaries = await store.getActivitySummaries([ids[0], ids[1], ids[3]], {
+      includeRunningForm: true,
+    });
+    expect(summaries.find((row) => row.activity_id === ids[0])).toMatchObject({
+      avg_cadence: 200,
+      cadence_basis: "step_intervals",
+      cadence_observed_seconds: 180,
+      cadence_coverage_percent: 30,
+      avg_stride_length: null,
+      avg_stance_time: 210,
+      avg_vertical_osc: null,
+    });
+    expect(summaries.find((row) => row.activity_id === ids[1])).toMatchObject({
+      avg_cadence: null,
+      avg_stride_length: null,
+      avg_stance_time: 240,
+      avg_vertical_osc: null,
+    });
+    expect(summaries.find((row) => row.activity_id === ids[3])).toMatchObject({
+      avg_cadence: 180,
+      cadence_basis: "unknown",
+      avg_stride_length: 1.2,
+      avg_stance_time: 230,
+      avg_vertical_osc: 85,
+    });
+  });
+
+  it("hydrates real ClickHouse form evidence through activity.byId", async () => {
+    const caller = createActivityCaller({
+      db: context.db,
+      userId,
+      timezone: "UTC",
+      sensorStore: store,
+      accountErasureRestoreLedger: {
+        findIntent: async () => null,
+        listIntentReferences: async () => [],
+        listIntentsForIdentities: async () => [],
+        recordIntent: async () => undefined,
+      },
+      cacheMode: "refresh",
+    });
+
+    const stepIntervals = await caller.byId({ id: ids[0] });
+    expect(stepIntervals.runningForm).toMatchObject({
+      cadence: 200,
+      cadenceBasis: "step_intervals",
+      cadenceObservedSeconds: 180,
+      cadenceCoveragePercent: 30,
+      // Ground contact takes precedence over the legacy 250ms stance in this row.
+      stanceTimeMs: 210,
+      strideLengthMeters: null,
+      verticalOscillationMm: null,
+    });
+
+    const cadenceSamples = await caller.byId({ id: ids[4] });
+    expect(cadenceSamples.runningForm).toMatchObject({
+      cadence: 176,
+      cadenceBasis: "cadence_samples",
+      cadenceObservedSeconds: 540,
+      cadenceCoveragePercent: 81,
+      strideLengthMeters: 1.35,
+      stanceTimeMs: 235,
+      verticalOscillationMm: 78,
+    });
+
+    const formOnly = await caller.byId({ id: ids[1] });
+    expect(formOnly.runningForm).toMatchObject({
+      cadence: null,
+      cadenceBasis: "unknown",
+      strideLengthMeters: null,
+      stanceTimeMs: 240,
+      verticalOscillationMm: null,
     });
   });
 });

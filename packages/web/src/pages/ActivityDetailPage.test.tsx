@@ -554,6 +554,107 @@ describe("ActivityDetailPage", () => {
     );
   });
 
+  it("shows a compact Running Form subsection in Performance without an empty metrics chart", () => {
+    mockActivityByIdUseQuery.mockReturnValue(
+      queryResult({
+        ...mockActivity,
+        runningForm: {
+          cadence: null,
+          cadenceBasis: "unknown",
+          cadenceObservedSeconds: null,
+          cadenceCoveragePercent: null,
+          strideLengthMeters: null,
+          stanceTimeMs: 240,
+          verticalOscillationMm: null,
+        },
+      }),
+    );
+    mockStreamUseQuery.mockReturnValue(queryResult<typeof mockStreamPoints>([]));
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    const performance = screen.getByRole("heading", { name: "Performance" }).closest("section");
+    if (!performance) throw new Error("Performance section is missing");
+    within(performance).getByRole("heading", { name: "Running Form" });
+    expect(within(performance).getByText("Ground contact time")).toBeTruthy();
+    expect(within(performance).getByText("240 ms")).toBeTruthy();
+    expect(within(performance).queryByText("Cadence")).toBeNull();
+    expect(within(performance).queryByText(/km|mi/)).toBeNull();
+    expect(capturedOptions).toHaveLength(0);
+  });
+
+  it("shows cadence coverage in Running Form without a duplicate header cadence", () => {
+    mockActivityByIdUseQuery.mockReturnValue(
+      queryResult({
+        ...mockActivity,
+        avgCadence: 170,
+        avgCadenceState: { status: "available" },
+        runningForm: {
+          cadence: 170,
+          cadenceBasis: "step_intervals",
+          cadenceObservedSeconds: 2400,
+          cadenceCoveragePercent: 92,
+          strideLengthMeters: null,
+          stanceTimeMs: null,
+          verticalOscillationMm: null,
+        },
+      }),
+    );
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    const heading = screen.getByRole("heading", { name: "Running Form" });
+    const section = heading.closest("section");
+    if (!section) throw new Error("Running Form section is missing");
+    expect(within(section).getByText("170 spm")).toBeTruthy();
+    expect(within(section).getByText("Steps · 92% coverage")).toBeTruthy();
+    expect(screen.queryByText(/Avg Cadence/)).toBeNull();
+    expect(screen.queryByText("170 steps/min")).toBeNull();
+  });
+
+  it("keeps multi-trace chart controls when the run also has form readings", () => {
+    mockActivityByIdUseQuery.mockReturnValue(
+      queryResult({
+        ...mockActivity,
+        runningForm: {
+          cadence: 170,
+          cadenceBasis: "step_intervals",
+          cadenceObservedSeconds: 2400,
+          cadenceCoveragePercent: 92,
+          strideLengthMeters: null,
+          stanceTimeMs: null,
+          verticalOscillationMm: null,
+        },
+      }),
+    );
+    mockMetricSourcesUseQuery.mockReturnValue(
+      queryResult(detailPageMetricSources.filter((source) => source.key === "heartRate")),
+    );
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    const performance = screen.getByRole("heading", { name: "Performance" }).closest("section");
+    if (!performance) throw new Error("Performance section is missing");
+    expect(within(performance).getByText("Chart controls")).toBeTruthy();
+    within(performance).getByRole("heading", { name: "Running Form" });
+    expect(within(performance).getByText("170 spm")).toBeTruthy();
+  });
+
+  it("does not reserve an empty metrics status slot outside an active update", () => {
+    mockMetricSourcesUseQuery.mockReturnValue(
+      queryResult(detailPageMetricSources.filter((source) => source.key === "power")),
+    );
+    renderWithUnits(<ActivityDetailPage />);
+
+    const performance = screen.getByRole("heading", { name: "Performance" }).closest("section");
+    if (!performance) throw new Error("Performance section is missing");
+    const emptyStatus = Array.from(performance.querySelectorAll('[role="status"]')).find(
+      (node) => node.textContent === "",
+    );
+    expect(emptyStatus).toBeUndefined();
+    expect(screen.queryByText("Updating metrics…")).toBeNull();
+  });
+
   it("does not show a transient power zone section before a nullable result resolves", async () => {
     setCyclingPowerZoneResult(undefined, { isLoading: true });
 
@@ -595,9 +696,8 @@ describe("ActivityDetailPage", () => {
             <ActivityDetailPage />
           </UnitContext.Provider>,
         );
-        expect(status).toBeInTheDocument();
-        expect(status).toHaveClass("min-h-4");
-        expect(status).toBeEmptyDOMElement();
+        expect(status).not.toBeInTheDocument();
+        expect(screen.queryByText("Updating metrics…")).toBeNull();
         expect(screen.getByText("478 kJ")).toBeVisible();
       }
     },

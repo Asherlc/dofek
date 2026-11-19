@@ -4,7 +4,12 @@ import {
   formatActivityMetric,
   groupActivityMetrics,
 } from "@dofek/format/activity-data-state";
-import { formatDateLong, formatDurationMinutes, formatNumber } from "@dofek/format/format";
+import {
+  formatDateLong,
+  formatDurationMinutes,
+  formatNumber,
+  formatPace,
+} from "@dofek/format/format";
 import { formatRecordLocalTime, formatRecordLocalTimeRange } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerLabel } from "@dofek/providers/providers";
@@ -38,6 +43,9 @@ export function ActivityHeader({
     undefined,
     viewerTimezone,
   );
+
+  const avgPaceSecondsPerKm =
+    activity.activityType === "running" ? activity.avgPaceSecondsPerKm : undefined;
 
   const stats: Array<
     ActivityMetric | { label: string; value: string; description?: string; attribution?: string }
@@ -101,19 +109,34 @@ export function ActivityHeader({
           },
         ]
       : []),
-    formatActivityMetric(
-      "Avg Speed",
-      activity.avgSpeed,
-      activity.avgSpeedState,
-      (value) => `${formatNumber(units.convertSpeed(value * 3.6))} ${units.speedLabel}`,
-    ),
-    formatActivityMetric(
-      "Avg Cadence",
-      activity.avgCadence,
-      activity.avgCadenceState,
-      (value) => `${Math.round(value)} ${cadenceUnit(activity.activityType)}`,
-    ),
+    avgPaceSecondsPerKm != null
+      ? formatActivityMetric(
+          "Avg Pace",
+          activity.avgSpeed,
+          activity.avgSpeedState,
+          () => `${formatPace(units.convertPace(avgPaceSecondsPerKm))} ${units.paceLabel}`,
+        )
+      : formatActivityMetric(
+          "Avg Speed",
+          activity.avgSpeed,
+          activity.avgSpeedState,
+          (value) => `${formatNumber(units.convertSpeed(value * 3.6))} ${units.speedLabel}`,
+        ),
   );
+
+  // Running Form carries cadence with its coverage qualifier on the detail page.
+  // Omit the duplicate header stat only when the form supplies that reading;
+  // non-running and older/partial responses keep their existing Avg Cadence stat.
+  if (activity.runningForm?.cadence == null) {
+    stats.push(
+      formatActivityMetric(
+        "Avg Cadence",
+        activity.avgCadence,
+        activity.avgCadenceState,
+        (value) => `${Math.round(value)} ${cadenceUnit(activity.activityType)}`,
+      ),
+    );
+  }
 
   const heading = (
     <ActivitySourceDisclosure

@@ -143,15 +143,18 @@ export const styles = StyleSheet.create({
   },
   cardHeader: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 8,
   },
   cardTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    flex: 1,
+    flexShrink: 1,
     minWidth: 0,
+    minHeight: 44,
   },
   statusDot: {
     width: 8,
@@ -162,10 +165,13 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: colors.text,
+    flexShrink: 1,
   },
   cardActions: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
+    flexShrink: 0,
     gap: 8,
   },
   cardMeta: {
@@ -184,6 +190,7 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     minWidth: 60,
+    minHeight: 44,
   },
   syncButtonDisabled: {
     opacity: 0.5,

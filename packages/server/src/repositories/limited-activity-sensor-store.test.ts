@@ -354,4 +354,23 @@ describe("LimitedActivitySensorStore", () => {
     await expect(store.getPowerZoneSeconds(window, 275)).resolves.toEqual(rows);
     expect(delegate.getPowerZoneSeconds).toHaveBeenCalledExactlyOnceWith(window, 275);
   });
+
+  it("forwards running-form options through the limiter and returns the delegate result", async () => {
+    const rows = [{ activity_id: "run-1", avg_stride_length: 1.24 }];
+    const delegate = makeDelegate({ getActivitySummaries: vi.fn().mockResolvedValue(rows) });
+    const store = new LimitedActivitySensorStore(delegate, 1);
+    const options = { includeRunningForm: true };
+
+    await expect(store.getActivitySummaries(["run-1"], options)).resolves.toEqual(rows);
+    expect(delegate.getActivitySummaries).toHaveBeenCalledExactlyOnceWith(["run-1"], options);
+  });
+
+  it("preserves default summary delegation without running-form options", async () => {
+    const rows = [{ activity_id: "run-2", avg_stride_length: 1.2 }];
+    const delegate = makeDelegate({ getActivitySummaries: vi.fn().mockResolvedValue(rows) });
+    const store = new LimitedActivitySensorStore(delegate, 1);
+
+    await expect(store.getActivitySummaries(["run-2"])).resolves.toEqual(rows);
+    expect(delegate.getActivitySummaries).toHaveBeenCalledExactlyOnceWith(["run-2"]);
+  });
 });

@@ -53,6 +53,12 @@ export interface ActivitySummaryReadModelRow {
   avg_speed: number | null;
   max_speed: number | null;
   avg_cadence: number | null;
+  cadence_basis?: "cadence_samples" | "step_intervals" | "unknown" | null;
+  cadence_observed_seconds?: number | null;
+  cadence_coverage_percent?: number | null;
+  avg_stride_length?: number | null;
+  avg_stance_time?: number | null;
+  avg_vertical_osc?: number | null;
   total_distance: number | null;
   elevation_gain_m: number | null;
   elevation_loss_m: number | null;
@@ -130,10 +136,22 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     return rows.map((row) => schema.parse(row));
   }
 
-  async getActivitySummaries(activityIds: string[]): Promise<ActivitySummaryReadModelRow[]> {
+  async getActivitySummaries(
+    activityIds: string[],
+    options: { includeRunningForm?: boolean } = {},
+  ): Promise<ActivitySummaryReadModelRow[]> {
     if (activityIds.length === 0) {
       return [];
     }
+    const runningFormColumns = options.includeRunningForm
+      ? `,
+          cadence_basis,
+          cadence_observed_seconds,
+          cadence_coverage_percent,
+          avg_stride_length,
+          coalesce(avg_ground_contact_time, avg_stance_time) AS avg_stance_time,
+          avg_vertical_osc`
+      : "";
     const result = await this.#client.query<ActivitySummaryReadModelRow>({
       query: `
         SELECT
@@ -144,7 +162,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           max_power,
           avg_speed,
           max_speed,
-          avg_cadence,
+          avg_cadence${runningFormColumns},
           total_distance,
           elevation_gain_m,
           elevation_loss_m,

@@ -11,6 +11,7 @@ interface MockQuery {
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
+  refetch?: () => void;
 }
 
 let mockQuery: MockQuery;
@@ -49,6 +50,7 @@ let mockOverviewQuery: {
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
+  refetch?: () => void;
 };
 let weekListInput: unknown;
 const titleSearchQuery = vi.hoisted(() => vi.fn());
@@ -75,6 +77,7 @@ let mockDataHealthQuery: {
   data: unknown;
   isLoading: boolean;
   error: Error | null;
+  refetch?: () => void;
 };
 let processingStatusInput: unknown;
 const mockImagesUseQuery = vi.fn(
@@ -382,6 +385,110 @@ describe("ActivitiesPage", () => {
     mockBulkDeleteShouldFail = false;
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
     processingStatusInput = undefined;
+  });
+
+  it("shows one notice when activity and processing status queries fail from the same offline condition", () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    mockOverviewQuery = { ...mockOverviewQuery, isError: true, error: new Error(message) };
+    mockQuery = { ...mockQuery, isError: true, error: new Error(message) };
+    mockDataHealthQuery = { data: undefined, isLoading: false, error: new Error(message) };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.queryByText(/No activities in the last/)).toBeNull();
+  });
+
+  it("omits the activity summary when the overview shares an offline failure without cached data", () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    mockOverviewQuery = {
+      ...mockOverviewQuery,
+      data: undefined,
+      isError: true,
+      error: new Error(message),
+    };
+    mockQuery = { ...mockQuery, isError: true, error: new Error(message) };
+    mockDataHealthQuery = { data: undefined, isLoading: false, error: new Error(message) };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.queryAllByText("Loading…")).toHaveLength(0);
+  });
+
+  it("keeps a cached activity summary during a grouped overview failure", () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    mockOverviewQuery = {
+      ...mockOverviewQuery,
+      data: {
+        activityCount: 7,
+        totalMinutes: 0,
+        totalDistanceMeters: 0,
+        totalDistanceState: { status: "available" },
+        totalElevationGainM: 0,
+        totalElevationState: { status: "available" },
+        activityTypes: [],
+      },
+      isError: true,
+      error: new Error(message),
+    };
+    mockQuery = { ...mockQuery, isError: true, error: new Error(message) };
+    mockDataHealthQuery = { data: undefined, isLoading: false, error: new Error(message) };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.getByText("7")).toBeTruthy();
+    expect(screen.queryAllByText("Loading…")).toHaveLength(0);
+  });
+
+  it("shared connection retry refetches the failed activity list too", () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    const overviewRefetch = vi.fn();
+    const listRefetch = vi.fn();
+    const processingRefetch = vi.fn();
+    mockOverviewQuery = {
+      ...mockOverviewQuery,
+      isError: true,
+      error: new Error(message),
+      refetch: overviewRefetch,
+    };
+    mockQuery = { ...mockQuery, isError: true, error: new Error(message), refetch: listRefetch };
+    mockDataHealthQuery = {
+      data: undefined,
+      isLoading: false,
+      error: new Error(message),
+      refetch: processingRefetch,
+    };
+
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(overviewRefetch).toHaveBeenCalledOnce();
+    expect(listRefetch).toHaveBeenCalledOnce();
+    expect(processingRefetch).toHaveBeenCalledOnce();
+  });
+
+  it("does not count a hidden overview failure while searching", () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    const searchRefetch = vi.fn();
+    titleSearchQuery.mockReturnValue({
+      data: undefined,
+      isError: true,
+      error: new Error(message),
+      isFetching: false,
+      refetch: searchRefetch,
+    });
+    mockOverviewQuery = { ...mockOverviewQuery, isError: true, error: new Error(message) };
+
+    render(<ActivitiesPage />);
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search activity titles" }), {
+      target: { value: "Ride" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(searchRefetch).toHaveBeenCalledOnce();
   });
 
   it("searches titles outside the browsing date range and returns to the list when cleared", () => {

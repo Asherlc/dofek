@@ -26,6 +26,7 @@ let mockDashboardData: unknown;
 let mockDashboardError: Error | null = null;
 let mockAnomalyData: unknown;
 let mockDataHealthData: unknown;
+let mockDataHealthError: Error | null = null;
 let mockProviderGuideError: Error | null = null;
 const mockDataHealthRefetch = vi.fn(() => Promise.resolve());
 const mockTrendsQuery = vi.fn();
@@ -94,7 +95,7 @@ vi.mock("../../lib/trpc", () => ({
             data: mockDataHealthData,
             isLoading: false,
             isError: false,
-            error: null,
+            error: mockDataHealthError,
             refetch: mockDataHealthRefetch,
           };
         },
@@ -200,6 +201,7 @@ describe("TodayScreen independent loading states", () => {
     };
     mockAnomalyData = undefined;
     mockDataHealthData = undefined;
+    mockDataHealthError = null;
     mockProviderGuideError = null;
     mockDashboardError = null;
     mockRouterPush.mockClear();
@@ -264,7 +266,7 @@ describe("TodayScreen independent loading states", () => {
     const { default: OverviewScreen } = await import("../../app/(tabs)/index");
     render(<OverviewScreen />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Show details for Skin Temperature" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Skin Temperature, .*Show details$/ }));
     expect(screen.getByText("7d avg 96.8°F vs prior 28d avg 95.0°F · +1.8°F")).toBeTruthy();
   });
 
@@ -293,6 +295,145 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("92.0%")).toBeTruthy();
     expect(screen.getByText("52 bpm")).toBeTruthy();
     expect(screen.getAllByText("Waiting for a connection")).toHaveLength(2);
+  });
+
+  it("shows one notice when overview and processing status queries fail from the same offline condition", async () => {
+    mockTrendsQuery.mockReturnValue({
+      isLoading: false,
+      error: new Error("Failed to fetch"),
+      refetch: vi.fn(),
+    });
+    mockInsightsQuery.mockReturnValue({
+      isLoading: false,
+      error: new Error("Network request failed"),
+      refetch: vi.fn(),
+    });
+    mockDataHealthError = new Error("Failed to fetch");
+
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
+    render(<TodayScreen />);
+
+    expect(
+      screen.getAllByText("We couldn't reach the server. Check your connection and try again."),
+    ).toHaveLength(1);
+    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+  });
+
+  it("hides empty evidence cards whose queries share the offline condition", async () => {
+    mockTrendsQuery.mockReturnValue({
+      isLoading: false,
+      error: new Error("Failed to fetch"),
+      refetch: vi.fn(),
+    });
+    mockInsightsQuery.mockReturnValue({
+      isLoading: false,
+      error: new Error("Network request failed"),
+      refetch: vi.fn(),
+    });
+    mockDataHealthError = new Error("Failed to fetch");
+
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
+    render(<TodayScreen />);
+
+    expect(
+      screen.getAllByText("We couldn't reach the server. Check your connection and try again."),
+    ).toHaveLength(1);
+    expect(screen.queryByText("Key correlation")).toBeNull();
+    expect(screen.queryByText("Health monitor")).toBeNull();
+  });
+
+  it("hides the insight card when a grouped offline failure leaves only insufficient cached insights", async () => {
+    mockTrendsQuery.mockReturnValue({
+      isLoading: false,
+      error: new Error("Failed to fetch"),
+      refetch: vi.fn(),
+    });
+    mockInsightsQuery.mockReturnValue({
+      isLoading: false,
+      data: [{ ...overviewEvidenceFixture.insights.data[0], confidence: "insufficient" }],
+      error: new Error("Network request failed"),
+      refetch: vi.fn(),
+    });
+    mockDataHealthError = new Error("Failed to fetch");
+
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
+    render(<TodayScreen />);
+
+    expect(screen.queryByText("Key correlation")).toBeNull();
+  });
+
+  it("keeps a usable cached insight visible during a grouped offline failure", async () => {
+    mockTrendsQuery.mockReturnValue({
+      isLoading: false,
+      error: new Error("Failed to fetch"),
+      refetch: vi.fn(),
+    });
+    mockInsightsQuery.mockReturnValue({
+      isLoading: false,
+      data: overviewEvidenceFixture.insights.data,
+      error: new Error("Network request failed"),
+      refetch: vi.fn(),
+    });
+    mockDataHealthError = new Error("Failed to fetch");
+
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("Key correlation")).toBeTruthy();
+    expect(
+      screen.getAllByText("We couldn't reach the server. Check your connection and try again."),
+    ).toHaveLength(1);
+  });
+
+  it("keeps a distinct heart rate failure visible when other queries share an offline failure", async () => {
+    mockTrendsQuery.mockReturnValue({
+      isLoading: false,
+      error: new Error("Failed to fetch"),
+      refetch: vi.fn(),
+    });
+    mockHeartRateQuery.mockReturnValue({
+      isLoading: false,
+      error: new Error("Heart rate service unavailable"),
+      refetch: vi.fn(),
+    });
+    mockInsightsQuery.mockReturnValue({
+      isLoading: false,
+      error: new Error("Network request failed"),
+      refetch: vi.fn(),
+    });
+    mockDataHealthError = new Error("Failed to fetch");
+
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("Heart rate service unavailable")).toBeTruthy();
+    expect(screen.getByText("Recent trend")).toBeTruthy();
+    expect(
+      screen.getAllByText("We couldn't reach the server. Check your connection and try again."),
+    ).toHaveLength(1);
+  });
+
+  it("keeps a distinct insight failure visible beside the grouped connection notice", async () => {
+    mockTrendsQuery.mockReturnValue({
+      isLoading: false,
+      error: new Error("Failed to fetch"),
+      refetch: vi.fn(),
+    });
+    mockInsightsQuery.mockReturnValue({
+      isLoading: false,
+      error: new Error("Insight service unavailable"),
+      refetch: vi.fn(),
+    });
+    mockDataHealthError = new Error("Failed to fetch");
+
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("Insight service unavailable")).toBeTruthy();
+    expect(screen.getByText("Key correlation")).toBeTruthy();
+    expect(
+      screen.getAllByText("We couldn't reach the server. Check your connection and try again."),
+    ).toHaveLength(1);
   });
 
   it("shows data readiness when dashboard summaries are stale", async () => {

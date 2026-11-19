@@ -177,9 +177,21 @@ describe("ClickHouseActivitySensorStore", () => {
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).not.toContain("analytics.v_activity");
+    expect(queryText).not.toContain("cadence_basis");
     expect(queryText).toContain(
       "activity_id IN (\n          SELECT arrayJoin(CAST({activityIds:Array(String)}, 'Array(UUID)'))",
     );
+  });
+
+  it("adds running form columns only when opted in", async () => {
+    const { store, query } = makeStore([]);
+
+    await store.getActivitySummaries([window.activityId], { includeRunningForm: true });
+
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("cadence_basis");
+    expect(queryText).toContain("cadence_coverage_percent");
+    expect(queryText).toContain("coalesce(avg_ground_contact_time, avg_stance_time)");
   });
 
   it("returns no activity summaries when ClickHouse returns no rows", async () => {

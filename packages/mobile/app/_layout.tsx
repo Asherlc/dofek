@@ -622,12 +622,8 @@ function AuthGate() {
           {backgroundSyncReady && <BleHeartRateSyncManager trpcClient={trpcClient} />}
           <Stack screenOptions={rootStackScreenOptions}>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="providers"
-              options={{
-                headerShown: false,
-              }}
-            />
+            <Stack.Screen name="providers/index" options={{ title: "Data Sources" }} />
+            <Stack.Screen name="providers/[id]" options={{ title: "Provider Detail" }} />
             <Stack.Screen
               name="settings"
               options={{

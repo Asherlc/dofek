@@ -57,6 +57,27 @@ type ProviderCardStory = StoryObj<typeof providerCardMeta>;
 
 export const Connected: ProviderCardStory = {};
 
+export const ShortNameSharesRowWithAction: ProviderCardStory = {
+  name: "Short name · single action shares the title row",
+  tags: ["review-scenario", "review-scenario-provider-short-name"],
+  decorators: [
+    (Story: ComponentType) => (
+      <View style={{ width: 340 }}>
+        <Story />
+      </View>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const titleRow = canvas.getByRole("button", { name: "Open Wahoo details" });
+    const sync = canvas.getByRole("button", { name: "Sync Wahoo" });
+    const titleRect = titleRow.getBoundingClientRect();
+    const syncRect = sync.getBoundingClientRect();
+    expect(syncRect.top).toBeGreaterThanOrEqual(titleRect.top);
+    expect(syncRect.bottom).toBeLessThanOrEqual(titleRect.bottom + 1);
+  },
+};
+
 export const CrimpdConnected: ProviderCardStory = {
   args: {
     provider: {
@@ -94,9 +115,34 @@ export const VerticalLifeNarrow: ProviderCardStory = {
     const canvas = within(canvasElement);
     const title = canvas.getByText("8a.nu / Vertical-Life");
     const sync = canvas.getByRole("button", { name: "Sync 8a.nu / Vertical-Life" });
-    await expect(title.getBoundingClientRect().right).toBeLessThanOrEqual(
-      sync.getBoundingClientRect().left,
+    expect(sync.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      title.getBoundingClientRect().bottom,
     );
+  },
+};
+
+export const LongNameNarrowWithTwoActions: ProviderCardStory = {
+  ...VerticalLifeConnected,
+  name: "Long name · narrow width · two actions",
+  tags: ["review-scenario", "review-scenario-provider-long-name"],
+  decorators: [
+    (Story: ComponentType) => (
+      <View style={{ width: 320 }}>
+        <Story />
+      </View>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const title = canvas.getByText("8a.nu / Vertical-Life");
+    const sync = canvas.getByRole("button", { name: "Sync 8a.nu / Vertical-Life" });
+    const importAction = canvas.getByRole("button", {
+      name: "Import file for 8a.nu / Vertical-Life",
+    });
+    const titleRect = title.getBoundingClientRect();
+    expect(titleRect.right).toBeLessThanOrEqual(canvasElement.getBoundingClientRect().right);
+    expect(sync.getBoundingClientRect().top).toBeGreaterThanOrEqual(titleRect.bottom);
+    expect(importAction.getBoundingClientRect().top).toBeGreaterThanOrEqual(titleRect.bottom);
   },
 };
 
