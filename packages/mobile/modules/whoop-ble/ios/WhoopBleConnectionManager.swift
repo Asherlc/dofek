@@ -326,6 +326,7 @@ final class WhoopBleConnectionManager {
 
     func setConnectedPeripheral(_ peripheral: (any WhoopBlePeripheralConnection)?) {
         connectedPeripheral = peripheral
+        if peripheral != nil { delegate?.connectionManagerDidSelectPeripheral(self) }
     }
 
     func setDiscoveredCharacteristics(

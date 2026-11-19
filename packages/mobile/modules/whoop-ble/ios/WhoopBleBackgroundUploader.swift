@@ -157,6 +157,14 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
+    func isManagedHistoryEnabled(for peripheralId: UUID) throws -> Bool {
+        try queue.sync { try store.isManagedHistoryEnabled(for: peripheralId) }
+    }
+
+    func setManagedHistoryEnabled(_ enabled: Bool, for peripheralId: UUID) throws {
+        try queue.sync { try store.setManagedHistoryEnabled(enabled, for: peripheralId) }
+    }
+
     func flush() throws {
         try queue.sync {
             // Validate storage synchronously so callers receive storage failures.

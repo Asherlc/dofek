@@ -9,6 +9,7 @@ extension WhoopBleModule {
         telemetry.record("ble_suspend")
         connectionManager.syncOnBleQueue {
             captureSuspended = true
+            stopManagedHistory()
             watchdog.stop()
         }
         telemetry.record("disconnect")
