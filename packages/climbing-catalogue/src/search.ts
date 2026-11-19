@@ -34,8 +34,9 @@ export class CatalogueSearchError extends AggregateError {
 async function search(
   adapter: ClimbingCatalogueAdapter,
   seed: CatalogueSeed,
+  recordedLocations: CatalogueSeed["locations"] = seed.locations,
 ): Promise<CatalogueSearchResult> {
-  const found = catalogueSearchResultSchema.parse(await adapter.search(seed));
+  const found = catalogueSearchResultSchema.parse(await adapter.search(seed, recordedLocations));
   if (found.candidates.some((candidate) => candidate.providerId !== adapter.providerId))
     throw new Error(`Unexpected provider in ${adapter.providerId} catalogue response.`);
   return found;
@@ -93,7 +94,7 @@ export class ClimbingCatalogueSearch {
         const found =
           adapter === nativeAdapter && nativeFound
             ? nativeFound
-            : await search(adapter, discoverySeed);
+            : await search(adapter, discoverySeed, seed.locations);
         return {
           providerId: adapter.providerId,
           searchComplete: found.complete,

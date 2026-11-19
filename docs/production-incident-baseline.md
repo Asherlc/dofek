@@ -1,5 +1,35 @@
 # Production Incident Baseline
 
+## 2026-11-18 — Vertical-Life search and detail disagree on a crag's broader area
+
+- **Impact.** Sentry reported 29 occurrences of `DOFEK-SERVER-89` from
+  November 16 through 22:46 UTC on November 18. A background climbing catalogue
+  refresh loses the Vertical-Life results for that lookup. The service caches
+  an error alongside results from other providers that succeeded. The event
+  has no user identity, so the number of affected users is unknown.
+  [Sentry event](https://east-bay-software.sentry.io/issues/7850869599/events/93de395677114187bc90d1d099d66da4/)
+  · [Deployed cache behavior](https://github.com/Asherlc/dofek/blob/4d8f11c2644ec36a3ae75ae020508eac7eda7690/src/climbing-catalogue.ts#L116-L137)
+- **Cause and validation.** Replaying the public `Friendly` search through the
+  adapter reproduced the exception. The `Friendly fire` search hit (route
+  `133530`) identifies crag `4513` and reports a nested area slug. The route
+  and crag detail endpoints both return `areaSlug: null` and confirm the same
+  crag ID, slug, country and category.
+  The adapter treats the missing broader area as a crag identity mismatch and
+  throws before returning the provider's candidates.
+  [Public search](https://vlcapi.vertical-life.info/collection/v1/web/search?query=Friendly&pageIndex=0&pageSize=20&entityTypes%5B%5D=3)
+  · [Route detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/sportclimbing/lebanon/beit-mery/sectors/sector-6/routes/friendly-fire)
+  · [Crag detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/sportclimbing/lebanon/beit-mery)
+  · [Deployed identity check](https://github.com/Asherlc/dofek/blob/4d8f11c2644ec36a3ae75ae020508eac7eda7690/packages/climbing-catalogue/src/vertical-life.ts#L205-L217)
+- **Fix.** Screen 8a.nu name-search hits using the recorded area name before
+  fetching crag details. Fuzzy names require agreement with a local area label.
+  Crag detail can omit the broader area slug when the core crag identity
+  agrees. Differing non-null area slugs still trigger the identity error.
+  [Adapter](../packages/climbing-catalogue/src/vertical-life.ts)
+- **Validation and follow-up.** Replaying the public responses confirms that
+  `Friendly` skips the fuzzy hit and that an exact `Friendly fire` lookup
+  retains the verified crag without the search-only area slug. The production
+  issue remains open pending deployment and a subsequent refresh.
+
 ## 2026-11-18 — TestFlight upload used the iOS 26.5 SDK
 
 - **Impact.** App Store Connect accepted Dofek 1.0.0 build `1795025515` and
