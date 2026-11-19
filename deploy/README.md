@@ -1038,6 +1038,12 @@ and [status reporting](https://docs.github.com/en/rest/deployments/statuses#crea
       configuration alone using its existing immutable image and wait for both
       replicas to converge before migrations.
       See [Docker stack deploy](https://docs.docker.com/reference/cli/docker/stack/deploy/).
+      Before the dependency apply, the workflow scales deployed migration
+      consumers to zero and waits for their tasks to stop. Rolling deployments
+      keep web running during the drain. Maintenance deployments include web.
+      After the apply, the workflow checks quiescence again before migrations.
+      [Deployment workflow](../.github/workflows/deploy-web-stack.yml) and
+      [Docker service scaling](https://docs.docker.com/reference/cli/docker/service/scale/).
       The overlays keep `analytics-worker`, all three metric-stream ClickHouse sinks,
       `processing-reconciliation`, and the migration-running `worker` at zero
       replicas during the migration window; see the

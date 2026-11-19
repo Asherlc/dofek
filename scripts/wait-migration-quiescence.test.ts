@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:child_process", () => ({ execFileSync: vi.fn() }));
 
-import { waitForMigrationQuiescence } from "./wait-migration-quiescence.ts";
+import {
+  drainMigrationConsumers,
+  waitForMigrationQuiescence,
+} from "./wait-migration-quiescence.ts";
 
 const docker = vi.mocked(execFileSync);
 const consumers = [
@@ -17,6 +20,10 @@ const consumers = [
 type ServiceFixture = { replicas?: number; updateState?: string; tasks?: string[] };
 const services = new Map<string, ServiceFixture>();
 const tasks = new Map<string, { ID: string; Status: { State: string }; DesiredState: string }>();
+let deployedServices = new Set<string>();
+let scaleCalls: string[][] = [];
+let discoveryFailure = "";
+let scaleFailure = "";
 
 function recordTask(id: string, state: string) {
   tasks.set(id, { ID: id, Status: { State: state }, DesiredState: "shutdown" });
@@ -28,9 +35,22 @@ beforeEach(() => {
   vi.spyOn(console, "log").mockImplementation(() => undefined);
   services.clear();
   tasks.clear();
+  deployedServices = new Set();
+  scaleCalls = [];
+  discoveryFailure = "";
+  scaleFailure = "";
   docker.mockReset();
   docker.mockImplementation((_command, arguments_) => {
     if (!Array.isArray(arguments_)) throw new Error("Expected Docker arguments");
+    if (arguments_[0] === "service" && arguments_[1] === "ls") {
+      if (discoveryFailure) throw new Error(discoveryFailure);
+      return [...deployedServices].join("\n");
+    }
+    if (arguments_[0] === "service" && arguments_[1] === "scale") {
+      if (scaleFailure) throw new Error(scaleFailure);
+      scaleCalls.push(arguments_);
+      return "";
+    }
     if (arguments_[0] === "service" && arguments_[1] === "inspect") {
       const service = services.get(arguments_[2] ?? "") ?? {};
       return JSON.stringify([
@@ -230,5 +250,114 @@ describe("migration service quiescence", () => {
     );
     await vi.advanceTimersByTimeAsync(35 * 60 * 1_000);
     await waiting;
+  });
+});
+
+describe("pre-apply migration publisher drain", () => {
+  it("scales exactly the deployed stack-prefixed consumer set to zero", async () => {
+    for (const consumer of consumers) {
+      deployedServices.add(`other_${consumer}`);
+      deployedServices.add(`dofek_${consumer}`);
+    }
+    deployedServices.add("dofek_worker_old");
+    deployedServices.add("dofek_clickhouse");
+
+    await drainMigrationConsumers("dofek", "rolling");
+
+    expect(docker).toHaveBeenCalledWith(
+      "docker",
+      ["service", "ls", "--format", "{{.Name}}"],
+      expect.objectContaining({ encoding: "utf8" }),
+    );
+    expect(scaleCalls).toEqual([
+      ["service", "scale", "--detach=true", ...consumers.map((consumer) => `dofek_${consumer}=0`)],
+    ]);
+  });
+
+  it("keeps web live in rolling mode and drains it in maintenance mode", async () => {
+    for (const consumer of consumers) deployedServices.add(`dofek_${consumer}`);
+    deployedServices.add("dofek_web");
+
+    await drainMigrationConsumers("dofek", "rolling");
+    expect(scaleCalls).toEqual([
+      ["service", "scale", "--detach=true", ...consumers.map((consumer) => `dofek_${consumer}=0`)],
+    ]);
+
+    scaleCalls = [];
+    await drainMigrationConsumers("dofek", "maintenance");
+    expect(scaleCalls).toEqual([
+      [
+        "service",
+        "scale",
+        "--detach=true",
+        ...consumers.map((consumer) => `dofek_${consumer}=0`),
+        "dofek_web=0",
+      ],
+    ]);
+  });
+
+  it("drains only services present on an older or partially deployed stack", async () => {
+    deployedServices.add("dofek_worker");
+    deployedServices.add("dofek_clickhouse");
+
+    await drainMigrationConsumers("dofek", "rolling");
+
+    expect(scaleCalls).toEqual([["service", "scale", "--detach=true", "dofek_worker=0"]]);
+  });
+
+  it("does nothing when no migration consumer is deployed on bootstrap", async () => {
+    deployedServices.add("dofek_clickhouse");
+
+    await expect(drainMigrationConsumers("dofek", "rolling")).resolves.toBeUndefined();
+    expect(scaleCalls).toEqual([]);
+  });
+
+  it("waits for a draining deployed task to reach a terminal state", async () => {
+    deployedServices.add("dofek_worker");
+    services.set("dofek_worker", { tasks: ["draining-task"] });
+    recordTask("draining-task", "running");
+    let completed = false;
+    const draining = drainMigrationConsumers("dofek", "rolling").then(() => {
+      completed = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(completed).toBe(false);
+    recordTask("draining-task", "shutdown");
+    await vi.advanceTimersByTimeAsync(1);
+    await draining;
+    expect(completed).toBe(true);
+  });
+
+  it("reuses the replica check for a scaled service that is still running", async () => {
+    deployedServices.add("dofek_worker");
+    services.set("dofek_worker", { replicas: 1 });
+
+    await expect(drainMigrationConsumers("dofek", "rolling")).rejects.toThrow(
+      /dofek_worker.*zero replicas/i,
+    );
+  });
+
+  it("aborts before scaling when discovery fails", async () => {
+    discoveryFailure = "cannot list services";
+
+    await expect(drainMigrationConsumers("dofek", "rolling")).rejects.toThrow(
+      "cannot list services",
+    );
+    expect(scaleCalls).toEqual([]);
+  });
+
+  it("aborts without polling when scaling fails", async () => {
+    deployedServices.add("dofek_worker");
+    scaleFailure = "cannot scale services";
+
+    await expect(drainMigrationConsumers("dofek", "rolling")).rejects.toThrow(
+      "cannot scale services",
+    );
+    expect(
+      docker.mock.calls.filter(
+        ([, args]) => Array.isArray(args) && args[0] === "service" && args[1] === "ps",
+      ),
+    ).toEqual([]);
   });
 });
