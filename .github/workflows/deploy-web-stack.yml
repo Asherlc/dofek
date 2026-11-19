@@ -708,6 +708,24 @@ jobs:
             ' < "$exporter_path"
           rm -f "$exporter_path"
 
+      # Use the workflow revision for pre-apply drain even when a manual
+      # release selects an app image that predates the drain step. Keep the
+      # sparse checkout inside the workspace so tsx can resolve node_modules.
+      - name: Checkout control migration quiescence script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/wait-migration-quiescence.ts
+          sparse-checkout-cone-mode: false
+          path: control-checkout
+
+      - name: Drain deployed migration publishers before dependency stack apply
+        id: drain_migration_publishers
+        env:
+          MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
+        run: pnpm tsx control-checkout/scripts/wait-migration-quiescence.ts --drain "$STACK_NAME" "$MIGRATION_DEPLOYMENT_MODE"
+
       - name: Apply dependency stack before migrations
         env:
           APP_IMAGE: ${{ steps.pull_images.outputs.pre_migration_image_ref }}
@@ -1706,6 +1724,28 @@ jobs:
           projects: dofek-web dofek-server
           release: ${{ steps.pull_images.outputs.sentry_release }}
           set_commits: skip
+
+      - name: Report interrupted deployment after publisher drain starts
+        if: >-
+          failure() &&
+          (steps.drain_migration_publishers.conclusion == 'failure' || steps.drain_migration_publishers.conclusion == 'success') &&
+          steps.deploy_stack_quiesced.conclusion != 'success' &&
+          steps.deploy_stack_full.conclusion != 'success'
+        env:
+          DRAIN_CONCLUSION: ${{ steps.drain_migration_publishers.conclusion }}
+        run: |
+          if [ "$DRAIN_CONCLUSION" = "failure" ]; then
+            failure_summary="The pre-apply migration publisher drain failed."
+          else
+            failure_summary="A deployment step failed after migration publishers stopped."
+          fi
+          message="$failure_summary Migration publisher replicas may still be at zero. Inspect the failed step before restarting the deployment."
+          echo "::error::$message"
+          {
+            echo "### Migration publishers may still be stopped"
+            echo
+            echo "$message"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report incomplete maintenance deployment
         if: failure() && steps.migration_deployment.outputs.mode == 'maintenance' && steps.deploy_stack_full.outcome != 'success'
