@@ -502,7 +502,8 @@ and uses the local start date for range selection. See the [sleep episode reader
 An optional IANA `timezone` sets the search date boundaries. `provider` matches contributing
 providers and `canonical_type` matches the canonical activity type.
 Pass `next_cursor` as `cursor` with the same date range and filters to continue past the 25-row
-page limit. `detail: "compact"` returns canonical IDs and types, UTC endpoints, and contributing
+page limit. If the cursor falls outside the current results, restart from the first page.
+`detail: "compact"` returns canonical IDs and types, UTC endpoints, and contributing
 providers without reading sensor or map summaries. See the [activity list repository](../packages/server/src/repositories/activity-list-repository.ts).
 
 `get_recovery_training_series` supports up to 366 inclusive calendar days. Use `fields` for
@@ -525,7 +526,9 @@ stored selected session ID.
   Workout intervals are clipped to that half-open window and overlapping time is counted once.
   A completed workout can finish exactly at onset. The last completed workout is selected by
   end time and includes its canonical ID, type, local end time, and elapsed minutes to onset.
-  If the immediately preceding episode has no valid wake within the two-calendar-day lookback,
+  The preceding episode can come from any recorded provider, including when the returned sleep
+  observations and workouts are provider-filtered. If the preceding episode has no valid wake
+  within two calendar days of sleep onset,
   activity coverage is `unavailable`. `no_records` means there were no recorded workouts in
   the window and duration is unknown. `no_matching_records` reports zero matching recorded
   duration when records exist but the filters exclude them. An invalid or missing workout end

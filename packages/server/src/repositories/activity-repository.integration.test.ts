@@ -360,7 +360,7 @@ describe("ActivityRepository exact-range search", () => {
       endDate: "2027-05-18",
       limit: 1,
     });
-    expect(emptyResult).toEqual({ items: [], totalCount: 0 });
+    expect(emptyResult).toEqual({ items: [], totalCount: 0, nextCursor: null });
   });
 
   it.each([

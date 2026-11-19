@@ -41,7 +41,7 @@
     "./db/provider-operation-fence": "./src/db/provider-operation-fence.ts",
     "./db/clickhouse": "./src/db/clickhouse.ts",
     "./db/clickhouse-read-model-refresh": "./src/db/clickhouse-read-model-refresh.ts",
-    "./db/clickhouse-sleep-episodes": "./src/db/clickhouse-read-models.ts",
+    "./db/clickhouse-sleep-episodes": "./src/db/clickhouse-sleep-episodes.ts",
     "./db/drizzle-schema": "./src/db/drizzle-schema.ts",
     "./db/execute-with-schema": "./src/db/execute-with-schema.ts",
     "./db/schema/account": "./src/db/schema/account.ts",

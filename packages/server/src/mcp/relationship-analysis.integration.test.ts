@@ -4,10 +4,12 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { buildSleepQualityMigrationStatements } from "../../../../src/db/clickhouse-read-models.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import {
   createClickHouseTestRawSensorStore,
+  getClickHouseTestClient,
   insertClickHouseMetricStreamRows,
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import { recoveryTrainingSeriesOutputSchema } from "./recovery-training-series-output.ts";
@@ -19,6 +21,8 @@ const night = "91000000-0000-4000-8000-000000000011";
 const duplicate = "91000000-0000-4000-8000-000000000012";
 const nap = "91000000-0000-4000-8000-000000000013";
 const lateWorkout = "92000000-0000-4000-8000-000000000002";
+const previousWakeOtherProvider = "91000000-0000-4000-8000-000000000031";
+const longSleep = "91000000-0000-4000-8000-000000000032";
 
 describe("read-only relationship analysis through MCP", () => {
   let context: TestContext;
@@ -86,11 +90,19 @@ describe("read-only relationship analysis through MCP", () => {
       ('91000000-0000-4000-8000-000000000021', ${TEST_USER_ID}, 'dofek', 'analysis-chain-last',
         '2026-11-24T07:20:00Z', '2026-11-24T15:20:00Z', 480, null,
         false, 'sleep', false, null, 'unknown', 'Dofek')`);
+    await context.db.execute(sql`INSERT INTO fitness.sleep_session
+      (id, user_id, provider_id, external_id, started_at, ended_at, duration_minutes, sleep_type)
+      VALUES
+      (${previousWakeOtherProvider}, ${TEST_USER_ID}, 'apple_health', 'analysis-prior-cross-provider',
+        '2026-12-11T01:00:00Z', '2026-12-11T07:00:00Z', 360, 'sleep'),
+      (${longSleep}, ${TEST_USER_ID}, 'whoop', 'analysis-current-cross-provider',
+        '2026-12-13T23:30:00Z', '2026-12-15T00:15:00Z', 1485, 'sleep')`);
     await context.db.execute(sql`INSERT INTO fitness.activity_group (id, user_id, anchor_activity_id) VALUES
       ('92000000-0000-4000-8000-000000000001', ${TEST_USER_ID}, '93000000-0000-4000-8000-000000000001'),
       (${lateWorkout}, ${TEST_USER_ID}, '93000000-0000-4000-8000-000000000002'),
       ('92000000-0000-4000-8000-000000000003', ${TEST_USER_ID}, '93000000-0000-4000-8000-000000000003'),
-      ('92000000-0000-4000-8000-000000000004', ${TEST_USER_ID}, '93000000-0000-4000-8000-000000000004')`);
+      ('92000000-0000-4000-8000-000000000004', ${TEST_USER_ID}, '93000000-0000-4000-8000-000000000004'),
+      ('92000000-0000-4000-8000-000000000031', ${TEST_USER_ID}, '93000000-0000-4000-8000-000000000031')`);
     await context.db.execute(sql`INSERT INTO fitness.activity
       (id, group_id, user_id, provider_id, external_id, canonical_type, provider_type, started_at, ended_at, local_time_source) VALUES
       ('93000000-0000-4000-8000-000000000001', '92000000-0000-4000-8000-000000000001', ${TEST_USER_ID}, 'whoop',
@@ -100,7 +112,9 @@ describe("read-only relationship analysis through MCP", () => {
       ('93000000-0000-4000-8000-000000000003', '92000000-0000-4000-8000-000000000003', ${TEST_USER_ID}, 'whoop',
         'analysis-overlapping-workout', 'cycling', 'cycling', '2026-11-19T02:00:00Z', '2026-11-19T04:00:00Z', 'unknown'),
       ('93000000-0000-4000-8000-000000000004', '92000000-0000-4000-8000-000000000004', ${TEST_USER_ID}, 'whoop',
-        'analysis-workout-no-end', 'running', 'running', '2026-11-20T03:00:00Z', null, 'unknown')`);
+        'analysis-workout-no-end', 'running', 'running', '2026-11-20T03:00:00Z', null, 'unknown'),
+      ('93000000-0000-4000-8000-000000000031', '92000000-0000-4000-8000-000000000031', ${TEST_USER_ID}, 'whoop',
+        'analysis-cross-provider-run', 'running', 'running', '2026-12-11T08:00:00Z', '2026-12-11T09:00:00Z', 'unknown')`);
     await context.db.execute(sql`INSERT INTO fitness.food_entry
       (id, user_id, provider_id, external_id, date, nutrition_grain, meal, food_name, started_at) VALUES
       ('94000000-0000-4000-8000-000000000001', ${TEST_USER_ID}, 'dofek', 'analysis-lunch',
@@ -168,6 +182,39 @@ describe("read-only relationship analysis through MCP", () => {
     const result = await call("get_recovery_training_series", args);
     return recoveryTrainingSeriesOutputSchema.parse({ result }).result;
   }
+
+  it("creates the legacy sleep view with the migration query on ClickHouse", async () => {
+    const createView = buildSleepQualityMigrationStatements().at(-1) ?? "";
+    // Use exec so the fixture client executes the view without materializing it into a table.
+    const clickhouse = getClickHouseTestClient(context);
+    const { stream } = await clickhouse.exec({
+      query: createView.replace("analytics.v_sleep", "analytics.v_sleep_migration_test"),
+    });
+    for await (const _ of stream) {
+      // The DDL has no rows. Consume the stream to surface database errors.
+    }
+  });
+
+  it("uses the preceding main wake across providers and resolves lookback from onset", async () => {
+    const result = await series({
+      start_date: "2026-12-15",
+      end_date: "2026-12-15",
+      grain: "main_sleep",
+      fields: ["sleep", "activity_exposure"],
+      timezone: "UTC",
+      providers: ["whoop"],
+    });
+    expect(result.rows).toMatchObject([
+      {
+        row_id: longSleep,
+        sleep: { source_provider: "whoop" },
+        activity_exposure: {
+          previous_wake: { session_id: previousWakeOtherProvider },
+          activity_count: 1,
+        },
+      },
+    ]);
+  });
 
   it("reconciles imports before assigning wake dates and honors caller and source timezones", async () => {
     const result = await call("get_sleep_summary", {
@@ -510,6 +557,25 @@ describe("read-only relationship analysis through MCP", () => {
         ],
       });
       expect(new Set([...first.items, ...second.items].map(({ id }) => id)).size).toBe(27);
+      expect(await search({ ...options, cursor: second.items.at(-1)?.id })).toMatchObject({
+        totalCount: 27,
+        next_cursor: null,
+        items: [],
+      });
+      const staleCursor = await activityClient.callTool({
+        name: "search_activities",
+        arguments: {
+          from: "2026-12-02",
+          to: "2026-12-02",
+          ...options,
+          cursor: first.next_cursor,
+          canonical_type: "running",
+        },
+      });
+      expect(staleCursor.isError).toBe(true);
+      expect(staleCursor.content[0]).toMatchObject({
+        text: expect.stringContaining("Restart paging"),
+      });
       expect(
         await search({ ...options, provider: "apple_health", canonical_type: "running" }),
       ).toMatchObject({ totalCount: 1, items: [{ id: "95000000-0000-4000-8000-000000000001" }] });

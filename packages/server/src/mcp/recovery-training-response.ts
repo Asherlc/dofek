@@ -8,8 +8,16 @@ export const seriesRowsSchema = recoveryTrainingSeriesOutputSchema.shape.result.
 type SeriesRow = z.infer<typeof seriesRowsSchema.element>;
 export type SeriesField = z.infer<typeof recoveryTrainingFieldSchema>;
 type SleepObservation = Extract<NonNullable<SeriesRow["sleep"]>, { status: "observed" }>;
+type Load = SeriesRow["training_load"];
 
 const weekdayFormat = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "UTC" });
+
+function hasObservedLoad(load: Load): boolean {
+  return Object.values(load ?? {}).some(
+    ({ daily_value, status }) =>
+      daily_value !== null && (status === "available" || status === "partial"),
+  );
+}
 
 function observedFields(row: SeriesRow): Record<string, boolean> {
   const weight = row.body_weight;
@@ -36,14 +44,10 @@ function observedFields(row: SeriesRow): Record<string, boolean> {
       "body_weight.rolling.average_7d_kg": weight.rolling.average_7d_kg !== null,
     }),
     ...(row.training_load !== undefined && {
-      training_load: Object.values(row.training_load ?? {}).some(
-        (channel) => channel.daily_value !== null,
-      ),
+      training_load: hasObservedLoad(row.training_load),
     }),
     ...(row.previous_day_training_load !== undefined && {
-      previous_day_training_load: Object.values(row.previous_day_training_load ?? {}).some(
-        (channel) => channel.daily_value !== null,
-      ),
+      previous_day_training_load: hasObservedLoad(row.previous_day_training_load),
     }),
     ...(activity && {
       activity_exposure:

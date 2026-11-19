@@ -149,9 +149,9 @@ export async function listPreSleepActivities(
   },
 ) {
   const chronological = [...episodes].sort(
-    (a, b) =>
-      Date.parse(a.timing.started_at) - Date.parse(b.timing.started_at) ||
-      a.timing.selected_session_id.localeCompare(b.timing.selected_session_id),
+    (left, right) =>
+      Date.parse(left.timing.started_at) - Date.parse(right.timing.started_at) ||
+      left.timing.selected_session_id.localeCompare(right.timing.selected_session_id),
   );
   const windows = chronological.flatMap(({ timing }, index): WakeWindow[] => {
     const previous = chronological[index - 1]?.timing;

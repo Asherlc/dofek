@@ -4,7 +4,26 @@ import {
   buildActivityReadModelRefreshStatements,
   buildDailyMetricsReadModelRefreshStatements,
   buildProviderStatsCreateReadModelStatements,
+  buildSleepQualityMigrationStatements,
 } from "./clickhouse-read-models.ts";
+import { buildSleepEpisodeAnalysisSelectSql } from "./clickhouse-sleep-episodes.ts";
+
+describe("buildSleepQualityMigrationStatements", () => {
+  it("separates the view header from the recursive sleep query", () => {
+    expect(buildSleepQualityMigrationStatements().at(-1)).toMatch(
+      /^CREATE VIEW IF NOT EXISTS analytics\.v_sleep\s+AS\s+WITH RECURSIVE\b/,
+    );
+  });
+});
+
+describe("buildSleepEpisodeAnalysisSelectSql", () => {
+  it("publishes placeholders for the user, inclusive date range, and provider selection", () => {
+    const query = buildSleepEpisodeAnalysisSelectSql();
+    const bindNames = [...query.matchAll(/\{(\w+):[^}]+\}/g)].map((match) => match[1]);
+
+    expect([...new Set(bindNames)].sort()).toEqual(["endDate", "providers", "startDate", "userId"]);
+  });
+});
 
 describe("buildActivityReadModelRefreshStatements", () => {
   it("reads the same materialized origin decision as activity cards", () => {

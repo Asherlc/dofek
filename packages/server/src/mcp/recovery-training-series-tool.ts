@@ -56,6 +56,12 @@ function inclusiveDays(startDate: string, endDate: string): number {
   );
 }
 
+function subtractCalendarDays(date: string, days: number): string {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - days);
+  return day.toISOString().slice(0, 10);
+}
+
 /** Register the compact date-aligned recovery, exposure, and training response primitive. */
 export function registerRecoveryTrainingSeriesTool(
   server: McpServer,
@@ -171,7 +177,7 @@ export function registerRecoveryTrainingSeriesTool(
         throw new Error("get_recovery_training_series requires the ClickHouse analytics store");
       }
       const sensorStore = context.sensorStore;
-      const sleepRange = (startDate: string, endDate: string) => {
+      const sleepRange = (startDate: string, endDate: string, selectedProviders = providers) => {
         if (!sensorStore) throw new Error("Sleep series requires the ClickHouse analytics store");
         return listSleepEpisodes(sensorStore, {
           userId: context.userId,
@@ -180,7 +186,7 @@ export function registerRecoveryTrainingSeriesTool(
           profileTimezone: context.timezone,
           analysisTimezone: timezone,
           alignToProfileTimezone: true,
-          providers,
+          providers: selectedProviders,
         });
       };
       const repository = new RecoveryTrainingSeriesRepository(
@@ -244,33 +250,53 @@ export function registerRecoveryTrainingSeriesTool(
         ...(canonical_activity_types && { canonicalTypes: canonical_activity_types }),
         ...(timezone && { datePolicy: "analysis_timezone" as const }),
       };
-      const lookback = new Date(`${start_date}T00:00:00Z`);
-      lookback.setUTCDate(lookback.getUTCDate() - 3);
+      const lookback = needsActivity ? subtractCalendarDays(start_date, 3) : start_date;
       const [base, episodes] = await Promise.all([
         repository.listRange(start_date, end_date, dailyStreams, filters),
-        useSleepGrain ? sleepRange(lookback.toISOString().slice(0, 10), end_date) : [],
+        useSleepGrain ? sleepRange(lookback, end_date) : [],
       ]);
       const baseRows = seriesRowsSchema.parse(base.rows);
       const byDate = new Map(baseRows.map((row) => [row.date, row]));
-      const preceding =
-        useSleepGrain && needsActivity
-          ? await listPreSleepActivities(context.db, context.userId, episodes, analysisZone, {
-              ...filters,
-              canonicalTypes: canonical_activity_types ?? [],
-            })
-          : null;
+      const selectedEpisodes = episodes.filter(({ date }) => date >= start_date);
+      let preceding = null;
+      if (needsActivity && selectedEpisodes.length > 0) {
+        const onsetLookback = selectedEpisodes
+          .map(({ timing }) => subtractCalendarDays(timing.local_start_date, 2))
+          .reduce((earliest, date) => (date < earliest ? date : earliest), start_date);
+        let chronology = episodes;
+        if (providers?.length || onsetLookback < lookback) {
+          const selectedIds = new Set(
+            selectedEpisodes.flatMap(({ timing }) => timing.source_session_ids),
+          );
+          const allEpisodes = await sleepRange(onsetLookback, end_date, []);
+          chronology = [
+            ...selectedEpisodes,
+            ...allEpisodes.filter(
+              ({ timing }) => !timing.source_session_ids.some((id) => selectedIds.has(id)),
+            ),
+          ];
+        }
+        preceding = await listPreSleepActivities(
+          context.db,
+          context.userId,
+          chronology,
+          analysisZone,
+          {
+            ...filters,
+            canonicalTypes: canonical_activity_types ?? [],
+          },
+        );
+      }
       const rows = useSleepGrain
-        ? episodes
-            .filter(({ date }) => date >= start_date)
-            .map((episode) => ({
-              ...byDate.get(episode.date),
-              date: episode.date,
-              row_id: episode.timing.selected_session_id,
-              ...(requestedStreams.includes("sleep") && { sleep: mapSleep(episode) }),
-              ...(preceding && {
-                activity_exposure: preceding.get(episode.timing.selected_session_id),
-              }),
-            }))
+        ? selectedEpisodes.map((episode) => ({
+            ...byDate.get(episode.date),
+            date: episode.date,
+            row_id: episode.timing.selected_session_id,
+            ...(requestedStreams.includes("sleep") && { sleep: mapSleep(episode) }),
+            ...(preceding && {
+              activity_exposure: preceding.get(episode.timing.selected_session_id),
+            }),
+          }))
         : baseRows.filter(
             (row) =>
               required_meals?.every((meal) => row.nutrition?.recorded_meal_labels.includes(meal)) ??

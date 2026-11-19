@@ -2024,6 +2024,51 @@ describe("createMcpRouter", () => {
     });
   });
 
+  it("returns compact canonical activity evidence and forwards its page and filters", async () => {
+    authorizeMcpToken();
+    const cursor = "00000000-0000-4000-8000-000000000011";
+    const item = makeActivitySearchItem({ source_providers: ["apple_health", "garmin"] });
+    toolTestMocks.activitySearch.mockResolvedValue({
+      items: [item],
+      nextCursor: item.id,
+      totalCount: 26,
+    });
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("search_activities", {
+        from: "2026-05-10",
+        to: "2026-05-18",
+        detail: "compact",
+        canonical_type: "cycling",
+        cursor,
+        provider: "garmin",
+      }),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual({
+      items: [
+        {
+          id: item.id,
+          canonical_type: "cycling",
+          started_at: item.started_at,
+          ended_at: null,
+          source_providers: ["apple_health", "garmin"],
+        },
+      ],
+      next_cursor: item.id,
+      totalCount: 26,
+    });
+    expect(toolTestMocks.activitySearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canonicalType: "cycling",
+        compact: true,
+        cursor,
+        provider: "garmin",
+      }),
+    );
+  });
+
   it("reports search activity failures with safe tool context", async () => {
     authorizeMcpToken();
     const error = new Error("database search failed");

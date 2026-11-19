@@ -110,12 +110,19 @@ export class ActivityListRepository extends BaseRepository {
     const hydratedRows = input.compact
       ? page.map((row) => ({ ...row, location: null }))
       : await withActivitySummaries(page, this.#sensorStore, this.userId);
-    const totalCount =
-      rows[0]?.total_count ??
-      (input.cursor
-        ? ((await this.#exactRangeRows({ ...options, cursor: undefined, limit: 1 }))[0]
-            ?.total_count ?? 0)
-        : 0);
+    let totalCount = rows[0]?.total_count ?? 0;
+    if (rows.length === 0 && input.cursor) {
+      const [first] = await this.#exactRangeRows({
+        ...options,
+        cursor: undefined,
+        validateCursor: input.cursor,
+        limit: 1,
+      });
+      if (!first?.cursor_found) {
+        throw new Error("The cursor does not match this activity search. Restart paging.");
+      }
+      totalCount = first.total_count;
+    }
     return {
       items: hydratedRows.map((row) => this.#toListItem(row)),
       totalCount,
@@ -170,6 +177,7 @@ export class ActivityListRepository extends BaseRepository {
     queryPattern,
     limit,
     cursor,
+    validateCursor,
     provider,
     canonicalType,
   }: {
@@ -179,6 +187,7 @@ export class ActivityListRepository extends BaseRepository {
     queryPattern?: string | null;
     limit?: number;
     cursor?: string;
+    validateCursor?: string;
     provider?: string;
     canonicalType?: string;
   }) {
@@ -198,8 +207,11 @@ export class ActivityListRepository extends BaseRepository {
           SELECT sort_started_at, id FROM filtered_activities WHERE id = ${cursor}::uuid
         )`
       : sql``;
+    const cursorEvidence = validateCursor
+      ? sql`, EXISTS (SELECT 1 FROM filtered_activities WHERE id = ${validateCursor}::uuid) AS cursor_found`
+      : sql``;
     return this.query(
-      activityListRowSchema,
+      activityListRowSchema.extend({ cursor_found: z.boolean().optional() }),
       sql`WITH filtered_activities AS (
             SELECT ${activityListColumns}, a.started_at AS sort_started_at
             FROM fitness.v_activity a
@@ -212,7 +224,7 @@ export class ActivityListRepository extends BaseRepository {
               ${canonicalType ? sql`AND a.canonical_type::text = ${canonicalType}` : sql``}
               ${this.timestampAccessPredicate(sql`a.started_at`)}
           )
-          SELECT activity.*
+          SELECT activity.* ${cursorEvidence}
           FROM filtered_activities activity
           ${cursorFilter}
           ORDER BY activity.sort_started_at DESC, activity.id DESC
