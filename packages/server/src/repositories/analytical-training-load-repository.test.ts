@@ -473,6 +473,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
     const result = await repository.listRange("2026-06-01", "2026-06-01", {
       providers: ["peloton"],
       modalities: ["indoor"],
+      canonicalTypes: ["cycling"],
     });
 
     expect(result).toMatchSnapshot();
@@ -491,9 +492,17 @@ describe("AnalyticalTrainingLoadRepository", () => {
       String(call[1]).includes("analytical-load:heart-rate"),
     );
     expect(cyclingCall?.[1]).toContain("hasAny(activity.source_providers");
-    expect(cyclingCall?.[2]).toMatchObject({ providers: ["peloton"], modalities: ["indoor"] });
+    expect(cyclingCall?.[2]).toMatchObject({
+      providers: ["peloton"],
+      modalities: ["indoor"],
+      canonicalTypes: ["cycling"],
+    });
     expect(heartRateCall?.[1]).toContain("has({modalities:Array(String)}, activity.modality)");
-    expect(heartRateCall?.[2]).toMatchObject({ providers: ["peloton"], modalities: ["indoor"] });
+    expect(heartRateCall?.[2]).toMatchObject({
+      providers: ["peloton"],
+      modalities: ["indoor"],
+      canonicalTypes: ["cycling"],
+    });
   });
 
   it("caps per-channel activity ID evidence while retaining the total count", async () => {

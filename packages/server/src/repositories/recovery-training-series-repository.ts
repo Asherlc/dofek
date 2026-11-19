@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { AnalyticalTrainingLoadRepository } from "./analytical-training-load-repository.ts";
 import type { BodyRepository } from "./body-repository.ts";
-import type { ClickHouseSleepNight } from "./clickhouse-sleep-repository.ts";
 import type { DailyMetricsRepository, HealthTrendRow } from "./daily-metrics-repository.ts";
 import type { FoodRepository } from "./food-repository.ts";
 import type { DirectWeightObservation } from "./nearby-weight.ts";
@@ -10,7 +9,7 @@ import type {
   RecoveryActivityExposureFilters,
   RecoveryDailyActivityExposure,
 } from "./recovery-activity-exposure-repository.ts";
-import type { SleepRepository } from "./sleep-repository.ts";
+import type { SleepEpisode } from "./sleep-episode-analysis.ts";
 
 export const recoveryTrainingStreamSchema = z.enum([
   "health",
@@ -24,7 +23,7 @@ export type RecoveryTrainingStream = z.infer<typeof recoveryTrainingStreamSchema
 
 export interface RecoveryTrainingSeriesSources {
   dailyMetrics?: Pick<DailyMetricsRepository, "listRange">;
-  sleep?: Pick<SleepRepository, "listRange">;
+  sleep?: { listRange(startDate: string, endDate: string): Promise<SleepEpisode[]> };
   body?: Pick<BodyRepository, "listReconciledRange">;
   weightObservations?: {
     listRange(startDate: string, endDate: string): Promise<DirectWeightObservation[]>;
@@ -107,34 +106,28 @@ function rollingWeightForDate(
   };
 }
 
-function mapSleep(row: ClickHouseSleepNight | undefined) {
+export function mapSleep(row: SleepEpisode | undefined) {
   if (!row) return { status: "missing" as const, reason: "No sleep record for this date." };
+  const { local_time_context, ...timing } = row.timing;
   return {
     status: "observed" as const,
-    started_at: row.started_at,
-    ended_at: row.ended_at,
+    ...timing,
     duration_minutes: row.duration_minutes,
     efficiency_pct: row.efficiency_pct,
-    stages_minutes: {
-      deep: row.deep_minutes,
-      light: row.light_minutes,
-      rem: row.rem_minutes,
-      awake: row.awake_minutes,
-    },
+    stages_minutes: row.stages_minutes,
     staging_available: row.staging_available,
     missing_fields: [
       ...(row.duration_minutes === null ? (["duration_minutes"] as const) : []),
       ...(row.efficiency_pct === null ? (["efficiency_pct"] as const) : []),
       ...(!row.staging_available ? (["stages_minutes"] as const) : []),
-      ...(row.ended_at === null ? (["ended_at"] as const) : []),
+      ...(timing.ended_at === null ? (["ended_at"] as const) : []),
+      ...(row.stages_minutes.awake === null ? (["awake_minutes"] as const) : []),
     ],
-    source_providers: row.source_providers,
-    selected_session_id: row.selected_session_id,
     local_time_context: {
-      timezone: row.timezone,
-      start_utc_offset_minutes: row.start_utc_offset_minutes,
-      end_utc_offset_minutes: row.end_utc_offset_minutes,
-      source: row.local_time_source,
+      timezone: local_time_context.timezone,
+      start_utc_offset_minutes: local_time_context.startUtcOffsetMinutes,
+      end_utc_offset_minutes: local_time_context.endUtcOffsetMinutes,
+      source: local_time_context.source,
     },
   };
 }
@@ -142,9 +135,9 @@ function mapSleep(row: ClickHouseSleepNight | undefined) {
 function durationEvidence(exposure: RecoveryDailyActivityExposure | undefined) {
   if (!exposure) {
     return {
-      value_minutes: 0,
-      status: "observed" as const,
-      reason: null,
+      value_minutes: null,
+      status: "no_records" as const,
+      reason: "No matching activity records for this date. Recording completeness is unknown.",
       supported_activities: 0,
       total_activities: 0,
       missing_end_activities: 0,
@@ -215,7 +208,7 @@ export class RecoveryTrainingSeriesRepository {
               priorDate,
               endDate,
               filters,
-              "source_context",
+              filters.datePolicy ?? "source_context",
             )
           : null,
         streams.has("activities")
@@ -234,7 +227,12 @@ export class RecoveryTrainingSeriesRepository {
       ]);
 
     const healthByDate = new Map(healthRows.map((row) => [row.date, row]));
-    const sleepByDate = new Map(sleepRows.map((row) => [row.date, row]));
+    const sleepByDate = new Map<string, SleepEpisode[]>();
+    for (const sleep of sleepRows) {
+      const group = sleepByDate.get(sleep.date) ?? [];
+      group.push(sleep);
+      sleepByDate.set(sleep.date, group);
+    }
     const bodyByDate = new Map(bodyRows.map((row) => [row.date, row]));
     const loadByDate = new Map(load?.rows.map((row) => [row.date, row]) ?? []);
     const nutritionByDate = new Map(nutritionRows.map((row) => [row.date, row]));
@@ -263,7 +261,18 @@ export class RecoveryTrainingSeriesRepository {
             steps: healthValue(health?.steps ?? null, health),
           };
         }
-        if (streams.has("sleep")) row.sleep = mapSleep(sleepByDate.get(date));
+        if (streams.has("sleep")) {
+          const episodes = sleepByDate.get(date) ?? [];
+          const longest = episodes.reduce<SleepEpisode | undefined>(
+            (selected, episode) =>
+              !selected || (episode.duration_minutes ?? -1) > (selected.duration_minutes ?? -1)
+                ? episode
+                : selected,
+            undefined,
+          );
+          row.sleep = mapSleep(longest);
+          row.sleep_episode_ids = episodes.map(({ timing }) => timing.selected_session_id);
+        }
         if (streams.has("body_weight")) {
           const body = bodyByDate.get(date);
           row.body_weight = {
@@ -322,6 +331,7 @@ export class RecoveryTrainingSeriesRepository {
                 fat_g: nutrition.fatGrams,
                 fiber_g: nutrition.fiberGrams,
                 meal_count: nutrition.mealCount,
+                ...nutrition.contributionCoverage,
                 logging_completeness: nutrition.loggingCompleteness,
                 logging_completeness_reason: nutrition.loggingCompletenessReason,
                 resolution_status: nutrition.resolutionStatus,

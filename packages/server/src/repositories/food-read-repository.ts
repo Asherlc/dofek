@@ -244,6 +244,37 @@ export class FoodReadRepository {
               AND entry.date >= ${startDate}::date
               AND entry.date <= ${endDate}::date
             GROUP BY entry.date
+          ),
+          contribution_coverage AS (
+            SELECT
+              entry.date,
+              count(DISTINCT entry.id)::int AS food_entry_count,
+              COALESCE(array_agg(DISTINCT entry.meal::text ORDER BY entry.meal::text)
+                FILTER (WHERE entry.meal IS NOT NULL), ARRAY[]::text[]) AS recorded_meal_labels,
+              count(DISTINCT entry.id) FILTER (
+                WHERE entry.effective_grain = 'itemized' AND food.started_at IS NOT NULL
+              )::int AS timed_food_entry_count,
+              min(food.started_at) FILTER (WHERE entry.effective_grain = 'itemized') AS first_consumed_at,
+              max(food.started_at) FILTER (WHERE entry.effective_grain = 'itemized') AS last_consumed_at,
+              count(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'calories') AS calorie_inputs,
+              count(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'protein') AS protein_inputs,
+              count(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'carbohydrate') AS carb_inputs,
+              count(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'fat') AS fat_inputs,
+              count(nutrient.amount) FILTER (WHERE nutrient.nutrient_id = 'fiber') AS fiber_inputs
+            FROM fitness.v_nutrition_entry_classification entry
+            JOIN fitness.v_food_entry_effective food ON food.source_entry_id = entry.id
+            JOIN fitness.v_nutrition_daily_resolution resolution
+              ON resolution.user_id = entry.user_id AND resolution.date = entry.date
+             AND resolution.resolution_status = 'available'
+             AND entry.source_key = ANY(resolution.contributing_source_keys)
+             AND entry.effective_grain = resolution.contribution_grain
+            LEFT JOIN fitness.v_food_entry_effective_nutrient nutrient
+              ON nutrient.source_entry_id = entry.id
+             AND nutrient.nutrient_id IN ('calories', 'protein', 'carbohydrate', 'fat', 'fiber')
+            WHERE entry.user_id = ${this.#userId}
+              AND entry.confirmed = true
+              AND entry.date BETWEEN ${startDate}::date AND ${endDate}::date
+            GROUP BY entry.date
           )
           SELECT
             date_spine.date,
@@ -253,6 +284,18 @@ export class FoodReadRepository {
             daily.fat_g::numeric(10,1) AS fat_g,
             daily.fiber_g::numeric(10,1) AS fiber_g,
             COALESCE(display_counts.meal_count, 0)::int AS meal_count,
+            COALESCE(contribution_coverage.food_entry_count, 0) AS food_entry_count,
+            COALESCE(contribution_coverage.recorded_meal_labels, ARRAY[]::text[]) AS recorded_meal_labels,
+            COALESCE(contribution_coverage.timed_food_entry_count, 0) AS timed_food_entry_count,
+            contribution_coverage.first_consumed_at,
+            contribution_coverage.last_consumed_at,
+            array_remove(ARRAY[
+              CASE WHEN daily.calories IS NULL OR calorie_inputs < food_entry_count THEN 'total_calories' END,
+              CASE WHEN daily.protein_g IS NULL OR protein_inputs < food_entry_count THEN 'protein_g' END,
+              CASE WHEN daily.carbs_g IS NULL OR carb_inputs < food_entry_count THEN 'carbs_g' END,
+              CASE WHEN daily.fat_g IS NULL OR fat_inputs < food_entry_count THEN 'fat_g' END,
+              CASE WHEN daily.fiber_g IS NULL OR fiber_inputs < food_entry_count THEN 'fiber_g' END
+            ], NULL) AS missing_nutrient_inputs,
             CASE
               WHEN food_logging.record_count IS NULL THEN 'no_logging'
               ELSE 'unknown_completeness'
@@ -279,6 +322,7 @@ export class FoodReadRepository {
               AND daily.date = date_spine.date
           LEFT JOIN display_counts ON display_counts.date = date_spine.date
           LEFT JOIN food_logging ON food_logging.date = date_spine.date
+          LEFT JOIN contribution_coverage ON contribution_coverage.date = date_spine.date
           ORDER BY date_spine.date ASC`,
     );
     return rows.map((row) => new DailyNutritionSummary(row));

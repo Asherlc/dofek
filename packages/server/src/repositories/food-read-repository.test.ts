@@ -350,10 +350,20 @@ describe("dailyTotals", () => {
 });
 
 describe("dailyTotalsRange", () => {
+  const coverageRow = {
+    food_entry_count: 4,
+    recorded_meal_labels: ["dinner", "lunch"],
+    timed_food_entry_count: 0,
+    first_consumed_at: null,
+    last_consumed_at: null,
+    missing_nutrient_inputs: [],
+  };
+
   it("returns exact-range totals with meal counts and provider provenance", async () => {
     const { repo } = makeRepository([
       {
         ...availableResolutionRow,
+        ...coverageRow,
         date: "2024-06-15",
         calories: "2450",
         protein_g: "165",
@@ -378,6 +388,7 @@ describe("dailyTotalsRange", () => {
     expect(result[0]?.fatGrams).toBe(85);
     expect(result[0]?.fiberGrams).toBe(32);
     expect(result[0]?.mealCount).toBe(4);
+    expect(result[0]?.contributionCoverage).toEqual(coverageRow);
     expect(result[0]?.sourceProviders).toEqual(["fatsecret"]);
     expect(result[0]?.resolutionStatus).toBe("available");
     expect(result[0]?.resolutionMessage).toBe(availableResolutionRow.resolution_message);
@@ -390,6 +401,10 @@ describe("dailyTotalsRange", () => {
   it("returns a no-logging date spine without turning missing nutrition into zero", async () => {
     const { repo, execute } = makeRepository([
       {
+        ...coverageRow,
+        food_entry_count: 0,
+        recorded_meal_labels: [],
+        missing_nutrient_inputs: ["total_calories", "protein_g", "carbs_g", "fat_g", "fiber_g"],
         date: "2024-06-16",
         calories: null,
         protein_g: null,
@@ -422,6 +437,9 @@ describe("dailyTotalsRange", () => {
     const { repo } = makeRepository([
       {
         ...availableResolutionRow,
+        ...coverageRow,
+        food_entry_count: 1,
+        recorded_meal_labels: ["snack"],
         date: "2024-06-15",
         calories: 150,
         protein_g: 5,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { missingNutrientInputSchema } from "../repositories/food-entry-models.ts";
 import type { DailyNutritionSummary } from "../repositories/food-repository.ts";
 
 const nullableNumber = z.number().nullable();
@@ -26,6 +27,12 @@ export const nutritionSummaryItemSchema = z
     fat_g: nullableNumber,
     fiber_g: nullableNumber,
     meal_count: z.number(),
+    food_entry_count: z.number().int().nonnegative(),
+    recorded_meal_labels: z.array(z.string()),
+    timed_food_entry_count: z.number().int().nonnegative(),
+    first_consumed_at: nullableString,
+    last_consumed_at: nullableString,
+    missing_nutrient_inputs: z.array(missingNutrientInputSchema),
     logging_completeness: z.enum([
       "complete",
       "explicitly_partial",
@@ -51,6 +58,7 @@ export function toNutritionSummaryOutput(row: DailyNutritionSummary) {
     fat_g: row.fatGrams,
     fiber_g: row.fiberGrams,
     meal_count: row.mealCount,
+    ...row.contributionCoverage,
     logging_completeness: row.loggingCompleteness,
     logging_completeness_reason: row.loggingCompletenessReason,
     resolution_status: row.resolutionStatus,

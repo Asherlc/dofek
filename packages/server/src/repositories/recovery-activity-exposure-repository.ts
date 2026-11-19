@@ -7,6 +7,8 @@ import { postgresActivityLocalDate } from "./activity-local-date.ts";
 export interface RecoveryActivityExposureFilters {
   providers: readonly string[];
   modalities: readonly string[];
+  canonicalTypes?: readonly string[];
+  datePolicy?: "analysis_timezone" | "source_context";
 }
 
 const dailyExposureRowSchema = z.object({
@@ -58,7 +60,13 @@ export class RecoveryActivityExposureRepository {
             filters.modalities.map((modality) => sql`${modality}`),
             sql`, `,
           )})`;
-    const localDate = postgresActivityLocalDate(sql`a`, this.#timezone);
+    const localDate =
+      filters.datePolicy === "analysis_timezone"
+        ? sql`(a.started_at AT TIME ZONE ${this.#timezone})::date`
+        : postgresActivityLocalDate(sql`a`, this.#timezone);
+    const canonicalTypePredicate = filters.canonicalTypes?.length
+      ? sql`a.canonical_type::text = ANY(${sql.param(filters.canonicalTypes)}::text[])`
+      : sql`true`;
 
     return executeWithSchema(
       this.#db,
@@ -72,7 +80,7 @@ export class RecoveryActivityExposureRepository {
           a.ended_at,
           ${localDate} AS date,
           CASE
-            WHEN a.local_time_source <> 'unknown'
+            WHEN ${filters.datePolicy !== "analysis_timezone"} AND a.local_time_source <> 'unknown'
               AND a.start_utc_offset_minutes IS NOT NULL THEN true
             ELSE false
           END AS authoritative_date,
@@ -84,6 +92,7 @@ export class RecoveryActivityExposureRepository {
         WHERE a.user_id = ${this.#userId}::uuid
           AND ${providerPredicate}
           AND ${modalityPredicate}
+          AND ${canonicalTypePredicate}
       )
       SELECT
         date::text AS date,

@@ -515,31 +515,12 @@ rather than infinity. These series expose formulas and evidence for analysis; th
 "risk zones" or diagnose injury. ACWR has substantial conceptual and causal limitations
 ([Impellizzeri et al. 2020](https://pubmed.ncbi.nlm.nih.gov/32502973/)).
 
-`get_recovery_training_series` provides a compact, selected date spine for recovery-response
-analysis. Available streams are daily HRV/calculated resting HR/respiratory rate/steps, deduplicated sleep and
-stages, reconciled body weight, the six independent analytical load channels, relevant canonical activities, and optional canonical nutrition. Missing values
-remain null with explicit state. Health source attribution is labeled at daily-row scope; sleep,
-weight, load, activity, and nutrition retain their more specific provenance and quality fields.
-Sleep includes onset/wake timestamps. Weight distinguishes direct daily observations from nearby
-measured/interpolated/nearest evidence and includes 7/28-day rolling context. Activity exposure is
-a compact canonical daily aggregate with authoritative-versus-assumed date-attribution counts.
-Daily activity-ID evidence is capped at 100 with explicit total/truncation metadata. Missing or
-invalid activity intervals make duration partial/unavailable rather than zero. Exposure and load
-share one source-offset-first calendar projection with an explicit analysis-timezone fallback.
-
-For each response date, `previous_day_training_load` is selected by the preceding local calendar
-date, not by subtracting 24 hours, which preserves next-day alignment across daylight-saving changes.
-Stream selection keeps payloads focused and responses are capped at 366 inclusive days. The
-endpoint exposes aligned observations only and explicitly does not claim causal relationships from
-correlations.
-Provider and modality filters apply to activity exposure and all load channels. Authorization and
-ClickHouse requirements are evaluated from the selected streams, so Postgres-only
-nutrition requests do not acquire unrelated health/activity dependencies.
-Recovery explicitly selects source-context activity dates and every load channel reports
-authoritative-versus-analysis-timezone activity counts. The latter identifies activities grouped
-by the configured analysis timezone rather than provider/device-local source context. The
-standalone analytical training-load tool retains its prior analysis-timezone date policy and
-labels it in the returned range.
+`get_recovery_training_series` pages through selected fields by local day or by reconciled main
+sleep. The daily series aligns health, sleep, weight, analytical load, activity exposure, and
+canonical nutrition. The main-sleep series can join canonical workouts from the preceding main
+wake to sleep onset and aggregate overlapping elapsed time. Activity coverage distinguishes
+missing records, incomplete intervals, and zero recorded exposure for the requested filter. Scope and
+storage dependencies follow the requested fields and filters. See the [MCP contract and examples](../../docs/mcp.md#relationship-analysis-examples).
 
 `compare_performances` requires `activity:read` and performs server-side, equivalence-constrained
 longitudinal comparisons. Supply a canonical `reference_activity_id` or an explicit identity:
@@ -710,6 +691,8 @@ weight policy: same-day direct weight, bounded 14-day interpolation, or nearest 
 partial observation; no-log days are `no_logging`. Energy and macros remain null on no-log days, so a sparse day cannot be mistaken for a
 known deficit and a 150-calorie day is not silently classified as partial. Nutrition source resolution
 is reported independently through the canonical `fitness.v_nutrition_daily` contribution set.
+The [MCP nutrition contract](../../docs/mcp.md#relationship-analysis-examples) also reports contributing
+entry counts, recorded meal labels, consumption time coverage, and missing nutrient inputs.
 Dense nutrition
 responses are capped at 366 inclusive days. `get_training_load` with `detail: "analytical"` and
 `include_nutrition: true` returns this canonical nutrition spine beside, rather than collapsed into,

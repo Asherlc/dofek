@@ -456,6 +456,7 @@ describe("ActivityListRepository", () => {
 
       expect(result).toEqual({
         totalCount: 1,
+        nextCursor: null,
         items: [
           expect.objectContaining({
             id: "search-activity",
@@ -470,7 +471,7 @@ describe("ActivityListRepository", () => {
       expect(result.items[0]).not.toHaveProperty("total_count");
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.params).toContain("%Morning%");
-      expect(compiledQuery.params).toContain(20);
+      expect(compiledQuery.params).toContain(21);
     });
 
     it("escapes wildcard characters in search text", async () => {
@@ -528,6 +529,112 @@ describe("ActivityListRepository", () => {
 
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.sql).not.toContain("a.canonical_type IN");
+    });
+
+    function searchRows(totalCount: number, days: number[]) {
+      return days.map((day, index) => ({
+        id: `activity-${index + 1}`,
+        canonical_type: "running",
+        started_at: `2024-01-${day}T10:00:00.000Z`,
+        ended_at: `2024-01-${day}T11:00:00.000Z`,
+        name: "Run",
+        provider_id: "garmin",
+        source_providers: ["garmin"],
+        avg_hr: null,
+        max_hr: null,
+        avg_power: null,
+        distance_meters: null,
+        elevation_gain_m: null,
+        total_count: totalCount,
+      }));
+    }
+
+    it("returns compact search results without hydrating summaries", async () => {
+      const { repo, execute, sensorStore } = makeRepositoryWithSensorStore(searchRows(2, [15, 14]));
+      const result = await repo.search({
+        startDate: "2024-01-01",
+        endDate: "2024-01-31",
+        limit: 1,
+        compact: true,
+      });
+
+      expect(result.items).toEqual([
+        expect.objectContaining({
+          id: "activity-1",
+          location: null,
+          distance_state: { status: "missing", reason: "Distance not recorded" },
+        }),
+      ]);
+      expect(result.nextCursor).toBe("activity-1");
+      expect(result.totalCount).toBe(2);
+      expect(sensorStore.getActivitySummaries).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns a null cursor when a search page exactly matches the limit", async () => {
+      const { repo, execute } = makeRepository(searchRows(2, [15, 14]));
+      const result = await repo.search({
+        startDate: "2024-01-01",
+        endDate: "2024-01-31",
+        limit: 2,
+        compact: true,
+      });
+
+      expect(result.items.map((item) => item.id)).toEqual(["activity-1", "activity-2"]);
+      expect(result.nextCursor).toBeNull();
+      expect(result.totalCount).toBe(2);
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns the original total for an exhausted page with a valid cursor", async () => {
+      const fallback = withUnknownLocalTimeContext(
+        searchRows(7, [15]).map((row) => ({ ...row, cursor_found: true })),
+      );
+      const execute = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce(fallback);
+      const repo = new ActivityListRepository({ execute }, "user-1", "UTC");
+      const cursor = "00000000-0000-0000-0000-000000000099";
+      const result = await repo.search({
+        startDate: "2024-01-01",
+        endDate: "2024-01-31",
+        limit: 20,
+        compact: true,
+        cursor,
+        canonicalType: "running",
+      });
+
+      expect(result).toEqual({ items: [], totalCount: 7, nextCursor: null });
+      expect(execute).toHaveBeenCalledTimes(2);
+      const firstQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      const fallbackQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
+      expect(firstQuery.params).toEqual(expect.arrayContaining([cursor, "running", 21]));
+      expect(fallbackQuery.params).toEqual(
+        expect.arrayContaining(["2024-01-01", "2024-01-31", "running", cursor, 1]),
+      );
+    });
+
+    it.each([
+      { fallback: [] },
+      {
+        fallback: withUnknownLocalTimeContext(
+          searchRows(2, [15]).map((row) => ({
+            ...row,
+            cursor_found: false,
+          })),
+        ),
+      },
+    ])("reports a cursor that is no longer in the filtered range", async ({ fallback }) => {
+      const execute = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce(fallback);
+      const repo = new ActivityListRepository({ execute }, "user-1", "UTC");
+
+      await expect(
+        repo.search({
+          startDate: "2024-01-01",
+          endDate: "2024-01-31",
+          limit: 2,
+          compact: true,
+          cursor: "00000000-0000-4000-8000-000000000099",
+        }),
+      ).rejects.toThrow("The cursor does not match this activity search");
     });
   });
 

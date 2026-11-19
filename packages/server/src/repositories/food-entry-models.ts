@@ -56,8 +56,22 @@ export const dailyTotalsRowSchema = z.object({
   excluded_source_labels: z.array(z.string()),
 });
 
+export const missingNutrientInputSchema = z.enum([
+  "total_calories",
+  "protein_g",
+  "carbs_g",
+  "fat_g",
+  "fiber_g",
+]);
+
 export const dailyNutritionSummaryRowSchema = dailyTotalsRowSchema.extend({
   meal_count: z.coerce.number(),
+  food_entry_count: z.coerce.number().int().nonnegative(),
+  recorded_meal_labels: z.array(z.string()),
+  timed_food_entry_count: z.coerce.number().int().nonnegative(),
+  first_consumed_at: timestampStringSchema.nullable(),
+  last_consumed_at: timestampStringSchema.nullable(),
+  missing_nutrient_inputs: z.array(missingNutrientInputSchema),
   logging_completeness: z.enum([
     "complete",
     "explicitly_partial",
@@ -195,6 +209,17 @@ export class DailyNutritionSummary {
 
   get mealCount(): number {
     return this.#row.meal_count;
+  }
+
+  get contributionCoverage() {
+    return {
+      food_entry_count: this.#row.food_entry_count,
+      recorded_meal_labels: this.#row.recorded_meal_labels,
+      timed_food_entry_count: this.#row.timed_food_entry_count,
+      first_consumed_at: this.#row.first_consumed_at,
+      last_consumed_at: this.#row.last_consumed_at,
+      missing_nutrient_inputs: this.#row.missing_nutrient_inputs,
+    };
   }
 
   get loggingCompleteness():
