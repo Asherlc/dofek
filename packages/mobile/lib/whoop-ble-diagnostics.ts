@@ -134,6 +134,8 @@ export class WhoopBleDiagnostics {
           }
         : {}),
       http5xxResponseCount: buffers.http5xxResponseCount,
+      http408ResponseCount: buffers.http408ResponseCount,
+      http408RecoveredBatchCount: buffers.http408RecoveredBatchCount,
     });
   }
 }

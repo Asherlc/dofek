@@ -23,7 +23,8 @@ extension WhoopBleBackgroundUploaderTests {
         reportError: @escaping (Error) -> Void = { _ in },
         reportUploadOutcome: @escaping (WhoopUploadOutcome) -> Void = { _ in },
         removeBodyFile: @escaping (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) },
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
+        monotonicNow: @escaping () -> ContinuousClock.Instant = { .now }
     ) throws -> (WhoopBleBackgroundUploader, WhoopBleSampleStore, TestWhoopUploadTransport) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try FileManager.default.removeItem(at: directory) }
@@ -32,7 +33,7 @@ extension WhoopBleBackgroundUploaderTests {
         let uploader = try WhoopBleBackgroundUploader(
             store: store, directory: directory.appendingPathComponent("bodies"), transport: transport,
             reportError: reportError, reportUploadOutcome: reportUploadOutcome,
-            removeBodyFile: removeBodyFile, now: now
+            removeBodyFile: removeBodyFile, now: now, monotonicNow: monotonicNow
         )
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "secret", headers: [:])
         return (uploader, store, transport)

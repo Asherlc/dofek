@@ -220,6 +220,8 @@ const WhoopDataPathStatsSchema = z.object({
     lastUploadError: z.string().nullable(),
     lastUploadOutcome: WhoopUploadOutcomeSchema.nullable().optional(),
     http5xxResponseCount: DiagnosticCountSchema.optional(),
+    http408ResponseCount: DiagnosticCountSchema.optional(),
+    http408RecoveredBatchCount: DiagnosticCountSchema.optional(),
   }),
 });
 

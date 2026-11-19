@@ -85,14 +85,32 @@ extension WhoopBleBackgroundUploaderTests {
             reportError: { errors.append($0) }, reportUploadOutcome: { outcomes.append($0) })
         try uploader.append(deviceId: "a", samplesByStream: [.imu: rows])
         try uploader.flush(); try settle(uploader)
+        let oldIdentity = try XCTUnwrap(transport.requests.first?.2)
+        transport.failOnePath(identity: oldIdentity)
+        try settle(uploader)
+        XCTAssertEqual(outcomes.filter(\.transportConnectionLost).count, 1)
 
         try uploader.purge(cutoff: Date(timeIntervalSince1970: 1_792_000_000))
+        transport.failOnePath(identity: oldIdentity)
         transport.complete(0)
         try settle(uploader)
 
         XCTAssertTrue(try store.pendingBatches().isEmpty)
         XCTAssertTrue(errors.isEmpty)
-        XCTAssertTrue(outcomes.isEmpty)
+        XCTAssertEqual(outcomes.map(\.stage), ["path_failed_fallback_active"])
+
+        try uploader.configure(userId: "bob", serverURL: "https://example.com", token: "token", headers: [:])
+        try uploader.append(deviceId: "b", samplesByStream: [.imu: rows])
+        try uploader.flush(); try settle(uploader)
+        let newIndex = try XCTUnwrap(transport.requests.indices.dropFirst().last)
+        XCTAssertNotEqual(transport.requests[newIndex].2, oldIdentity)
+        transport.complete(newIndex)
+        try settle(uploader)
+
+        XCTAssertEqual(outcomes.last?.stage, "outbox_retired")
+        XCTAssertTrue(outcomes.compactMap(\.connectionLossRecoveryDuration).isEmpty)
+        XCTAssertTrue(try store.pendingBatches().isEmpty)
+        XCTAssertTrue(errors.isEmpty)
     }
 
     func testAccountAndServerBindingRotationClearLastUploadOutcome() throws {

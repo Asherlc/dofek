@@ -1,5 +1,4 @@
 import Foundation
-import CoreFoundation
 
 struct WhoopUploadTaskSnapshot {
     let identities: Set<String>
@@ -48,7 +47,7 @@ final class WhoopBleBackgroundUploader: NSObject {
     private var finishedEventsPending = false
     private var lastError: String?
     private var lastUploadOutcome: WhoopUploadOutcome?
-    private var http5xxResponseCount = 0
+    private var metrics: WhoopUploadMetrics
     private var tokenEpoch = 0
     private var submitted: [String: (epoch: Int, attempt: Int)] = [:]
     private var submissionSequence = 0
@@ -61,11 +60,13 @@ final class WhoopBleBackgroundUploader: NSObject {
          reportError: @escaping (Error) -> Void,
          reportUploadOutcome: @escaping (WhoopUploadOutcome) -> Void = { _ in },
          removeBodyFile: @escaping (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) },
-         now: @escaping () -> Date = Date.init) throws {
+         now: @escaping () -> Date = Date.init,
+         monotonicNow: @escaping () -> ContinuousClock.Instant = { .now }) throws {
         self.store = store; self.directory = directory; self.transport = transport; self.reportError = reportError
         self.reportUploadOutcome = reportUploadOutcome
         self.removeBodyFile = removeBodyFile
         self.now = now
+        self.metrics = WhoopUploadMetrics(now: monotonicNow)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var directory = directory
         var resources = URLResourceValues(); resources.isExcludedFromBackup = true
@@ -86,6 +87,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                     self.pairedActive.remove(identity)
                     self.retryAfter[batch.stream] = self.now().addingTimeInterval(30)
                     let transportData = (error as NSError).userInfo[WhoopUploadTelemetry.transportContextKey] as? [String: Any] ?? [:]
+                    let connectionLost = WhoopUploadOutcome.isNetworkConnectionLost(error)
                     let outcome = WhoopUploadOutcome(
                         batchIdentity: identity, stream: batch.stream.rawValue, route: batch.stream.route,
                         stage: "path_failed_fallback_active", statusCode: nil,
@@ -94,10 +96,10 @@ final class WhoopBleBackgroundUploader: NSObject {
                         taskIdentifier: transportData["taskIdentifier"] as? Int,
                         transportPath: transportData["transportPath"] as? String,
                         siblingTaskPending: transportData["siblingTaskPending"] as? Bool,
-                        occurredAt: Self.iso(self.now()))
-                    self.lastUploadOutcome = outcome
-                    self.reportUploadOutcome(outcome)
-                    self.record(error, outcome: outcome)
+                        occurredAt: Self.iso(self.now()), transportConnectionLost: connectionLost)
+                    self.metrics.recordConnectionLoss(outcome, stream: batch.stream)
+                    self.reportOutcome(outcome)
+                    self.record(error, outcome: outcome, reportToSentry: !connectionLost)
                 } catch { self.record(error) }
             }
         }
@@ -129,6 +131,7 @@ final class WhoopBleBackgroundUploader: NSObject {
             let bindingChanged = try store.binding != binding
             if bindingChanged {
                 lastUploadOutcome = nil
+                metrics.resetReservations()
                 self.token = nil; self.headers = [:]
                 try cancelOwnedTasks()
                 active.removeAll(); pairedActive.removeAll(); submitted.removeAll(); authRetriedEpoch.removeAll()
@@ -173,6 +176,7 @@ final class WhoopBleBackgroundUploader: NSObject {
 
     private func disableLocked(cutoff: Date? = nil, onStage: WhoopCleanupStageHandler) throws {
         lastUploadOutcome = nil
+        metrics.resetReservations()
         token = nil; headers = [:]; blocked.removeAll()
         onStage(WhoopCleanupStage("uploader_cancel_tasks"))
         try cancelOwnedTasks()
@@ -212,9 +216,9 @@ final class WhoopBleBackgroundUploader: NSObject {
                 "bufferCreatedAt": Self.iso(createdAt), "checkpointAt": Self.iso(now()),
                 "imu": try store.statistics(stream: .imu), "realtime": try store.statistics(stream: .realtime),
                 "sensorRecords": try store.statistics(stream: .sensorRecords),
-                "activeUploadCount": active.count, "blockedUploadStreams": blocked.map(\.rawValue),
-                "http5xxResponseCount": http5xxResponseCount
+                "activeUploadCount": active.count, "blockedUploadStreams": blocked.map(\.rawValue)
             ]
+            result.merge(metrics.counters) { _, count in count }
             result["reservationWriteSummary"] = reservationWriteSummary.asDictionary
             result["lastUploadError"] = lastError.map { $0 as Any } ?? NSNull()
             result["lastUploadOutcome"] = lastUploadOutcome?.sentryData ?? NSNull()
@@ -260,6 +264,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                 self.wantsActiveRefresh = false
                 do {
                     let known = Set(try self.store.pendingBatches().map(self.identity))
+                    self.metrics.retainReservations(known)
                     for identity in snapshot.identities where !known.contains(identity) {
                         self.transport.cancel(identity: identity)
                         self.active.remove(identity)
@@ -352,6 +357,7 @@ final class WhoopBleBackgroundUploader: NSObject {
             outcome = WhoopUploadOutcome.received(
                 identity: identity, batch: batch, response: response, context: context,
                 occurredAt: Self.iso(now()))
+            metrics.recordConnectionLoss(outcome, stream: batch.stream)
             guard try validateResponse(
                 identity: identity, batch: batch, response: response,
                 outcome: &outcome, nextPartial: &nextPartial) else { return }
@@ -359,6 +365,7 @@ final class WhoopBleBackgroundUploader: NSObject {
             outcome?.stage = retired ? "outbox_retired" : "outbox_already_absent"
             outcome?.outboxState = retired ? "retired" : "absent"
             authRetriedEpoch[identity] = nil
+            outcome?.connectionLossRecoveryDuration = metrics.finishReservation(identity, stream: batch.stream, retired: retired)
             let file = directory.appendingPathComponent(identity + ".json")
             if FileManager.default.fileExists(atPath: file.path) {
                 do { try removeBodyFile(file) } catch {
@@ -369,11 +376,10 @@ final class WhoopBleBackgroundUploader: NSObject {
             retryAfter[batch.stream] = nil
             nextPartial = false
         } catch {
-            let isKnownHTTP5xx = outcome?.isValidatedHttp5xxRejection == true
-            if isKnownHTTP5xx { http5xxResponseCount += 1 }
+            let operationalHTTPRejection = metrics.recordOperationalHTTPRejection(outcome)
             reportCompletionFailure(
                 identity: identity, error: error, outcome: &outcome,
-                reportToSentry: !isKnownHTTP5xx)
+                reportToSentry: !operationalHTTPRejection)
         }
         if let outcome, outcome.stage == "outbox_retired" || outcome.stage == "outbox_already_absent" {
             reportOutcome(outcome)
@@ -452,20 +458,7 @@ private extension WhoopBleBackgroundUploader {
             }
             throw WhoopUploadError(message: "WHOOP \(batch.stream.rawValue) upload returned HTTP \(response.status ?? 0)")
         }
-        let json: Any?
-        if response.data.count <= 65_536 {
-            json = try? JSONSerialization.jsonObject(with: response.data)
-        } else {
-            json = nil
-        }
-        guard response.data.count <= 65_536,
-              let json = json as? [String: Any],
-              let result = json["result"] as? [String: Any],
-              let value = result["data"] as? [String: Any],
-              let inserted = value["inserted"] as? NSNumber,
-              CFGetTypeID(inserted) != CFBooleanGetTypeID(),
-              inserted.doubleValue.isFinite, inserted.doubleValue >= 0,
-              inserted.doubleValue.rounded() == inserted.doubleValue else {
+        guard response.hasValidAcknowledgment else {
             outcome?.stage = "acknowledgment_invalid"
             blocked.insert(batch.stream)
             throw WhoopUploadError(message: "WHOOP upload returned an invalid acknowledgment")
