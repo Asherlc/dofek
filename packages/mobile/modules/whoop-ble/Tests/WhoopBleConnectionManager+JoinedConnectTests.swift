@@ -1,4 +1,5 @@
 import CoreBluetooth
+import Dispatch
 import XCTest
 @testable import WhoopBLE
 
@@ -172,14 +173,22 @@ final class WhoopBleJoinedConnectTests: XCTestCase {
         replacement.state = .connecting
         let delegate = DisconnectionObserver()
         let disconnected = expectation(description: "publishes the displaced strap's disconnect")
+        disconnected.assertForOverFulfill = true
+        let observedQueue = DispatchSpecificKey<Bool>()
+        manager.bleQueue.setSpecific(key: observedQueue, value: true)
         let observer = NotificationCenter.default.addObserver(
             forName: WhoopBleConnectionEvent.name, object: nil, queue: nil
         ) { notification in
-            if notification.userInfo?["state"] as? String == WhoopBleConnectionEvent.disconnected.rawValue {
-                disconnected.fulfill()
-            }
+            guard DispatchQueue.getSpecific(key: observedQueue) == true,
+                  notification.userInfo?["state"] as? String == WhoopBleConnectionEvent.disconnected.rawValue else { return }
+            disconnected.fulfill()
         }
         defer { NotificationCenter.default.removeObserver(observer) }
+        let (unrelatedManager, unrelatedPeripheral) = restore()
+        unrelatedManager.syncOnBleQueue {
+            unrelatedManager.autoReconnect = false
+            unrelatedManager.handlePeripheralDisconnected(unrelatedPeripheral, error: nil)
+        }
         manager.syncOnBleQueue { manager.delegate = delegate }
         var previousResults: [Result<Bool, WhoopBleConnectionError>] = []
         var unknownResults: [Result<Bool, WhoopBleConnectionError>] = []
