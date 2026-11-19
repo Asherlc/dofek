@@ -7,6 +7,7 @@ let expoFiles = [
     "BridgeTestHost",
     "WhoopBleModule.swift",
     "WhoopBleModule+Cleanup.swift",
+    "WhoopBleModule+History.swift",
     "WhoopBleModule+ConnectionManagerDelegate.swift",
     "WhoopBleCleanupTelemetry.swift",
     "WhoopBleUploadAppDelegateSubscriber.swift",

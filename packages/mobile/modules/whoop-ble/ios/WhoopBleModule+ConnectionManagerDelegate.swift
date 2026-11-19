@@ -155,23 +155,11 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
             realtimeSamples: newRealtimeData
         )
 
-        let hasSamples = !newImuSamples.isEmpty || !newRealtimeData.isEmpty || !newSensorRecords.isEmpty
-        if hasSamples {
-            totalSamplesExtracted += UInt64(newImuSamples.count)
-            publishOrientation(newImuSamples)
-            do {
-                try uploader.append(deviceId: deviceId, samplesByStream: [
-                    .sensorRecords: newSensorRecords,
-                    .realtime: WhoopBleSampleSerializer.realtime(newRealtimeData),
-                    .imu: WhoopBleSampleSerializer.imu(newImuSamples),
-                ])
-            } catch {
-                failCapture(error)
-                return
-            }
-            scheduleDeviceStatePublication()
-        } else {
-            emptyExtractions += 1
+        do {
+            try persistSamples(deviceId: deviceId, imu: newImuSamples, realtime: newRealtimeData, records: newSensorRecords)
+        } catch {
+            failCapture(error)
+            return
         }
 
         for (index, frame) in frames.enumerated() {
@@ -180,6 +168,23 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
             )
         }
         startManagedHistoryIfEnabled()
+    }
+
+    private func persistSamples(
+        deviceId: String, imu: [WhoopImuSample], realtime: [WhoopRealtimeDataSample], records: [[String: Any]]
+    ) throws {
+        guard !imu.isEmpty || !realtime.isEmpty || !records.isEmpty else {
+            emptyExtractions += 1
+            return
+        }
+        totalSamplesExtracted += UInt64(imu.count)
+        publishOrientation(imu)
+        try uploader.append(deviceId: deviceId, samplesByStream: [
+            .sensorRecords: records,
+            .realtime: WhoopBleSampleSerializer.realtime(realtime),
+            .imu: WhoopBleSampleSerializer.imu(imu),
+        ])
+        scheduleDeviceStatePublication()
     }
 
     private func publishOrientation(_ samples: [WhoopImuSample]) {

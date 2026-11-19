@@ -154,28 +154,6 @@ final class WhoopBleSampleStore {
     var binding: WhoopUploadBinding? { get throws { try synchronized { try readBinding() } } }
     var generation: String { get throws { try synchronized { try currentGeneration() } } }
 
-    static let managedHistoryKeyPrefix = "managed-history:"
-
-    func isManagedHistoryEnabled(for peripheralId: UUID) throws -> Bool {
-        try synchronized {
-            try metadata(Self.managedHistoryKeyPrefix + peripheralId.uuidString) == "1"
-        }
-    }
-
-    func setManagedHistoryEnabled(_ enabled: Bool, for peripheralId: UUID) throws {
-        try transaction {
-            guard try readBinding() != nil else {
-                throw StoreError("Configure an authenticated WHOOP account before changing history sync")
-            }
-            let key = Self.managedHistoryKeyPrefix + peripheralId.uuidString
-            if enabled {
-                try setMetadata(key, "1")
-            } else {
-                try execute("DELETE FROM metadata WHERE key = ?", [key])
-            }
-        }
-    }
-
     func configure(_ binding: WhoopUploadBinding) throws {
         try transaction {
             guard try readBinding() != binding else { return }
@@ -357,7 +335,7 @@ final class WhoopBleSampleStore {
         }
     }
 
-    private func readBinding() throws -> WhoopUploadBinding? {
+    func readBinding() throws -> WhoopUploadBinding? {
         guard let value = try metadata("binding") else { return nil }
         return try JSONDecoder().decode(WhoopUploadBinding.self, from: Data(value.utf8))
     }
@@ -394,7 +372,7 @@ final class WhoopBleSampleStore {
         lock.lock(); defer { lock.unlock() }
         return try action()
     }
-    private func transaction<T>(
+    func transaction<T>(
         onStage: WhoopCleanupStageHandler = { _ in },
         reportWrites: ((WhoopSQLiteWriteMeasurement?) -> Void)? = nil,
         _ action: () throws -> T
