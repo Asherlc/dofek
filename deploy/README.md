@@ -218,6 +218,11 @@ infrastructure has been retired.
   headers default to `drop`; path, query, client identity, and headers are not
   exported. See the [Axiom runbook](../docs/axiom-observability-runbook.md#traefik-server-error-access-logs)
   for fields, types, and queries.
+- Traefik returns HTTP 503 from the fallback router when Swarm has no web
+  tasks to route. Both routers use the same Compose rule. Bump the immutable
+  Swarm config key `traefik_web_unavailable_v1` when the fallback file changes.
+  [Traefik fallback routing](https://doc.traefik.io/traefik/getting-started/faq/#xxx-instead-of-404)
+  · [Axiom request metrics](../docs/axiom-observability-runbook.md#traefik-request-counts).
 
 ## Deployment
 

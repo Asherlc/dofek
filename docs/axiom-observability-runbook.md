@@ -112,6 +112,26 @@ a specific cause. Service fields can be absent when no backend was selected.
 See the [Traefik 3.6.25 field middleware](https://raw.githubusercontent.com/traefik/traefik/v3.6.25/pkg/middlewares/accesslog/field_middleware.go)
 and [proxy error handler](https://raw.githubusercontent.com/traefik/traefik/v3.6.25/pkg/proxy/httputil/proxy.go).
 
+## Traefik request counts
+
+Traefik exports native OTLP metrics over HTTP to
+`http://collector:4318/v1/metrics`. The collector forwards
+`traefik_router_requests_total` to `dofek-host-metrics`. Its Traefik filter
+keeps only that counter, which avoids creating metric series from incoming
+Host headers used by the HTTP duration histogram.
+[Traefik metric labels](https://doc.traefik.io/traefik/v3.6/reference/install-configuration/observability/metrics/#router-metrics)
+· [HTTP duration source](https://github.com/traefik/traefik/blob/v3.6.25/pkg/middlewares/observability/semconv.go#L59-L74)
+· [Collector filter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/v0.165.0/processor/filterprocessor/README.md).
+
+In Axiom Metrics Builder, select `dofek-host-metrics` and
+`traefik_router_requests_total`. Use `align` with `prom::rate` to see how fast
+the cumulative counter changes over the selected window. Filter by
+`router="web-unavailable@file"` and `code="503"` for outage responses.
+`router="web@swarm"` shows requests handled by the regular web router. These
+counters measure traffic that reaches Traefik. An outage without matching
+requests can leave no series for that window.
+[Axiom Metrics Builder](https://axiom.co/docs/query-data/explore#query-metrics).
+
 ## Post-deploy acceptance
 
 - Traefik errors: drive one request that returns `5xx`; within one collector

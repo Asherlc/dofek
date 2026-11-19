@@ -7,6 +7,11 @@
 # compose-style ${VAR} interpolation and renders least-privilege env_file inputs
 # for the application services that need runtime credentials.
 
+# Canonical web route. A YAML scalar anchor keeps the swarm router label and the
+# file-provider fallback router (through the Traefik proxy environment variable)
+# on exactly the same rule, including any WEB_HOST_RULE override.
+x-web-host-rule: &web-host-rule (${WEB_HOST_RULE:-Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`) || Host(`dofek.asherlc.com`)}) && !PathPrefix(`/readyz`)
+
 secrets:
   apple_private_key:
     name: ${APPLE_PRIVATE_KEY_SECRET_NAME:?APPLE_PRIVATE_KEY_SECRET_NAME is required}
@@ -20,6 +25,10 @@ services:
       - --providers.swarm=true
       - --providers.swarm.exposedbydefault=false
       - --providers.swarm.network=${STACK_NAME:-dofek}_default
+      # File-provider fallback route; a Swarm config object is immutable, so
+      # watching this file only adds inotify churn.
+      - --providers.file.filename=/etc/traefik/traefik-web-unavailable.yml
+      - --providers.file.watch=false
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
@@ -56,14 +65,26 @@ services:
       - --experimental.otlplogs=true
       - --accesslog.otlp.http.endpoint=http://collector:4318/v1/logs
       - --accesslog.otlp.servicename=traefik
+      # Native OTLP request counts into the existing collector metrics pipeline.
+      # Router labels are off by default, so enable them explicitly.
+      - --metrics.otlp=true
+      - --metrics.otlp.http=true
+      - --metrics.otlp.http.endpoint=http://collector:4318/v1/metrics
+      - --metrics.otlp.addrouterslabels=true
     environment:
       CF_DNS_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}
+      # Shared with the file-provider fallback router's Go template. Prefixed
+      # DOFEK_ rather than TRAEFIK_ to avoid Traefik static-config env options.
+      DOFEK_WEB_ROUTER_RULE: *web-host-rule
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - letsencrypt:/letsencrypt
+    configs:
+      - source: traefik_web_unavailable_v1
+        target: /etc/traefik/traefik-web-unavailable.yml
     deploy:
       labels:
         - traefik.enable=true
@@ -118,20 +139,20 @@ services:
         failure_action: rollback
         monitor: 90s
       labels:
-        - traefik.enable=true
-        - traefik.http.routers.web.rule=(${WEB_HOST_RULE:-Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`) || Host(`dofek.asherlc.com`)}) && !PathPrefix(`/readyz`)
-        - traefik.http.routers.web.entrypoints=websecure
-        - traefik.http.routers.web.tls=true
-        - traefik.http.routers.web.tls.certresolver=le
-        - traefik.http.routers.web.tls.domains[0].main=dofek.fit
-        - traefik.http.routers.web.tls.domains[0].sans=www.dofek.fit
-        - traefik.http.routers.web.tls.domains[1].main=dofek.live
-        - traefik.http.routers.web.tls.domains[1].sans=www.dofek.live
-        - traefik.http.routers.web.tls.domains[2].main=dofek.asherlc.com
-        - traefik.http.services.web.loadbalancer.server.port=3000
-        - traefik.http.services.web.loadbalancer.healthcheck.path=/healthz
-        - traefik.http.services.web.loadbalancer.healthcheck.interval=5s
-        - traefik.http.services.web.loadbalancer.healthcheck.timeout=3s
+        traefik.enable: "true"
+        traefik.http.routers.web.rule: *web-host-rule
+        traefik.http.routers.web.entrypoints: websecure
+        traefik.http.routers.web.tls: "true"
+        traefik.http.routers.web.tls.certresolver: le
+        traefik.http.routers.web.tls.domains[0].main: dofek.fit
+        traefik.http.routers.web.tls.domains[0].sans: www.dofek.fit
+        traefik.http.routers.web.tls.domains[1].main: dofek.live
+        traefik.http.routers.web.tls.domains[1].sans: www.dofek.live
+        traefik.http.routers.web.tls.domains[2].main: dofek.asherlc.com
+        traefik.http.services.web.loadbalancer.server.port: "3000"
+        traefik.http.services.web.loadbalancer.healthcheck.path: /healthz
+        traefik.http.services.web.loadbalancer.healthcheck.interval: 5s
+        traefik.http.services.web.loadbalancer.healthcheck.timeout: 3s
 
   worker:
     image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
@@ -814,7 +835,7 @@ services:
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     configs:
-      - source: otel_collector_config_v4
+      - source: otel_collector_config_v5
         target: /etc/otelcol-contrib/config.yaml
 
   ota:
@@ -938,6 +959,10 @@ networks:
     attachable: true
 
 configs:
+  # Swarm config objects are immutable. Bump this key's version suffix when the
+  # fallback rule or TLS settings change, same as netdata_db_limits_v2.
+  traefik_web_unavailable_v1:
+    file: ./traefik-web-unavailable.yml
   pipedash_config_v1:
     file: ./pipedash/config.toml
   clickhouse_default_query_guardrails_v2:
@@ -951,7 +976,7 @@ configs:
   # Swarm config objects are immutable: when otel-collector-config.yaml changes,
   # bump this key's version suffix (e.g. _v2) so a new config object is created
   # and the collector rolls onto it — same convention as netdata_db_limits_v2.
-  otel_collector_config_v4:
+  otel_collector_config_v5:
     file: ./otel-collector-config.yaml
   kafka_jmx_exporter_v1:
     file: ./kafka/jmx-exporter.yaml

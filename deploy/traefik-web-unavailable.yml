@@ -1,0 +1,18 @@
+# Answer 503 on the public web route when Swarm has no web tasks to route.
+# https://doc.traefik.io/traefik/getting-started/faq/#xxx-instead-of-404
+http:
+  routers:
+    web-unavailable:
+      # Quote the shared Compose rule as a YAML scalar.
+      rule: {{ env "DOFEK_WEB_ROUTER_RULE" | toJson }}
+      entryPoints:
+        - websecure
+      priority: 1
+      service: web-unavailable
+      # Use the certificates provisioned by the web router.
+      tls: {}
+
+  services:
+    web-unavailable:
+      loadBalancer:
+        servers: []
