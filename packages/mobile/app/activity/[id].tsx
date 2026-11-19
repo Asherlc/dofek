@@ -40,7 +40,7 @@ import {
 } from "../../components/activity/ActivityExportMenu";
 import { RecomputeActivityButton } from "../../components/activity/RecomputeActivityButton";
 import { RunningFormStats } from "../../components/activity/RunningFormStats";
-import { statsStyles, styles } from "../../components/activity/styles";
+import { exerciseStyles, statsStyles, styles } from "../../components/activity/styles";
 import { useActivityClimbing } from "../../components/activity/useActivityClimbing";
 import { useActivityMapHover } from "../../components/activity/useActivityMapHover";
 import { useActivityMetrics } from "../../components/activity/useActivityMetrics";
@@ -234,80 +234,6 @@ function ExerciseBreakdown({
     </View>
   );
 }
-
-const exerciseStyles = StyleSheet.create({
-  container: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-  },
-  exerciseCard: {
-    gap: 6,
-  },
-  exerciseHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  exerciseName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  badge: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  badgeText: {
-    fontSize: 10,
-    color: colors.textTertiary,
-    textTransform: "capitalize",
-  },
-  muscleGroupRow: {
-    flexDirection: "row",
-    gap: 4,
-    marginBottom: 2,
-  },
-  muscleGroupBadge: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-  },
-  muscleGroupText: {
-    fontSize: 10,
-    color: colors.textTertiary,
-  },
-  setRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 3,
-    paddingLeft: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.surfaceSecondary,
-  },
-  setNumber: {
-    fontSize: 12,
-    color: colors.textTertiary,
-    width: 18,
-    fontVariant: ["tabular-nums"],
-  },
-  setValue: {
-    fontSize: 13,
-    color: colors.text,
-    fontWeight: "500",
-    fontVariant: ["tabular-nums"],
-  },
-  setRpe: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    fontVariant: ["tabular-nums"],
-  },
-});
 
 const climbingStyles = StyleSheet.create({
   container: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 12 },

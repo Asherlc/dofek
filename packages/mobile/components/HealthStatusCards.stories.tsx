@@ -41,6 +41,8 @@ function overviewMetric(
     evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
     explanation: `${overrides.label} is close to your usual range.`,
     baselineProgress: readyBaselineProgress,
+    provenance: null,
+    comparison: null,
     ...overrides,
   };
 }
@@ -66,6 +68,8 @@ const meta = {
         statusLabel: "Moving as intended",
         evaluationRule: "Below your baseline, where lower values support this metric",
         explanation: "Trend Weight is below your baseline, in line with your weight goal.",
+        provenance: null,
+        comparison: null,
         baselineProgress: readyBaselineProgress,
       },
       {
@@ -86,6 +90,8 @@ const meta = {
           "Outside your usual range: 1 to less than 2 standard deviations from baseline",
         explanation:
           "Body Fat % is above your usual range enough to stand out from recent variation.",
+        provenance: null,
+        comparison: null,
         baselineProgress: readyBaselineProgress,
       },
     ],
@@ -238,6 +244,8 @@ export const InsufficientData: Story = {
         statusLabel: "Not enough data",
         evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
         explanation: "Not enough varied data yet to compare this value with your usual range.",
+        provenance: null,
+        comparison: null,
         baselineProgress: collectingBaselineProgress,
       },
     ],
@@ -306,6 +314,8 @@ export const FarFromBaseline: Story = {
           "Well outside your usual range: at least 2 standard deviations from baseline",
         explanation:
           "Resting Heart Rate is well above your usual range compared with recent variation.",
+        provenance: null,
+        comparison: null,
         baselineProgress: readyBaselineProgress,
       },
     ],
@@ -356,6 +366,8 @@ export const CompactDashboardMetrics: Story = {
         statusLabel: "Near baseline",
         evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
         explanation: "Steps is close to your usual range.",
+        provenance: null,
+        comparison: null,
         baselineProgress: readyBaselineProgress,
       },
     ],

@@ -162,7 +162,8 @@ export function OverviewEvidence({
   )?.baselineProgress;
   const startDate = shiftDateYmd(endDate, 1 - overviewDays);
   const dateOptions = { timeZone: "UTC" };
-  const hideInsightCard = isGroupedNoData(hideConnectionErrors, insights);
+  const hideInsightCard =
+    hideConnectionErrors && isConnectionFailure(insights.error) && topInsight == null;
   // A distinct heart rate failure still owns the trend card even when the
   // grouped trend query has no data — keep the card so its error stays visible.
   const hasDistinctHeartRateError =

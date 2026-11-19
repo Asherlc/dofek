@@ -103,4 +103,41 @@ describe("seedReadyProcessingStatus", () => {
       client.mobileDashboard.recovery.query({ days: 30, endDate: "2026-07-28" }),
     ).rejects.toThrow("Unhandled processing-status story tRPC operation: mobileDashboard.recovery");
   });
+
+  it("serves sleep companion queries using the requested date and range", async () => {
+    const queryClient = new QueryClient();
+    const snapshot = seedReadyProcessingStatus(queryClient, ["sleep"]);
+    const client = createTRPCClient<AppRouter>({
+      links: [
+        createProcessingStatusStoryLink(snapshot, {
+          "sleep.stagesByDate": (input) => ({
+            date: typeof input?.date === "string" ? input.date : "2026-07-28",
+            stages: [],
+          }),
+          "recovery.sleepAnalytics": (input) => ({
+            nightly: [],
+            averageSleepMinutes: 400 + (typeof input?.days === "number" ? input.days : 0),
+            averageEfficiencyPercent: 92,
+          }),
+          "recovery.sleepConsistency": (input) =>
+            typeof input?.days === "number" ? [{ date: `day-${input.days}` }] : [],
+        }),
+      ],
+    });
+
+    await expect(client.sleep.stagesByDate.query({ date: "2026-07-27" })).resolves.toEqual({
+      date: "2026-07-27",
+      stages: [],
+    });
+    await expect(client.sleep.stagesByDate.query()).resolves.toEqual({
+      date: "2026-07-28",
+      stages: [],
+    });
+    await expect(client.recovery.sleepAnalytics.query({ days: 90 })).resolves.toMatchObject({
+      averageSleepMinutes: 490,
+    });
+    await expect(client.recovery.sleepConsistency.query({ days: 7 })).resolves.toEqual([
+      { date: "day-7" },
+    ]);
+  });
 });

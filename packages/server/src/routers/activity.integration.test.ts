@@ -1,9 +1,11 @@
 import { sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { activityRouter } from "./activity.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
@@ -95,7 +97,9 @@ describe("Activity router", () => {
     metricOnlyActivityId = activityId;
     metricOnlyActivityGroupId = insertedActivities[0].group_id;
 
-    const formOnlyActivities = await testCtx.db.execute<{ id: string; group_id: string }>(
+    const formOnlyActivities = await executeWithSchema(
+      testCtx.db,
+      z.object({ id: z.guid(), group_id: z.guid() }),
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
           ) VALUES (
@@ -109,8 +113,10 @@ describe("Activity router", () => {
             'Form Only Run'
           ) RETURNING id, group_id`,
     );
-    formOnlyActivityId = formOnlyActivities[0]?.id ?? "";
-    formOnlyActivityGroupId = formOnlyActivities[0]?.group_id ?? "";
+    const formOnlyActivity = formOnlyActivities[0];
+    if (!formOnlyActivity) throw new Error("Failed to insert form-only test activity");
+    formOnlyActivityId = formOnlyActivity.id;
+    formOnlyActivityGroupId = formOnlyActivity.group_id;
 
     const filteredActivities = await testCtx.db.execute<{
       id: string;

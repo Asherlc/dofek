@@ -213,6 +213,9 @@ describe("HealthStatusBar", () => {
       ),
     ).toBeDefined();
     expect(screen.getByText(summary)).toBeVisible();
+    expect(
+      screen.getAllByText("Needs a current value, baseline, and measurable day-to-day variation"),
+    ).toHaveLength(1);
   });
 
   it("renders server-authored HRV and steps text instead of recomputing raw values", () => {
@@ -537,6 +540,7 @@ describe("HealthStatusBar", () => {
     fireEvent.click(row);
     expect(row.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText(serverMetric.explanation)).toBeTruthy();
+    expect(screen.getByText(serverMetric.evaluationRule)).toBeTruthy();
   });
 
   it("shows the exact baseline in grouped expanded details without baselineRelative context", () => {

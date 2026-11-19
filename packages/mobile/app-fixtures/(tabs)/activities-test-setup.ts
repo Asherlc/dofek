@@ -38,7 +38,12 @@ export const activityMocks: {
   invalidateCalendarData: CallableVitestMock;
   invalidateActivityList: CallableVitestMock;
   invalidateDataHealth: CallableVitestMock;
-  mockDataHealthQuery: { data: unknown; isLoading: boolean; error: Error | null };
+  mockDataHealthQuery: {
+    data: unknown;
+    isLoading: boolean;
+    error: Error | null;
+    refetch?: CallableVitestMock;
+  };
   processingStatusInput: unknown;
 } = {
   mockQuery: activityListQuery([]),
@@ -63,6 +68,16 @@ export const activityMocks: {
   mockDataHealthQuery: { data: undefined, isLoading: false, error: null },
   processingStatusInput: undefined,
 };
+
+export function mockActivityImages(images: unknown[]): void {
+  mockImagesQuery.mockReturnValue({
+    data: { images, coverage: [], acquisition: [] },
+    error: null,
+    isLoading: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  });
+}
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: routerPush }),

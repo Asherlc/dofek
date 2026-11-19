@@ -45,6 +45,49 @@ function createNight(date: string, index: number): SleepNightlyRow {
   };
 }
 
+function readString(input: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = input?.[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function readNumber(input: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = input?.[key];
+  return typeof value === "number" ? value : undefined;
+}
+
+function createStages(date: string) {
+  return (["awake", "light", "deep", "rem", "light"] as const).map((stage, index) => ({
+    stage,
+    started_at: `${date}T05:30:${String(index * 10).padStart(2, "0")}.000Z`,
+    ended_at: `${date}T05:40:${String(index * 10).padStart(2, "0")}.000Z`,
+    duration_seconds: 600,
+  }));
+}
+
+const SLEEP_FIXTURE_NIGHTS = 90;
+const SLEEP_CONSISTENCY_NIGHTS = 3;
+
+function createStableNightly(dates: ReturnType<typeof createFixtureDates>): SleepNightlyRow[] {
+  return Array.from({ length: SLEEP_FIXTURE_NIGHTS }, (_, index) =>
+    createNight(dates.date(index - SLEEP_FIXTURE_NIGHTS + 1), index),
+  );
+}
+
+function createStableConsistency(dates: ReturnType<typeof createFixtureDates>) {
+  return Array.from({ length: SLEEP_CONSISTENCY_NIGHTS }, (_, index) => ({
+    date: dates.date(index - SLEEP_CONSISTENCY_NIGHTS + 1),
+    consistencyScore: 84 + index,
+    bedtimeHour: 23.2,
+    waketimeHour: 7.1,
+    rollingBedtimeStddev: null,
+    rollingWaketimeStddev: null,
+  }));
+}
+
+function latestNights<T>(nights: readonly T[], days: number): T[] {
+  return nights.slice(Math.max(0, nights.length - days));
+}
+
 function MockProviders({ children }: { children: React.ReactNode }) {
   const { queryClient, trpcClient } = useMemo(() => {
     const seededQueryClient = new QueryClient({
@@ -52,41 +95,48 @@ function MockProviders({ children }: { children: React.ReactNode }) {
     });
     const dates = createFixtureDates(new Date());
     const days = 30;
-    const nightly = Array.from({ length: 7 }, (_, index) =>
-      createNight(dates.date(index - 6), index),
-    );
+    const stableNightly = createStableNightly(dates);
+    const stableConsistency = createStableConsistency(dates);
     const processingStatus = seedReadyProcessingStatus(seededQueryClient, ["sleep"]);
 
     seededQueryClient.setQueryData(
       [["recovery", "sleepAnalytics"], { input: { days }, type: "query" }],
-      { nightly, averageSleepMinutes: 447, averageEfficiencyPercent: 92 },
+      {
+        nightly: latestNights(stableNightly, 7),
+        averageSleepMinutes: 447,
+        averageEfficiencyPercent: 92,
+      },
     );
     seededQueryClient.setQueryData(
       [["recovery", "sleepConsistency"], { input: { days }, type: "query" }],
-      Array.from({ length: 3 }, (_, index) => ({
-        date: dates.date(index - 2),
-        consistencyScore: 84 + index,
-        bedtimeHour: 23.2,
-        waketimeHour: 7.1,
-      })),
+      stableConsistency,
     );
     seededQueryClient.setQueryData(
       [["sleep", "stagesByDate"], { input: undefined, type: "query" }],
-      {
-        date: dates.date(0),
-        stages: ["awake", "light", "deep", "rem", "light"].map((stage, index) => ({
-          stage,
-          started_at: `${dates.date(0)}T05:30:${String(index * 10).padStart(2, "0")}.000Z`,
-          ended_at: `${dates.date(0)}T05:40:${String(index * 10).padStart(2, "0")}.000Z`,
-          duration_seconds: 600,
-        })),
-      },
+      { date: dates.date(0), stages: createStages(dates.date(0)) },
     );
 
     return {
       queryClient: seededQueryClient,
       trpcClient: trpc.createClient({
-        links: [createProcessingStatusStoryLink(processingStatus)],
+        links: [
+          createProcessingStatusStoryLink(processingStatus, {
+            "sleep.stagesByDate": (input) => {
+              const date = readString(input, "date") ?? dates.date(0);
+              return { date, stages: createStages(date) };
+            },
+            "recovery.sleepAnalytics": (input) => ({
+              nightly: latestNights(stableNightly, readNumber(input, "days") ?? days),
+              averageSleepMinutes: 447,
+              averageEfficiencyPercent: 92,
+            }),
+            "recovery.sleepConsistency": (input) =>
+              latestNights(
+                stableConsistency,
+                Math.min(readNumber(input, "days") ?? days, SLEEP_CONSISTENCY_NIGHTS),
+              ),
+          }),
+        ],
       }),
     };
   }, []);

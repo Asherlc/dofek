@@ -373,6 +373,7 @@ vi.mock("react-native", () => {
   const Alert = { alert: vi.fn() };
   const AccessibilityInfo = {
     announceForAccessibility: vi.fn(),
+    announceForAccessibilityWithOptions: vi.fn(),
     sendAccessibilityEvent: vi.fn(),
   };
   const Linking = { openURL: vi.fn(() => Promise.resolve()) };

@@ -230,6 +230,7 @@ export default function ActivitiesScreen() {
     ...(!searching && trainingTimeExpanded ? [calendarQuery] : []),
     listQuery,
     processingStatus,
+    ...(placeLookup ? [places] : []),
   ];
   const connectionFailures = visibleQueries.filter(
     (query) => query.error != null && isConnectionFailure(query.error),
@@ -419,7 +420,7 @@ export default function ActivitiesScreen() {
       </View>
       {placeLookup && places.isFetching && !places.data ? (
         <QueryStatePanel variant="loading" minHeight={44} />
-      ) : placeLookup && places.isError ? (
+      ) : placeLookup && places.isError && !isSharedConnectionFailure(places.error) ? (
         <QueryStatePanel
           variant="error"
           message={places.error?.message}

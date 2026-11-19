@@ -158,16 +158,20 @@ function HealthMetricDetailsBody({
   metric,
   baselineDetails,
   comparisonDetails,
+  showBlockedEvaluationRule = false,
 }: {
   metric: HealthStatusMetric;
   baselineDetails: string;
   comparisonDetails: string;
+  showBlockedEvaluationRule?: boolean;
 }) {
   const provenance = metric.provenance;
   const blocked = metric.baselineProgress.blocker !== null;
   return (
     <>
-      {!blocked ? <div className="font-medium text-muted">{metric.evaluationRule}</div> : null}
+      {!blocked || showBlockedEvaluationRule ? (
+        <div className="font-medium text-muted">{metric.evaluationRule}</div>
+      ) : null}
       <div>{metric.explanation}</div>
       {blocked ? (
         <>
@@ -321,6 +325,7 @@ function GroupedHealthStatusList({
                     metric={metric}
                     baselineDetails={baselineDetails}
                     comparisonDetails={comparisonDetails}
+                    showBlockedEvaluationRule
                   />
                 ) : null}
               </div>

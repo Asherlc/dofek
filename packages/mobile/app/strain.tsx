@@ -422,7 +422,9 @@ export function TrainingAnalysis({
         <>
           <ClimbingStrengths
             data={climbingStrengths.data}
-            refreshing={climbingStrengths.data != null && climbingStrengthsQuery.isFetching}
+            refreshing={
+              climbingStrengths.data != null && climbingStrengthsQuery.isFetching && isFocused
+            }
             includeAreaMetadata={includeAreaMetadata}
             onIncludeAreaMetadataChange={setIncludeAreaMetadata}
             rangeControl={
