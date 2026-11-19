@@ -78,6 +78,13 @@
       }
     },
     "packages/eight-sleep": {},
+    "packages/oura-ble": {
+      "entry": ["src/index.ts", "src/expo.ts", "scripts/build-ios.ts"],
+      "vitest": {
+        "config": ["../../vitest.config.ts"],
+        "entry": ["src/**/*.test.ts"]
+      }
+    },
     "packages/zwift-client": {
       "vitest": {
         "config": ["../../vitest.config.ts"],

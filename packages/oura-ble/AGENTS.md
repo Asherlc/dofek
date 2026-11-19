@@ -14,8 +14,10 @@
   module named `OuraBle` via `expo`'s exported `requireOptionalNativeModule`,
   throw an actionable error when unavailable, avoid exposing native secrets,
   and forward method parameters and native rejections unchanged.
-- Native Rust/iOS implementation lives outside this task; do not add native
-  code here unless explicitly requested.
+- `native` owns the shared protocol session and local SQLite operations.
+  `ios` owns Bluetooth, credential persistence, and the Expo bridge. Keep
+  the ring's history cursor and each batch in the same SQLite transaction.
+  Save a pending pairing before attempting to install its key on the ring.
 
 ## Contracts
 
@@ -33,3 +35,5 @@
 - Run `pnpm exec vitest run --project unit packages/oura-ble`,
   `pnpm --filter @dofek/oura-ble typecheck`, and
   `pnpm --filter @dofek/oura-ble build`.
+- Run `cargo +1.100.0 test --locked --lib` from `native`. Verify packaged
+  native changes with a tarball install in an independent Expo app.

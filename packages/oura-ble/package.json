@@ -25,6 +25,12 @@
   "sideEffects": false,
   "files": [
     "dist",
+    "expo-module.config.json",
+    "ios/OuraBle.podspec",
+    "ios/*.swift",
+    "ios/generated/*.swift",
+    "ios/generated/OuraBleCore.xcframework",
+    "ios/generated/THIRD-PARTY-LICENSES.txt",
     "README.md",
     "LICENSE"
   ],
@@ -47,7 +53,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "prepack": "pnpm run build",
+    "build:ios": "tsx scripts/build-ios.ts",
+    "prepack": "pnpm run build && test -f ios/generated/OuraBleCore.xcframework/Info.plist && test -f ios/generated/oura_ble_core.swift && test -f ios/generated/THIRD-PARTY-LICENSES.txt",
     "test": "vitest run src",
     "typecheck": "tsc --noEmit"
   },

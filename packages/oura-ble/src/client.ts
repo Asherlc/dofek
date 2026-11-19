@@ -96,6 +96,8 @@ export interface OuraSyncResult {
   ringId: OuraRingId;
   /** Number of new event records committed during sync. */
   syncedEventCount: number;
+  /** Optional details when the ring could not complete a preparation step. */
+  warnings?: string[];
 }
 
 /** Options for reading recorded events. */

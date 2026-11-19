@@ -3,9 +3,12 @@ use std::{sync::Mutex, time::Duration};
 use oura_link::{OuraClient, transport::Transport};
 use oura_store::storage::Store;
 use rusqlite::Connection;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, oneshot};
 
-use crate::{configure_measurement, event_page, pair_ring, sync_to_store, verify_pairing};
+use crate::{
+    OuraError, OuraPacketWriter, OuraSession, configure_measurement, event_page, pair_ring,
+    sync_to_store, verify_pairing,
+};
 
 const TEST_SERIAL: &str = "XXXXXXXXXXXX";
 const TEST_KEY: [u8; 16] = [0; 16];
@@ -91,6 +94,30 @@ async fn reports_an_unsupported_setting_without_writing_to_the_ring() {
         configure_measurement(&client, "unknown").await,
         Err("Unsupported measurement setting.".into())
     );
+}
+
+#[tokio::test]
+async fn disconnect_interrupts_a_pending_response() {
+    struct Writer(Mutex<Option<oneshot::Sender<()>>>);
+
+    impl OuraPacketWriter for Writer {
+        fn write(&self, _data: Vec<u8>) {
+            self.0.lock().unwrap().take().unwrap().send(()).unwrap();
+        }
+    }
+
+    let (sent, written) = oneshot::channel();
+    let session = OuraSession::new(Box::new(Writer(Mutex::new(Some(sent)))));
+    let pending = tokio::spawn({
+        let session = session.clone();
+        async move { session.identify().await }
+    });
+    written.await.unwrap();
+    session.close();
+    assert!(matches!(
+        pending.await.unwrap(),
+        Err(OuraError::Disconnected)
+    ));
 }
 
 #[tokio::test]
