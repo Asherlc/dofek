@@ -61,8 +61,12 @@ import { captureException } from "../../lib/telemetry";
 const testHelpers = vi.hoisted(
   () => import("../../components/activity/activity-detail-test-helpers"),
 );
+const unitMode = vi.hoisted(() => ({ imperial: false }));
 
-vi.mock("react-native", async () => (await testHelpers).createReactNativeMock());
+vi.mock("react-native", async () => ({
+  ...(await testHelpers).createReactNativeMock(),
+  useWindowDimensions: vi.fn(() => ({ width: 390, height: 844, scale: 3, fontScale: 1 })),
+}));
 vi.mock("react-native-svg", async () => (await testHelpers).createSvgMock());
 vi.mock("expo-router", async () => {
   const { activityRouteParams, routeMocks } = await testHelpers;
@@ -84,9 +88,18 @@ vi.mock("../../components/RouteMap", async () => ({ RouteMap: (await testHelpers
 vi.mock("../../components/activity/useChartScrub", async () =>
   (await testHelpers).createChartScrubMock(),
 );
-vi.mock("../../lib/units", async () =>
-  (await testHelpers).activityDetailSimpleMocks.unitConverter(),
-);
+vi.mock("../../lib/units", async () => {
+  const converter = (await testHelpers).activityDetailSimpleMocks.unitConverter();
+  return {
+    ...converter,
+    useUnitConverter: () => {
+      const units = converter.useUnitConverter();
+      return unitMode.imperial
+        ? { ...units, convertPace: (seconds: number) => seconds * 1.60934, paceLabel: "/mi" }
+        : units;
+    },
+  };
+});
 vi.mock("../../lib/auth-context", () => ({ useAuth: () => authFixture }));
 vi.mock(
   "../../lib/activity-export",
@@ -143,6 +156,7 @@ const authFixture = vi.hoisted(() => ({
 vi.mock("../../lib/trpc", async () => (await testHelpers).makeTrpcMock());
 
 beforeEach(() => {
+  unitMode.imperial = false;
   resetActivityDetailMocks({
     activity: baseCyclingActivity,
     stream: streamPointsWithHrAndPower,
@@ -154,12 +168,18 @@ beforeEach(() => {
   });
 });
 
+function selectPerformanceMetric(metric: string) {
+  const trigger = screen.queryByRole("button", { name: /^Performance metrics:/ });
+  if (!trigger) return;
+  fireEvent.click(trigger);
+  const choice = screen.queryByRole("radio", { name: metric });
+  if (choice) fireEvent.click(choice);
+  else fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+}
+
 function openPerformance(metric?: string) {
   fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
-  if (metric) {
-    const metricTab = screen.queryByRole("tab", { name: metric });
-    if (metricTab) fireEvent.click(metricTab);
-  }
+  if (metric) selectPerformanceMetric(metric);
 }
 
 describe("ActivityDetailScreen", () => {
@@ -169,7 +189,7 @@ describe("ActivityDetailScreen", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
     expect(screen.getByRole("button", { name: "View Heart Rate data" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "View Power data" })).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: "Power" }));
+    selectPerformanceMetric("Power");
     expect(screen.getByRole("button", { name: "View Power data" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "View Heart Rate data" })).toBeNull();
 
@@ -658,7 +678,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.queryByText("Partial power data")).toBeNull();
   });
 
-  it("keeps recorded output visible while refreshing and shows the server error", async () => {
+  it("keeps recorded output visible and shows the refresh status only while fetching in Performance", async () => {
     mocks.metricSourcesQuery.mockReturnValue(
       defaultObserver(activityDetailMetricSources.filter((source) => source.key === "power")),
     );
@@ -669,16 +689,21 @@ describe("ActivityDetailScreen", () => {
     };
     mocks.powerWorkQuery.mockReturnValue(workState);
     const { rerender } = renderActivityDetail();
-    const status = screen.getByText("Updating metrics…");
-    expect(screen.getByText("720 kJ")).toBeTruthy();
-    expect(screen.getByText("Power data could not be read. Choose another source.")).toBeTruthy();
+    expect(screen.queryByText("Updating metrics…")).toBeNull();
+    openPerformance();
+    expect(screen.getByText("Updating metrics…")).toBeTruthy();
     for (const isFetching of [false, true, false]) {
       workState.isFetching = isFetching;
       rerender(<ActivityDetailScreen />);
-      expect(status.isConnected).toBe(true);
-      expect(status.textContent).toBe(isFetching ? "Updating metrics…" : "");
-      expect(screen.getByText("720 kJ")).toBeTruthy();
+      if (isFetching) expect(screen.getByText("Updating metrics…")).toBeTruthy();
+      else expect(screen.queryByText("Updating metrics…")).toBeNull();
     }
+  });
+
+  it("reserves no idle metrics status space in Performance", () => {
+    renderActivityDetail();
+    openPerformance();
+    expect(screen.queryByText("Updating metrics…")).toBeNull();
   });
 
   it("does not show the previous ride's output after navigating to another activity", async () => {
@@ -886,6 +911,141 @@ describe("ActivityDetailScreen", () => {
   });
 });
 
+it("shows available running form measurements in Activity detail Performance", () => {
+  mocks.byIdQuery.mockReturnValue(
+    defaultObserver({
+      ...baseCyclingActivity,
+      activityType: "running",
+      avgSpeed: 3.33,
+      avgCadence: 178,
+      runningForm: {
+        cadence: 178,
+        cadenceBasis: "cadence_samples",
+        cadenceObservedSeconds: 600,
+        cadenceCoveragePercent: null,
+        strideLengthMeters: 1.24,
+        stanceTimeMs: 240,
+        verticalOscillationMm: 8,
+      },
+    }),
+  );
+  renderActivityDetail();
+  openPerformance();
+  expect(screen.getByText("Running Form")).toBeTruthy();
+  const readings = screen.getByLabelText("Running Form readings");
+  expect(within(readings).getByText("Cadence")).toBeTruthy();
+  expect(within(readings).getByText("178 spm")).toBeTruthy();
+  expect(within(readings).getByText("Recorded cadence")).toBeTruthy();
+  expect(within(readings).getByText("Stride length")).toBeTruthy();
+  expect(within(readings).getByText("1.24 m")).toBeTruthy();
+  expect(within(readings).getByText("Ground contact time")).toBeTruthy();
+  expect(within(readings).getByText("240 ms")).toBeTruthy();
+  expect(within(readings).getByText("Vertical oscillation")).toBeTruthy();
+  expect(within(readings).getByText("8 mm")).toBeTruthy();
+  expect(within(readings).getAllByText("Cadence")).toHaveLength(1);
+});
+
+it("shows form-only readings without the generic empty performance message", () => {
+  mocks.byIdQuery.mockReturnValue(
+    defaultObserver({
+      ...baseCyclingActivity,
+      activityType: "running",
+      avgCadence: null,
+      runningForm: {
+        cadence: null,
+        cadenceBasis: "unknown",
+        cadenceObservedSeconds: null,
+        cadenceCoveragePercent: null,
+        strideLengthMeters: 2.1,
+        stanceTimeMs: 210,
+        verticalOscillationMm: 9,
+      },
+    }),
+  );
+  mocks.streamQuery.mockReturnValue(defaultObserver([]));
+  renderActivityDetail();
+  openPerformance();
+  expect(screen.getByText("Running Form")).toBeTruthy();
+  expect(screen.getByText("2.10 m")).toBeTruthy();
+  expect(screen.queryByText("No performance measurements recorded")).toBeNull();
+});
+
+it("omits the form readout for non-running activities and older cached runs", () => {
+  mocks.byIdQuery.mockReturnValue(
+    defaultObserver({
+      ...baseCyclingActivity,
+      runningForm: {
+        cadence: 170,
+        cadenceBasis: "cadence_samples",
+        cadenceObservedSeconds: null,
+        cadenceCoveragePercent: null,
+        strideLengthMeters: 2,
+        stanceTimeMs: 200,
+        verticalOscillationMm: 9,
+      },
+    }),
+  );
+  const cycling = renderActivityDetail();
+  openPerformance();
+  expect(screen.queryByText("Running Form")).toBeNull();
+  cycling.unmount();
+
+  mocks.byIdQuery.mockReturnValue(
+    defaultObserver({ ...baseCyclingActivity, activityType: "running" }),
+  );
+  renderActivityDetail();
+  openPerformance();
+  expect(screen.queryByText("Running Form")).toBeNull();
+});
+
+it("uses the server-provided run pace as Avg Pace with an Avg Speed fallback", () => {
+  mocks.byIdQuery.mockReturnValue(
+    defaultObserver({
+      ...baseCyclingActivity,
+      activityType: "running",
+      avgSpeed: 3.328,
+      avgPaceSecondsPerKm: 301,
+    }),
+  );
+  const running = renderActivityDetail();
+  expect(screen.getByText("Avg Pace")).toBeTruthy();
+  expect(screen.getByText("5:01 /km")).toBeTruthy();
+  expect(screen.queryByText("Avg Speed")).toBeNull();
+  running.unmount();
+
+  mocks.byIdQuery.mockReturnValue(
+    defaultObserver({ ...baseCyclingActivity, activityType: "running", avgSpeed: 3.328 }),
+  );
+  const older = renderActivityDetail();
+  expect(screen.getByText("Avg Speed")).toBeTruthy();
+  expect(screen.queryByText("Avg Pace")).toBeNull();
+  older.unmount();
+
+  mocks.byIdQuery.mockReturnValue(
+    defaultObserver({ ...baseCyclingActivity, activityType: "running", avgSpeed: 0 }),
+  );
+  const zero = renderActivityDetail();
+  expect(screen.getByText("Avg Speed")).toBeTruthy();
+  zero.unmount();
+
+  renderActivityDetail();
+  expect(screen.getByText("Avg Speed")).toBeTruthy();
+});
+
+it("converts the server-provided run pace for imperial units", () => {
+  unitMode.imperial = true;
+  mocks.byIdQuery.mockReturnValue(
+    defaultObserver({
+      ...baseCyclingActivity,
+      activityType: "running",
+      avgSpeed: 3.328,
+      avgPaceSecondsPerKm: 300,
+    }),
+  );
+  renderActivityDetail();
+  expect(screen.getByText("8:03 /mi")).toBeTruthy();
+});
+
 it("switches the visible power-work reading with its selected source", async () => {
   mocks.metricSourcesQuery.mockReturnValue(defaultObserver(activityDetailMetricSources));
   const workBySource = {
@@ -997,4 +1157,73 @@ it("keeps sparse temperature charts on the activity timeline and supports GPS ho
   expect(
     view.container.querySelector("[data-scroll-enabled]")?.getAttribute("data-scroll-enabled"),
   ).toBe("true");
+});
+
+it("uses one compact trigger for every available performance metric and keeps the selection", () => {
+  renderActivityDetail();
+  fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
+
+  expect(screen.queryByRole("tablist", { name: "Performance metrics" })).toBeNull();
+  const trigger = screen.getByRole("button", { name: /^Performance metrics: Heart Rate/ });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  const choices = screen.getAllByRole("radio").map((radio) => radio.getAttribute("aria-label"));
+  expect(choices).toContain("Heart Rate");
+  expect(choices).toContain("Power");
+
+  fireEvent.click(screen.getByRole("radio", { name: "Power" }));
+  expect(screen.getByRole("button", { name: "View Power data" })).toBeTruthy();
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+  fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
+  expect(screen.getByRole("button", { name: /^Performance metrics: Power/ })).toBeTruthy();
+});
+
+it("omits the compact metric trigger when only one metric is available", () => {
+  mocks.streamQuery.mockReturnValue(
+    defaultObserver([
+      {
+        recordedAt: "2026-04-14T10:00:00.000Z",
+        heartRate: 140,
+        power: null,
+        speed: null,
+        cadence: null,
+        altitude: null,
+        skinTemperature: null,
+        lat: null,
+        lng: null,
+      },
+    ]),
+  );
+  renderActivityDetail();
+  fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
+
+  expect(screen.queryByRole("button", { name: /^Performance metrics:/ })).toBeNull();
+  expect(screen.getByRole("button", { name: "View Heart Rate data" })).toBeTruthy();
+});
+
+it("keeps the performance section empty when no metric is available", () => {
+  mocks.streamQuery.mockReturnValue(
+    defaultObserver([
+      {
+        recordedAt: "2026-04-14T10:00:00.000Z",
+        heartRate: null,
+        power: null,
+        speed: null,
+        cadence: null,
+        altitude: null,
+        skinTemperature: null,
+        lat: null,
+        lng: null,
+      },
+    ]),
+  );
+  renderActivityDetail();
+  fireEvent.click(screen.getByRole("tab", { name: "Performance" }));
+
+  expect(screen.queryByRole("button", { name: /^Performance metrics:/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /View .* data/ })).toBeNull();
 });

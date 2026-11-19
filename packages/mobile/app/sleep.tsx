@@ -11,8 +11,9 @@ import {
 } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { getMissingSleepStates } from "@dofek/format/sleep-data-state";
-import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { isConnectionFailure, userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
+import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useRef, useState } from "react";
 import {
@@ -22,6 +23,7 @@ import {
   type ScrollViewInstance,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Hypnogram } from "../components/charts/Hypnogram";
@@ -125,6 +127,8 @@ function renderStageContent(night: SleepNightlyRow, compact = false) {
 export default function SleepScreen() {
   const scrollViewRef = useRef<ScrollViewInstance>(null);
   const sleepSourcesYRef = useRef(0);
+  const { fontScale } = useWindowDimensions();
+  const largeDateControls = fontScale > 1;
   const { days, setDays } = useTimeRangePreference("sleep");
   const [selectedDate, setSelectedDate] = useState<string>();
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
@@ -139,9 +143,22 @@ export default function SleepScreen() {
     selectedDate === undefined || stagesByDateQuery.data?.date === selectedDate
       ? stagesByDateQuery.data?.stages
       : undefined;
-
+  // Night stages, the trend, and processing status can all fail from the same
+  // offline condition. Group only visible failures; the consistency query has
+  // no error UI on this screen, so it must not affect the grouping.
+  const connectionFailures = [stagesByDateQuery, sleepQuery, processingStatus].filter(
+    (query) => query.error != null && isConnectionFailure(query.error),
+  );
+  const sharedConnectionFailure = connectionFailures.length > 1;
+  const isSharedConnectionFailure = (error: unknown) =>
+    sharedConnectionFailure && isConnectionFailure(error);
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
+  // A grouped offline failure on the analytics query leaves no nightly rows to
+  // review. Drop that empty source area rather than rendering an orphaned
+  // "Sleep Sources" heading. A cached empty payload is still empty here;
+  // cached nights keep their source area.
+  const omitEmptySleepSources = isSharedConnectionFailure(sleepQuery.error) && nightly.length === 0;
   const averageSleepMinutes = sleepResult?.averageSleepMinutes;
   const averageEfficiencyPercent = sleepResult?.averageEfficiencyPercent;
   const mostRecentNight = nightly[nightly.length - 1];
@@ -179,6 +196,55 @@ export default function SleepScreen() {
     });
   };
 
+  const previousButton = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Previous day"
+      style={styles.stageDateButton}
+      onPress={() => {
+        const previousDate = shiftDateYmd(displayDate, -1);
+        if (previousDate <= today) setSelectedDate(previousDate);
+      }}
+    >
+      <Ionicons name="chevron-back" size={20} color={colors.blue} accessible={false} />
+    </Pressable>
+  );
+  const datePicker = (
+    <DateTimePicker
+      accessibilityLabel="Night date"
+      display="compact"
+      maximumDate={new Date(`${today}T23:59:59`)}
+      mode="date"
+      onChange={(event, date) => {
+        if (event.type !== "dismissed" && date) {
+          const pickedDate = formatDateYmd(date);
+          if (pickedDate <= today) setSelectedDate(pickedDate);
+        }
+      }}
+      style={
+        largeDateControls
+          ? [styles.stageDatePicker, styles.stageDatePickerOwnLine]
+          : styles.stageDatePicker
+      }
+      value={new Date(`${displayDate}T12:00:00`)}
+    />
+  );
+  const nextButton = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Next day"
+      accessibilityState={{ disabled: displayDate >= today }}
+      disabled={displayDate >= today}
+      style={[styles.stageDateButton, displayDate >= today && styles.stageDateButtonDisabled]}
+      onPress={() => {
+        const nextDate = shiftDateYmd(displayDate, 1);
+        if (nextDate <= today) setSelectedDate(nextDate);
+      }}
+    >
+      <Ionicons name="chevron-forward" size={20} color={colors.blue} accessible={false} />
+    </Pressable>
+  );
+
   return (
     <ScrollView
       ref={scrollViewRef}
@@ -192,63 +258,51 @@ export default function SleepScreen() {
         />
       }
     >
-      <DaySelector days={days} onChange={setDays} />
+      {sharedConnectionFailure ? (
+        <QueryStatePanel
+          variant="error"
+          message={userFacingErrorMessage(connectionFailures[0]?.error)}
+          minHeight={72}
+        />
+      ) : null}
 
       <ProcessingStatusWidget
         data={processingStatus.data}
-        error={processingStatus.error}
+        error={
+          isSharedConnectionFailure(processingStatus.error) ? undefined : processingStatus.error
+        }
         loading={processingStatus.isLoading}
       />
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Night’s Stages</Text>
-        <View style={styles.stageDateControls}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Previous day"
-            style={styles.stageDateButton}
-            onPress={() => {
-              const previousDate = shiftDateYmd(displayDate, -1);
-              if (previousDate <= today) setSelectedDate(previousDate);
-            }}
-          >
-            <Text style={styles.stageDateButtonText}>Previous</Text>
-          </Pressable>
-          <DateTimePicker
-            accessibilityLabel="Night date"
-            display="compact"
-            maximumDate={new Date(`${today}T23:59:59`)}
-            mode="date"
-            onChange={(event, date) => {
-              if (event.type !== "dismissed" && date) {
-                const pickedDate = formatDateYmd(date);
-                if (pickedDate <= today) setSelectedDate(pickedDate);
-              }
-            }}
-            value={new Date(`${displayDate}T12:00:00`)}
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Next day"
-            accessibilityState={{ disabled: displayDate >= today }}
-            disabled={displayDate >= today}
-            style={[styles.stageDateButton, displayDate >= today && styles.stageDateButtonDisabled]}
-            onPress={() => {
-              const nextDate = shiftDateYmd(displayDate, 1);
-              if (nextDate <= today) setSelectedDate(nextDate);
-            }}
-          >
-            <Text style={styles.stageDateButtonText}>Next</Text>
-          </Pressable>
+        <View testID="night-date-controls" style={styles.stageDateControls}>
+          {largeDateControls ? (
+            <>
+              {datePicker}
+              <View style={styles.stageDateNav}>
+                {previousButton}
+                {nextButton}
+              </View>
+            </>
+          ) : (
+            <>
+              {previousButton}
+              {datePicker}
+              {nextButton}
+            </>
+          )}
         </View>
-        {stagesByDateQuery.isError && !selectedStages ? (
+        {stagesByDateQuery.isError &&
+        !selectedStages &&
+        !isSharedConnectionFailure(stagesByDateQuery.error) ? (
           <QueryStatePanel
             variant="error"
             message={userFacingErrorMessage(stagesByDateQuery.error)}
           />
         ) : selectedStages ? (
           <>
-            {stagesByDateQuery.isError && (
+            {stagesByDateQuery.isError && !isSharedConnectionFailure(stagesByDateQuery.error) && (
               <Text accessibilityRole="alert" style={styles.stageUnavailable}>
                 Refresh failed: {userFacingErrorMessage(stagesByDateQuery.error)}
               </Text>
@@ -264,13 +318,16 @@ export default function SleepScreen() {
         ) : null}
       </View>
 
+      {/* Trend range, grouped with the trend content below the independently browsed night. */}
+      <DaySelector days={days} onChange={setDays} />
+
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading sleep data...</Text>
         </View>
-      ) : sleepQuery.isError && !sleepQuery.data ? (
+      ) : sleepQuery.isError && !sleepQuery.data && !isSharedConnectionFailure(sleepQuery.error) ? (
         <QueryStatePanel variant="error" message={userFacingErrorMessage(sleepQuery.error)} />
-      ) : nightly.length === 0 ? (
+      ) : nightly.length === 0 && !isSharedConnectionFailure(sleepQuery.error) ? (
         <QueryStatePanel
           variant="empty"
           title="No sleep records in this period"
@@ -416,13 +473,15 @@ export default function SleepScreen() {
             </View>
           )}
 
-          <View
-            onLayout={(event) => {
-              sleepSourcesYRef.current = event.nativeEvent.layout.y;
-            }}
-          >
-            <SleepSourceReview nights={[...nightly].slice(-7).reverse()} />
-          </View>
+          {!omitEmptySleepSources && (
+            <View
+              onLayout={(event) => {
+                sleepSourcesYRef.current = event.nativeEvent.layout.y;
+              }}
+            >
+              <SleepSourceReview nights={[...nightly].slice(-7).reverse()} />
+            </View>
+          )}
         </>
       )}
     </ScrollView>
@@ -458,21 +517,30 @@ const styles = StyleSheet.create({
   stageDateControls: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
     justifyContent: "space-between",
+    gap: 8,
+  },
+  stageDateNav: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   stageDateButton: {
     minHeight: 44,
+    minWidth: 44,
+    alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 8,
+  },
+  stageDatePicker: {
+    flexShrink: 1,
+    maxWidth: "100%",
+  },
+  stageDatePickerOwnLine: {
+    width: "100%",
   },
   stageDateButtonDisabled: {
     opacity: 0.45,
-  },
-  stageDateButtonText: {
-    color: colors.blue,
-    fontSize: 13,
-    fontWeight: "600",
   },
   cardTitle: {
     fontSize: 13,
@@ -529,10 +597,14 @@ const styles = StyleSheet.create({
   },
   consistencyRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-around",
+    gap: 8,
   },
   consistencyStat: {
     alignItems: "center",
+    flexShrink: 1,
+    minWidth: 0,
     gap: 4,
   },
   consistencyValue: {

@@ -13,14 +13,29 @@ import {
 import {
   activityMocks,
   locationSearchQuery,
+  mockActivityImages,
   mockImagesQuery,
   placeLookupQuery,
   routerPush,
+  titleSearchQuery,
 } from "../../app-fixtures/(tabs)/activities-test-setup";
 import { branchingActivitySourceTree } from "../../app-fixtures/activity-source-tree";
 import { activityImageFixture } from "../../components/activity-images-test-helpers";
 
 const { default: ActivitiesScreen } = await import("../../app/(tabs)/activities");
+const connectionMessage = "We couldn't reach the server. Check your connection and try again.";
+
+function renderLiveActivityList(fetch: NonNullable<typeof activityMocks.livePageFetch>) {
+  activityMocks.liveQueryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  activityMocks.livePageFetch = fetch;
+  return render(
+    <QueryClientProvider client={activityMocks.liveQueryClient}>
+      <ActivitiesScreen />
+    </QueryClientProvider>,
+  );
+}
 
 describe("ActivitiesScreen", () => {
   it("searches recorded locations, chooses a nearby place, and loads more results", () => {
@@ -113,6 +128,137 @@ describe("ActivitiesScreen", () => {
     expect(refetch).toHaveBeenCalledOnce();
   });
 
+  it("groups a visible place lookup failure with other connection failures and retries it", () => {
+    const placesRefetch = vi.fn();
+    const processingRefetch = vi.fn();
+    placeLookupQuery.mockImplementation((_input, options) =>
+      options.enabled
+        ? { isError: true, error: new Error(connectionMessage), refetch: placesRefetch }
+        : {},
+    );
+    activityMocks.mockDataHealthQuery = {
+      ...activityMocks.mockDataHealthQuery,
+      error: new Error(connectionMessage),
+      refetch: processingRefetch,
+    };
+
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Location" }));
+    fireEvent.change(screen.getByLabelText("Search activity locations"), {
+      target: { value: "East Bay" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Look up a place" }));
+
+    expect(screen.getAllByText(connectionMessage)).toHaveLength(1);
+    expect(screen.queryByText("Place lookup is temporarily unavailable.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(placesRefetch).toHaveBeenCalledOnce();
+    expect(processingRefetch).toHaveBeenCalledOnce();
+  });
+
+  it("excludes an inactive place lookup failure from the shared connection group", () => {
+    const placesRefetch = vi.fn();
+    placeLookupQuery.mockImplementation(() => ({
+      isError: true,
+      error: new Error(connectionMessage),
+      refetch: placesRefetch,
+    }));
+    activityMocks.mockDataHealthQuery = {
+      ...activityMocks.mockDataHealthQuery,
+      error: new Error(connectionMessage),
+      refetch: vi.fn(),
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getAllByText(connectionMessage)).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(placesRefetch).not.toHaveBeenCalled();
+  });
+
+  it("shows one notice when activity and processing status queries fail from the same offline condition", () => {
+    activityMocks.mockOverviewQuery = {
+      ...activityMocks.mockOverviewQuery,
+      isError: true,
+      error: new Error("Failed to fetch"),
+    };
+    activityMocks.mockQuery = {
+      ...activityMocks.mockQuery,
+      isError: true,
+      error: new Error("Network request failed"),
+    };
+    activityMocks.mockDataHealthQuery = {
+      ...activityMocks.mockDataHealthQuery,
+      error: new Error("Failed to fetch"),
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getAllByText(connectionMessage)).toHaveLength(1);
+    expect(screen.queryByText(/No activities in the last/)).toBeNull();
+  });
+
+  it("shared connection retry refetches every failed visible query including the activity list", () => {
+    const overviewRefetch = vi.fn();
+    const listRefetch = vi.fn();
+    const processingRefetch = vi.fn();
+    activityMocks.mockOverviewQuery = {
+      ...activityMocks.mockOverviewQuery,
+      isError: true,
+      error: new Error(connectionMessage),
+      refetch: overviewRefetch,
+    };
+    activityMocks.mockQuery = {
+      ...activityMocks.mockQuery,
+      isError: true,
+      error: new Error(connectionMessage),
+      refetch: listRefetch,
+    };
+    activityMocks.mockDataHealthQuery = {
+      ...activityMocks.mockDataHealthQuery,
+      error: new Error(connectionMessage),
+      refetch: processingRefetch,
+    };
+
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(overviewRefetch).toHaveBeenCalledOnce();
+    expect(listRefetch).toHaveBeenCalledOnce();
+    expect(processingRefetch).toHaveBeenCalledOnce();
+  });
+
+  it("does not count hidden overview and calendar failures while searching", () => {
+    const searchRefetch = vi.fn();
+    titleSearchQuery.mockReturnValue({
+      data: undefined,
+      isError: true,
+      error: new Error(connectionMessage),
+      isFetching: false,
+      hasNextPage: false,
+      refetch: searchRefetch,
+    });
+    activityMocks.mockOverviewQuery = {
+      ...activityMocks.mockOverviewQuery,
+      isError: true,
+      error: new Error(connectionMessage),
+    };
+    activityMocks.mockCalendarQuery = {
+      ...activityMocks.mockCalendarQuery,
+      isError: true,
+      error: new Error(connectionMessage),
+    };
+
+    render(<ActivitiesScreen />);
+    fireEvent.change(screen.getByLabelText("Search activity titles"), {
+      target: { value: "Ride" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(searchRefetch).toHaveBeenCalledOnce();
+  });
+
   it("uses the primary climbing source for the icon over a cardio representative", () => {
     activityMocks.mockQuery = activityListQuery([
       activity({ name: "Kaya climbing", activityType: "cardio", primaryActivityType: "climbing" }),
@@ -152,17 +298,7 @@ describe("ActivitiesScreen", () => {
 
   it("shows one downloaded photo for activities without a map", () => {
     activityMocks.mockQuery = activityListQuery([activity({ location: null })]);
-    mockImagesQuery.mockReturnValue({
-      data: {
-        images: [activityImageFixture, { ...activityImageFixture, id: "photo-2" }],
-        coverage: [],
-        acquisition: [],
-      },
-      error: null,
-      isLoading: false,
-      isFetching: false,
-      refetch: vi.fn(),
-    });
+    mockActivityImages([activityImageFixture, { ...activityImageFixture, id: "photo-2" }]);
     render(<ActivitiesScreen />);
     expect(screen.getAllByLabelText("View from the summit")).toHaveLength(1);
     expect(mockImagesQuery).toHaveBeenCalledWith(
@@ -283,13 +419,7 @@ describe("ActivitiesScreen", () => {
           },
         }),
       ]);
-      mockImagesQuery.mockReturnValue({
-        data: { images: [activityImageFixture], coverage: [], acquisition: [] },
-        error: null,
-        isLoading: false,
-        isFetching: false,
-        refetch: vi.fn(),
-      });
+      mockActivityImages([activityImageFixture]);
       render(<ActivitiesScreen />);
       if (selectMode) fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
       const sourceButton = screen.getByRole("button", { name: "Lineage: Hang Ten" });
@@ -610,11 +740,8 @@ describe("ActivitiesScreen", () => {
   });
 
   it("keeps cached cards and navigation after an uncached server page fails", async () => {
-    activityMocks.liveQueryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
     let failPage = true;
-    activityMocks.livePageFetch = async (input) => {
+    renderLiveActivityList(async (input) => {
       if (input.page === 1 && failPage)
         throw new Error("Page two is unavailable. Retry the request.");
       return {
@@ -628,12 +755,7 @@ describe("ActivitiesScreen", () => {
         page: input.page ?? 0,
         pageSize: 20,
       };
-    };
-    render(
-      <QueryClientProvider client={activityMocks.liveQueryClient}>
-        <ActivitiesScreen />
-      </QueryClientProvider>,
-    );
+    });
     await screen.findByText("Cached Ride");
     fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
     await screen.findByText("Page two is unavailable. Retry the request.");
@@ -646,10 +768,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("does not label another range's cached cards as the failed selected range", async () => {
-    activityMocks.liveQueryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    activityMocks.livePageFetch = async (input) => {
+    renderLiveActivityList(async (input) => {
       if (input.weeks === 8) throw new Error("Selected range is unavailable.");
       return {
         days: [{ date: "2026-03-18", activities: [activity({ name: "Previous Range Ride" })] }],
@@ -657,12 +776,7 @@ describe("ActivitiesScreen", () => {
         page: 0,
         pageSize: 20,
       };
-    };
-    render(
-      <QueryClientProvider client={activityMocks.liveQueryClient}>
-        <ActivitiesScreen />
-      </QueryClientProvider>,
-    );
+    });
     await screen.findByText("Previous Range Ride");
     fireEvent.click(screen.getByRole("button", { name: /^Date range/ }));
     fireEvent.click(screen.getByText("8 weeks"));

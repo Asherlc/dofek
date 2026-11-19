@@ -16,7 +16,7 @@ function StatBadge({ label, count }: { label: string; count: number }) {
 }
 
 /**
- * Compact variant: horizontal wrap of stat badges (used in provider cards).
+ * Compact variant: total only (used in provider list cards).
  * Full variant: total header + grid of stat badges (used in detail pages).
  */
 export function ProviderStatsBreakdown({
@@ -27,9 +27,9 @@ export function ProviderStatsBreakdown({
   variant?: "compact" | "full";
 }) {
   const total = providerStatsTotal(stats);
-  const breakdown = providerStatsBreakdown(stats);
 
   if (variant === "full") {
+    const breakdown = providerStatsBreakdown(stats);
     return (
       <View style={styles.fullContainer}>
         <View style={styles.totalRow}>
@@ -50,11 +50,6 @@ export function ProviderStatsBreakdown({
       <View style={styles.compactTotalRow}>
         <Text style={styles.compactTotalCount}>{total.toLocaleString()}</Text>
         <Text style={styles.compactTotalLabel}>records</Text>
-      </View>
-      <View style={styles.statsRow}>
-        {breakdown.map((stat) => (
-          <StatBadge key={stat.label} label={stat.label} count={stat.count} />
-        ))}
       </View>
     </View>
   );

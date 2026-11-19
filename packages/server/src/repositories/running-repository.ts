@@ -1,6 +1,7 @@
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
+import { averageRunPaceSecondsPerKm } from "../lib/average-run-pace.ts";
 import {
   clickHouseIntervalDayLowerBound,
   type RangeDays,
@@ -72,9 +73,7 @@ export class RunningDynamicsActivity {
 
   /** Pace in seconds per kilometer, derived from average speed (m/s). */
   get paceSecondsPerKm(): number | null {
-    return this.#row.avgSpeed != null && this.#row.avgSpeed > 0
-      ? Math.round(1000 / this.#row.avgSpeed)
-      : null;
+    return averageRunPaceSecondsPerKm(this.#row.avgSpeed);
   }
 
   /** Distance in kilometers, rounded to 1 decimal. */

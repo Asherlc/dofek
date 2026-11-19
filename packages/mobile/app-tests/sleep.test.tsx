@@ -2,10 +2,14 @@
 
 import { shiftDateYmd } from "@dofek/format/format";
 import { fireEvent, render, screen } from "@testing-library/react";
+import type { CSSProperties } from "react";
+import { useWindowDimensions } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockSleepData: Record<string, unknown> | undefined;
 let mockSleepError: Error | null;
+let mockProcessingError: Error | null;
+let mockConsistencyData: Record<string, unknown>[] = [];
 const sleepMocks = vi.hoisted(() => ({ stagesByDate: vi.fn() }));
 
 vi.mock("../lib/trpc", () => ({
@@ -21,7 +25,7 @@ vi.mock("../lib/trpc", () => ({
         }),
       },
       sleepConsistency: {
-        useQuery: () => ({ data: [], isLoading: false, isFetching: false }),
+        useQuery: () => ({ data: mockConsistencyData, isLoading: false, isFetching: false }),
       },
     },
     sleep: {
@@ -34,16 +38,19 @@ vi.mock("@react-native-community/datetimepicker", () => ({
   default: ({
     maximumDate,
     onChange,
+    style,
     value,
   }: {
     maximumDate: Date;
     onChange: (event: { type: string }, date?: Date) => void;
+    style?: CSSProperties | Array<CSSProperties | false | undefined>;
     value: Date;
   }) => (
     <input
       type="date"
       aria-label="Night date"
       max={maximumDate.toISOString().slice(0, 10)}
+      style={Array.isArray(style) ? Object.assign({}, ...style) : style}
       value={value.toISOString().slice(0, 10)}
       onChange={(event) =>
         onChange({ type: "set" }, new Date(`${event.currentTarget.value}T12:00:00`))
@@ -53,7 +60,7 @@ vi.mock("@react-native-community/datetimepicker", () => ({
 }));
 
 vi.mock("../lib/useProcessingStatus", () => ({
-  useProcessingStatus: () => ({ data: undefined, error: null, isLoading: false }),
+  useProcessingStatus: () => ({ data: undefined, error: mockProcessingError, isLoading: false }),
 }));
 
 vi.mock("../lib/useTimeRangePreference", async () => {
@@ -75,7 +82,8 @@ vi.mock("../lib/useRefresh", () => ({
 }));
 
 vi.mock("../components/ProcessingStatusWidget", () => ({
-  ProcessingStatusWidget: () => null,
+  ProcessingStatusWidget: ({ error }: { error: { message: string } | null }) =>
+    error ? <p>{error.message}</p> : null,
 }));
 
 vi.mock("../components/charts/Hypnogram", () => ({
@@ -95,10 +103,20 @@ vi.mock("../components/charts/SparkLine", () => ({
   ),
 }));
 
+const mockUseWindowDimensions = vi.mocked(useWindowDimensions);
+
 describe("SleepScreen", () => {
   beforeEach(() => {
     mockSleepData = undefined;
     mockSleepError = null;
+    mockProcessingError = null;
+    mockConsistencyData = [];
+    mockUseWindowDimensions.mockReturnValue({
+      width: 390,
+      height: 844,
+      scale: 3,
+      fontScale: 1,
+    });
     sleepMocks.stagesByDate.mockImplementation((input?: { date?: string }) => ({
       data: { date: input?.date ?? "2026-07-20", stages: [] },
       error: null,
@@ -453,5 +471,330 @@ describe("SleepScreen", () => {
     });
 
     expect(sleepMocks.stagesByDate).toHaveBeenLastCalledWith({ date: selectedDate });
+  });
+
+  it("keeps the independently browsed night stages before the grouped trend range", async () => {
+    mockSleepData = {
+      nightly: [
+        {
+          date: "2026-07-20",
+          startedAt: "2026-07-20T05:00:00.000Z",
+          endedAt: "2026-07-20T13:00:00.000Z",
+          localTimeContext: {
+            timezone: null,
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "provider_offset",
+          },
+          durationMinutes: 320,
+          sleepMinutes: 300,
+          deepPct: 20,
+          remPct: 20,
+          lightPct: 50,
+          awakePct: 10,
+          efficiency: 50,
+          stagingAvailable: true,
+          rollingAvgDuration: 300,
+          durationState: { status: "available" },
+          sleepState: { status: "available" },
+          stageState: { status: "available" },
+        },
+      ],
+      averageSleepMinutes: 455,
+      averageEfficiencyPercent: 91.2,
+    };
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    const nightStages = screen.getByText("Night’s Stages");
+    const trendRange = screen.getByRole("radiogroup", { name: "Time range" });
+    const trendCard = screen.getByText("Average Duration");
+    expect(
+      nightStages.compareDocumentPosition(trendRange) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      trendRange.compareDocumentPosition(trendCard) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("shows one notice when the night and trend queries fail with the same connection error", async () => {
+    const connectionMessage = "We couldn't reach the server. Check your connection and try again.";
+    mockSleepError = new Error("Failed to fetch");
+    sleepMocks.stagesByDate.mockImplementation(() => ({
+      data: undefined,
+      error: new Error("Network request failed"),
+      isError: true,
+      isLoading: false,
+      isFetching: false,
+    }));
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    const view = render(<SleepScreen />);
+
+    expect(screen.getAllByText(connectionMessage)).toHaveLength(1);
+    expect(screen.queryByText("No sleep records in this period")).toBeNull();
+    // A failed analytics query with no cached data must not leave an empty
+    // source area behind, but the independently browsable controls stay.
+    expect(screen.queryByText("Sleep Sources")).toBeNull();
+    expect(screen.getByText("Night’s Stages")).toBeTruthy();
+    expect(screen.getByRole("radiogroup", { name: "Time range" })).toBeTruthy();
+
+    // A cached *empty* payload is still empty after the grouped offline refresh.
+    mockSleepData = { nightly: [], averageSleepMinutes: null, averageEfficiencyPercent: null };
+    view.unmount();
+    render(<SleepScreen />);
+
+    expect(screen.getAllByText(connectionMessage)).toHaveLength(1);
+    expect(screen.queryByText("No sleep records in this period")).toBeNull();
+    expect(screen.queryByText("Sleep Sources")).toBeNull();
+    expect(screen.getByRole("radiogroup", { name: "Time range" })).toBeTruthy();
+  });
+
+  it("keeps the cached sleep source area when the trend shares the connection error", async () => {
+    const connectionMessage = "We couldn't reach the server. Check your connection and try again.";
+    const today = new Intl.DateTimeFormat("en-CA").format(new Date());
+    mockSleepData = {
+      nightly: [
+        {
+          date: today,
+          startedAt: `${today}T08:00:00.000Z`,
+          endedAt: `${today}T16:00:00.000Z`,
+          localTimeContext: {
+            timezone: "UTC",
+            startUtcOffsetMinutes: 0,
+            endUtcOffsetMinutes: 0,
+            source: "provider_timezone",
+          },
+          durationMinutes: 480,
+          sleepMinutes: 450,
+          deepPct: 20,
+          remPct: 20,
+          lightPct: 50,
+          awakePct: 10,
+          efficiency: 90,
+          stagingAvailable: true,
+          rollingAvgDuration: 450,
+          durationState: { status: "available" },
+          sleepState: { status: "available" },
+          stageState: { status: "available" },
+        },
+      ],
+      averageSleepMinutes: 450,
+      averageEfficiencyPercent: 90,
+    };
+    mockSleepError = new Error("Failed to fetch");
+    sleepMocks.stagesByDate.mockImplementation(() => ({
+      data: undefined,
+      error: new Error("Network request failed"),
+      isError: true,
+      isLoading: false,
+      isFetching: false,
+    }));
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    expect(screen.getAllByText(connectionMessage)).toHaveLength(1);
+    expect(screen.getByText("Sleep Sources")).toBeTruthy();
+    expect(screen.getByText("Recent Nights")).toBeTruthy();
+  });
+
+  it("keeps distinct night and trend failures as separate notices", async () => {
+    mockSleepError = new Error("Sleep analytics are unavailable.");
+    sleepMocks.stagesByDate.mockImplementation(() => ({
+      data: undefined,
+      error: new Error("Failed to fetch"),
+      isError: true,
+      isLoading: false,
+      isFetching: false,
+    }));
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    expect(screen.getByText("Sleep analytics are unavailable.")).toBeTruthy();
+    expect(
+      screen.getByText("We couldn't reach the server. Check your connection and try again."),
+    ).toBeTruthy();
+  });
+
+  it("shows one grouped notice and hides the processing copy when night, trend, and processing share a connection error", async () => {
+    const connectionMessage = "We couldn't reach the server. Check your connection and try again.";
+    mockSleepError = new Error("Failed to fetch");
+    mockProcessingError = new Error(connectionMessage);
+    sleepMocks.stagesByDate.mockImplementation(() => ({
+      data: undefined,
+      error: new Error("Network request failed"),
+      isError: true,
+      isLoading: false,
+      isFetching: false,
+    }));
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    expect(screen.getAllByText(connectionMessage)).toHaveLength(1);
+    expect(screen.getAllByTestId("query-state-error")).toHaveLength(1);
+  });
+
+  it("groups the processing failure with the night failure when the trend fails distinctly", async () => {
+    const connectionMessage = "We couldn't reach the server. Check your connection and try again.";
+    mockSleepError = new Error("Sleep analytics are unavailable.");
+    mockProcessingError = new Error(connectionMessage);
+    sleepMocks.stagesByDate.mockImplementation(() => ({
+      data: undefined,
+      error: new Error("Network request failed"),
+      isError: true,
+      isLoading: false,
+      isFetching: false,
+    }));
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    expect(screen.getAllByText(connectionMessage)).toHaveLength(1);
+    expect(screen.getByText("Sleep analytics are unavailable.")).toBeTruthy();
+  });
+
+  it("hides the duplicate refresh failure but keeps cached stages when the night shares the connection error", async () => {
+    const connectionMessage = "We couldn't reach the server. Check your connection and try again.";
+    mockSleepError = new Error("Failed to fetch");
+    mockProcessingError = new Error(connectionMessage);
+    sleepMocks.stagesByDate.mockImplementation(() => ({
+      data: { date: "2026-07-20", stages: [] },
+      error: new Error("Network request failed"),
+      isError: true,
+      isLoading: false,
+      isFetching: false,
+    }));
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    expect(screen.getAllByText(connectionMessage)).toHaveLength(1);
+    expect(screen.queryByText(/Refresh failed:/)).toBeNull();
+    expect(screen.getByText("Night’s Stages")).toBeTruthy();
+  });
+
+  it("keeps one compact row with chevron navigation and 44-point targets at the standard text size", async () => {
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    const controls = screen.getByTestId("night-date-controls");
+    expect(controls.style.flexDirection).toBe("row");
+    expect(controls.style.flexWrap).toBe("wrap");
+
+    const previous = screen.getByRole("button", { name: "Previous day" });
+    const next = screen.getByRole("button", { name: "Next day" });
+    const picker = screen.getByLabelText("Night date");
+    for (const button of [previous, next]) {
+      expect(button.style.minHeight).toBe("44px");
+      expect(button.style.minWidth).toBe("44px");
+    }
+    expect(previous.querySelector('[data-icon="chevron-back"]')).toBeTruthy();
+    expect(next.querySelector('[data-icon="chevron-forward"]')).toBeTruthy();
+    expect(
+      previous.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(picker.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("gives the date picker its own line and keeps both chevrons together at accessibility text sizes", async () => {
+    const today = new Intl.DateTimeFormat("en-CA").format(new Date());
+    mockUseWindowDimensions.mockReturnValue({
+      width: 390,
+      height: 844,
+      scale: 3,
+      fontScale: 2,
+    });
+    sleepMocks.stagesByDate.mockImplementation((input?: { date?: string }) => ({
+      data: { date: input?.date ?? today, stages: [] },
+      error: null,
+      isError: false,
+      isLoading: false,
+      isFetching: false,
+    }));
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    const controls = screen.getByTestId("night-date-controls");
+    const picker = screen.getByLabelText("Night date");
+    expect(picker.style.width).toBe("100%");
+
+    const previous = screen.getByRole("button", { name: "Previous day" });
+    const next = screen.getByRole("button", { name: "Next day" });
+    const nav = previous.parentElement;
+    if (!nav) throw new Error("Expected the navigation buttons to be grouped");
+    expect(nav).toBe(next.parentElement);
+    expect(nav.style.flexDirection).toBe("row");
+    expect(picker.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const button of [previous, next]) {
+      expect(button.style.minHeight).toBe("44px");
+      expect(button.style.minWidth).toBe("44px");
+      expect(button.style.width).not.toBe("100%");
+      expect(controls.contains(button)).toBe(true);
+    }
+    expect(previous.querySelector('[data-icon="chevron-back"]')).toBeTruthy();
+    expect(next.querySelector('[data-icon="chevron-forward"]')).toBeTruthy();
+    expect(next.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("wraps consistency stats into paired rows when enlarged values cannot share a line", async () => {
+    const today = new Intl.DateTimeFormat("en-CA").format(new Date());
+    mockSleepData = {
+      nightly: [
+        {
+          date: today,
+          startedAt: `${today}T08:00:00.000Z`,
+          endedAt: `${today}T16:00:00.000Z`,
+          localTimeContext: {
+            timezone: "UTC",
+            startUtcOffsetMinutes: 0,
+            endUtcOffsetMinutes: 0,
+            source: "provider_timezone",
+          },
+          durationMinutes: 480,
+          sleepMinutes: 450,
+          deepPct: 20,
+          remPct: 20,
+          lightPct: 50,
+          awakePct: 10,
+          efficiency: 90,
+          stagingAvailable: true,
+          rollingAvgDuration: 450,
+          durationState: { status: "available" },
+          sleepState: { status: "available" },
+          stageState: { status: "available" },
+        },
+      ],
+      averageSleepMinutes: 450,
+      averageEfficiencyPercent: 90,
+    };
+    mockConsistencyData = [
+      {
+        date: today,
+        consistencyScore: 84,
+        bedtimeHour: 23.2,
+        waketimeHour: 7.1,
+      },
+    ];
+
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+
+    const scoreLabel = screen.getByText("Score");
+    const stat = scoreLabel.parentElement;
+    const row = stat?.parentElement;
+    if (!stat || !row) throw new Error("Expected paired consistency stats in a wrapping row");
+
+    expect(row.style.flexWrap).toBe("wrap");
+    expect(row.style.gap).toBe("8px");
+    expect(stat.style.flexShrink).toBe("1");
+    // The value and its label remain paired inside the same stat.
+    expect(stat.textContent).toContain("84");
+    expect(stat.textContent).toContain("Score");
+    expect(screen.getByText("Schedule Consistency")).toBeTruthy();
   });
 });

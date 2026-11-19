@@ -28,6 +28,8 @@ import { z } from "zod";
 
 const workflowText = readFileSync(".github/workflows/deploy-web-stack.yml", "utf8");
 const otaImage = `${deployTestRepository}-ota@${deployTestDigest}`;
+const CHECKOUT_ACTION = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
+const CONTROL_CHECKOUT_PATH = "control-checkout";
 
 describe("Pipedash production access verification", () => {
   const execute = (statuses: number[], password?: string, rule?: string) =>
@@ -268,6 +270,19 @@ function workflowRunScript(name: string): string {
   return script;
 }
 
+function webStackSteps() {
+  return z.object({ jobs: z.object({ "web-stack": z.object({
+    steps: z.array(z.object({
+      name: z.string().optional(),
+      id: z.string().optional(),
+      if: z.string().optional(),
+      uses: z.string().optional(),
+      with: z.record(z.unknown()).optional(),
+      run: z.string().optional(),
+    })),
+  }) }) }).parse(parse(workflowText)).jobs["web-stack"].steps;
+}
+
 function workflowStackWebFilter(): string {
   return z.string().optional().parse(parseDocument(workflowText).getIn(["jobs", "web-stack", "env", "STACK_WEB_FILTER"])) ?? "";
 }
@@ -412,6 +427,64 @@ describe("deploy-web-stack workflow contract", () => {
       "steps.verify_peerdb_cdc_contract.conclusion == 'success'",
     );
     expect(workflowRunScript("Wait for pre-migration web convergence")).toContain("UpdateStatus.State");
+  });
+
+  it("drains deployed publishers before the dependency apply and rechecks quiescence afterward", () => {
+    const drainStep = "Drain deployed migration publishers before dependency stack apply";
+    const applyStep = "Apply dependency stack before migrations";
+    const checkStep = "Wait for migration readers and writers to stop";
+    const positions = [drainStep, applyStep, checkStep].map((name) =>
+      workflowText.indexOf(`      - name: ${name}\n`),
+    );
+
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+    expect(workflowRunScript(drainStep)).toBe(
+      `pnpm tsx ${CONTROL_CHECKOUT_PATH}/scripts/wait-migration-quiescence.ts --drain "$STACK_NAME" "$MIGRATION_DEPLOYMENT_MODE"`,
+    );
+    expect(workflowRunScript(checkStep)).toBe(
+      'pnpm tsx scripts/wait-migration-quiescence.ts "$STACK_NAME" "$MIGRATION_DEPLOYMENT_MODE"',
+    );
+
+    const drain = webStackSteps().find((step) => step.name === drainStep);
+    expect(drain?.id).toBe("drain_migration_publishers");
+  });
+
+  it("reports an interrupted deploy only after the publisher drain has started", () => {
+    const report = webStackSteps().find(
+      (step) => step.name === "Report interrupted deployment after publisher drain starts",
+    );
+    expect(report?.if).toContain("failure()");
+    expect(report?.if).toContain(
+      "(steps.drain_migration_publishers.conclusion == 'failure' || steps.drain_migration_publishers.conclusion == 'success')",
+    );
+    expect(report?.if).toContain("steps.deploy_stack_quiesced.conclusion != 'success'");
+    expect(report?.if).toContain("steps.deploy_stack_full.conclusion != 'success'");
+    expect(report?.run).toContain("Migration publisher replicas may still be at zero");
+    expect(report?.run).toContain("Inspect the failed step before restarting the deployment.");
+  });
+
+  it("pins candidate and control checkout identities for the migration guard", () => {
+    const checkouts = webStackSteps().filter((step) => step.uses?.startsWith("actions/checkout@"));
+    expect(checkouts).toHaveLength(2);
+    expect(checkouts.map((step) => step.uses)).toEqual([CHECKOUT_ACTION, CHECKOUT_ACTION]);
+
+    const candidate = checkouts[0]?.with ?? {};
+    expect(candidate).toMatchObject({
+      ref: "${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}",
+      "persist-credentials": false,
+    });
+    expect(candidate).not.toHaveProperty("path");
+    expect(candidate).not.toHaveProperty("sparse-checkout");
+
+    const control = checkouts[1]?.with ?? {};
+    expect(control).toMatchObject({
+      ref: "${{ github.workflow_sha }}",
+      "persist-credentials": false,
+      "sparse-checkout": "scripts/wait-migration-quiescence.ts",
+      "sparse-checkout-cone-mode": false,
+      path: CONTROL_CHECKOUT_PATH,
+    });
   });
 
   it.each(["image", "config", "lifecycle", "updating", "no-op"] as const)("waits for ClickHouse readiness for %s", (change) => {

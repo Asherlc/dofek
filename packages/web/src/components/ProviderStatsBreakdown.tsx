@@ -5,7 +5,7 @@ import {
 } from "@dofek/providers/provider-stats";
 
 /**
- * Compact variant: total + 2-column grid (used in provider cards).
+ * Compact variant: total only (used in provider list cards).
  * Full variant: total + responsive multi-column grid (used in detail pages).
  */
 export function ProviderStatsBreakdown({
@@ -16,9 +16,9 @@ export function ProviderStatsBreakdown({
   variant?: "compact" | "full";
 }) {
   const total = providerStatsTotal(stats);
-  const breakdown = providerStatsBreakdown(stats);
 
   if (variant === "full") {
+    const breakdown = providerStatsBreakdown(stats);
     return (
       <section className="card p-4">
         <div className="flex items-baseline gap-2 mb-3">
@@ -48,14 +48,6 @@ export function ProviderStatsBreakdown({
           {total.toLocaleString()}
         </span>
         <span className="text-xs text-subtle">records</span>
-      </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
-        {breakdown.map((stat) => (
-          <div key={stat.label} className="flex justify-between text-xs">
-            <span className="text-subtle">{stat.label}</span>
-            <span className="text-muted tabular-nums">{stat.count.toLocaleString()}</span>
-          </div>
-        ))}
       </div>
     </div>
   );

@@ -213,6 +213,62 @@ it.each([
   },
 );
 
+it("omits the header Avg Cadence stat when Running Form supplies cadence", () => {
+  render(
+    <ActivityHeader
+      activity={{
+        ...baseActivity,
+        activityType: "running",
+        runningForm: {
+          cadence: 170,
+          cadenceBasis: "step_intervals",
+          cadenceObservedSeconds: 2400,
+          cadenceCoveragePercent: 92,
+          strideLengthMeters: null,
+          stanceTimeMs: null,
+          verticalOscillationMm: null,
+        },
+      }}
+      units={new UnitConverter("metric")}
+    />,
+  );
+  expect(screen.queryByText(/Avg Cadence/)).toBeNull();
+  expect(screen.queryByText("170 steps/min")).toBeNull();
+});
+
+it.each([
+  {
+    name: "non-running activities",
+    activity: { ...baseActivity, activityType: "cycling" },
+    cadence: "85 rpm",
+  },
+  {
+    name: "older detail responses without Running Form",
+    activity: { ...baseActivity, activityType: "running" },
+    cadence: "85 steps/min",
+  },
+  {
+    name: "Running Form without a cadence reading",
+    activity: {
+      ...baseActivity,
+      activityType: "running",
+      runningForm: {
+        cadence: null,
+        cadenceBasis: "unknown" as const,
+        cadenceObservedSeconds: null,
+        cadenceCoveragePercent: null,
+        strideLengthMeters: 0.9,
+        stanceTimeMs: null,
+        verticalOscillationMm: null,
+      },
+    },
+    cadence: "85 steps/min",
+  },
+])("keeps the header Avg Cadence stat for $name", ({ activity, cadence }) => {
+  render(<ActivityHeader activity={activity} units={new UnitConverter("metric")} />);
+  expect(screen.getByText(cadence)).toBeVisible();
+});
+
 it("retains a measured zero distance and formats the selected distance and speed units", () => {
   const { rerender } = render(
     <ActivityHeader
@@ -237,6 +293,95 @@ it("retains a measured zero distance and formats the selected distance and speed
   expect(screen.getByText("6.2 mi")).toBeVisible();
   expect(screen.getByText("19.0 mph")).toBeVisible();
   expect(screen.getByText("656 ft")).toBeVisible();
+});
+
+it.each([
+  { system: "metric", expected: "5:33 /km" },
+  { system: "imperial", expected: "8:56 /mi" },
+] as const)(
+  "renders Avg Pace instead of Avg Speed for a running activity with positive speed in $system units",
+  ({ system, expected }) => {
+    render(
+      <ActivityHeader
+        activity={{
+          ...baseActivity,
+          activityType: "running",
+          avgSpeed: 3,
+          avgSpeedState: { status: "available" },
+          avgPaceSecondsPerKm: 333,
+        }}
+        units={new UnitConverter(system)}
+      />,
+    );
+    expect(screen.getByText("Avg Pace")).toBeVisible();
+    expect(screen.getByText(expected)).toBeVisible();
+    expect(screen.queryByText("Avg Speed")).toBeNull();
+  },
+);
+
+it("uses the server pace value rather than recomputing from speed", () => {
+  render(
+    <ActivityHeader
+      activity={{
+        ...baseActivity,
+        activityType: "running",
+        avgSpeed: 3.328,
+        avgPaceSecondsPerKm: 301,
+      }}
+      units={new UnitConverter("metric")}
+    />,
+  );
+  expect(screen.getByText("5:01 /km")).toBeVisible();
+});
+
+it("converts the server pace value for imperial units", () => {
+  render(
+    <ActivityHeader
+      activity={{
+        ...baseActivity,
+        activityType: "running",
+        avgSpeed: 3.328,
+        avgPaceSecondsPerKm: 300,
+      }}
+      units={new UnitConverter("imperial")}
+    />,
+  );
+  expect(screen.getByText("8:03 /mi")).toBeVisible();
+});
+
+it.each([
+  {
+    name: "non-running activities",
+    activity: { ...baseActivity, activityType: "cycling" },
+  },
+  {
+    name: "running with zero speed",
+    activity: { ...baseActivity, activityType: "running", avgSpeed: 0 },
+  },
+  {
+    name: "older running responses without server pace",
+    activity: { ...baseActivity, activityType: "running", avgSpeed: 3.328 },
+  },
+])("keeps Avg Speed for $name", ({ activity }) => {
+  render(<ActivityHeader activity={activity} units={new UnitConverter("metric")} />);
+  expect(screen.getByText("Avg Speed")).toBeVisible();
+  expect(screen.queryByText("Avg Pace")).toBeNull();
+});
+
+it("keeps the missing speed state hidden rather than rendering Avg Pace", () => {
+  render(
+    <ActivityHeader
+      activity={{
+        ...baseActivity,
+        activityType: "running",
+        avgSpeed: null,
+        avgSpeedState: { status: "missing", reason: "Avg Speed not recorded" },
+      }}
+      units={new UnitConverter("metric")}
+    />,
+  );
+  expect(screen.queryByText("Avg Pace")).toBeNull();
+  expect(screen.queryByText("Avg Speed")).toBeNull();
 });
 
 it("shows the FIT recovery warning and omits it for clean files", () => {
@@ -298,4 +443,20 @@ it("expands distinct server source branches and preserves unresolved recording a
   if (!strava) throw new Error("Expected transfer branch");
   expect(strava).toHaveTextContent("Apple Health");
   expect(screen.getByRole("region", { name: "Other" })).toHaveTextContent("WHOOP");
+});
+
+it("stacks a labeled lineage trigger under a long title so the title keeps its width", () => {
+  const longName = "Kaya gym session with an unusually long activity title";
+  render(
+    <ActivityHeader
+      activity={{ ...baseActivity, name: longName, sourceTree: detailSourceTree }}
+      units={new UnitConverter("metric")}
+    />,
+  );
+
+  const heading = screen.getByRole("heading", { name: longName });
+  const trigger = screen.getByRole("button", { name: "Garmin Edge 530 Lineage" });
+  expect(heading.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(trigger).toHaveTextContent("Garmin Edge 530");
+  expect(trigger).toHaveTextContent("Lineage");
 });

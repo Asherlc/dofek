@@ -34,6 +34,22 @@ type ProcessingStatusStoryCompanionResponses = {
   "efficiency.polarizationTrend"?: Awaited<
     ReturnType<AppRouterClient["efficiency"]["polarizationTrend"]["query"]>
   >;
+
+  "sleep.stagesByDate"?:
+    | Awaited<ReturnType<AppRouterClient["sleep"]["stagesByDate"]["query"]>>
+    | ((
+        input: Record<string, unknown> | undefined,
+      ) => Awaited<ReturnType<AppRouterClient["sleep"]["stagesByDate"]["query"]>>);
+  "recovery.sleepAnalytics"?:
+    | Awaited<ReturnType<AppRouterClient["recovery"]["sleepAnalytics"]["query"]>>
+    | ((
+        input: Record<string, unknown> | undefined,
+      ) => Awaited<ReturnType<AppRouterClient["recovery"]["sleepAnalytics"]["query"]>>);
+  "recovery.sleepConsistency"?:
+    | Awaited<ReturnType<AppRouterClient["recovery"]["sleepConsistency"]["query"]>>
+    | ((
+        input: Record<string, unknown> | undefined,
+      ) => Awaited<ReturnType<AppRouterClient["recovery"]["sleepConsistency"]["query"]>>);
 };
 type ProcessingStatusStoryCompanionPath = keyof ProcessingStatusStoryCompanionResponses;
 
@@ -51,6 +67,9 @@ const PROCESSING_STATUS_STORY_COMPANION_PATHS = [
 
   "training.hrZones",
   "efficiency.polarizationTrend",
+  "sleep.stagesByDate",
+  "recovery.sleepAnalytics",
+  "recovery.sleepConsistency",
 ] satisfies readonly ProcessingStatusStoryCompanionPath[];
 
 function isProcessingStatusStoryCompanionPath(
@@ -116,6 +135,10 @@ export function seedReadyProcessingStatus(
   return snapshot;
 }
 
+function isRecordInput(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 export function createProcessingStatusStoryLink(
   snapshot: ProcessingStatusStorySnapshot,
   companionResponses: Readonly<ProcessingStatusStoryCompanionResponses> = {},
@@ -131,7 +154,11 @@ export function createProcessingStatusStoryLink(
             isProcessingStatusStoryCompanionPath(op.path) &&
             Object.hasOwn(companionResponses, op.path)
           ) {
-            data = companionResponses[op.path];
+            const response = companionResponses[op.path];
+            data =
+              typeof response === "function"
+                ? response(isRecordInput(op.input) ? op.input : undefined)
+                : response;
           } else {
             throw new Error(`Unhandled processing-status story tRPC operation: ${op.path}`);
           }

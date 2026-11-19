@@ -1,9 +1,11 @@
 import { sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { activityRouter } from "./activity.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
@@ -16,6 +18,8 @@ describe("Activity router", () => {
   let sessionCookie: string;
   let metricOnlyActivityId: string;
   let metricOnlyActivityGroupId: string;
+  let formOnlyActivityId: string;
+  let formOnlyActivityGroupId: string;
   let cyclingActivityGroupId: string;
   let walkingActivityGroupId: string;
 
@@ -93,6 +97,27 @@ describe("Activity router", () => {
     metricOnlyActivityId = activityId;
     metricOnlyActivityGroupId = insertedActivities[0].group_id;
 
+    const formOnlyActivities = await executeWithSchema(
+      testCtx.db,
+      z.object({ id: z.guid(), group_id: z.guid() }),
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
+          ) VALUES (
+            'test_provider',
+            ${TEST_USER_ID},
+            'form-only-activity',
+            'running',
+            'running',
+            CURRENT_TIMESTAMP - INTERVAL '3 days',
+            CURRENT_TIMESTAMP - INTERVAL '3 days' + INTERVAL '20 minutes',
+            'Form Only Run'
+          ) RETURNING id, group_id`,
+    );
+    const formOnlyActivity = formOnlyActivities[0];
+    if (!formOnlyActivity) throw new Error("Failed to insert form-only test activity");
+    formOnlyActivityId = formOnlyActivity.id;
+    formOnlyActivityGroupId = formOnlyActivity.group_id;
+
     const filteredActivities = await testCtx.db.execute<{
       id: string;
       group_id: string;
@@ -136,25 +161,54 @@ describe("Activity router", () => {
     walkingActivityGroupId = walkingActivity.group_id;
 
     const sensorStore = makeMockSensorStore();
-    sensorStore.getActivitySummaries = async (activityIds) =>
-      activityIds.includes(metricOnlyActivityGroupId)
-        ? [
-            {
-              activity_id: metricOnlyActivityGroupId,
-              avg_hr: 152.3333,
-              max_hr: 155,
-              avg_power: 215,
-              max_power: 220,
-              avg_speed: 3.9,
-              max_speed: 4,
-              avg_cadence: 89,
-              total_distance: null,
-              elevation_gain_m: null,
-              elevation_loss_m: null,
-              sample_count: 12,
-            },
-          ]
-        : [];
+    sensorStore.getActivitySummaries = async (activityIds) => {
+      const summaries = [];
+      if (activityIds.includes(metricOnlyActivityGroupId)) {
+        summaries.push({
+          activity_id: metricOnlyActivityGroupId,
+          avg_hr: 152.3333,
+          max_hr: 155,
+          avg_power: 215,
+          max_power: 220,
+          avg_speed: 3.9,
+          max_speed: 4,
+          avg_cadence: 89,
+          total_distance: null,
+          elevation_gain_m: null,
+          elevation_loss_m: null,
+          sample_count: 12,
+          cadence_basis: "step_intervals",
+          cadence_observed_seconds: 180,
+          cadence_coverage_percent: 30,
+          avg_stride_length: 1.2,
+          avg_stance_time: 210,
+          avg_vertical_osc: 85,
+        });
+      }
+      if (activityIds.includes(formOnlyActivityGroupId)) {
+        summaries.push({
+          activity_id: formOnlyActivityGroupId,
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          max_power: null,
+          avg_speed: null,
+          max_speed: null,
+          avg_cadence: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          elevation_loss_m: null,
+          sample_count: null,
+          cadence_basis: "unknown",
+          cadence_observed_seconds: null,
+          cadence_coverage_percent: null,
+          avg_stride_length: null,
+          avg_stance_time: 240,
+          avg_vertical_osc: null,
+        });
+      }
+      return summaries;
+    };
     sensorStore.getStream = async (window) =>
       window.activityId === metricOnlyActivityGroupId
         ? [
@@ -348,6 +402,52 @@ describe("Activity router", () => {
       expect(result.error).toBeDefined();
       expect(result.error.data.code).toBe("BAD_REQUEST");
     });
+
+    it("serializes running form with cadence evidence for a visible owned run", async () => {
+      const result = await query("activity.byId", { id: metricOnlyActivityGroupId });
+      expect(result.error).toBeUndefined();
+      expect(result.result?.data).toMatchObject({
+        id: metricOnlyActivityGroupId,
+        activityType: "running",
+        runningForm: {
+          cadence: 89,
+          cadenceBasis: "step_intervals",
+          cadenceObservedSeconds: 180,
+          cadenceCoveragePercent: 30,
+          strideLengthMeters: 1.2,
+          stanceTimeMs: 210,
+          verticalOscillationMm: 85,
+        },
+      });
+    });
+
+    it("keeps a form-only run visible without manufacturing cadence, pace or distance", async () => {
+      const result = await query("activity.byId", { id: formOnlyActivityId });
+      expect(result.error).toBeUndefined();
+      expect(result.result?.data).toMatchObject({
+        id: formOnlyActivityGroupId,
+        resolvedFrom: formOnlyActivityId,
+        activityType: "running",
+        avgCadence: null,
+        avgSpeed: null,
+        totalDistance: null,
+        runningForm: {
+          cadence: null,
+          cadenceBasis: "unknown",
+          cadenceObservedSeconds: null,
+          cadenceCoveragePercent: null,
+          strideLengthMeters: null,
+          stanceTimeMs: 240,
+          verticalOscillationMm: null,
+        },
+      });
+    });
+
+    it("omits running form for a non-running activity", async () => {
+      const result = await query("activity.byId", { id: cyclingActivityGroupId });
+      expect(result.error).toBeUndefined();
+      expect(result.result?.data).not.toHaveProperty("runningForm");
+    });
   });
 
   describe("list", () => {
@@ -363,6 +463,30 @@ describe("Activity router", () => {
       const insertedActivity = items.find((item) => item.id === metricOnlyActivityGroupId);
       expect(insertedActivity).toBeDefined();
       expect(insertedActivity?.avg_hr).toBeCloseTo(152.3333, 4);
+    });
+
+    it("keeps the bounded list wire shape free of running-form columns", async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const result = await query("activity.list", {
+        days: 30,
+        endDate: today,
+        limit: 20,
+        offset: 0,
+      });
+      const items: Array<Record<string, unknown>> = result.result?.data?.items ?? [];
+      const inserted = items.find((item) => item.id === metricOnlyActivityGroupId);
+      expect(inserted).toBeDefined();
+      expect(inserted?.avg_hr).toBeCloseTo(152.3333, 4);
+      for (const key of [
+        "cadence_basis",
+        "cadence_observed_seconds",
+        "cadence_coverage_percent",
+        "avg_stride_length",
+        "avg_stance_time",
+        "avg_vertical_osc",
+      ]) {
+        expect(inserted).not.toHaveProperty(key);
+      }
     });
 
     it("filters by activityTypes without raising a SQL error", async () => {

@@ -25,8 +25,16 @@ import {
   type ClimbingStrengthsTab,
 } from "@dofek/training/climbing-strengths-views";
 import { useRouter } from "expo-router";
-import { type ReactNode, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  Alert,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { openExternalUrl } from "../lib/open-external-url";
 import { colors, radius, spacing } from "../theme";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart";
@@ -39,6 +47,7 @@ export function ClimbingStrengths({
   rangeControl,
   includeAreaMetadata = true,
   onIncludeAreaMetadataChange,
+  refreshing = false,
 }: {
   data: Strengths | undefined;
   loading?: boolean;
@@ -46,10 +55,29 @@ export function ClimbingStrengths({
   rangeControl?: ReactNode;
   includeAreaMetadata?: boolean;
   onIncludeAreaMetadataChange?: (value: boolean) => void;
+  refreshing?: boolean;
 }) {
   const [view, setView] = useState<ClimbingStrengthsTab>("radar");
   const [selectedBreakdown, setBreakdown] = useState<string | null>(null);
   const [errorDetailsExpanded, setErrorDetailsExpanded] = useState(false);
+  const hasCachedData = data != null;
+  const enrichmentPending = data?.enrichmentPending === true;
+  const refreshAnnounced = useRef(false);
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    // Polling briefly clears `refreshing` while enrichment is still pending.
+    // Keep the latch through that gap so each fetch cycle announces once.
+    if (!hasCachedData || (!refreshing && !enrichmentPending)) {
+      refreshAnnounced.current = false;
+      return;
+    }
+    if (refreshing && !refreshAnnounced.current) {
+      refreshAnnounced.current = true;
+      AccessibilityInfo.announceForAccessibilityWithOptions("Updating climbing strengths…", {
+        queue: true,
+      });
+    }
+  }, [refreshing, hasCachedData, enrichmentPending]);
   const enrichmentErrors = [...new Set(data?.enrichmentErrors)];
   const panels = [...(data?.panels ?? []), ...(data?.tagPanels ?? [])];
   const options = climbingStrengthsBreakdownOptions(panels);
@@ -60,6 +88,11 @@ export function ClimbingStrengths({
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Climbing strengths</Text>
+      {refreshing && data != null ? (
+        <Text testID="climbing-refresh-status" accessibilityLiveRegion="polite" style={styles.meta}>
+          Updating climbing strengths…
+        </Text>
+      ) : null}
       {rangeControl ? <Text style={styles.meta}>Strengths period</Text> : null}
       {rangeControl}
       <Pressable

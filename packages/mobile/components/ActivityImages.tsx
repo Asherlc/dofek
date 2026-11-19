@@ -10,6 +10,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { captureException } from "../lib/telemetry";
@@ -24,6 +25,8 @@ interface ActivityPhotoProps {
   pressLabel?: string;
   resizeMode?: "cover" | "contain";
   style?: StyleProp<ViewStyle>;
+  failureStyle?: StyleProp<ViewStyle>;
+  failureContentStyle?: StyleProp<ViewStyle>;
 }
 
 export function ActivityPhoto(props: ActivityPhotoProps) {
@@ -38,6 +41,8 @@ function DownloadedPhoto({
   pressLabel,
   resizeMode = "cover",
   style,
+  failureStyle,
+  failureContentStyle,
 }: ActivityPhotoProps) {
   const [loaded, setLoaded] = useState(false);
   const [failedAttempt, setFailedAttempt] = useState<number | null>(null);
@@ -57,9 +62,9 @@ function DownloadedPhoto({
     />
   );
   return (
-    <View style={[styles.photo, style]}>
+    <View style={[styles.photo, style, failed ? failureStyle : undefined]}>
       {failed ? (
-        <View style={styles.photoFailure} accessibilityRole="alert">
+        <View style={[styles.photoFailure, failureContentStyle]} accessibilityRole="alert">
           <Text style={styles.photoFailureText}>Photo unavailable</Text>
           {onPress ? (
             <Pressable accessibilityRole="button" accessibilityLabel={pressLabel} onPress={onPress}>
@@ -129,6 +134,8 @@ export function ActivityImages({
 }: ActivityImagesProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const { fontScale } = useWindowDimensions();
+  const stackedHeading = fontScale > 1;
   const refresh = () => {
     setRefreshVersion((version) => version + 1);
     onRetry();
@@ -161,13 +168,18 @@ export function ActivityImages({
   return (
     <View style={styles.gallery}>
       {heading ? (
-        <View style={styles.summary}>
+        <View style={stackedHeading ? styles.summaryStacked : styles.summary}>
+          <View style={stackedHeading ? styles.summaryHeadingStacked : styles.summaryHeading}>
+            {heading}
+          </View>
           {firstImage ? (
-            <View style={styles.summaryPhoto}>
+            <View style={stackedHeading ? styles.summaryPhotoWrapperStacked : styles.summaryPhoto}>
               <ActivityPhoto
                 image={firstImage}
                 retryVersion={refreshVersion}
                 style={styles.summaryPhoto}
+                failureStyle={stackedHeading ? styles.summaryPhotoFailure : undefined}
+                failureContentStyle={stackedHeading ? styles.summaryPhotoFailureContent : undefined}
                 onRetry={refresh}
                 onPress={() => setSelectedId(firstImage.id)}
                 pressLabel={`View ${images.length} ${images.length === 1 ? "photo" : "photos"}`}
@@ -179,7 +191,6 @@ export function ActivityImages({
               ) : null}
             </View>
           ) : null}
-          <View style={styles.summaryHeading}>{heading}</View>
         </View>
       ) : (
         <Text style={styles.title}>Photos</Text>
@@ -271,9 +282,14 @@ export function ActivityImages({
 }
 
 const styles = StyleSheet.create({
-  summary: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  summary: { flexDirection: "row-reverse", alignItems: "center", gap: spacing.md },
+  summaryStacked: { flexDirection: "column", gap: spacing.md },
   summaryPhoto: { width: 80, height: 80, flexShrink: 0 },
+  summaryPhotoWrapperStacked: { alignSelf: "flex-start", maxWidth: "100%" },
+  summaryPhotoFailure: { width: "auto", minWidth: 80, height: "auto", minHeight: 80 },
+  summaryPhotoFailureContent: { flex: 0, minWidth: 200 },
   summaryHeading: { flex: 1, minWidth: 0 },
+  summaryHeadingStacked: { width: "100%" },
   count: {
     position: "absolute",
     bottom: 4,

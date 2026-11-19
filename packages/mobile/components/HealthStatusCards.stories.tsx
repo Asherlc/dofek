@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
+import type { HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
+import { View } from "react-native";
 import { HealthStatusCards } from "./HealthStatusCards";
 
 const readyBaselineProgress = {
@@ -21,6 +23,30 @@ const collectingBaselineProgress = {
   action: "Keep syncing data for at least 2 more days.",
 };
 
+function overviewMetric(
+  overrides: Pick<
+    HealthStatusMetric,
+    "metric" | "label" | "value" | "valueText" | "baseline" | "baselineText"
+  > &
+    Partial<HealthStatusMetric>,
+): HealthStatusMetric {
+  return {
+    sampleDeviation: 1,
+    deviation: 0,
+    direction: "aligned",
+    intent: "neutral",
+    statusToken: "near_baseline",
+    statusColor: "positive",
+    statusLabel: "Near baseline",
+    evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
+    explanation: `${overrides.label} is close to your usual range.`,
+    baselineProgress: readyBaselineProgress,
+    provenance: null,
+    comparison: null,
+    ...overrides,
+  };
+}
+
 const meta = {
   title: "Components/HealthStatusCards",
   component: HealthStatusCards,
@@ -42,6 +68,8 @@ const meta = {
         statusLabel: "Moving as intended",
         evaluationRule: "Below your baseline, where lower values support this metric",
         explanation: "Trend Weight is below your baseline, in line with your weight goal.",
+        provenance: null,
+        comparison: null,
         baselineProgress: readyBaselineProgress,
       },
       {
@@ -62,6 +90,8 @@ const meta = {
           "Outside your usual range: 1 to less than 2 standard deviations from baseline",
         explanation:
           "Body Fat % is above your usual range enough to stand out from recent variation.",
+        provenance: null,
+        comparison: null,
         baselineProgress: readyBaselineProgress,
       },
     ],
@@ -74,7 +104,126 @@ type Story = StoryObj<typeof meta>;
 
 export const Complete: Story = {};
 
-export const Compact: Story = { args: { compact: true } };
+export const Compact: Story = {
+  args: {
+    compact: true,
+    metrics: [
+      overviewMetric({
+        metric: "hrv",
+        label: "Heart Rate Variability (HRV)",
+        value: 52,
+        valueText: "52 ms",
+        baseline: 51,
+        baselineText: "51 ms",
+        sampleDeviation: 5,
+        deviation: 0.2,
+        direction: "above",
+        intent: "higher",
+        statusToken: "moving_as_intended",
+        statusLabel: "Moving as intended",
+        evaluationRule: "Above your baseline, where higher values support this metric",
+        explanation: "Heart Rate Variability (HRV) is above your baseline.",
+        provenance: {
+          latestDate: "2026-07-30",
+          sourceProviders: ["whoop"],
+          observedDays: 5,
+          windowDays: 7,
+        },
+      }),
+      overviewMetric({
+        metric: "resting_heart_rate",
+        label: "Resting Heart Rate",
+        value: 58,
+        valueText: "58 bpm",
+        baseline: 60,
+        baselineText: "60 bpm",
+        sampleDeviation: 4,
+        deviation: -0.5,
+        direction: "below",
+        intent: "lower",
+        statusToken: "moving_as_intended",
+        statusLabel: "Moving as intended",
+        evaluationRule: "Below your baseline, where lower values support this metric",
+        explanation: "Resting Heart Rate is below your baseline.",
+      }),
+      overviewMetric({
+        metric: "respiratory_rate",
+        label: "Respiratory Rate",
+        value: 14,
+        valueText: "14.0 br/min",
+        baseline: 15,
+        baselineText: "15.0 br/min",
+        sampleDeviation: 1,
+      }),
+      overviewMetric({
+        metric: "sleep_efficiency",
+        label: "Sleep Efficiency",
+        value: 91,
+        valueText: "91%",
+        baseline: 89,
+        baselineText: "89%",
+        sampleDeviation: 3,
+        deviation: 0.7,
+        direction: "above",
+        intent: "higher",
+        statusToken: "moving_as_intended",
+        statusLabel: "Moving as intended",
+        evaluationRule: "Above your baseline, where higher values support this metric",
+        explanation: "Sleep Efficiency is above your baseline.",
+      }),
+      overviewMetric({
+        metric: "spo2",
+        label: "Blood Oxygen Saturation (SpO2)",
+        value: 96,
+        valueText: "96%",
+        baseline: 98,
+        baselineText: "98%",
+        sampleDeviation: 1,
+        deviation: -1.5,
+        direction: "below",
+        statusToken: "notable_deviation",
+        statusColor: "warning",
+        statusLabel: "Notably below baseline",
+        evaluationRule:
+          "Outside your usual range: 1 to less than 2 standard deviations from baseline",
+        explanation: "Blood Oxygen Saturation (SpO2) is below your usual range.",
+      }),
+      overviewMetric({
+        metric: "steps",
+        label: "Steps",
+        value: 7640,
+        valueText: "7,640",
+        baseline: 7640,
+        baselineText: "7,640",
+        sampleDeviation: 500,
+      }),
+      overviewMetric({
+        metric: "skin_temperature",
+        label: "Skin Temperature",
+        value: 33.6,
+        valueText: "33.6 °C",
+        baseline: 33.2,
+        baselineText: "33.2 °C",
+        sampleDeviation: 0.3,
+        deviation: 1.2,
+        direction: "above",
+        statusToken: "notable_deviation",
+        statusColor: "warning",
+        statusLabel: "Notably above baseline",
+        evaluationRule:
+          "Outside your usual range: 1 to less than 2 standard deviations from baseline",
+        explanation: "Skin Temperature is above your usual range.",
+      }),
+    ],
+  },
+  decorators: [
+    (Story) => (
+      <View style={{ width: "100%", maxWidth: 390, padding: 16 }}>
+        <Story />
+      </View>
+    ),
+  ],
+};
 
 export const InsufficientData: Story = {
   args: {
@@ -95,6 +244,8 @@ export const InsufficientData: Story = {
         statusLabel: "Not enough data",
         evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
         explanation: "Not enough varied data yet to compare this value with your usual range.",
+        provenance: null,
+        comparison: null,
         baselineProgress: collectingBaselineProgress,
       },
     ],
@@ -163,6 +314,8 @@ export const FarFromBaseline: Story = {
           "Well outside your usual range: at least 2 standard deviations from baseline",
         explanation:
           "Resting Heart Rate is well above your usual range compared with recent variation.",
+        provenance: null,
+        comparison: null,
         baselineProgress: readyBaselineProgress,
       },
     ],
@@ -213,6 +366,8 @@ export const CompactDashboardMetrics: Story = {
         statusLabel: "Near baseline",
         evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
         explanation: "Steps is close to your usual range.",
+        provenance: null,
+        comparison: null,
         baselineProgress: readyBaselineProgress,
       },
     ],

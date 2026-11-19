@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import type { HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import { describe, expect, it } from "vitest";
 import { HealthStatusCards } from "./HealthStatusCards";
 
@@ -390,4 +391,179 @@ describe("HealthStatusCards", () => {
       expect(screen.getByLabelText(`${statusLabel} status`).textContent).toBe(symbol);
     },
   );
+});
+
+function compactMetric(
+  overrides: Partial<HealthStatusMetric> & Pick<HealthStatusMetric, "metric" | "label">,
+): HealthStatusMetric {
+  return {
+    value: 52,
+    valueText: "52 ms",
+    baseline: 50,
+    baselineText: "50 ms",
+    sampleDeviation: 5,
+    deviation: 0.4,
+    direction: "above",
+    intent: "neutral",
+    statusToken: "near_baseline",
+    statusColor: "positive",
+    statusLabel: "Near baseline",
+    evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
+    explanation: "The most recent measurement was near your baseline.",
+    provenance: null,
+    comparison: null,
+    baselineProgress: readyBaselineProgress,
+    ...overrides,
+  };
+}
+
+describe("HealthStatusCards compact grouped summary", () => {
+  it("groups one focusable disclosure per row with metric, status and value together", () => {
+    const hrv = compactMetric({ metric: "hrv", label: "Heart Rate Variability (HRV)" });
+    const steps = compactMetric({
+      metric: "steps",
+      label: "Steps",
+      valueText: "7,640",
+      baselineText: "7,640",
+    });
+    render(<HealthStatusCards compact metrics={[hrv, steps]} />);
+
+    const rows = screen.getAllByRole("button", { name: /details$/ });
+    expect(rows).toHaveLength(2);
+    expect(rows[0].getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.getByRole("button", {
+        name: /Heart Rate Variability \(HRV\), 52 ms, Near baseline\. Show details/,
+      }),
+    ).toBeTruthy();
+    expect(within(rows[0]).getByText("Heart Rate Variability (HRV)")).toBeTruthy();
+    expect(within(rows[0]).getByText("52 ms")).toBeTruthy();
+    expect(within(rows[0]).getByText("Near baseline")).toBeTruthy();
+    expect(within(rows[0]).queryByText(/baseline 50 ms/)).toBeNull();
+    expect(within(rows[1]).getByText("7,640")).toBeTruthy();
+    expect(within(rows[1]).getByText("Steps")).toBeTruthy();
+  });
+
+  it("shows the concise status in the row and moves exact baseline and evidence into expanded details", () => {
+    const longStatus = "Notably above baseline · Weight management goal";
+    const metric = compactMetric({
+      metric: "trend_weight",
+      label: "Trend Weight",
+      statusLabel: longStatus,
+      valueText: "84.2 kg",
+      baselineText: "82.0 kg",
+      explanation: "Trend Weight is above your usual range.",
+      provenance: {
+        latestDate: "2026-11-17",
+        sourceProviders: ["whoop"],
+        observedDays: 5,
+        windowDays: 7,
+      },
+      comparison: {
+        recentDays: 7,
+        baselineDays: 28,
+        recentMean: 84,
+        baselineMean: 82,
+        delta: 2,
+        direction: "increasing",
+      },
+    });
+    render(<HealthStatusCards compact metrics={[metric]} />);
+
+    const row = screen.getByRole("button", { name: /Trend Weight, 84\.2 kg, .*Show details/ });
+    expect(within(row).getByText(longStatus)).toBeTruthy();
+    expect(screen.queryByText(/baseline 82.0 kg/)).toBeNull();
+
+    fireEvent.click(row);
+
+    expect(row.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Baseline: 82.0 kg")).toBeTruthy();
+    expect(screen.getByText("Trend Weight is above your usual range.")).toBeTruthy();
+    expect(screen.getByText("7d avg 84 vs prior 28d avg 82 · +2")).toBeTruthy();
+    expect(screen.getByText("Source: WHOOP (Cloud)")).toBeTruthy();
+    expect(screen.getByText("Latest recorded date: 2026-11-17")).toBeTruthy();
+    expect(screen.getByText("Coverage: 5/7 days")).toBeTruthy();
+  });
+
+  it("keeps the blocked baseline action visible and exposes requirement, summary, baseline and provenance on expand", () => {
+    const requirement = "A step count for this day to compare with your recorded baseline.";
+    const summary = "No step count is available for this day.";
+    const action = "Sync steps data again to record a step count for this day.";
+    const metric = compactMetric({
+      metric: "steps",
+      label: "Steps",
+      value: null,
+      valueText: null,
+      baselineText: "6,055",
+      statusToken: "insufficient_data",
+      statusLabel: "Steps missing for this day",
+      provenance: {
+        latestDate: "2026-10-08",
+        sourceProviders: ["apple_health"],
+        observedDays: 89,
+        windowDays: 90,
+      },
+      comparison: {
+        recentDays: 7,
+        baselineDays: 28,
+        recentMean: 6100,
+        baselineMean: 6055,
+        delta: 45,
+        direction: "increasing",
+      },
+      baselineProgress: {
+        ...readyBaselineProgress,
+        blocker: "missing_source_data",
+        requirement,
+        summary,
+        action,
+      },
+    });
+    render(<HealthStatusCards compact metrics={[metric]} />);
+
+    const row = screen.getByRole("button", {
+      name: /Steps, —, Steps missing for this day\. Show details/,
+    });
+    expect(screen.getByText(action)).toBeTruthy();
+    expect(within(row).queryByText(action)).toBeNull();
+    expect(screen.queryByText(summary)).toBeNull();
+
+    fireEvent.click(row);
+
+    expect(screen.getByText(requirement)).toBeTruthy();
+    expect(screen.getByText(summary)).toBeTruthy();
+    expect(screen.getByText("Baseline: 6,055")).toBeTruthy();
+    expect(screen.getByText("Source: Apple Health")).toBeTruthy();
+    expect(screen.getByText("Coverage: 89/90 days")).toBeTruthy();
+    expect(screen.getByText("7d avg 6100 vs prior 28d avg 6055 · +45")).toBeTruthy();
+  });
+
+  it("shows the blocked evaluation rule inside compact expanded details", () => {
+    const evaluationRule = "Requires a recorded value above the baseline minimum.";
+    const metric = compactMetric({
+      metric: "steps",
+      label: "Steps",
+      value: null,
+      valueText: null,
+      baselineText: "6,055",
+      statusToken: "insufficient_data",
+      statusLabel: "Steps missing for this day",
+      evaluationRule,
+      baselineProgress: {
+        ...readyBaselineProgress,
+        blocker: "missing_source_data",
+        requirement: "A step count is required.",
+        summary: "No step count for this day.",
+        action: "Sync steps data again.",
+      },
+    });
+    render(<HealthStatusCards compact metrics={[metric]} />);
+
+    const row = screen.getByRole("button", { name: /^Steps, —, .*Show details$/ });
+    expect(screen.queryByText(evaluationRule)).toBeNull();
+
+    fireEvent.click(row);
+
+    expect(screen.getByText(evaluationRule)).toBeTruthy();
+  });
 });

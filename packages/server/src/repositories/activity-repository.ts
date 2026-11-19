@@ -349,7 +349,9 @@ export class ActivityRepository extends BaseRepository {
             AND a.user_id = ${this.userId}
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
-    const hydratedRows = await withActivitySummaries(rows, this.#sensorStore, this.userId);
+    const hydratedRows = await withActivitySummaries(rows, this.#sensorStore, this.userId, {
+      includeRunningForm: rows[0]?.canonical_type === "running",
+    });
     const firstRow = hydratedRows[0];
     if (!firstRow) return null;
     const { member_activity_ids: _, ...activity } = firstRow;

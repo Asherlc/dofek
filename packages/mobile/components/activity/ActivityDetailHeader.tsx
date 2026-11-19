@@ -4,7 +4,7 @@ import { providerLabel } from "@dofek/providers/providers";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityDetail } from "dofek-server/types";
 import type { ComponentProps, ReactNode } from "react";
-import { Text, View } from "react-native";
+import { Text, useWindowDimensions, View } from "react-native";
 import { ActivityImages } from "../ActivityImages";
 import { ActivitySourceDisclosure } from "../ActivitySourceDisclosure";
 import { ActivityTypeIcon } from "../ActivityTypeIcon";
@@ -38,6 +38,8 @@ export function ActivityDetailHeader({
     | "fitRecoveryWarning"
   >;
 } & Omit<ComponentProps<typeof ActivitySourceDisclosure>, "tree">) {
+  const { fontScale } = useWindowDimensions();
+  const largeText = fontScale > 1;
   const viewerTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const localStartTime = formatRecordLocalTime(
     activity.startedAt,
@@ -47,25 +49,38 @@ export function ActivityDetailHeader({
     viewerTimezone,
   );
 
-  const identity = (
-    <View style={styles.header}>
-      <View style={styles.headerRow}>
-        {!photos?.images.length && (
-          <ActivityTypeIcon activityType={activity.activityType} size={48} />
-        )}
-        <View style={styles.headerText}>
-          <Text style={styles.name}>
-            {activity.name ??
-              formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
-          </Text>
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeBadgeText}>
-              {formatActivityTypeLabel(activity.activityType)}
-            </Text>
-          </View>
+  const name =
+    activity.name ?? formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType);
+  const typeLabel = formatActivityTypeLabel(activity.activityType);
+
+  const identityHeader = largeText ? (
+    <>
+      <Text style={styles.name}>{name}</Text>
+      <View style={styles.largeTextMetaRow}>
+        <View style={[styles.typeBadge, styles.largeTextBadge]}>
+          <Text style={styles.typeBadgeText}>{typeLabel}</Text>
         </View>
         {actions}
       </View>
+    </>
+  ) : (
+    <View style={styles.headerRow}>
+      {!photos?.images.length && (
+        <ActivityTypeIcon activityType={activity.activityType} size={48} />
+      )}
+      <View style={styles.headerText}>
+        <Text style={styles.name}>{name}</Text>
+        <View style={styles.typeBadge}>
+          <Text style={styles.typeBadgeText}>{typeLabel}</Text>
+        </View>
+      </View>
+      {actions}
+    </View>
+  );
+
+  const identity = (
+    <View style={styles.header}>
+      {identityHeader}
       <Text style={styles.dateTime}>
         {formatDateLong(activity.displayedDate, { timeZone: "UTC" })}
         {" at "}

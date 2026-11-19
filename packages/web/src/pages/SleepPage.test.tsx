@@ -70,9 +70,16 @@ vi.mock("../components/QueryStatePanel.tsx", () => ({
   QueryStatePanel: ({ error }: { error: Error | null }) => <p>{error?.message ?? "Loading"}</p>,
 }));
 vi.mock("../components/TimeRangeSelector.tsx", () => ({
-  TimeRangeSelector: ({ description }: { description: string }) => <p>{description}</p>,
+  TimeRangeSelector: ({ days }: { days: number }) => (
+    <fieldset aria-label="Time range">
+      <legend>Selected range: {days}d</legend>
+    </fieldset>
+  ),
 }));
-vi.mock("../components/ProcessingStatusWidget.tsx", () => ({ ProcessingStatusWidget: () => null }));
+vi.mock("../components/ProcessingStatusWidget.tsx", () => ({
+  ProcessingStatusWidget: ({ error }: { error: { message: string } | null }) =>
+    error ? <p>{error.message}</p> : null,
+}));
 vi.mock("../components/SleepChart.tsx", () => ({
   SleepChart: ({ data }: { data: unknown[] }) => <p>Sleep rows: {data.length}</p>,
 }));
@@ -142,6 +149,142 @@ describe("SleepPage", () => {
     expect(screen.getByText("Insight: sleep-effect")).toBeTruthy();
     expect(screen.queryByText("Insight: training-effect")).toBeNull();
     expect(screen.queryByText("Insight: insufficient-effect")).toBeNull();
+  });
+
+  it("shows one notice when the night and trend queries fail with the same connection error", async () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    mocks.sleepList.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error(message),
+      isError: true,
+    });
+    mocks.stagesByDate.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error(message),
+      isError: true,
+    });
+    const { SleepPage } = await import("./SleepPage.tsx");
+
+    const view = render(<SleepPage />);
+
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    // A failed list query with no cached data must not render an empty chart
+    // or a false empty sources table, while the range/timeline controls stay.
+    expect(screen.queryByText("Sleep rows: 0")).toBeNull();
+    expect(screen.queryByText("Sources:")).toBeNull();
+    expect(screen.getByLabelText("Night date")).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Time range" })).toBeTruthy();
+
+    // A cached *empty* payload is still empty after the grouped offline refresh.
+    mocks.sleepList.mockReturnValue({
+      ...queryResult([]),
+      error: new Error(message),
+      isError: true,
+    });
+    view.unmount();
+    render(<SleepPage />);
+
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.queryByText("Sleep rows: 0")).toBeNull();
+    expect(screen.queryByText("Sources:")).toBeNull();
+    expect(screen.getByRole("group", { name: "Time range" })).toBeTruthy();
+  });
+
+  it("shows one notice when night, trend, insights, and processing all fail with the same connection error", async () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    mocks.sleepList.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error(message),
+      isError: true,
+    });
+    mocks.stagesByDate.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error(message),
+      isError: true,
+    });
+    mocks.insights.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error(message),
+      isError: true,
+    });
+    mocks.processing.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error(message),
+      isError: true,
+    });
+    const { SleepPage } = await import("./SleepPage.tsx");
+
+    const view = render(<SleepPage />);
+
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.queryByText("Sleep rows: 0")).toBeNull();
+    expect(screen.queryByText("Sources:")).toBeNull();
+    expect(screen.getByLabelText("Night date")).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Time range" })).toBeTruthy();
+
+    mocks.sleepList.mockReturnValue({
+      ...queryResult([]),
+      error: new Error(message),
+      isError: true,
+    });
+    view.unmount();
+    render(<SleepPage />);
+
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.queryByText("Sleep rows: 0")).toBeNull();
+    expect(screen.queryByText("Sources:")).toBeNull();
+    expect(screen.getByRole("group", { name: "Time range" })).toBeTruthy();
+  });
+
+  it("keeps the cached chart and sources when the list shares the connection error", async () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    mocks.sleepList.mockReturnValue({
+      ...queryResult([sleepRow]),
+      error: new Error(message),
+      isError: true,
+    });
+    mocks.stagesByDate.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error(message),
+      isError: true,
+    });
+    const { SleepPage } = await import("./SleepPage.tsx");
+
+    render(<SleepPage />);
+
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.getByText("Sleep rows: 1")).toBeTruthy();
+    expect(screen.getByText("Sources: 2026-03-01|oura|Oura Ring")).toBeTruthy();
+  });
+
+  it("groups insights and processing with the night failure when the trend fails distinctly", async () => {
+    const message = "We couldn't reach the server. Check your connection and try again.";
+    mocks.sleepList.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error("Sleep history unavailable"),
+      isError: true,
+    });
+    mocks.stagesByDate.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error(message),
+      isError: true,
+    });
+    mocks.insights.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error(message),
+      isError: true,
+    });
+    mocks.processing.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error(message),
+      isError: true,
+    });
+    const { SleepPage } = await import("./SleepPage.tsx");
+
+    render(<SleepPage />);
+
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.getByText("Sleep history unavailable")).toBeTruthy();
   });
 
   it("shows independent errors only where no cached result is available", async () => {
@@ -247,5 +390,19 @@ describe("SleepPage", () => {
 
     expect(mocks.stagesByDate).toHaveBeenLastCalledWith({ date: "2026-03-27" });
     expect(screen.getByRole("button", { name: "Previous day" })).toBeEnabled();
+  });
+
+  it("places independently browsed night stages before the trend range grouped with the trend chart", async () => {
+    const { SleepPage } = await import("./SleepPage.tsx");
+
+    render(<SleepPage />);
+
+    const nightStages = screen.getByRole("heading", { name: "Night’s Stages" });
+    const trendRange = screen.getByRole("group", { name: "Time range" });
+    const trendChartSection = screen.getByRole("region", { name: "Sleep Stages" });
+    expect(
+      nightStages.compareDocumentPosition(trendRange) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(trendChartSection.contains(trendRange)).toBe(true);
   });
 });

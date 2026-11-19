@@ -56,6 +56,22 @@ function renderProvider(overrides: Partial<Provider> = {}) {
 }
 
 describe("ProviderCard sync summary", () => {
+  it("lets a short title and a single action share one row without a forced full-width title", () => {
+    renderProvider();
+
+    const titleRow = screen.getByRole("button", { name: "Open Strava details" });
+    const syncButton = screen.getByRole("button", { name: "Sync Strava" });
+
+    // No hardcoded full-width title basis: flex-wrap decides whether the two
+    // children share a line, so a short label and one 44pt action fit together.
+    expect(titleRow.getAttribute("style")).not.toContain("flex-basis: 100%");
+    expect(titleRow.getAttribute("style")).toContain("flex-shrink: 1");
+    expect(titleRow.parentElement?.getAttribute("style")).toContain("flex-wrap: wrap");
+    expect(syncButton.parentElement?.getAttribute("style")).toContain("flex-shrink: 0");
+    expect(titleRow.getAttribute("style")).toContain("min-height: 44px");
+    expect(syncButton.getAttribute("style")).toContain("min-height: 44px");
+  });
+
   it("summarizes a successful current sync once and keeps its action", () => {
     const { onSync } = renderProvider();
     expect(screen.getAllByText("Sync current")).toHaveLength(1);
@@ -76,6 +92,44 @@ describe("ProviderCard sync summary", () => {
     expect(screen.getByText("Sync overdue")).toBeTruthy();
     expect(screen.getByText("The last successful sync is overdue.")).toBeTruthy();
     expect(screen.queryByText("Sync current")).toBeNull();
+  });
+
+  it("gives a long provider name a wrapping full-width row with 44pt touch targets", () => {
+    render(
+      <ProviderCard
+        provider={{ ...provider, label: "8a.nu / Vertical-Life" }}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={vi.fn()}
+        onConnect={vi.fn()}
+        onImport={vi.fn()}
+        onPress={vi.fn()}
+      />,
+    );
+
+    const title = screen.getByText("8a.nu / Vertical-Life");
+    const titleRow = screen.getByRole("button", { name: "Open 8a.nu / Vertical-Life details" });
+    const syncButton = screen.getByRole("button", { name: "Sync 8a.nu / Vertical-Life" });
+    const importButton = screen.getByRole("button", {
+      name: "Import file for 8a.nu / Vertical-Life",
+    });
+
+    // The header wraps by content: a long title keeps its own row and the
+    // actions flow beneath it without a hardcoded full-width title basis.
+    expect(titleRow.parentElement?.getAttribute("style")).toContain("flex-wrap: wrap");
+    expect(titleRow.getAttribute("style")).not.toContain("flex-basis: 100%");
+    expect(syncButton.parentElement?.getAttribute("style")).toContain("flex-wrap: wrap");
+    expect(syncButton.parentElement?.getAttribute("style")).toContain("flex-shrink: 0");
+
+    // The label can shrink and wrap inside that row at accessibility font sizes.
+    expect(title.getAttribute("style")).toContain("flex-shrink: 1");
+    expect(titleRow.getAttribute("style")).toContain("flex-shrink: 1");
+
+    // The title and the shared action buttons keep a minimum 44pt touch target.
+    expect(titleRow.getAttribute("style")).toContain("min-height: 44px");
+    expect(syncButton.getAttribute("style")).toContain("min-height: 44px");
+    expect(importButton.getAttribute("style")).toContain("min-height: 44px");
   });
 
   it("keeps a failed attempt, its successful-update time, and reconnect action visible", () => {

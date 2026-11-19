@@ -380,7 +380,9 @@ describe("ActivityRepository", () => {
       expect(result?.name).toBe("Easy Run");
       expect(result?.subsource).toBe("Strong");
       expect(result?.perceived_exertion).toBe(7);
-      expect(sensorStore.getActivitySummaries).toHaveBeenCalledExactlyOnceWith(["abc-123"]);
+      expect(sensorStore.getActivitySummaries).toHaveBeenCalledExactlyOnceWith(["abc-123"], {
+        includeRunningForm: true,
+      });
     });
 
     it("keeps member activity aliases internal", async () => {

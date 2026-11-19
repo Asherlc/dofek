@@ -1,3 +1,4 @@
+import { formatRunningFormMeasurements } from "@dofek/format/running-form";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
@@ -59,6 +60,12 @@ export function ActivityDetailPage() {
     powerZones,
     heartRateContext,
   } = metrics;
+  const metricsUpdating =
+    stream.isFetching ||
+    heartRateContext.isFetching ||
+    hrZones.isFetching ||
+    powerZones.isFetching ||
+    powerWork.isFetching;
   const route = trpc.activity.route.useQuery(
     { id, maxPoints: 500 },
     {
@@ -139,6 +146,9 @@ export function ActivityDetailPage() {
   }
 
   const activity = detail.data;
+  const runningFormReadings = activity.runningForm
+    ? formatRunningFormMeasurements(activity.runningForm)
+    : [];
   const zones = hrZones.data ?? [];
   const exercises = strengthExercises.data ?? [];
   const routePoints = route.data?.status === "ready" ? route.data.points : EMPTY_ROUTE_POINTS;
@@ -150,6 +160,13 @@ export function ActivityDetailPage() {
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
   const hasAltitude = points.some((p) => p.altitude != null);
+  const hasPerformanceChart =
+    hasHr ||
+    hasPower ||
+    hasSpeed ||
+    hasCadence ||
+    sourceControls.some((metric) => metric.key !== "altitude");
+  const showPerformance = hasPerformanceChart || runningFormReadings.length > 0;
   const showHrZones = hrZones.error != null || hasHr || zones.length > 0;
   const hrZonesHaveCachedData = zones.length > 0;
   const strengthExercisesHaveCachedData = exercises.length > 0;
@@ -243,53 +260,65 @@ export function ActivityDetailPage() {
           </Section>
         )}
 
-      {(hasHr ||
-        hasPower ||
-        hasSpeed ||
-        hasCadence ||
-        sourceControls.some((metric) => metric.key !== "altitude")) && (
+      {showPerformance && (
         <Section title="Performance">
-          {sourceControls.length > 0 && (
-            <p role="status" className="mb-2 min-h-4 text-xs text-muted">
-              {stream.isFetching ||
-              heartRateContext.isFetching ||
-              hrZones.isFetching ||
-              powerZones.isFetching ||
-              powerWork.isFetching
-                ? "Updating metrics…"
-                : null}
-            </p>
+          {hasPerformanceChart && (
+            <>
+              {sourceControls.length > 0 && metricsUpdating && (
+                <p role="status" className="mb-2 text-xs text-muted">
+                  Updating metrics…
+                </p>
+              )}
+              <MetricsChart
+                heartRateContext={isClimbingActivity ? heartRateContext.data : undefined}
+                activityWindow={activity}
+                highlightedClimbId={highlightedClimbId ?? activeClimbId}
+                selectedClimbId={activeClimbId}
+                onSelectClimb={setActiveClimbId}
+                climbAnnotations={
+                  isClimbingActivity
+                    ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
+                    : undefined
+                }
+                points={points}
+                activityType={activity.activityType}
+                hasHr={hasHr}
+                hasPower={hasPower}
+                hasSpeed={hasSpeed}
+                hasCadence={hasCadence}
+                loading={stream.isLoading}
+                error={stream.error}
+                metricSources={sourceControls.filter((metric) => metric.key !== "altitude")}
+                sourceAttribution={{
+                  ...metrics.attributionHints.stream,
+                  heartRate:
+                    isClimbingActivity && heartRateContext.data !== undefined
+                      ? metrics.attributionHints.heartRateContext
+                      : metrics.attributionHints.stream.heartRate,
+                }}
+                units={units}
+                onHoverPosition={hasGps ? handleChartHover : undefined}
+              />
+            </>
           )}
-          <MetricsChart
-            heartRateContext={isClimbingActivity ? heartRateContext.data : undefined}
-            activityWindow={activity}
-            highlightedClimbId={highlightedClimbId ?? activeClimbId}
-            selectedClimbId={activeClimbId}
-            onSelectClimb={setActiveClimbId}
-            climbAnnotations={
-              isClimbingActivity
-                ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
-                : undefined
-            }
-            points={points}
-            activityType={activity.activityType}
-            hasHr={hasHr}
-            hasPower={hasPower}
-            hasSpeed={hasSpeed}
-            hasCadence={hasCadence}
-            loading={stream.isLoading}
-            error={stream.error}
-            metricSources={sourceControls.filter((metric) => metric.key !== "altitude")}
-            sourceAttribution={{
-              ...metrics.attributionHints.stream,
-              heartRate:
-                isClimbingActivity && heartRateContext.data !== undefined
-                  ? metrics.attributionHints.heartRateContext
-                  : metrics.attributionHints.stream.heartRate,
-            }}
-            units={units}
-            onHoverPosition={hasGps ? handleChartHover : undefined}
-          />
+          {runningFormReadings.length > 0 && (
+            <div
+              className={hasPerformanceChart ? "mt-4 border-t border-border/60 pt-4" : undefined}
+            >
+              <h3 className="mb-2 text-xs font-medium text-muted uppercase tracking-wider">
+                Running Form
+              </h3>
+              <div className="flex flex-wrap gap-x-8 gap-y-4">
+                {runningFormReadings.map(({ label, value, qualifier }) => (
+                  <div key={label}>
+                    <div className="text-xs text-subtle">{label}</div>
+                    <div className="text-xl font-semibold tracking-tight tabular-nums">{value}</div>
+                    {qualifier ? <div className="text-xs text-subtle">{qualifier}</div> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </Section>
       )}
 

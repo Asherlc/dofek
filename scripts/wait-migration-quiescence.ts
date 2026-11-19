@@ -53,12 +53,15 @@ const taskSnapshotSchema = z.object({
   ID: z.string().min(1),
   CurrentState: z.string().min(1),
 });
+function dockerExec(arguments_: string[], deadline: number): string {
+  return execFileSync("docker", arguments_, {
+    encoding: "utf8",
+    timeout: Math.max(1, deadline - Date.now()),
+  });
+}
+
 function inspectService(serviceName: string, deadline: number): string[] {
-  const docker = (arguments_: string[]) =>
-    execFileSync("docker", arguments_, {
-      encoding: "utf8",
-      timeout: Math.max(1, deadline - Date.now()),
-    });
+  const docker = (arguments_: string[]) => dockerExec(arguments_, deadline);
   const [service] = serviceInspectionSchema.parse(
     JSON.parse(docker(["service", "inspect", serviceName])),
   );
@@ -88,17 +91,24 @@ function inspectService(serviceName: string, deadline: number): string[] {
     .map((task) => `${serviceName}: ${task.ID}=${task.State}`);
 }
 
-export async function waitForMigrationQuiescence(
+function migrationConsumerServices(
   stackName: string,
   deploymentMode: "rolling" | "maintenance",
-): Promise<void> {
+): string[] {
   if (!stackName.trim()) throw new Error("A stack name is required for migration quiescence.");
   const consumers =
     deploymentMode === "maintenance" ? [...MIGRATION_CONSUMERS, "web"] : MIGRATION_CONSUMERS;
-  const deadline = Date.now() + QUIESCENCE_TIMEOUT_MS;
+  return consumers.map((consumer) => `${stackName}_${consumer}`);
+}
+
+async function waitForServicesToStop(
+  services: readonly string[],
+  deploymentMode: "rolling" | "maintenance",
+  deadline: number,
+): Promise<void> {
   let waiting: string[] = [];
   while (Date.now() < deadline) {
-    waiting = consumers.flatMap((consumer) => inspectService(`${stackName}_${consumer}`, deadline));
+    waiting = services.flatMap((service) => inspectService(service, deadline));
     if (waiting.length === 0) {
       console.log(`Migration consumers are stopped for ${deploymentMode} deployment.`);
       return;
@@ -111,17 +121,60 @@ export async function waitForMigrationQuiescence(
   throw new Error(`Migration quiescence timed out after 35 minutes: ${waiting.join(", ")}`);
 }
 
+async function runMigrationQuiescence(
+  stackName: string,
+  deploymentMode: "rolling" | "maintenance",
+  drain: boolean,
+): Promise<void> {
+  const services = migrationConsumerServices(stackName, deploymentMode);
+  const deadline = Date.now() + QUIESCENCE_TIMEOUT_MS;
+  let watched = services;
+  if (drain) {
+    const deployed = new Set(
+      dockerExec(["service", "ls", "--format", "{{.Name}}"], deadline)
+        .split(/\r?\n/)
+        .map((name) => name.trim())
+        .filter(Boolean),
+    );
+    watched = services.filter((service) => deployed.has(service));
+    if (watched.length > 0) {
+      dockerExec(
+        ["service", "scale", "--detach=true", ...watched.map((service) => `${service}=0`)],
+        deadline,
+      );
+    }
+  }
+  await waitForServicesToStop(watched, deploymentMode, deadline);
+}
+
+export async function waitForMigrationQuiescence(
+  stackName: string,
+  deploymentMode: "rolling" | "maintenance",
+): Promise<void> {
+  await runMigrationQuiescence(stackName, deploymentMode, false);
+}
+
+export async function drainMigrationConsumers(
+  stackName: string,
+  deploymentMode: "rolling" | "maintenance",
+): Promise<void> {
+  await runMigrationQuiescence(stackName, deploymentMode, true);
+}
+
 const commandPath = process.argv[1];
 if (commandPath && import.meta.url === pathToFileURL(commandPath).href) {
-  const [stackName, deploymentMode, ...extra] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const drain = args[0] === "--drain";
+  const [stackName, deploymentMode, ...extra] = drain ? args.slice(1) : args;
   if (
     !stackName ||
     (deploymentMode !== "rolling" && deploymentMode !== "maintenance") ||
     extra.length > 0
   ) {
     throw new Error(
-      "Usage: pnpm tsx scripts/wait-migration-quiescence.ts <stack-name> <rolling|maintenance>",
+      "Usage: pnpm tsx scripts/wait-migration-quiescence.ts [--drain] <stack-name> <rolling|maintenance>",
     );
   }
-  await waitForMigrationQuiescence(stackName, deploymentMode);
+  if (drain) await drainMigrationConsumers(stackName, deploymentMode);
+  else await waitForMigrationQuiescence(stackName, deploymentMode);
 }

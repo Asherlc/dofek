@@ -140,6 +140,12 @@ export const activitySummaryReadModelRowSchema = z.object({
   avg_speed: z.number().nullable(),
   max_speed: z.number().nullable(),
   avg_cadence: z.number().nullable(),
+  cadence_basis: z.enum(["cadence_samples", "step_intervals", "unknown"]).nullable().optional(),
+  cadence_observed_seconds: z.number().nullable().optional(),
+  cadence_coverage_percent: z.number().nullable().optional(),
+  avg_stride_length: z.number().nullable().optional(),
+  avg_stance_time: z.number().nullable().optional(),
+  avg_vertical_osc: z.number().nullable().optional(),
   total_distance: z.number().nullable(),
   elevation_gain_m: z.number().nullable(),
   elevation_loss_m: z.number().nullable(),
@@ -147,6 +153,17 @@ export const activitySummaryReadModelRowSchema = z.object({
   centroid_lat: z.number().nullable().default(null),
   centroid_lng: z.number().nullable().default(null),
 });
+
+/** Running-form evidence carried from the bounded summary into an owned activity row. */
+export type ActivitySummaryFormColumns = Pick<
+  z.infer<typeof activitySummaryReadModelRowSchema>,
+  | "cadence_basis"
+  | "cadence_observed_seconds"
+  | "cadence_coverage_percent"
+  | "avg_stride_length"
+  | "avg_stance_time"
+  | "avg_vertical_osc"
+>;
 
 export const activityIdResolutionSchema = z.object({
   requested_id: z.string(),

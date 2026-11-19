@@ -1,4 +1,5 @@
 import { formatSpO2Measurement } from "@dofek/format/format";
+import { isConnectionFailure } from "@dofek/format/user-facing-error";
 import { baselineRelativeMetricSchema } from "dofek-server/baseline-relative-metrics";
 import {
   type HealthStatusMetric,
@@ -69,6 +70,13 @@ export function Dashboard() {
   const processingStatus = useProcessingStatus({
     datasets: ["activity", "sleep", "recovery", "training", "body"],
   });
+  const connectionFailures = [
+    trends.error,
+    insightsQuery.error,
+    heartRateBaseline.error,
+    processingStatus.error,
+  ].filter((error) => error != null && isConnectionFailure(error));
+  const sharedConnectionFailure = connectionFailures.length > 1;
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
     : undefined;
@@ -127,14 +135,28 @@ export function Dashboard() {
   );
   usePageLoadDomSection("resting-heart-rate", heartRateBaseline.error ? "error" : undefined);
 
+  const trendsErrorHidden = sharedConnectionFailure && isConnectionFailure(trends.error);
+  const hideInsightCard =
+    sharedConnectionFailure && isConnectionFailure(insightsQuery.error) && topInsight == null;
+  // A distinct heart rate failure still owns the trend card even when the
+  // grouped trend query has no data — keep the card so its error stays visible.
+  const hasDistinctHeartRateError =
+    heartRateBaseline.error != null && !isConnectionFailure(heartRateBaseline.error);
+  const hideTrendCard =
+    trendsErrorHidden &&
+    trendData == null &&
+    restingHeartRatePoints.length === 0 &&
+    !hasDistinctHeartRateError;
+  const hideHealthMonitor = trendsErrorHidden && trendData == null;
   const healthMonitor =
-    trends.error && trends.data == null ? (
+    trends.error && trends.data == null && !trendsErrorHidden ? (
       <QueryStatePanel error={trends.error} height={160} />
     ) : (
       <>
         <HealthStatusBar
           baselineRelative={trendData?.baselineRelative}
           metrics={healthMetrics}
+          grouped
           loading={trends.isLoading}
           formatters={{
             spo2: formatSpO2Measurement,
@@ -150,13 +172,17 @@ export function Dashboard() {
             sleep_efficiency: "%",
           }}
         />
-        {trends.error ? <QueryStatePanel error={trends.error} height={72} /> : null}
+        {trends.error && !trendsErrorHidden ? (
+          <QueryStatePanel error={trends.error} height={72} />
+        ) : null}
       </>
     );
   const insightStatePanel = insightsQuery.isLoading ? (
     <QueryStatePanel variant="loading" height={160} />
   ) : insightsQuery.error ? (
-    <QueryStatePanel error={insightsQuery.error} height={160} />
+    sharedConnectionFailure && isConnectionFailure(insightsQuery.error) ? null : (
+      <QueryStatePanel error={insightsQuery.error} height={160} />
+    )
   ) : !insightsQuery.isFetched ? (
     <QueryStatePanel variant="loading" height={160} />
   ) : !topInsight ? (
@@ -165,9 +191,16 @@ export function Dashboard() {
 
   return (
     <PageLayout headerChildren={undefined}>
+      {sharedConnectionFailure ? (
+        <QueryStatePanel error={connectionFailures[0]} height={72} />
+      ) : null}
       <ProcessingStatusWidget
         data={processingStatus.data}
-        error={processingStatus.error}
+        error={
+          sharedConnectionFailure && isConnectionFailure(processingStatus.error)
+            ? undefined
+            : processingStatus.error
+        }
         loading={processingStatus.isLoading}
       />
       <DashboardEvidenceOverview
@@ -183,8 +216,15 @@ export function Dashboard() {
           restingHeartRatePoints,
         }}
         restingHeartRateLoading={heartRateBaseline.isLoading}
-        restingHeartRateError={heartRateBaseline.error}
+        restingHeartRateError={
+          sharedConnectionFailure && isConnectionFailure(heartRateBaseline.error)
+            ? undefined
+            : heartRateBaseline.error
+        }
         healthMonitor={healthMonitor}
+        hideInsightCard={hideInsightCard}
+        hideTrendCard={hideTrendCard}
+        hideHealthMonitor={hideHealthMonitor}
       />
     </PageLayout>
   );

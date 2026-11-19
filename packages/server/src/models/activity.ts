@@ -3,6 +3,7 @@ import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
 import type { ActivityOriginEvidence } from "@dofek/providers/activity-origin";
 import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
 import type { ClimbingLogActivitySession } from "../contracts/climbing-log-contracts.ts";
+import { averageRunPaceSecondsPerKm } from "../lib/average-run-pace.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { type ActivityOriginColumns, activityOriginFromColumns } from "./activity-origin.ts";
 import type { ActivitySource } from "./activity-source.ts";
@@ -28,6 +29,17 @@ export type {
 
 const FIT_RECOVERY_WARNING =
   "Some activity data could not be recovered from the original file. The available data was imported; this activity may be incomplete.";
+
+/** Running-form evidence for one resolved activity, mirroring the running.dynamics row vocabulary. */
+export interface ActivityRunningForm {
+  cadence: number | null;
+  cadenceBasis: "cadence_samples" | "step_intervals" | "unknown";
+  cadenceObservedSeconds: number | null;
+  cadenceCoveragePercent: number | null;
+  strideLengthMeters: number | null;
+  stanceTimeMs: number | null;
+  verticalOscillationMm: number | null;
+}
 
 export interface ActivityDetail {
   climbingLogSessions: ClimbingLogActivitySession[];
@@ -65,6 +77,9 @@ export interface ActivityDetail {
   maxSpeedState: ActivityDataState;
   avgCadence: number | null;
   avgCadenceState: ActivityDataState;
+  /** Server-derived pace for a canonical run with positive average speed. */
+  avgPaceSecondsPerKm?: number;
+  runningForm?: ActivityRunningForm;
   totalDistance: number | null;
   totalDistanceState: ActivityDataState;
   elevationGain: number | null;
@@ -107,6 +122,12 @@ export interface ActivityRow extends ActivityOriginColumns {
   avg_speed: number | null;
   max_speed: number | null;
   avg_cadence: number | null;
+  cadence_basis?: "cadence_samples" | "step_intervals" | "unknown" | null;
+  cadence_observed_seconds?: number | null;
+  cadence_coverage_percent?: number | null;
+  avg_stride_length?: number | null;
+  avg_stance_time?: number | null;
+  avg_vertical_osc?: number | null;
   total_distance: number | null;
   elevation_gain_m: number | null;
   elevation_loss_m: number | null;
@@ -260,10 +281,33 @@ export class Activity {
     return this.#row.provider_absent_at ? String(this.#row.provider_absent_at) : null;
   }
 
+  /** Running form is additive: only a canonical run with a recorded measurement carries it. */
+  #runningForm(): ActivityRunningForm | null {
+    if (this.activityType !== "running") return null;
+    const form: ActivityRunningForm = {
+      cadence: this.avgCadence,
+      cadenceBasis: this.#row.cadence_basis ?? "unknown",
+      cadenceObservedSeconds: this.#row.cadence_observed_seconds ?? null,
+      cadenceCoveragePercent: this.#row.cadence_coverage_percent ?? null,
+      strideLengthMeters: this.#row.avg_stride_length ?? null,
+      stanceTimeMs: this.#row.avg_stance_time ?? null,
+      verticalOscillationMm: this.#row.avg_vertical_osc ?? null,
+    };
+    const hasMeasurement =
+      form.cadence != null ||
+      form.strideLengthMeters != null ||
+      form.stanceTimeMs != null ||
+      form.verticalOscillationMm != null;
+    return hasMeasurement ? form : null;
+  }
+
   /** Serialize to the ActivityDetail shape consumed by API clients. */
   toDetail(climbingLogSessions: ClimbingLogActivitySession[] = []): ActivityDetail {
     const sourceLinks = this.sourceLinks;
     const origin = activityOriginFromColumns(this.#row);
+    const runningForm = this.#runningForm();
+    const avgPaceSecondsPerKm =
+      this.activityType === "running" ? averageRunPaceSecondsPerKm(this.avgSpeed) : null;
     return {
       id: this.id,
       displayedDate: this.displayedDate,
@@ -310,6 +354,8 @@ export class Activity {
       maxSpeedState: activityMeasurementState("Maximum speed", this.maxSpeed),
       avgCadence: this.avgCadence,
       avgCadenceState: activityMeasurementState("Average cadence", this.avgCadence),
+      ...(avgPaceSecondsPerKm != null ? { avgPaceSecondsPerKm } : {}),
+      ...(runningForm ? { runningForm } : {}),
       totalDistance: this.totalDistance,
       totalDistanceState: activityMeasurementState("Distance", this.totalDistance),
       elevationGain: this.elevationGain,

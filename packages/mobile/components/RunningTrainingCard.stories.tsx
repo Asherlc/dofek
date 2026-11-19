@@ -1,4 +1,3 @@
-import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { RunningTrainingCard } from "./RunningTrainingCard";
 import {
@@ -16,8 +15,6 @@ const meta = {
     data: runningData,
     loading: false,
     error: null,
-    units: new UnitConverter("metric"),
-    onOpenActivity: () => {},
   },
 } satisfies Meta<typeof RunningTrainingCard>;
 export default meta;

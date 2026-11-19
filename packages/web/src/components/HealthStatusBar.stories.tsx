@@ -232,6 +232,7 @@ export const BlockedBaseline: Story = {
 
 export const NarrowDashboardCards: Story = {
   args: {
+    grouped: true,
     metrics: [
       hrvMetric({ value: 51.5, valueText: "52 ms", baseline: 50.5, baselineText: "51 ms" }),
       hrvMetric({

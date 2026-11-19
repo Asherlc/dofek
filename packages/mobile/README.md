@@ -127,6 +127,11 @@ the activity's route, exercises, or climbs when available. Performance shows
 one metric at a time with the recording source and exact chart data. Scrubbing
 an activity with GPS still updates the route position. The actions beside the
 title open export, recompute, and delete, and Details opens recording lineage.
+A run's Performance section also shows its available form readings through
+[RunningFormStats](components/activity/RunningFormStats.tsx), including form-only
+runs without cadence; older responses simply omit the readout. A recorded positive
+server-computed pace appears in the key stats as a unit-specific Avg Pace, while
+older, zero-speed, and non-running responses keep Avg Speed.
 
 Activity details show downloaded photos in [ActivityImages](components/ActivityImages.tsx),
 with tappable thumbnails, captions, source labels, and a full-screen

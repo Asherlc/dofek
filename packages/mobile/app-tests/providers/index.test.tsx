@@ -1167,18 +1167,8 @@ describe("ProviderCard", () => {
 
     expect(screen.getByText("206,539")).toBeTruthy();
     expect(screen.getByText("records")).toBeTruthy();
-    expect(screen.getByText("Activities")).toBeTruthy();
-    expect(screen.getByText("352")).toBeTruthy();
-    expect(screen.getByText("Metric Stream")).toBeTruthy();
-    expect(screen.getByText("205,367")).toBeTruthy();
-    expect(screen.getByText("Daily Metrics")).toBeTruthy();
-    expect(screen.getByText("229")).toBeTruthy();
-    expect(screen.getByText("Sleep")).toBeTruthy();
-    expect(screen.getByText("155")).toBeTruthy();
-    expect(screen.getByText("Body")).toBeTruthy();
-    expect(screen.getByText("43")).toBeTruthy();
-    expect(screen.getByText("Events")).toBeTruthy();
-    expect(screen.getByText("392")).toBeTruthy();
+    expect(screen.queryByText("Activities")).toBeNull();
+    expect(screen.queryByText("Metric Stream")).toBeNull();
   });
 
   describe("import-only providers", () => {
@@ -1625,6 +1615,16 @@ describe("ProvidersScreen", () => {
       expect(within(syncRegion).getByText("Sync recent data")).toBeTruthy();
     },
   );
+
+  it("collapses the reserved sync control space once inventory resolves without actions", async () => {
+    mockProvidersQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    await renderProvidersScreen();
+
+    const syncRegion = screen.getByTestId("provider-sync-controls-region");
+    const reservedStyle = JSON.parse(syncRegion.getAttribute("data-style") ?? "{}");
+    expect(reservedStyle.minHeight).toBeUndefined();
+    expect(screen.queryByText("Sync recent data")).toBeNull();
+  });
 
   it("renders dataset-level processing progress on the provider list", async () => {
     mockDataHealthQuery.mockReturnValue({
