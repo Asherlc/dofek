@@ -310,4 +310,74 @@ describe("withActivitySummaries", () => {
       { id: "canonical-map", routeActivityId: "canonical-map", memberActivityIds: ["source-map"] },
     ]);
   });
+
+  const runningFormFields = {
+    cadence_basis: "step_intervals",
+    cadence_observed_seconds: 0,
+    cadence_coverage_percent: 30,
+    avg_stride_length: 1.24,
+    avg_stance_time: 240,
+    avg_vertical_osc: 8,
+  } as const;
+
+  it("maps all opted-in running-form fields including a recorded zero", async () => {
+    const store = makeSensorStore();
+    store.getActivitySummaries = vi
+      .fn()
+      .mockResolvedValue([makeSummary("run-1", runningFormFields)]);
+
+    const [row] = await withActivitySummaries([makeRow("run-1")], store, "user-1", {
+      includeRunningForm: true,
+    });
+
+    expect(store.getActivitySummaries).toHaveBeenCalledExactlyOnceWith(["run-1"], {
+      includeRunningForm: true,
+    });
+    expect(row).toMatchObject(runningFormFields);
+  });
+
+  it.each([
+    { name: "absent", values: {} },
+    {
+      name: "null",
+      values: {
+        cadence_basis: null,
+        cadence_observed_seconds: null,
+        cadence_coverage_percent: null,
+        avg_stride_length: null,
+        avg_stance_time: null,
+        avg_vertical_osc: null,
+      },
+    },
+  ])("defaults opted-in running-form fields to null when $name", async ({ values }) => {
+    const store = makeSensorStore();
+    store.getActivitySummaries = vi.fn().mockResolvedValue([makeSummary("run-2", values)]);
+
+    const [row] = await withActivitySummaries([makeRow("run-2")], store, "user-1", {
+      includeRunningForm: true,
+    });
+
+    expect(row).toMatchObject({
+      cadence_basis: null,
+      cadence_observed_seconds: null,
+      cadence_coverage_percent: null,
+      avg_stride_length: null,
+      avg_stance_time: null,
+      avg_vertical_osc: null,
+    });
+  });
+
+  it("keeps the default summary list unchanged without running-form fields", async () => {
+    const store = makeSensorStore();
+    store.getActivitySummaries = vi
+      .fn()
+      .mockResolvedValue([makeSummary("run-3", runningFormFields)]);
+
+    const [row] = await withActivitySummaries([makeRow("run-3")], store, "user-1");
+
+    expect(store.getActivitySummaries).toHaveBeenCalledExactlyOnceWith(["run-3"]);
+    for (const field of Object.keys(runningFormFields)) {
+      expect(row).not.toHaveProperty(field);
+    }
+  });
 });

@@ -72,6 +72,16 @@ const fullRow: ActivityRow = {
   provider_absent_at: null,
 };
 
+const emptyRunningForm = {
+  cadence: null,
+  cadenceBasis: "unknown",
+  cadenceObservedSeconds: null,
+  cadenceCoveragePercent: null,
+  strideLengthMeters: null,
+  stanceTimeMs: null,
+  verticalOscillationMm: null,
+};
+
 describe("Activity", () => {
   it("maps a recovered FIT source to the fixed user-facing detail warning", () => {
     const detail = new Activity({ ...fullRow, fit_recovery_error: true }, mockLookup).toDetail();
@@ -104,6 +114,145 @@ describe("Activity", () => {
     },
   ])("omits server-computed pace for $name", ({ row }) => {
     expect(new Activity(row, mockLookup).toDetail()).not.toHaveProperty("avgPaceSecondsPerKm");
+  });
+
+  it("serializes complete measured runningForm with cadence provenance", () => {
+    const detail = new Activity(
+      {
+        ...fullRow,
+        canonical_type: "running",
+        avg_cadence: 178,
+        cadence_basis: "cadence_samples",
+        cadence_observed_seconds: 600,
+        cadence_coverage_percent: 100,
+        avg_stride_length: 1.24,
+        avg_stance_time: 240,
+        avg_vertical_osc: 8,
+      },
+      mockLookup,
+    ).toDetail();
+
+    expect(detail.runningForm).toEqual({
+      cadence: 178,
+      cadenceBasis: "cadence_samples",
+      cadenceObservedSeconds: 600,
+      cadenceCoveragePercent: 100,
+      strideLengthMeters: 1.24,
+      stanceTimeMs: 240,
+      verticalOscillationMm: 8,
+    });
+  });
+
+  it("serializes step-interval cadence provenance and coverage", () => {
+    const detail = new Activity(
+      {
+        ...fullRow,
+        canonical_type: "running",
+        avg_cadence: 170,
+        cadence_basis: "step_intervals",
+        cadence_observed_seconds: 180,
+        cadence_coverage_percent: 30,
+      },
+      mockLookup,
+    ).toDetail();
+
+    expect(detail.runningForm).toEqual({
+      ...emptyRunningForm,
+      cadence: 170,
+      cadenceBasis: "step_intervals",
+      cadenceObservedSeconds: 180,
+      cadenceCoveragePercent: 30,
+    });
+  });
+
+  it.each([
+    { name: "recorded cadence", overrides: { avg_cadence: 178 }, expected: { cadence: 178 } },
+    { name: "numeric zero cadence", overrides: { avg_cadence: 0 }, expected: { cadence: 0 } },
+    {
+      name: "stride length",
+      overrides: { avg_stride_length: 1.2 },
+      expected: { strideLengthMeters: 1.2 },
+    },
+    {
+      name: "numeric zero stride length",
+      overrides: { avg_stride_length: 0 },
+      expected: { strideLengthMeters: 0 },
+    },
+    {
+      name: "ground contact time",
+      overrides: { avg_stance_time: 240 },
+      expected: { stanceTimeMs: 240 },
+    },
+    {
+      name: "numeric zero ground contact time",
+      overrides: { avg_stance_time: 0 },
+      expected: { stanceTimeMs: 0 },
+    },
+    {
+      name: "vertical oscillation",
+      overrides: { avg_vertical_osc: 8 },
+      expected: { verticalOscillationMm: 8 },
+    },
+    {
+      name: "numeric zero vertical oscillation",
+      overrides: { avg_vertical_osc: 0 },
+      expected: { verticalOscillationMm: 0 },
+    },
+  ])("keeps a run with only $name in runningForm", ({ overrides, expected }) => {
+    const detail = new Activity(
+      {
+        ...fullRow,
+        canonical_type: "running",
+        avg_cadence: null,
+        avg_stride_length: null,
+        avg_stance_time: null,
+        avg_vertical_osc: null,
+        ...overrides,
+      },
+      mockLookup,
+    ).toDetail();
+
+    expect(detail.runningForm).toEqual({ ...emptyRunningForm, ...expected });
+  });
+
+  it("uses exact defaults for null form fields", () => {
+    const detail = new Activity(
+      {
+        ...fullRow,
+        canonical_type: "running",
+        avg_cadence: 0,
+        cadence_basis: null,
+        cadence_observed_seconds: null,
+        cadence_coverage_percent: null,
+        avg_stride_length: null,
+        avg_stance_time: null,
+        avg_vertical_osc: null,
+      },
+      mockLookup,
+    ).toDetail();
+
+    expect(detail.runningForm).toEqual({ ...emptyRunningForm, cadence: 0 });
+  });
+
+  it.each([
+    { name: "a run without measurements", canonicalType: "running", overrides: {} },
+    {
+      name: "a non-running activity despite form evidence",
+      canonicalType: "cycling",
+      overrides: { avg_stride_length: 1.2, avg_stance_time: 240, avg_vertical_osc: 8 },
+    },
+  ])("omits runningForm for $name", ({ canonicalType, overrides }) => {
+    const detail = new Activity(
+      {
+        ...fullRow,
+        canonical_type: canonicalType,
+        avg_cadence: null,
+        ...overrides,
+      },
+      mockLookup,
+    ).toDetail();
+
+    expect(detail).not.toHaveProperty("runningForm");
   });
 
   it("projects rounded measured duration and keeps an unknown end null", () => {
