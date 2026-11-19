@@ -81,6 +81,31 @@ describe("Activity", () => {
     );
   });
 
+  it("serializes server-computed run pace from positive average speed", () => {
+    const detail = new Activity(
+      { ...fullRow, canonical_type: "running", avg_speed: 3.328 },
+      mockLookup,
+    ).toDetail();
+    expect(detail.avgPaceSecondsPerKm).toBe(300);
+    expect(
+      new Activity(
+        { ...fullRow, canonical_type: "running", avg_speed: 3.32 },
+        mockLookup,
+      ).toDetail().avgPaceSecondsPerKm,
+    ).toBe(301);
+  });
+
+  it.each([
+    { name: "non-running activity", row: fullRow },
+    { name: "zero average speed", row: { ...fullRow, canonical_type: "running", avg_speed: 0 } },
+    {
+      name: "missing average speed",
+      row: { ...fullRow, canonical_type: "running", avg_speed: null },
+    },
+  ])("omits server-computed pace for $name", ({ row }) => {
+    expect(new Activity(row, mockLookup).toDetail()).not.toHaveProperty("avgPaceSecondsPerKm");
+  });
+
   it("projects rounded measured duration and keeps an unknown end null", () => {
     expect(
       new Activity(

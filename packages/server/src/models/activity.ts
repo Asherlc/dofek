@@ -3,6 +3,7 @@ import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
 import type { ActivityOriginEvidence } from "@dofek/providers/activity-origin";
 import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
 import type { ClimbingLogActivitySession } from "../contracts/climbing-log-contracts.ts";
+import { averageRunPaceSecondsPerKm } from "../lib/average-run-pace.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { type ActivityOriginColumns, activityOriginFromColumns } from "./activity-origin.ts";
 import type { ActivitySource } from "./activity-source.ts";
@@ -76,6 +77,8 @@ export interface ActivityDetail {
   maxSpeedState: ActivityDataState;
   avgCadence: number | null;
   avgCadenceState: ActivityDataState;
+  /** Server-derived pace for a canonical run with positive average speed. */
+  avgPaceSecondsPerKm?: number;
   runningForm?: ActivityRunningForm;
   totalDistance: number | null;
   totalDistanceState: ActivityDataState;
@@ -303,6 +306,8 @@ export class Activity {
     const sourceLinks = this.sourceLinks;
     const origin = activityOriginFromColumns(this.#row);
     const runningForm = this.#runningForm();
+    const avgPaceSecondsPerKm =
+      this.activityType === "running" ? averageRunPaceSecondsPerKm(this.avgSpeed) : null;
     return {
       id: this.id,
       displayedDate: this.displayedDate,
@@ -349,6 +354,7 @@ export class Activity {
       maxSpeedState: activityMeasurementState("Maximum speed", this.maxSpeed),
       avgCadence: this.avgCadence,
       avgCadenceState: activityMeasurementState("Average cadence", this.avgCadence),
+      ...(avgPaceSecondsPerKm != null ? { avgPaceSecondsPerKm } : {}),
       ...(runningForm ? { runningForm } : {}),
       totalDistance: this.totalDistance,
       totalDistanceState: activityMeasurementState("Distance", this.totalDistance),

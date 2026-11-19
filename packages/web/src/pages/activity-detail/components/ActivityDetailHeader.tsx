@@ -44,6 +44,9 @@ export function ActivityHeader({
     viewerTimezone,
   );
 
+  const avgPaceSecondsPerKm =
+    activity.activityType === "running" ? activity.avgPaceSecondsPerKm : undefined;
+
   const stats: Array<
     ActivityMetric | { label: string; value: string; description?: string; attribution?: string }
   > = [];
@@ -106,13 +109,12 @@ export function ActivityHeader({
           },
         ]
       : []),
-    activity.activityType === "running" && activity.avgSpeed != null && activity.avgSpeed > 0
+    avgPaceSecondsPerKm != null
       ? formatActivityMetric(
           "Avg Pace",
           activity.avgSpeed,
           activity.avgSpeedState,
-          (value) =>
-            `${formatPace(units.convertPace(Math.round(1000 / value)))} ${units.paceLabel}`,
+          () => `${formatPace(units.convertPace(avgPaceSecondsPerKm))} ${units.paceLabel}`,
         )
       : formatActivityMetric(
           "Avg Speed",

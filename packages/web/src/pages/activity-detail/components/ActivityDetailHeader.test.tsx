@@ -308,6 +308,7 @@ it.each([
           activityType: "running",
           avgSpeed: 3,
           avgSpeedState: { status: "available" },
+          avgPaceSecondsPerKm: 333,
         }}
         units={new UnitConverter(system)}
       />,
@@ -318,6 +319,36 @@ it.each([
   },
 );
 
+it("uses the server pace value rather than recomputing from speed", () => {
+  render(
+    <ActivityHeader
+      activity={{
+        ...baseActivity,
+        activityType: "running",
+        avgSpeed: 3.328,
+        avgPaceSecondsPerKm: 301,
+      }}
+      units={new UnitConverter("metric")}
+    />,
+  );
+  expect(screen.getByText("5:01 /km")).toBeVisible();
+});
+
+it("converts the server pace value for imperial units", () => {
+  render(
+    <ActivityHeader
+      activity={{
+        ...baseActivity,
+        activityType: "running",
+        avgSpeed: 3.328,
+        avgPaceSecondsPerKm: 300,
+      }}
+      units={new UnitConverter("imperial")}
+    />,
+  );
+  expect(screen.getByText("8:03 /mi")).toBeVisible();
+});
+
 it.each([
   {
     name: "non-running activities",
@@ -326,6 +357,10 @@ it.each([
   {
     name: "running with zero speed",
     activity: { ...baseActivity, activityType: "running", avgSpeed: 0 },
+  },
+  {
+    name: "older running responses without server pace",
+    activity: { ...baseActivity, activityType: "running", avgSpeed: 3.328 },
   },
 ])("keeps Avg Speed for $name", ({ activity }) => {
   render(<ActivityHeader activity={activity} units={new UnitConverter("metric")} />);

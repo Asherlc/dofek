@@ -998,15 +998,28 @@ it("omits the form readout for non-running activities and older cached runs", ()
   expect(screen.queryByText("Running Form")).toBeNull();
 });
 
-it("shows a recorded running speed as Avg Pace and keeps Avg Speed for other cases", () => {
+it("uses the server-provided run pace as Avg Pace with an Avg Speed fallback", () => {
   mocks.byIdQuery.mockReturnValue(
-    defaultObserver({ ...baseCyclingActivity, activityType: "running", avgSpeed: 3.33 }),
+    defaultObserver({
+      ...baseCyclingActivity,
+      activityType: "running",
+      avgSpeed: 3.328,
+      avgPaceSecondsPerKm: 301,
+    }),
   );
   const running = renderActivityDetail();
   expect(screen.getByText("Avg Pace")).toBeTruthy();
-  expect(screen.getByText("5:00 /km")).toBeTruthy();
+  expect(screen.getByText("5:01 /km")).toBeTruthy();
   expect(screen.queryByText("Avg Speed")).toBeNull();
   running.unmount();
+
+  mocks.byIdQuery.mockReturnValue(
+    defaultObserver({ ...baseCyclingActivity, activityType: "running", avgSpeed: 3.328 }),
+  );
+  const older = renderActivityDetail();
+  expect(screen.getByText("Avg Speed")).toBeTruthy();
+  expect(screen.queryByText("Avg Pace")).toBeNull();
+  older.unmount();
 
   mocks.byIdQuery.mockReturnValue(
     defaultObserver({ ...baseCyclingActivity, activityType: "running", avgSpeed: 0 }),
@@ -1019,10 +1032,15 @@ it("shows a recorded running speed as Avg Pace and keeps Avg Speed for other cas
   expect(screen.getByText("Avg Speed")).toBeTruthy();
 });
 
-it("rounds pace seconds before converting an imperial run's speed", () => {
+it("converts the server-provided run pace for imperial units", () => {
   unitMode.imperial = true;
   mocks.byIdQuery.mockReturnValue(
-    defaultObserver({ ...baseCyclingActivity, activityType: "running", avgSpeed: 3.328 }),
+    defaultObserver({
+      ...baseCyclingActivity,
+      activityType: "running",
+      avgSpeed: 3.328,
+      avgPaceSecondsPerKm: 300,
+    }),
   );
   renderActivityDetail();
   expect(screen.getByText("8:03 /mi")).toBeTruthy();

@@ -449,11 +449,7 @@ function ActivityDetailScreen({ id }: { id: string }) {
   }
 
   const activity = detail.data;
-  const showPace =
-    isRunning &&
-    activity.avgSpeed != null &&
-    activity.avgSpeed > 0 &&
-    activity.avgSpeedState?.status === "available";
+  const avgPaceSecondsPerKm = isRunning ? activity.avgPaceSecondsPerKm : undefined;
   const zones = hrZones.data ?? [];
 
   const routePoints = route.data?.status === "ready" ? route.data.points : EMPTY_ROUTE_POINTS;
@@ -607,12 +603,12 @@ function ActivityDetailScreen({ id }: { id: string }) {
   }
   stats.push(
     formatActivityMetric(
-      showPace ? "Avg Pace" : "Avg Speed",
+      avgPaceSecondsPerKm != null ? "Avg Pace" : "Avg Speed",
       activity.avgSpeed,
       activity.avgSpeedState,
       (value) =>
-        showPace
-          ? `${formatPace(units.convertPace(Math.round(1000 / value)))} ${units.paceLabel}`
+        avgPaceSecondsPerKm != null
+          ? `${formatPace(units.convertPace(avgPaceSecondsPerKm))} ${units.paceLabel}`
           : `${formatNumber(units.convertSpeed(value * 3.6))} ${units.speedLabel}`,
     ),
     formatActivityMetric(
