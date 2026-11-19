@@ -1,5 +1,6 @@
 import { formatDateYmdInTimeZone, shiftDateYmd } from "@dofek/format/format";
 import { localTimeSourceSchema } from "@dofek/format/record-local-time";
+import { isConnectionFailure } from "@dofek/format/user-facing-error";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import {
@@ -94,6 +95,20 @@ export function SleepPage() {
     selectedDate === undefined || stagesByDate.data?.date === selectedDate
       ? stagesByDate.data?.stages
       : undefined;
+  // Night stages, the trend, insights, and processing status can all fail from
+  // the same offline condition. Group only visible failures so one notice is
+  // shown and every matching copy is suppressed.
+  const connectionFailures = [stagesByDate, sleepData, insightsQuery, processingStatus].filter(
+    (query) => query.error != null && isConnectionFailure(query.error),
+  );
+  const sharedConnectionFailure = connectionFailures.length > 1;
+  const isSharedConnectionFailure = (error: unknown) =>
+    sharedConnectionFailure && isConnectionFailure(error);
+  // A grouped offline failure on the list query leaves no rows to chart or
+  // attribute. Omit only those empty views while keeping the range controls,
+  // the grouped notice, and any cached nonempty list data. A cached empty
+  // payload is still empty here.
+  const omitEmptySleepList = isSharedConnectionFailure(sleepData.error) && sleepRows.length === 0;
   const sourceRows = useMemo(
     () =>
       sleepRows.map((row) => ({
@@ -134,9 +149,14 @@ export function SleepPage() {
   return (
     <ChartRangeProvider days={days}>
       <PageLayout title="Sleep" subtitle="Sleep stages and patterns over time">
+        {sharedConnectionFailure ? (
+          <QueryStatePanel error={connectionFailures[0]?.error} height={72} />
+        ) : null}
         <ProcessingStatusWidget
           data={processingStatus.data}
-          error={processingStatus.error}
+          error={
+            isSharedConnectionFailure(processingStatus.error) ? undefined : processingStatus.error
+          }
           loading={processingStatus.isLoading}
         />
 
@@ -180,14 +200,18 @@ export function SleepPage() {
               Next
             </button>
           </div>
-          {stagesByDate.isError && !selectedStages && (
-            <QueryStatePanel error={stagesByDate.error} height={72} />
-          )}
-          {stagesByDate.isError && selectedStages && (
-            <p role="status" className="mb-2 text-sm text-warning">
-              Refresh failed: {stagesByDate.error.message}
-            </p>
-          )}
+          {stagesByDate.isError &&
+            !selectedStages &&
+            !isSharedConnectionFailure(stagesByDate.error) && (
+              <QueryStatePanel error={stagesByDate.error} height={72} />
+            )}
+          {stagesByDate.isError &&
+            selectedStages &&
+            !isSharedConnectionFailure(stagesByDate.error) && (
+              <p role="status" className="mb-2 text-sm text-warning">
+                Refresh failed: {stagesByDate.error.message}
+              </p>
+            )}
           {selectedStages ? (
             <Hypnogram data={selectedStages} loading={false} />
           ) : stagesByDate.isLoading ? (
@@ -202,31 +226,35 @@ export function SleepPage() {
           <div className="mb-3 flex justify-end">
             <TimeRangeSelector days={days} onChange={setDays} />
           </div>
-          {sleepData.isError && !sleepData.data && (
+          {sleepData.isError && !sleepData.data && !isSharedConnectionFailure(sleepData.error) && (
             <QueryStatePanel error={sleepData.error} height={72} />
           )}
-          <SleepChart data={sleepRows} loading={sleepData.isLoading} />
+          {!omitEmptySleepList && <SleepChart data={sleepRows} loading={sleepData.isLoading} />}
         </PageSection>
 
         {/* Data Sources */}
-        <PageSection
-          id="sleep-data-sources"
-          title="Data Sources"
-          subtitle="See which sleep record is used for each night and compare overlapping records"
-        >
-          <SleepDataSourcesTable
-            key={days ?? "all"}
-            rows={sourceRows}
-            loading={sleepData.isLoading}
-          />
-        </PageSection>
-
-        {/* Sleep Insights */}
-        {insightsQuery.isError && !insightsQuery.data && (
-          <PageSection title="Sleep Insights" card={false}>
-            <QueryStatePanel error={insightsQuery.error} height={72} />
+        {!omitEmptySleepList && (
+          <PageSection
+            id="sleep-data-sources"
+            title="Data Sources"
+            subtitle="See which sleep record is used for each night and compare overlapping records"
+          >
+            <SleepDataSourcesTable
+              key={days ?? "all"}
+              rows={sourceRows}
+              loading={sleepData.isLoading}
+            />
           </PageSection>
         )}
+
+        {/* Sleep Insights */}
+        {insightsQuery.isError &&
+          !insightsQuery.data &&
+          !isSharedConnectionFailure(insightsQuery.error) && (
+            <PageSection title="Sleep Insights" card={false}>
+              <QueryStatePanel error={insightsQuery.error} height={72} />
+            </PageSection>
+          )}
 
         {insightsQuery.isLoading && (
           <PageSection title="Sleep Insights" card={false}>

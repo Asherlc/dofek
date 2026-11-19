@@ -152,7 +152,7 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    flexBasis: "100%",
+    flexShrink: 1,
     minWidth: 0,
     minHeight: 44,
   },
@@ -171,6 +171,7 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     alignItems: "center",
+    flexShrink: 0,
     gap: 8,
   },
   cardMeta: {

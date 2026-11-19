@@ -1,5 +1,5 @@
 const DEFAULT_ERROR_MESSAGE = "We couldn't complete this request. Please try again.";
-const CONNECTION_ERROR_MESSAGE =
+export const CONNECTION_ERROR_MESSAGE =
   "We couldn't reach the server. Check your connection and try again.";
 const TIMEOUT_ERROR_MESSAGE = "The request took too long. Please try again.";
 
@@ -143,4 +143,13 @@ export function userFacingErrorMessage(error: unknown, fallback = DEFAULT_ERROR_
   }
 
   return message;
+}
+
+/**
+ * True when a raw error or an already user-facing message normalizes to the
+ * single canonical connection failure. Screens use this to group independent
+ * queries that failed from the same offline condition.
+ */
+export function isConnectionFailure(error: unknown): boolean {
+  return userFacingErrorMessage(error) === CONNECTION_ERROR_MESSAGE;
 }

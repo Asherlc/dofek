@@ -56,6 +56,22 @@ function renderProvider(overrides: Partial<Provider> = {}) {
 }
 
 describe("ProviderCard sync summary", () => {
+  it("lets a short title and a single action share one row without a forced full-width title", () => {
+    renderProvider();
+
+    const titleRow = screen.getByRole("button", { name: "Open Strava details" });
+    const syncButton = screen.getByRole("button", { name: "Sync Strava" });
+
+    // No hardcoded full-width title basis: flex-wrap decides whether the two
+    // children share a line, so a short label and one 44pt action fit together.
+    expect(titleRow.getAttribute("style")).not.toContain("flex-basis: 100%");
+    expect(titleRow.getAttribute("style")).toContain("flex-shrink: 1");
+    expect(titleRow.parentElement?.getAttribute("style")).toContain("flex-wrap: wrap");
+    expect(syncButton.parentElement?.getAttribute("style")).toContain("flex-shrink: 0");
+    expect(titleRow.getAttribute("style")).toContain("min-height: 44px");
+    expect(syncButton.getAttribute("style")).toContain("min-height: 44px");
+  });
+
   it("summarizes a successful current sync once and keeps its action", () => {
     const { onSync } = renderProvider();
     expect(screen.getAllByText("Sync current")).toHaveLength(1);
@@ -99,13 +115,16 @@ describe("ProviderCard sync summary", () => {
       name: "Import file for 8a.nu / Vertical-Life",
     });
 
-    // The title row owns a full-width row and the header/actions wrap beneath it.
+    // The header wraps by content: a long title keeps its own row and the
+    // actions flow beneath it without a hardcoded full-width title basis.
     expect(titleRow.parentElement?.getAttribute("style")).toContain("flex-wrap: wrap");
-    expect(titleRow.getAttribute("style")).toContain("flex-basis: 100%");
+    expect(titleRow.getAttribute("style")).not.toContain("flex-basis: 100%");
     expect(syncButton.parentElement?.getAttribute("style")).toContain("flex-wrap: wrap");
+    expect(syncButton.parentElement?.getAttribute("style")).toContain("flex-shrink: 0");
 
     // The label can shrink and wrap inside that row at accessibility font sizes.
     expect(title.getAttribute("style")).toContain("flex-shrink: 1");
+    expect(titleRow.getAttribute("style")).toContain("flex-shrink: 1");
 
     // The title and the shared action buttons keep a minimum 44pt touch target.
     expect(titleRow.getAttribute("style")).toContain("min-height: 44px");

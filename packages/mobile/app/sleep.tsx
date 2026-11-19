@@ -11,7 +11,7 @@ import {
 } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { getMissingSleepStates } from "@dofek/format/sleep-data-state";
-import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { isConnectionFailure, userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -143,9 +143,22 @@ export default function SleepScreen() {
     selectedDate === undefined || stagesByDateQuery.data?.date === selectedDate
       ? stagesByDateQuery.data?.stages
       : undefined;
-
+  // Night stages, the trend, and processing status can all fail from the same
+  // offline condition. Group only visible failures; the consistency query has
+  // no error UI on this screen, so it must not affect the grouping.
+  const connectionFailures = [stagesByDateQuery, sleepQuery, processingStatus].filter(
+    (query) => query.error != null && isConnectionFailure(query.error),
+  );
+  const sharedConnectionFailure = connectionFailures.length > 1;
+  const isSharedConnectionFailure = (error: unknown) =>
+    sharedConnectionFailure && isConnectionFailure(error);
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
+  // A grouped offline failure on the analytics query leaves no nightly rows to
+  // review. Drop that empty source area rather than rendering an orphaned
+  // "Sleep Sources" heading. A cached empty payload is still empty here;
+  // cached nights keep their source area.
+  const omitEmptySleepSources = isSharedConnectionFailure(sleepQuery.error) && nightly.length === 0;
   const averageSleepMinutes = sleepResult?.averageSleepMinutes;
   const averageEfficiencyPercent = sleepResult?.averageEfficiencyPercent;
   const mostRecentNight = nightly[nightly.length - 1];
@@ -245,9 +258,19 @@ export default function SleepScreen() {
         />
       }
     >
+      {sharedConnectionFailure ? (
+        <QueryStatePanel
+          variant="error"
+          message={userFacingErrorMessage(connectionFailures[0]?.error)}
+          minHeight={72}
+        />
+      ) : null}
+
       <ProcessingStatusWidget
         data={processingStatus.data}
-        error={processingStatus.error}
+        error={
+          isSharedConnectionFailure(processingStatus.error) ? undefined : processingStatus.error
+        }
         loading={processingStatus.isLoading}
       />
 
@@ -270,14 +293,16 @@ export default function SleepScreen() {
             </>
           )}
         </View>
-        {stagesByDateQuery.isError && !selectedStages ? (
+        {stagesByDateQuery.isError &&
+        !selectedStages &&
+        !isSharedConnectionFailure(stagesByDateQuery.error) ? (
           <QueryStatePanel
             variant="error"
             message={userFacingErrorMessage(stagesByDateQuery.error)}
           />
         ) : selectedStages ? (
           <>
-            {stagesByDateQuery.isError && (
+            {stagesByDateQuery.isError && !isSharedConnectionFailure(stagesByDateQuery.error) && (
               <Text accessibilityRole="alert" style={styles.stageUnavailable}>
                 Refresh failed: {userFacingErrorMessage(stagesByDateQuery.error)}
               </Text>
@@ -300,9 +325,9 @@ export default function SleepScreen() {
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading sleep data...</Text>
         </View>
-      ) : sleepQuery.isError && !sleepQuery.data ? (
+      ) : sleepQuery.isError && !sleepQuery.data && !isSharedConnectionFailure(sleepQuery.error) ? (
         <QueryStatePanel variant="error" message={userFacingErrorMessage(sleepQuery.error)} />
-      ) : nightly.length === 0 ? (
+      ) : nightly.length === 0 && !isSharedConnectionFailure(sleepQuery.error) ? (
         <QueryStatePanel
           variant="empty"
           title="No sleep records in this period"
@@ -448,13 +473,15 @@ export default function SleepScreen() {
             </View>
           )}
 
-          <View
-            onLayout={(event) => {
-              sleepSourcesYRef.current = event.nativeEvent.layout.y;
-            }}
-          >
-            <SleepSourceReview nights={[...nightly].slice(-7).reverse()} />
-          </View>
+          {!omitEmptySleepSources && (
+            <View
+              onLayout={(event) => {
+                sleepSourcesYRef.current = event.nativeEvent.layout.y;
+              }}
+            >
+              <SleepSourceReview nights={[...nightly].slice(-7).reverse()} />
+            </View>
+          )}
         </>
       )}
     </ScrollView>
@@ -570,10 +597,14 @@ const styles = StyleSheet.create({
   },
   consistencyRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-around",
+    gap: 8,
   },
   consistencyStat: {
     alignItems: "center",
+    flexShrink: 1,
+    minWidth: 0,
     gap: 4,
   },
   consistencyValue: {

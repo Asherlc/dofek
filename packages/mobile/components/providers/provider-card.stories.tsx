@@ -57,6 +57,27 @@ type ProviderCardStory = StoryObj<typeof providerCardMeta>;
 
 export const Connected: ProviderCardStory = {};
 
+export const ShortNameSharesRowWithAction: ProviderCardStory = {
+  name: "Short name · single action shares the title row",
+  tags: ["review-scenario", "review-scenario-provider-short-name"],
+  decorators: [
+    (Story: ComponentType) => (
+      <View style={{ width: 340 }}>
+        <Story />
+      </View>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const titleRow = canvas.getByRole("button", { name: "Open Wahoo details" });
+    const sync = canvas.getByRole("button", { name: "Sync Wahoo" });
+    const titleRect = titleRow.getBoundingClientRect();
+    const syncRect = sync.getBoundingClientRect();
+    expect(syncRect.top).toBeGreaterThanOrEqual(titleRect.top);
+    expect(syncRect.bottom).toBeLessThanOrEqual(titleRect.bottom + 1);
+  },
+};
+
 export const CrimpdConnected: ProviderCardStory = {
   args: {
     provider: {
