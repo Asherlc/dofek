@@ -59,16 +59,18 @@ async function pairAndSync(selectedPeripheralId: string) {
 - `syncRing` runs in the foreground and returns the count of newly stored
   records. It commits each complete batch with the ring cursor and resumes
   from the saved checkpoint. `warnings` reports ring preparation issues
-  such as unavailable sleep processing. Await each operation before starting
-  another.
+  such as unavailable sleep processing or missing clock anchors. Await each
+  operation before starting another.
 - `readEvents` uses `{ pageToken: previousPage.nextPageToken }` to continue
   reading until `nextPageToken` is `null`. Each event contains a raw tag and
-  base64 payload, a decisecond ring timestamp, and the host capture time.
-  Clock anchors are included in the stream. Consumers can use those to
-  resolve observation times. Decoded fields depend on the event type.
+  base64 payload, a millisecond ring timestamp, and the host capture time.
+  Ring-supplied clock anchors are included in the stream when available.
+  Consumers can use those to resolve observation times. Decoded fields depend
+  on the event type.
 - `forgetRing` deletes the application's copy of the events, sync cursor,
-  and pairing credentials. To start a new pairing after a reset, forget the
-  old pairing and run discovery and pairing again.
+  and pairing credentials. When the ring confirms that it has been factory-reset,
+  discovery and pairing create a new ring ID. The old ID retains its local history
+  until explicitly forgotten.
 
 ## Build from source
 

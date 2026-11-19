@@ -38,7 +38,8 @@ each change and review the actual diff before committing.
 - [ ] Implement the Rust session and iOS Expo module. Keep keys in the
   Keychain and pair against the selected ring. Persist the pending key
   before writing it. A fresh pairing after a reset gets a new store and
-  cursor. Use an atomic upstream batch commit. Return errors to callers
+  cursor. Validate batch completeness, then atomically commit records and
+  the exact millisecond checkpoint in the upstream event schema. Return errors to callers
   and close the owned link on completion or failure. Forgetting a ring
   removes this app's data for the pairing.
 - [ ] Re-run replay checks and build device and simulator slices. Verify
@@ -48,8 +49,8 @@ each change and review the actual diff before committing.
 
 ## 3. Consumer verification and publication
 
-- [ ] Build the XCFramework for ARM64 iOS devices and Apple silicon
-  simulators on macOS. Pack the compiled JavaScript, declarations, Swift
+- [ ] Build the XCFramework for ARM64 iOS devices and both simulator
+  architectures on macOS. Pack the compiled JavaScript, declarations, Swift
   bridge, Expo module metadata, and XCFramework. Keep build caches and
   capture files outside the tarball.
 - [ ] Install the tarball into a clean Expo 58 consumer. Verify imports,

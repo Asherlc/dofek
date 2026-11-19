@@ -53,6 +53,8 @@ private func resolve(_ promise: Promise, operation: @escaping @MainActor () asyn
             promise.reject("ERR_OURA_OPERATION", message)
         } catch OuraError.Disconnected {
             promise.reject("ERR_OURA_DISCONNECTED", "The ring disconnected. Reconnect to continue.")
+        } catch OuraError.PairingReset {
+            promise.reject("ERR_OURA_PAIRING_RESET", "The ring is in its factory-reset state. Pair it again to sync.")
         } catch {
             promise.reject("ERR_OURA_OPERATION", error.localizedDescription)
         }
@@ -81,14 +83,23 @@ private final class OuraIOSClient {
             let serial = try await session.identify()
             let saved = try OuraPairings.matching(serialNumber: serial)
             var pairing = try saved ?? OuraPairing(serialNumber: serial, peripheralID: peripheralID)
+            var recovering = saved != nil
             if pairing.confirmed {
-                try await session.verifyPairing(serialNumber: serial, key: pairing.key)
-            } else {
+                do {
+                    try await session.verifyPairing(serialNumber: serial, key: pairing.key)
+                } catch OuraError.PairingReset {
+                    pairing.archived = true
+                    try OuraPairings.save(pairing)
+                    pairing = try OuraPairing(serialNumber: serial, peripheralID: peripheralID)
+                    recovering = false
+                }
+            }
+            if !pairing.confirmed {
                 try OuraPairings.save(pairing)
                 try await session.pair(
                     serialNumber: serial,
                     key: pairing.key,
-                    recovering: saved != nil
+                    recovering: recovering
                 )
                 pairing.confirmed = true
             }
@@ -114,7 +125,7 @@ private final class OuraIOSClient {
     }
 
     func sync(_ ringID: String) async throws -> [String: Any] {
-        let pairing = try confirmedPairing(ringID)
+        let pairing = try syncablePairing(ringID)
         return try await withSession(peripheralID: pairing.peripheralID) { session in
             var directory = try storeDirectory(pairing.id)
             try FileManager.default.createDirectory(
@@ -141,7 +152,7 @@ private final class OuraIOSClient {
     func read(_ ringID: String, pageToken: String?, limit: Int) throws -> [String: Any] {
         try beginOperation()
         defer { operationInProgress = false }
-        let pairing = try confirmedPairing(ringID)
+        let pairing = try readablePairing(ringID)
         guard (1...500).contains(limit) else {
             throw OuraAdapterError("Event pages require a limit from 1 to 500.")
         }
@@ -170,7 +181,7 @@ private final class OuraIOSClient {
                 "ringId": pairing.id.uuidString,
                 "tag": event.tag,
                 "eventType": event.name,
-                "ringRelativeTimestamp": ["value": event.ringTimestamp, "unit": "deciseconds"],
+                "ringRelativeTimestamp": ["value": event.ringTimestamp, "unit": "milliseconds"],
                 "captureTime": dateFormatter.string(from: Date(timeIntervalSince1970: Double(event.capturedUnix))),
                 "rawBodyBase64": event.body.base64EncodedString(),
             ]
@@ -211,10 +222,10 @@ private final class OuraIOSClient {
         try await transport.connect(peripheralID: peripheralID)
 
         let writer = RingPacketWriter { [weak transport] frame in
-            try transport?.write(frame)
+            guard let transport else { throw OuraError.Disconnected }
+            try await transport.write(frame)
         }
         let session = OuraSession(writer: writer)
-        writer.onFailure = { [weak session] in session?.close() }
         transport.onFrame = { [weak session] data in session?.pushFrame(data: data) }
         transport.onDisconnection = { [weak session] in session?.close() }
         defer {
@@ -231,10 +242,18 @@ private final class OuraIOSClient {
         }
     }
 
-    private func confirmedPairing(_ ringID: String) throws -> OuraPairing {
+    private func readablePairing(_ ringID: String) throws -> OuraPairing {
         let id = try pairingID(ringID)
         guard let pairing = try OuraPairings.lookup(id), pairing.confirmed else {
             throw OuraAdapterError("The ring is not paired in this app. Discover it and pair it first.")
+        }
+        return pairing
+    }
+
+    private func syncablePairing(_ ringID: String) throws -> OuraPairing {
+        let pairing = try readablePairing(ringID)
+        guard !pairing.archived else {
+            throw OuraAdapterError("This ring pairing was replaced after a factory reset. Pair the ring again to sync new data.")
         }
         return pairing
     }
@@ -268,24 +287,22 @@ private final class OuraIOSClient {
 }
 
 private final class RingPacketWriter: OuraPacketWriter {
-    private let send: @MainActor @Sendable (Data) throws -> Void
+    private let send: @MainActor @Sendable (Data) async throws -> Void
     @MainActor var active = true
-    @MainActor var onFailure: (() -> Void)?
     @MainActor private(set) var failure: Error?
 
-    init(send: @escaping @MainActor @Sendable (Data) throws -> Void) {
+    init(send: @escaping @MainActor @Sendable (Data) async throws -> Void) {
         self.send = send
     }
 
-    func write(data: Data) {
-        Task { @MainActor in
-            guard active else { return }
-            do {
-                try send(data)
-            } catch {
-                failure = error
-                onFailure?()
-            }
+    @MainActor func write(data: Data) async -> Bool {
+        guard active else { return false }
+        do {
+            try await send(data)
+            return true
+        } catch {
+            failure = error
+            return false
         }
     }
 }

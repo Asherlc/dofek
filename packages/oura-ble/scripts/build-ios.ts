@@ -60,8 +60,8 @@ try {
   }
   const simulator = join(staging, `lib${library}.a`);
   execFileSync(
-    "xcrun",
-    ["lipo", "-create", ...simulatorTargets.map(archive), "-output", simulator],
+    "/usr/bin/lipo",
+    ["-create", ...simulatorTargets.map(archive), "-output", simulator],
     buildOptions,
   );
 

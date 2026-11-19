@@ -24,5 +24,5 @@ oura-protocol = { git = "https://github.com/Th0rgal/open_oura", rev = "4f7957d33
 oura-store = { git = "https://github.com/Th0rgal/open_oura", rev = "4f7957d3304c4084f0e1e703f3d84606bf10b781" }
 rusqlite = "=0.31.0"
 thiserror = "=2.0.18"
-tokio = { version = "=1.52.3", features = ["macros", "rt", "sync"] }
+tokio = { version = "=1.52.3", features = ["macros", "rt", "sync", "time"] }
 uniffi = { version = "=0.32.2", features = ["tokio"] }

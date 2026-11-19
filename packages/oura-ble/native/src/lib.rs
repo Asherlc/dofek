@@ -1,11 +1,12 @@
 use std::future::Future;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use oura_link::{OuraClient, transport::Transport};
 use oura_protocol::protocol::feature;
-use oura_store::storage::Store;
 use rusqlite::{Connection, OpenFlags, params};
 use tokio::sync::{broadcast, watch};
+
+mod history;
 
 uniffi::setup_scaffolding!();
 
@@ -15,6 +16,8 @@ pub enum OuraError {
     Operation { message: String },
     #[error("The ring disconnected. Reconnect to continue.")]
     Disconnected,
+    #[error("The ring is in its factory-reset state. Pair it again to sync.")]
+    PairingReset,
 }
 
 type Result<T> = std::result::Result<T, OuraError>;
@@ -36,7 +39,7 @@ pub struct MeasurementOutcome {
 pub struct StoredEvent {
     pub tag: u8,
     pub name: String,
-    pub ring_timestamp: u32,
+    pub ring_timestamp: u64,
     pub captured_unix: i64,
     pub body: Vec<u8>,
     pub decoded_json: Option<String>,
@@ -55,8 +58,9 @@ pub struct SyncReport {
 }
 
 #[uniffi::export(callback_interface)]
+#[async_trait::async_trait]
 pub trait OuraPacketWriter: Send + Sync {
-    fn write(&self, data: Vec<u8>);
+    async fn write(&self, data: Vec<u8>) -> bool;
 }
 
 struct FrameTransport {
@@ -67,8 +71,13 @@ struct FrameTransport {
 #[async_trait::async_trait]
 impl Transport for FrameTransport {
     async fn write(&self, data: &[u8]) -> oura_link::Result<()> {
-        self.writer.write(data.to_vec());
-        Ok(())
+        if self.writer.write(data.to_vec()).await {
+            Ok(())
+        } else {
+            Err(oura_link::Error::Ble(
+                "The ring did not acknowledge the Bluetooth write.".into(),
+            ))
+        }
     }
 
     fn subscribe(&self) -> broadcast::Receiver<Vec<u8>> {
@@ -186,7 +195,12 @@ impl OuraSession {
                     )));
                 }
             }
-            let inserted = sync_to_store(&self.client, &database_path, &serial_number).await?;
+            let inserted =
+                history::sync_to_store(self.client.transport(), &database_path, &serial_number)
+                    .await?;
+            if inserted > 0 && !history::has_clock_anchor(&database_path, &serial_number)? {
+                warnings.push("The stored ring history has no decoded clock anchor. Observation times may be unavailable.".into());
+            }
             Ok(SyncReport { inserted, warnings })
         })
         .await
@@ -236,8 +250,13 @@ async fn verify_ring<T: Transport>(client: &OuraClient<T>, expected: &str) -> Re
 
 async fn authenticate<T: Transport>(client: &OuraClient<T>, key: &[u8; 16]) -> Result<()> {
     client.authenticate(key).await.map(|_| ()).map_err(|error| match error {
-        oura_link::Error::Auth(_) => operation(
-            "The ring did not accept its saved pairing. If it was factory-reset, forget it in this app and pair it again.",
+            oura_link::Error::Auth(ref message)
+                if message.starts_with("ring rejected auth: state=0x02 (InFactoryReset)") =>
+            {
+                OuraError::PairingReset
+            }
+            oura_link::Error::Auth(_) => operation(
+                "The ring did not accept its saved pairing. Reconnect to the selected ring and try again.",
         ),
         error => operation(format!("Could not authenticate the ring: {error}")),
     })
@@ -298,103 +317,6 @@ async fn configure_measurement<T: Transport>(
     Ok(())
 }
 
-async fn sync_to_store<T: Transport>(
-    client: &OuraClient<T>,
-    path: &str,
-    serial: &str,
-) -> Result<u32> {
-    let store = Store::open(path)
-        .map_err(|error| operation(format!("Could not open the event store: {error}")))?;
-    let cursor = store
-        .cursor(serial)
-        .map_err(|error| operation(format!("Could not read the sync cursor: {error}")))?;
-    let store = Mutex::new(store);
-    let mut inserted = 0;
-    let first = drain_batch_stream(client, &store, serial, cursor, &mut inserted).await;
-    let rebase = match first {
-        Ok(outcome) if cursor > 0 && outcome.events_synced == 0 => {
-            // An empty increment is normal unless the last confirmed ring event
-            // disappeared, such as after the ring's event clock restarted.
-            let marker = client
-                .drain_events(cursor - 1, |_| true, |_| true)
-                .await
-                .map_err(|error| operation(format!("Could not verify the sync cursor: {error}")))?;
-            marker.events_synced == 0 || marker.next_cursor < cursor
-        }
-        Ok(_) => false,
-        Err(DrainError::Link(oura_link::Error::Protocol(ref message)))
-            if cursor > 0
-                && message.contains("extended history request failed with result code 0xff") =>
-        {
-            true
-        }
-        Err(error) => return Err(operation(error.to_string())),
-    };
-    if rebase {
-        store
-            .lock()
-            .unwrap()
-            .set_cursor(serial, 0)
-            .map_err(|error| {
-                operation(format!("Could not reset the stale sync cursor: {error}"))
-            })?;
-        drain_batch_stream(client, &store, serial, 0, &mut inserted)
-            .await
-            .map_err(|error| operation(error.to_string()))?;
-    }
-    Ok(inserted)
-}
-
-#[derive(Debug, thiserror::Error)]
-enum DrainError {
-    #[error("Could not commit an event batch: {0}")]
-    Storage(oura_store::error::Error),
-    #[error("Could not finish ring history sync: {0}")]
-    Link(oura_link::Error),
-}
-
-async fn drain_batch_stream<T: Transport>(
-    client: &OuraClient<T>,
-    store: &Mutex<Store>,
-    serial: &str,
-    cursor: u32,
-    inserted: &mut u32,
-) -> std::result::Result<oura_link::client::SyncOutcome, DrainError> {
-    let batch = Mutex::new(Vec::new());
-    let mut storage_error = None;
-    let drained = client
-        .drain_events(
-            cursor,
-            |event| {
-                batch.lock().unwrap().push(event.clone());
-                true
-            },
-            |progress| {
-                let mut batch = batch.lock().unwrap();
-                match store
-                    .lock()
-                    .unwrap()
-                    .commit_batch(serial, &batch, progress.next_cursor)
-                {
-                    Ok(count) => {
-                        *inserted += count;
-                        batch.clear();
-                        true
-                    }
-                    Err(error) => {
-                        storage_error = Some(error);
-                        false
-                    }
-                }
-            },
-        )
-        .await;
-    if let Some(error) = storage_error {
-        return Err(DrainError::Storage(error));
-    }
-    drained.map_err(DrainError::Link)
-}
-
 #[uniffi::export]
 pub fn read_event_page(
     database_path: String,
@@ -419,6 +341,7 @@ fn event_page(
     after_row_id: i64,
     limit: u32,
 ) -> rusqlite::Result<StoredEventPage> {
+    let timestamp_factor = history::timestamp_factor(database)?;
     let mut query = database.prepare(
         "SELECT id, tag, name, ring_timestamp, captured_unix, body, decoded_json
          FROM events WHERE serial = ?1 AND id > ?2 ORDER BY id LIMIT ?3",
@@ -437,7 +360,7 @@ fn event_page(
         events.push(StoredEvent {
             tag: row.get(1)?,
             name: row.get(2)?,
-            ring_timestamp: row.get(3)?,
+            ring_timestamp: row.get::<_, u64>(3)? * timestamp_factor,
             captured_unix: row.get(4)?,
             body: row.get(5)?,
             decoded_json: row.get(6)?,

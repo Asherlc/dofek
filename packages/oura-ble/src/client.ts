@@ -9,7 +9,7 @@ export type OuraEventPageToken = string;
 
 /** Ring-relative timestamp as reported by the ring/protocol. */
 export interface OuraRingRelativeTimestamp {
-  /** Raw ring clock value preserved from the packet. */
+  /** Ring clock value in the reported unit. The iOS adapter uses milliseconds. */
   value: number;
   /** Unit of the raw value (for example "ticks" or "seconds"). */
   unit: string;
@@ -96,7 +96,7 @@ export interface OuraSyncResult {
   ringId: OuraRingId;
   /** Number of new event records committed during sync. */
   syncedEventCount: number;
-  /** Optional details when the ring could not complete a preparation step. */
+  /** Optional details about preparation or clock anchors. */
   warnings?: string[];
 }
 

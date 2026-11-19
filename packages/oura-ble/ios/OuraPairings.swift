@@ -7,6 +7,16 @@ struct OuraPairing: Codable {
     var peripheralID: UUID
     let key: Data
     var confirmed = false
+    var archived = false
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case serialNumber
+        case peripheralID
+        case key
+        case confirmed
+        case archived
+    }
 
     init(serialNumber: String, peripheralID: UUID) throws {
         var bytes = [UInt8](repeating: 0, count: 16)
@@ -16,6 +26,17 @@ struct OuraPairing: Codable {
         self.peripheralID = peripheralID
         self.key = Data(bytes)
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        serialNumber = try container.decode(String.self, forKey: .serialNumber)
+        peripheralID = try container.decode(UUID.self, forKey: .peripheralID)
+        key = try container.decode(Data.self, forKey: .key)
+        confirmed = try container.decodeIfPresent(Bool.self, forKey: .confirmed) ?? false
+        archived = try container.decodeIfPresent(Bool.self, forKey: .archived) ?? false
+    }
+
 }
 
 enum OuraPairings {
@@ -34,19 +55,27 @@ enum OuraPairings {
     static func save(_ pairing: OuraPairing) throws {
         let attributes = query(pairing.id)
         let data = try JSONEncoder().encode(pairing)
+        let label = label(for: pairing)
         let status = SecItemUpdate(
             attributes as CFDictionary,
-            [kSecValueData as String: data] as CFDictionary
+            [
+                kSecValueData as String: data,
+                kSecAttrLabel as String: label,
+            ] as CFDictionary
         )
         if status == errSecItemNotFound {
             var item = attributes
-            item[kSecAttrLabel as String] = pairing.serialNumber
+            item[kSecAttrLabel as String] = label
             item[kSecValueData as String] = data
             item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             try check(SecItemAdd(item as CFDictionary, nil))
         } else {
             try check(status)
         }
+    }
+
+    private static func label(for pairing: OuraPairing) -> String {
+        pairing.archived ? "archived.\(pairing.id.uuidString)" : pairing.serialNumber
     }
 
     static func remove(_ id: UUID) throws {

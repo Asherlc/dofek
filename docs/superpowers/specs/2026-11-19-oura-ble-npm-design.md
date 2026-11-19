@@ -29,12 +29,13 @@ separate Remove action that skips factory reset. Those paths supplied no
 evidence of a third-party pairing grant. [Oura reset guide](https://support.ouraring.com/hc/en-us/articles/360025446854-Factory-Reset-an-Oura-Product) · [Oura phone-transfer guide](https://support.ouraring.com/hc/en-us/articles/360025592293-Transfer-Your-Oura-Data-to-a-New-Phone)
 
 The first release exposes discovery, pairing, foreground history sync, and
-paged access to recorded events. Use `oura-store` in the host app's private
-storage to commit each batch and its ring cursor together before acknowledging
-it. After an interruption the SDK resumes at the committed cursor. A new
-pairing after a reset starts a new sync history for the same physical ring.
-Host apps can remove the SDK's local data and pairing credentials.
-[Upstream batch storage](https://github.com/Th0rgal/open_oura/blob/main/crates/oura-store/src/storage.rs)
+paged access to recorded events. The SDK uses the upstream event schema and
+body decoders in the host app's private storage. It validates each batch and
+commits the records and inclusive millisecond cursor in the same transaction.
+After an interruption the SDK resumes at the committed cursor. A new pairing
+after a confirmed reset starts a separate sync history for the same physical
+ring. The host can continue reading the old events until it removes that pairing.
+[Upstream batch storage](https://github.com/Th0rgal/open_oura/blob/4f7957d3304c4084f0e1e703f3d84606bf10b781/crates/oura-store/src/storage.rs)
 
 Events carry ring identity, event type, ring-relative timestamp, capture
 time, decoded fields when available, and the raw event body. Return clock

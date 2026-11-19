@@ -24,6 +24,7 @@ final class OuraBluetoothTransport: NSObject, @preconcurrency CBCentralManagerDe
     private var scannedRings: [UUID: DiscoveredOuraRing] = [:]
     private var discovery: CheckedContinuation<[DiscoveredOuraRing], Error>?
     private var connection: CheckedContinuation<Void, Error>?
+    private var pendingWrite: CheckedContinuation<Void, Error>?
     private var selectedID: UUID?
     private var peripheral: CBPeripheral?
     private var writer: CBCharacteristic?
@@ -53,11 +54,17 @@ final class OuraBluetoothTransport: NSObject, @preconcurrency CBCentralManagerDe
         }
     }
 
-    func write(_ data: Data) throws {
-        guard connection == nil, let peripheral, let writer, peripheral.state == .connected else {
+    func write(_ data: Data) async throws {
+        guard connection == nil, pendingWrite == nil, let peripheral, let writer, peripheral.state == .connected else {
             throw OuraAdapterError("The ring disconnected before the command could be sent.")
         }
-        peripheral.writeValue(data, for: writer, type: .withResponse)
+        try await withCheckedThrowingContinuation {
+            pendingWrite = $0
+            setTimeout(seconds: 10) { [weak self] in
+                self?.failLink(OuraAdapterError("The ring did not acknowledge the Bluetooth write."))
+            }
+            peripheral.writeValue(data, for: writer, type: .withResponse)
+        }
     }
 
     func disconnect() {
@@ -224,8 +231,14 @@ final class OuraBluetoothTransport: NSObject, @preconcurrency CBCentralManagerDe
     }
 
     func peripheral(_ device: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard device === peripheral, let error else { return }
-        failLink(error)
+        guard device === peripheral, characteristic === writer, let pending = pendingWrite else { return }
+        if let error {
+            failLink(error)
+        } else {
+            timeout?.cancel()
+            pendingWrite = nil
+            pending.resume()
+        }
     }
 
     private func finishDiscovery(_ result: Result<[DiscoveredOuraRing], Error>) {
@@ -240,8 +253,10 @@ final class OuraBluetoothTransport: NSObject, @preconcurrency CBCentralManagerDe
 
     private func failLink(_ error: Error) {
         let pending = connection
+        let write = pendingWrite
         let device = peripheral
         connection = nil
+        pendingWrite = nil
         peripheral = nil
         writer = nil
         timeout?.cancel()
@@ -253,6 +268,7 @@ final class OuraBluetoothTransport: NSObject, @preconcurrency CBCentralManagerDe
             central.cancelPeripheralConnection(device)
         }
         pending?.resume(throwing: error)
+        write?.resume(throwing: error)
         onDisconnection?()
     }
 }
