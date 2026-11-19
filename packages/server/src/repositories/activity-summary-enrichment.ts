@@ -1,6 +1,9 @@
 import type { ActivityLocation } from "../contracts/activity-location.ts";
 import { routeMapPreview } from "../lib/map-preview.ts";
-import { activitySummaryReadModelRowSchema } from "./activity-repository-schemas.ts";
+import {
+  type ActivitySummaryFormColumns,
+  activitySummaryReadModelRowSchema,
+} from "./activity-repository-schemas.ts";
 import { getActivityMapReadiness, getActivityRoutePreviews } from "./activity-route-preview.ts";
 import type { ActivitySensorReadStore } from "./activity-sensor-types.ts";
 
@@ -14,13 +17,16 @@ export async function withActivitySummaries<
   rows: TRow[],
   sensorStore: ActivitySensorReadStore | undefined,
   userId: string,
-): Promise<Array<TRow & { location: ActivityLocation | null }>> {
+  options: { includeRunningForm?: boolean } = {},
+): Promise<Array<TRow & { location: ActivityLocation | null } & ActivitySummaryFormColumns>> {
   if (!sensorStore) return rows.map((row) => ({ ...row, location: null }));
   if (rows.length === 0) return [];
 
   const activityIds = [...new Set(rows.map((row) => row.id))];
   const [summaries, routePreviewByActivityId] = await Promise.all([
-    sensorStore.getActivitySummaries(activityIds),
+    options.includeRunningForm
+      ? sensorStore.getActivitySummaries(activityIds, options)
+      : sensorStore.getActivitySummaries(activityIds),
     getActivityRoutePreviews(sensorStore, userId, activityIds),
   ]);
   const summaryByActivityId = new Map(
@@ -62,6 +68,16 @@ export async function withActivitySummaries<
       avg_speed: summary.avg_speed,
       max_speed: summary.max_speed,
       avg_cadence: summary.avg_cadence,
+      ...(options.includeRunningForm
+        ? {
+            cadence_basis: summary.cadence_basis ?? null,
+            cadence_observed_seconds: summary.cadence_observed_seconds ?? null,
+            cadence_coverage_percent: summary.cadence_coverage_percent ?? null,
+            avg_stride_length: summary.avg_stride_length ?? null,
+            avg_stance_time: summary.avg_stance_time ?? null,
+            avg_vertical_osc: summary.avg_vertical_osc ?? null,
+          }
+        : {}),
       total_distance: summary.total_distance,
       distance_meters: summary.total_distance,
       elevation_gain_m: summary.elevation_gain_m,

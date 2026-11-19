@@ -39,6 +39,7 @@ export function ClimbingStrengths({
   rangeControl,
   includeAreaMetadata = true,
   onIncludeAreaMetadataChange,
+  refreshing = false,
 }: {
   data: Strengths | undefined;
   loading?: boolean;
@@ -46,6 +47,7 @@ export function ClimbingStrengths({
   rangeControl?: ReactNode;
   includeAreaMetadata?: boolean;
   onIncludeAreaMetadataChange?: (value: boolean) => void;
+  refreshing?: boolean;
 }) {
   const [view, setView] = useState<ClimbingStrengthsTab>("radar");
   const [selectedBreakdown, setBreakdown] = useState<string | null>(null);
@@ -60,6 +62,11 @@ export function ClimbingStrengths({
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Climbing strengths</Text>
+      {refreshing && data != null ? (
+        <Text testID="climbing-refresh-status" accessibilityLiveRegion="polite" style={styles.meta}>
+          Updating climbing strengths…
+        </Text>
+      ) : null}
       {rangeControl ? <Text style={styles.meta}>Strengths period</Text> : null}
       {rangeControl}
       <Pressable

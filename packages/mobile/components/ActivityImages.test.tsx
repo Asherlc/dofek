@@ -1,13 +1,25 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { useWindowDimensions } from "react-native";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureException } from "../lib/telemetry";
 import { ActivityImages, ActivityPhoto } from "./ActivityImages";
 import { activityImageFixture } from "./activity-images-test-helpers";
 
 vi.mock("../lib/telemetry", () => ({ captureException: vi.fn() }));
 
+const mockUseWindowDimensions = vi.mocked(useWindowDimensions);
+
+function asElement(value: Element | null): HTMLElement {
+  if (!(value instanceof HTMLElement)) throw new Error("Expected an HTML element");
+  return value;
+}
+
 describe("ActivityImages", () => {
+  beforeEach(() => {
+    mockUseWindowDimensions.mockReturnValue({ width: 390, height: 844, scale: 3, fontScale: 1 });
+  });
+
   it("keeps other photos reachable when the summary preview fails", () => {
     render(
       <ActivityImages
@@ -49,29 +61,68 @@ describe("ActivityImages", () => {
     expect(within(viewer).getByLabelText("View from the summit")).toBeTruthy();
     expect(retry).toHaveBeenCalledOnce();
   });
-  it("opens all photos from a single summary preview", () => {
-    render(
-      <ActivityImages
-        images={[
-          activityImageFixture,
-          {
-            ...activityImageFixture,
-            id: "photo-2",
-            sources: activityImageFixture.sources.map((source) => ({
-              ...source,
-              caption: "Finish",
-            })),
-          },
-        ]}
-        heading={<span>Morning ride</span>}
-        onRetry={vi.fn()}
-      />,
-    );
+  it("opens all photos from a single summary preview with the heading first for VoiceOver", () => {
+    const images = [
+      activityImageFixture,
+      {
+        ...activityImageFixture,
+        id: "photo-2",
+        sources: activityImageFixture.sources.map((source) => ({
+          ...source,
+          caption: "Finish",
+        })),
+      },
+    ];
+    const heading = <span>Morning ride</span>;
+    const view = render(<ActivityImages images={images} heading={heading} onRetry={vi.fn()} />);
     expect(screen.getByText("Morning ride")).toBeTruthy();
+
+    const expectHeadingBeforePhoto = (flexDirection: string) => {
+      const headingContainer = screen.getByText("Morning ride").parentElement;
+      if (!headingContainer) throw new Error("Expected a heading container");
+      const summary = headingContainer.parentElement;
+      if (!summary) throw new Error("Expected a summary container");
+      expect(summary.firstElementChild).toBe(headingContainer);
+      expect(summary.getAttribute("style")).toContain(`flex-direction: ${flexDirection}`);
+    };
+    expectHeadingBeforePhoto("row-reverse");
+
     fireEvent.click(screen.getByRole("button", { name: "View 2 photos" }));
     const viewer = screen.getByLabelText("Activity photo");
     fireEvent.click(within(viewer).getByRole("button", { name: "Open photo 2: Finish" }));
     expect(within(viewer).getByText("Finish")).toBeTruthy();
+
+    mockUseWindowDimensions.mockReturnValue({ width: 390, height: 844, scale: 3, fontScale: 2 });
+    view.rerender(<ActivityImages images={images} heading={heading} onRetry={vi.fn()} />);
+    expectHeadingBeforePhoto("column");
+  });
+  it("lets a failed large-text summary preview wrap while a loaded preview keeps its 80pt footprint", () => {
+    mockUseWindowDimensions.mockReturnValue({ width: 375, height: 812, scale: 3, fontScale: 2 });
+    render(
+      <ActivityImages
+        images={[activityImageFixture]}
+        heading={<span>Morning ride</span>}
+        onRetry={vi.fn()}
+      />,
+    );
+    const summary = screen.getByText("Morning ride").parentElement?.parentElement;
+    if (!summary) throw new Error("Expected the summary container");
+    const wrapper = asElement(summary.lastElementChild);
+    expect(wrapper.style.alignSelf).toBe("flex-start");
+    const loadedPhoto = asElement(wrapper.firstElementChild);
+    expect(loadedPhoto.style.width).toBe("80px");
+    expect(loadedPhoto.style.height).toBe("80px");
+
+    fireEvent.error(screen.getByLabelText("View from the summit"));
+    expect(screen.getByText("Photo unavailable")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View 1 photo" })).toBeTruthy();
+    const failedPhoto = asElement(wrapper.firstElementChild);
+    expect(failedPhoto.style.width).toBe("auto");
+    expect(failedPhoto.style.height).toBe("auto");
+    expect(failedPhoto.style.minHeight).toBe("80px");
+    const failureContent = screen.getByRole("alert");
+    expect(failureContent.style.flex).toBe("0 1 0%");
+    expect(failureContent.style.minWidth).toBe("200px");
   });
   afterEach(() => vi.restoreAllMocks());
 

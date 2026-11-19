@@ -17,7 +17,7 @@ export function ScreenSections<Section extends string>({
 }) {
   const [open, setOpen] = useState(false);
   if (compact) {
-    const selectedTitle = sections.find(({ id }) => id === selected)?.title ?? "";
+    const selectedTitle = sections.find(({ id }) => id === selected)?.title ?? selected;
     return (
       <View>
         <Pressable

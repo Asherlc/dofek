@@ -191,7 +191,7 @@ export const activityRouter = router({
 
   byId: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-maplibre-v6",
+    keyVersion: "activity-maplibre-v7",
   })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {

@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { RunningDynamics } from "./RunningDynamics.tsx";
 import {
+  availableRunning,
   emptyRunning,
-  emptyRunningForm,
   intervalRun,
   runningData,
 } from "./running-dynamics-test-helpers.ts";
@@ -20,23 +20,13 @@ export const MissingCadence: Story = {
   args: {
     data: {
       ...runningData,
-      data: [
-        {
-          ...intervalRun,
-          cadence: null,
-          cadenceBasis: "unknown",
-          cadenceCoveragePercent: null,
-          cadenceObservedSeconds: null,
-          paceSecondsPerKm: null,
-          distanceKm: null,
-        },
-      ],
+      data: [{ ...intervalRun, cadence: null }],
       cadenceAvailability: emptyRunning,
     },
   },
 };
 export const Empty: Story = {
-  args: { data: { data: [], availability: emptyRunningForm, cadenceAvailability: emptyRunning } },
+  args: { data: { data: [], availability: availableRunning, cadenceAvailability: emptyRunning } },
 };
 export const Loading: Story = { args: { data: undefined, loading: true } };
 export const RefetchError: Story = {

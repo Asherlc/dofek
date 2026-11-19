@@ -337,7 +337,7 @@ export const LongKayaTitleWithPhoto: Story = {
       </Pressable>
     ),
   },
-  decorators: [(Story) => <View style={{ width: 390 }}>{Story()}</View>],
+  decorators: [(Story) => <View style={{ width: "100%", maxWidth: 390 }}>{Story()}</View>],
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement.ownerDocument.body);
     await expect(

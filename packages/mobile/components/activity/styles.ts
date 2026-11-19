@@ -112,6 +112,15 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: "capitalize",
   },
+  largeTextMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 12,
+  },
+  largeTextBadge: {
+    alignSelf: "center",
+  },
   dateTime: {
     fontSize: 14,
     color: colors.textSecondary,

@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { Linking, Pressable, Text } from "react-native";
+import { Linking, Pressable, Text, useWindowDimensions } from "react-native";
 import { userEvent } from "storybook/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { garminActivitySourceTree } from "../../app-fixtures/activity-source-tree";
@@ -9,7 +9,11 @@ import { detailHeaderActivity, removedDetailHeaderActivity } from "./ActivityDet
 
 vi.mock("react-native", async () => {
   const web = await vi.importActual<typeof import("react-native")>("react-native-web");
-  return { ...web, Linking: { ...web.Linking, openURL: vi.fn(() => Promise.resolve()) } };
+  return {
+    ...web,
+    Linking: { ...web.Linking, openURL: vi.fn(() => Promise.resolve()) },
+    useWindowDimensions: vi.fn(() => ({ width: 390, height: 844, scale: 3, fontScale: 1 })),
+  };
 });
 vi.mock("react-native-svg", () => ({
   SvgXml: () => <svg data-testid="activity-icon-svg" />,
@@ -39,8 +43,13 @@ vi.mock("@dofek/providers/providers", async (importOriginal) => ({
   providerLabel: (id: string) => (id === "kilter" ? "Kilter Board" : id),
 }));
 
+const mockUseWindowDimensions = vi.mocked(useWindowDimensions);
+
 describe("ActivityDetailHeader", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseWindowDimensions.mockReturnValue({ width: 390, height: 844, scale: 3, fontScale: 1 });
+  });
 
   it("shows a server-projected FIT recovery warning and omits it for a clean activity", () => {
     const warning = "Some FIT data could not be recovered from the original file.";
@@ -290,5 +299,41 @@ describe("ActivityDetailHeader", () => {
     expect(title.contains(trigger)).toBe(false);
     expect(screen.getByRole("button", { name: "View 1 photo" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Activity actions" })).toBeTruthy();
+  });
+
+  it("gives a large-text title its own line with the badge and actions in one wrapping row", () => {
+    const longName = "Touchstone climbing session with a long title";
+    mockUseWindowDimensions.mockReturnValue({ width: 375, height: 812, scale: 3, fontScale: 2 });
+    render(
+      <ActivityDetailHeader
+        activity={{ ...detailHeaderActivity, name: longName }}
+        photos={{ images: [activityImageFixture], onRetry: () => undefined }}
+        actions={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Activity actions"
+            onPress={() => undefined}
+          >
+            <Text>⋯</Text>
+          </Pressable>
+        }
+      />,
+    );
+
+    const title = screen.getByText(longName);
+    const header = title.parentElement;
+    if (!header) throw new Error("Expected the title to sit directly in the header");
+    expect(header.firstElementChild).toBe(title);
+
+    const badge = screen.getByText("Cycling").parentElement;
+    if (!badge) throw new Error("Expected the type badge view");
+    const metaRow = badge.parentElement;
+    if (!metaRow) throw new Error("Expected the badge to sit in the metadata row");
+    // react-native-web registers styles as CSS classes, so read the resolved
+    // StyleSheet values instead of inline element styles.
+    expect(getComputedStyle(metaRow).flexWrap).toBe("wrap");
+    expect(getComputedStyle(metaRow).flexDirection).toBe("row");
+    expect(metaRow.contains(screen.getByRole("button", { name: "Activity actions" }))).toBe(true);
+    expect(metaRow.contains(title)).toBe(false);
   });
 });

@@ -20,7 +20,7 @@ import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
 } from "@dofek/training/training";
-import { useIsFocused, useRouter } from "expo-router";
+import { useIsFocused } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
@@ -86,7 +86,6 @@ export function TrainingAnalysis({
   const [climbingFilters, setClimbingFilters] = useState<ClimbingFilterValues>({});
   const [strengthsAllTime, setStrengthsAllTime] = useState(false);
   const [includeAreaMetadata, setIncludeAreaMetadata] = useState(true);
-  const router = useRouter();
   const utils = trpc.useUtils();
   const { days, isHydrated, setDays } = useTimeRangePreference("training");
   const units = useUnitConverter();
@@ -421,16 +420,9 @@ export function TrainingAnalysis({
       ) : null}
       {show("climbing") ? (
         <>
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[styles.emptyChartText, { minHeight: 50, lineHeight: 18 }]}
-          >
-            {climbingStrengths.data && climbingStrengthsQuery.isFetching
-              ? "Updating climbing strengths…"
-              : null}
-          </Text>
           <ClimbingStrengths
             data={climbingStrengths.data}
+            refreshing={climbingStrengths.data != null && climbingStrengthsQuery.isFetching}
             includeAreaMetadata={includeAreaMetadata}
             onIncludeAreaMetadataChange={setIncludeAreaMetadata}
             rangeControl={
@@ -495,14 +487,12 @@ export function TrainingAnalysis({
       ) : null}
       {show("running") ? (
         <RunningTrainingCard
-          units={units}
           data={isHydrated ? runningQuery.data : undefined}
           loading={!isHydrated || runningQuery.isLoading}
           error={runningQuery.error}
           onRetry={() => {
             void runningQuery.refetch();
           }}
-          onOpenActivity={(id) => router.push(`/activity/${id}`)}
         />
       ) : null}
       {show("climbing") && shouldShowClimbingSection && !isLoading ? (
