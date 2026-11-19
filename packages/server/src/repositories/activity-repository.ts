@@ -171,6 +171,12 @@ export interface SearchInput {
   endDate: string;
   query?: string;
   limit: number;
+  /** UUID of the last item from the previous page (keyset pagination). */
+  cursor?: string;
+  /** Compact mode skips ClickHouse summary/route hydration. */
+  compact?: boolean;
+  provider?: string;
+  canonicalType?: string;
 }
 
 export interface CountVisibleInWindowInput {
@@ -294,20 +300,40 @@ export class ActivityRepository extends BaseRepository {
   }
 
   /** Activities inside an exact inclusive local-date range, optionally filtered before paging. */
-  async search(input: SearchInput): Promise<{ items: ActivityListItem[]; totalCount: number }> {
+  async search(input: SearchInput): Promise<{
+    items: ActivityListItem[];
+    totalCount: number;
+    nextCursor: string | null;
+  }> {
     const escapedQuery = input.query?.replace(/[%_\\]/g, (character) => `\\${character}`);
     const queryPattern = escapedQuery ? `%${escapedQuery}%` : null;
-    const rows = await this.#exactRangeRows(
-      input.startDate,
-      input.endDate,
-      undefined,
+    // Fetch one extra row to detect whether a next keyset page exists.
+    const options = {
+      startDate: input.startDate,
+      endDate: input.endDate,
       queryPattern,
-      input.limit,
-    );
-    const hydratedRows = await this.#withActivitySummaries(rows);
-    const totalCount = hydratedRows[0]?.total_count ?? 0;
+      limit: input.limit + 1,
+      cursor: input.cursor,
+      provider: input.provider,
+      canonicalType: input.canonicalType,
+    };
+    const rows = await this.#exactRangeRows(options);
+    const hasNextPage = rows.length > input.limit;
+    const pageRows = hasNextPage ? rows.slice(0, input.limit) : rows;
+    // Compact mode skips the ClickHouse summary/route hydration entirely.
+    const hydratedRows = input.compact
+      ? pageRows.map((row) => ({ ...row, location: null }))
+      : await this.#withActivitySummaries(pageRows);
+    const totalCount =
+      hydratedRows[0]?.total_count ??
+      (input.cursor
+        ? ((await this.#exactRangeRows({ ...options, cursor: undefined, limit: 1 }))[0]
+            ?.total_count ?? 0)
+        : 0);
     const items = hydratedRows.map((row) => this.#toListItem(row));
-    return { items, totalCount };
+    const lastRow = pageRows.at(-1);
+    const nextCursor = hasNextPage && lastRow ? lastRow.id : null;
+    return { items, totalCount, nextCursor };
   }
 
   /** All activities inside an exact inclusive local-date range for server-side aggregation. */
@@ -316,7 +342,7 @@ export class ActivityRepository extends BaseRepository {
     endDate: string,
     activityTypes?: string[],
   ): Promise<ActivityListItem[]> {
-    const rows = await this.#exactRangeRows(startDate, endDate, activityTypes);
+    const rows = await this.#exactRangeRows({ startDate, endDate, activityTypes });
     const hydratedRows = await this.#withActivitySummaries(rows);
     return hydratedRows.map((row) => this.#toListItem(row));
   }
@@ -350,36 +376,50 @@ export class ActivityRepository extends BaseRepository {
     };
   }
 
-  #exactRangeRows(
-    startDate: string,
-    endDate: string,
-    activityTypes?: string[],
-    queryPattern: string | null = null,
-    limit?: number,
-  ) {
+  #exactRangeRows(options: {
+    startDate: string;
+    endDate: string;
+    activityTypes?: string[];
+    queryPattern?: string | null;
+    limit?: number;
+    cursor?: string;
+    provider?: string;
+    canonicalType?: string;
+  }) {
     const typeFilter =
-      activityTypes && activityTypes.length > 0
+      options.activityTypes && options.activityTypes.length > 0
         ? sql`AND a.canonical_type IN (${sql.join(
-            activityTypes.map((activityType) => sql`${activityType}`),
+            options.activityTypes.map((activityType) => sql`${activityType}`),
             sql`, `,
           )})`
         : sql``;
-    const queryFilter = queryPattern
-      ? sql`AND (a.name ILIKE ${queryPattern} OR a.canonical_type::text ILIKE ${queryPattern})`
+    const queryFilter = options.queryPattern
+      ? sql`AND (a.name ILIKE ${options.queryPattern} OR a.canonical_type::text ILIKE ${options.queryPattern})`
       : sql``;
-    const limitClause = limit == null ? sql`` : sql`LIMIT ${limit}`;
+    const cursorFilter = options.cursor
+      ? sql`WHERE (a.sort_started_at, a.id) < (
+          SELECT sort_started_at, id FROM filtered_activities WHERE id = ${options.cursor}::uuid
+        )`
+      : sql``;
+    const limitClause = options.limit == null ? sql`` : sql`LIMIT ${options.limit}`;
     return this.query(
       activityListRowSchema,
-      sql`SELECT
-            ${activityListColumns}
-          FROM fitness.v_activity a
-          WHERE a.user_id = ${this.userId}
-            AND a.started_at >= (${startDate}::date AT TIME ZONE ${this.timezone})
-            AND a.started_at < ((${endDate}::date + 1) AT TIME ZONE ${this.timezone})
-            ${typeFilter}
-            ${queryFilter}
-            ${this.timestampAccessPredicate(sql`a.started_at`)}
-          ORDER BY a.started_at DESC
+      sql`WITH filtered_activities AS (
+            SELECT ${activityListColumns}, a.started_at AS sort_started_at
+            FROM fitness.v_activity a
+            WHERE a.user_id = ${this.userId}
+              AND a.started_at >= (${options.startDate}::date AT TIME ZONE ${this.timezone})
+              AND a.started_at < ((${options.endDate}::date + 1) AT TIME ZONE ${this.timezone})
+              ${typeFilter}
+              ${queryFilter}
+              ${options.provider ? sql`AND ${options.provider} = ANY(a.source_providers)` : sql``}
+              ${options.canonicalType ? sql`AND a.canonical_type::text = ${options.canonicalType}` : sql``}
+              ${this.timestampAccessPredicate(sql`a.started_at`)}
+          )
+          SELECT a.*
+          FROM filtered_activities a
+          ${cursorFilter}
+          ORDER BY a.sort_started_at DESC, a.id DESC
           ${limitClause}`,
     );
   }

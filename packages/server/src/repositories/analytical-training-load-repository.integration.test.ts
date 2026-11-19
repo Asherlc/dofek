@@ -173,6 +173,7 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
         activity_id UUID,
         user_id UUID,
         started_at DateTime64(6, 'UTC'),
+        canonical_type String,
         modality Nullable(String),
         timezone Nullable(String),
         start_utc_offset_minutes Nullable(Int16),
@@ -219,6 +220,7 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
           activity_id: cyclingActivityId,
           user_id: userId,
           started_at: "2026-06-16 00:30:00.000000",
+          canonical_type: "cycling",
           modality: "indoor",
           timezone: null,
           start_utc_offset_minutes: -420,
@@ -429,6 +431,40 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
       climbing_attempts: { daily_value: 0, status: "not_observed" },
       finger_load: { daily_value: 0, status: "not_observed" },
       strength_volume: { daily_value: 0, status: "not_observed" },
+    });
+  });
+
+  it("applies canonical type to recorded load and its coverage in both stores", async () => {
+    const result = await new AnalyticalTrainingLoadRepository(
+      postgres.db,
+      store,
+      userId,
+      "America/Los_Angeles",
+    ).listRange("2026-06-15", "2026-06-15", {
+      providers: [duplicateProviderId],
+      modalities: [],
+      canonicalTypes: ["climbing"],
+    });
+    expect(result.rows[0]?.channels).toMatchObject({
+      cycling_power_tss: { daily_value: null, status: "unavailable" },
+      heart_rate_zone_load: { daily_value: null, status: "unavailable" },
+      session_rpe: { daily_value: null, status: "unavailable" },
+    });
+
+    const climbing = await new AnalyticalTrainingLoadRepository(
+      postgres.db,
+      store,
+      userId,
+      "America/Los_Angeles",
+    ).listRange("2026-06-15", "2026-06-15", {
+      providers: [providerId],
+      modalities: [],
+      canonicalTypes: ["climbing"],
+    });
+    expect(climbing.rows[0]?.channels).toMatchObject({
+      climbing_attempts: { daily_value: 4 },
+      cycling_power_tss: { daily_value: null },
+      strength_volume: { daily_value: null },
     });
   });
 });

@@ -1072,6 +1072,7 @@ describe("ActivityRepository", () => {
 
       expect(result).toEqual({
         totalCount: 1,
+        nextCursor: null,
         items: [
           expect.objectContaining({
             id: "search-activity",

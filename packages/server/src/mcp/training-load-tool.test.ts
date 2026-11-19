@@ -186,6 +186,14 @@ describe("get_training_load", () => {
         fatGrams: 4,
         fiberGrams: 1,
         mealCount: 1,
+        contributionCoverage: {
+          food_entry_count: 1,
+          recorded_meal_labels: ["snack"],
+          timed_food_entry_count: 0,
+          first_consumed_at: null,
+          last_consumed_at: null,
+          missing_nutrient_inputs: [],
+        },
         loggingCompleteness: "unknown_completeness",
         loggingCompletenessReason:
           "Nutrition was logged, but no source explicitly reported whether the day was complete.",

@@ -506,7 +506,11 @@ export class AnalyticalTrainingLoadRepository {
   async listRange(
     startDate: string,
     endDate: string,
-    filters: { providers: readonly string[]; modalities: readonly string[] } = {
+    filters: {
+      providers: readonly string[];
+      modalities: readonly string[];
+      canonicalTypes?: readonly string[];
+    } = {
       providers: [],
       modalities: [],
     },
@@ -541,6 +545,9 @@ export class AnalyticalTrainingLoadRepository {
             filters.modalities.map((modality) => sql`${modality}`),
             sql`, `,
           )})`;
+    const canonicalTypePredicate = filters.canonicalTypes?.length
+      ? sql`activity.canonical_type::text = ANY(${sql.param(filters.canonicalTypes)}::text[])`
+      : sql`true`;
     const settingsHistory = await new SportSettingsRepository(this.#db, this.#userId).history(
       "cycling",
     );
@@ -565,6 +572,8 @@ export class AnalyticalTrainingLoadRepository {
               OR hasAny(activity.source_providers, {providers:Array(String)}))
             AND (empty({modalities:Array(String)})
               OR has({modalities:Array(String)}, activity.modality))
+            AND (empty({canonicalTypes:Array(String)})
+              OR has({canonicalTypes:Array(String)}, activity.canonical_type))
         ),
         first_observed AS (SELECT minOrNull(date) AS date FROM all_cycling)
         SELECT
@@ -589,6 +598,7 @@ export class AnalyticalTrainingLoadRepository {
           endDate,
           providers: [...filters.providers],
           modalities: [...filters.modalities],
+          canonicalTypes: [...(filters.canonicalTypes ?? [])],
         },
       ),
       executeWithSchema(
@@ -653,6 +663,7 @@ export class AnalyticalTrainingLoadRepository {
             WHERE activity.user_id = ${this.#userId}::uuid
               AND ${providerPredicate}
               AND ${modalityPredicate}
+              AND ${canonicalTypePredicate}
               AND ${postgresLocalDate}
                 BETWEEN ${calculationStart}::date AND ${endDate}::date
           ),
@@ -807,6 +818,7 @@ export class AnalyticalTrainingLoadRepository {
           WHERE activity.user_id = ${this.#userId}::uuid
             AND ${providerPredicate}
             AND ${modalityPredicate}
+            AND ${canonicalTypePredicate}
         `,
       ),
     ]);
@@ -989,7 +1001,11 @@ export class AnalyticalTrainingLoadRepository {
     settingsHistory: SportSettingsRow[],
     calculationStart: string,
     endDate: string,
-    filters: { providers: readonly string[]; modalities: readonly string[] },
+    filters: {
+      providers: readonly string[];
+      modalities: readonly string[];
+      canonicalTypes?: readonly string[];
+    },
     clickHouseLocalDate: string,
     clickHouseDateIsAuthoritative: string,
   ): Promise<z.infer<typeof heartRateLoadSchema>[]> {
@@ -1041,6 +1057,8 @@ export class AnalyticalTrainingLoadRepository {
                 OR hasAny(activity.source_providers, {providers:Array(String)}))
               AND (empty({modalities:Array(String)})
                 OR has({modalities:Array(String)}, activity.modality))
+              AND (empty({canonicalTypes:Array(String)})
+                OR has({canonicalTypes:Array(String)}, activity.canonical_type))
               AND ${clickHouseLocalDate}
                 BETWEEN toDate({segmentStart:String}) AND toDate({segmentEnd:String})
           ),
@@ -1074,6 +1092,7 @@ export class AnalyticalTrainingLoadRepository {
             upperPcts,
             providers: [...filters.providers],
             modalities: [...filters.modalities],
+            canonicalTypes: [...(filters.canonicalTypes ?? [])],
           },
         ),
       ),

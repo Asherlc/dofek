@@ -175,14 +175,14 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_health_trends` | `health:read` | Returns a structured daily or weekly metric envelope with explicit no-data diagnostics, per-series coverage, and baseline-relative recovery context. |
 | `get_data_coverage` | `health:read` | Returns first/last observed dates, observed-day counts, and providers for every supported health metric. |
 | `render_health_explorer` | `health:read` | Returns a server-computed analytics snapshot and renders the Dofek Analytics Explorer in MCP clients that support Apps UI resources. |
-| `get_sleep_summary` | `health:read` | Returns nightly sleep duration, efficiency, stages, and timing. |
-| `search_activities` | `activity:read` | Searches activities inside exact date boundaries. |
+| `get_sleep_summary` | `health:read` | Returns reconciled sleep episodes, their UTC and local timing, stages, and source IDs. |
+| `search_activities` | `activity:read` | Pages through canonical activities inside exact date boundaries. |
 | `get_activity_details` | `activity:read` | Returns one activity with its strength, climbing, and finger-loading details. |
 | `get_activity_streams` | `activity:read` | Returns a capped, downsampled activity sensor stream with caller-selected channels. |
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type, ISO week, modality, or purpose, including unclassified and power coverage. |
 | `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
 | `get_training_load` | `activity:read`; also `nutrition:read` when requested | Returns daily load and rolling windows; analytical detail preserves modality channels and can include aligned nutrition. |
-| `get_recovery_training_series` | Scope depends on selected streams: `health:read`, `activity:read`, and/or `nutrition:read` | Returns a selected, date-aligned recovery, sleep, weight, load, compact activity-exposure, and nutrition series without causal interpretation. |
+| `get_recovery_training_series` | Scope depends on selected fields and grain: `health:read`, `activity:read`, and/or `nutrition:read` | Aligns selected observations by local day or main sleep, with workout timing and coverage evidence. |
 | `compare_performances` | `activity:read` | Compares only explicitly or strongly evidenced equivalent workouts, routes, climbs, strength exercises, or standardized tests with contextual deltas and provenance. |
 | `find_repeated_efforts` | `activity:read` | Discovers repeated exact or strongly inferred identities, with opt-in weak name/duration candidates and canonical/source evidence. |
 | `get_effort_trend` | `activity:read` | Returns chronological repetitions and descriptive deltas for a discovered effort or explicit equivalence, preserving quality and false-fitness caveats. |
@@ -467,7 +467,12 @@ energy/macros, zero meal count, and `logging_completeness: "no_logging"`. A date
 or partial observation. Low energy intake is never used as a completeness heuristic.
 `resolution_status` remains a separate
 description of which overlapping nutrition source was selected, so completeness and source conflict
-are not conflated. See the canonical [food repository](../packages/server/src/repositories/food-repository.ts).
+are not conflated. `food_entry_count` and `recorded_meal_labels` describe the selected canonical
+contributions. `timed_food_entry_count`, `first_consumed_at`, and `last_consumed_at` use stored
+consumption starts from itemized entries.
+`missing_nutrient_inputs` lists totals for which a contributing entry lacks that nutrient, even
+when a partial numeric total is present. Date-only entries retain their recorded date. See the
+[food read repository](../packages/server/src/repositories/food-read-repository.ts).
 Dense nutrition responses are bounded to 366 inclusive days; callers split longer histories into
 date chunks. For one aligned response, call `get_training_load` with `detail: "analytical"` and
 `include_nutrition: true`. That path requires both `activity:read` and `nutrition:read` and preserves
@@ -482,38 +487,109 @@ fields.
 Analytical `get_training_load` preserves its existing analysis-timezone calendar contract and
 labels that choice as `date_policy: "analysis_timezone"`.
 
-`get_recovery_training_series` returns an inclusive local-calendar date spine capped at 366 days.
-Callers select only the needed `health`, `sleep`, `body_weight`, `training_load`,
-`activities`, and `nutrition` streams; nutrition is opt-in. Missing scalar observations remain null
-and carry `missing` status. HRV, respiratory rate, and step provider attribution is explicitly
-labeled as applying to the canonical daily row because the current daily view does not attribute
-every scalar independently. Resting HR is separately labeled as calculated from canonical
-deduplicated samples; its current read model does not expose contributing provider IDs. Sleep
-retains onset/wake timestamps, selected session, stage coverage, providers, named timezone, UTC
-offsets, and local-time source. Body weight distinguishes a direct measurement on that date from
-same-day/interpolated/nearest direct-measurement evidence and includes 7/28-day rolling coverage.
+`get_sleep_summary` reconciles episodes before assigning a wake date. It uses the existing
+provider and device priorities and consolidates cross-source overlaps with a matching wake instant,
+including shorter imports. Separate episodes retain separate IDs. The selected session ID identifies
+the stored record used for the metrics, and `source_session_ids` lists the contributing stored records.
+Supply `include_naps: true` to include naps. `sleep_kind_recorded` distinguishes stored main/nap
+evidence from classification based on the available duration. An explicit IANA `timezone` controls
+both local timestamps across daylight-saving transitions. Otherwise the summary uses the recorded
+zone or offsets where available, then the profile zone. An open episode has a null local wake date
+and uses the local start date for range selection. See the [sleep episode reader](../packages/server/src/repositories/sleep-episode-analysis.ts).
 
-Training load remains six separate modality-specific channels. Each response date also exposes the
-immediately preceding local-calendar day's load channels, calculated by calendar date rather than a
-fixed 24-hour subtraction, so load-to-next-day recovery alignment remains correct across daylight-
-saving transitions.
-Activities are returned as bounded daily aggregates rather than an unpaginated hydrated list. The
-aggregate retains canonical activity IDs/providers and counts dates attributed from authoritative
-named-zone/offset context separately from dates that required the analysis-timezone assumption.
-Activity-ID evidence is capped at 100 IDs per day with the total count and truncation flag returned.
-Duration is zero only on an observed empty day; a missing end or invalid interval makes the daily
-duration null with partial/unavailable status and supported/total counts. Activity exposure and all
-load channels use the same source-resolved start offset before falling back to analysis timezone.
-Each load channel reports authoritative-activity and analysis-timezone-activity counts. The latter
-counts activities intentionally grouped by the configured analysis timezone rather than by
-provider/device-local source context. This source-context policy is explicitly selected by the
-recovery endpoint and does not change the standalone analytical training-load tool's
-analysis-timezone default.
-Optional provider and modality filters apply to both activity exposure and all training-load
-channels; other recovery streams remain unfiltered. Stream-specific authorization and dependencies
-mean nutrition-only requests do not require the ClickHouse analytics store.
-The endpoint's interpretation block states that these observations support association analysis but do not establish causality. See the
-[series repository](../packages/server/src/repositories/recovery-training-series-repository.ts).
+`search_activities` orders results by start time descending, then canonical activity ID descending.
+An optional IANA `timezone` sets the search date boundaries. `provider` matches contributing
+providers and `canonical_type` matches the canonical activity type.
+Pass `next_cursor` as `cursor` with the same date range and filters to continue past the 25-row
+page limit. `detail: "compact"` returns canonical IDs and types, UTC endpoints, and contributing
+providers without reading sensor or map summaries. See the [activity repository](../packages/server/src/repositories/activity-repository.ts).
+
+`get_recovery_training_series` supports up to 366 inclusive calendar days. Use `fields` for
+`health`, `sleep`, `body_weight`, `training_load`, `previous_day_training_load`,
+`activity_exposure`, or `nutrition`. The existing `streams` input selects complete streams.
+Only selected streams and streams needed for a requested filter or cohort are read. Use `limit`
+and the returned `next_cursor` to page. `eligible_count` and `observed_counts` describe the
+full filtered range on every page. Numeric counts include recorded partial totals, which carry
+their missing-input evidence separately. The sleep source-change list compares consecutive selected
+observations. Dates are the drilldown key for daily observations and main sleep rows include the
+stored selected session ID.
+
+- `grain: "local_day"` returns one row per date. Sleep displays the longest main episode on that
+  wake date and includes all main episode IDs for that date. Weight includes trailing observed
+  7-day and 28-day averages and their sample counts. The prior-day load field uses the previous
+  calendar date, including across daylight-saving transitions. Canonical nutrition retains its
+  recorded dates. The optional `required_meals` rule selects days with all the requested labels.
+- `grain: "main_sleep"` returns one row per main episode, including multiple episodes on the same
+  wake date. The activity window starts at the preceding main wake and ends at sleep onset.
+  Workout intervals are clipped to that half-open window and overlapping time is counted once.
+  A completed workout can finish exactly at onset. The last completed workout is selected by
+  end time and includes its canonical ID, type, local end time, and elapsed minutes to onset.
+  If the immediately preceding episode has no valid wake within the two-calendar-day lookback,
+  activity coverage is `unavailable`. `no_records` means there were no recorded workouts in
+  the window and duration is unknown. `no_matching_records` reports zero matching recorded
+  duration when records exist but the filters exclude them. An invalid or missing workout end
+  yields `partial` coverage and a null duration and final workout. Activity IDs are capped at
+  100 per window, with the total and truncation flag retained.
+- An explicit `timezone` aligns sleep and activity clocks and activity-derived daily dates.
+  The default sleep series uses the profile zone. Daily activity and load retain source-local
+  date attribution when no explicit analysis timezone is provided. `providers` selects
+  sleep observations within reconciled episodes and matches contributing activity providers.
+  `canonical_activity_types` and `modalities` filter activity records and the six analytical
+  load channels. Health and body observations retain their canonical reconciliation.
+
+See the [series tool](../packages/server/src/mcp/recovery-training-series-tool.ts),
+[workout exposure repository](../packages/server/src/repositories/pre-sleep-activity-repository.ts),
+and [PostgreSQL time-zone conversion rules](https://www.postgresql.org/docs/current/functions-datetime.html).
+
+#### Relationship analysis examples
+
+These are `tools/call` parameters and abbreviated structured responses from
+[synthetic MCP fixtures](../packages/server/src/mcp/relationship-analysis.integration.test.ts).
+
+**Workout finish time and sleep across 90 days**
+
+```json
+{"name":"get_recovery_training_series","arguments":{"start_date":"2026-08-23","end_date":"2026-11-20","timezone":"America/Los_Angeles","grain":"main_sleep","fields":["sleep","activity_exposure"],"workout_finish_after":"20:00"}}
+```
+
+```json
+{"result":{"calendar_day_count":90,"workout_finish_counts":[{"weekday":"Thursday","before":1,"at_or_after":1,"unknown":1}],"rows":[{"date":"2026-11-12","weekday":"Thursday","sleep":{"local_start_time":"21:30:00","local_wake_time":"07:00:00","duration_minutes":520},"activity_exposure":{"last_activity":{"local_end_time":"19:00:00"}}},{"date":"2026-11-19","weekday":"Thursday","sleep":{"selected_session_id":"91000000-0000-4000-8000-000000000011","local_start_time":"22:51:43","local_wake_time":"07:00:00","duration_minutes":448},"activity_exposure":{"last_activity":{"id":"92000000-0000-4000-8000-000000000002","local_end_time":"20:30:00"},"duration":{"value_minutes":150}}}]}}
+```
+
+The later-finish Thursday episode started 81 minutes 43 seconds later, woke at the same local
+time, and recorded 72 fewer minutes of sleep. Each group has one observed Thursday. The cutoff
+is inclusive and compares the last workout's local clock time. The response also gives its
+local date for comparisons that treat after-midnight workouts as part of the preceding evening.
+
+**Sleep timing and awake minutes for one provider**
+
+```json
+{"name":"get_recovery_training_series","arguments":{"start_date":"2026-09-01","end_date":"2026-11-20","timezone":"America/Los_Angeles","grain":"main_sleep","fields":["sleep"],"providers":["whoop"]}}
+```
+
+```json
+{"result":{"rows":[{"date":"2026-09-03","sleep":{"local_start_time":"22:00:00","local_wake_time":"08:00:00","duration_minutes":550,"stages_minutes":{"awake":50}}},{"date":"2026-11-19","sleep":{"local_start_time":"22:51:43","local_wake_time":"07:00:00","duration_minutes":448,"stages_minutes":{"awake":40},"source_session_ids":["91000000-0000-4000-8000-000000000011","91000000-0000-4000-8000-000000000012"]}}]}}
+```
+
+The shorter fixture episode started later and woke earlier while reporting less time awake.
+Select `apple_health` to inspect its own source observation. Its awake time is null. Duration is
+the stored source metric. `elapsed_minutes` measures the UTC interval between the stored endpoints.
+
+**Meal coverage and the weekly weight trend**
+
+```json
+{"name":"get_recovery_training_series","arguments":{"start_date":"2026-11-18","end_date":"2026-11-20","timezone":"America/Los_Angeles","fields":["nutrition","body_weight"],"required_meals":["lunch","dinner"]}}
+```
+
+```json
+{"result":{"eligible_count":1,"observed_counts":{"nutrition.total_calories":1,"nutrition.protein_g":1,"body_weight.rolling.average_7d_kg":1},"rows":[{"date":"2026-11-18","nutrition":{"total_calories":1700,"protein_g":110,"recorded_meal_labels":["dinner","lunch"],"food_entry_count":2,"timed_food_entry_count":1,"logging_completeness":"unknown_completeness"},"body_weight":{"rolling":{"average_7d_kg":71,"observed_days_7d":2}}}]}}
+```
+
+With `required_meals: ["dinner"]`, two days qualify. The mean of the two recorded calorie totals
+is 1,250 kcal, while the protein sample size stays at one. The second day has a missing protein
+input. These comparisons describe logged observations. The records cannot establish full-day
+intake, an unrecorded workout or rest day, awake time without stage evidence, or a causal effect
+of workouts or meals on sleep or weight.
 
 `compare_performances` requires either a canonical reference activity or an explicit equivalence
 key. Recorded reusable workout, route, segment, climb and test identities retain

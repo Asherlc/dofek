@@ -1,6 +1,8 @@
 import { localTimeSourceSchema } from "@dofek/format/record-local-time";
 import { z } from "zod";
+import { preSleepActivitySchema } from "../repositories/pre-sleep-activity-repository.ts";
 import { recoveryTrainingStreamSchema } from "../repositories/recovery-training-series-repository.ts";
+import { sleepEpisodeTimingSchema } from "../repositories/sleep-episode-analysis.ts";
 import { analyticalTrainingLoadChannelSchema } from "./analytical-training-load-output.ts";
 import { nutritionSummaryItemSchema } from "./nutrition-summary-output.ts";
 
@@ -70,6 +72,19 @@ const loadChannelsSchema = z
     strength_volume: analyticalTrainingLoadChannelSchema,
   })
   .strict();
+
+export const recoveryTrainingFieldSchema = z.enum([
+  "health",
+  "sleep",
+  "body_weight",
+  "training_load",
+  "previous_day_training_load",
+  "activity_exposure",
+  "nutrition",
+]);
+
+export const recoveryTrainingGrainSchema = z.enum(["local_day", "main_sleep"]);
+
 /** Strict wire contract for compact, selected date-aligned recovery and exposure streams. */
 export const recoveryTrainingSeriesOutputSchema = z
   .object({
@@ -83,8 +98,41 @@ export const recoveryTrainingSeriesOutputSchema = z
           })
           .strict(),
         requested_streams: z.array(recoveryTrainingStreamSchema),
+        requested_fields: z.array(recoveryTrainingFieldSchema).optional(),
+        grain: recoveryTrainingGrainSchema.optional(),
+        calendar_day_count: z.number().int().positive().optional(),
+        eligible_count: z.number().int().nonnegative().optional(),
+        observed_counts: z.record(z.string(), z.number().int().nonnegative()).optional(),
+        next_cursor: z.string().nullable().optional(),
+        sleep_source_changes: z
+          .array(
+            z.object({
+              previous_date: z.string(),
+              date: z.string(),
+              previous_provider: z.string(),
+              provider: z.string(),
+              previous_source_name: z.string().nullable(),
+              source_name: z.string().nullable(),
+            }),
+          )
+          .optional(),
+        workout_finish_counts: z
+          .array(
+            z.object({
+              weekday: z.string(),
+              before: z.number().int().nonnegative(),
+              at_or_after: z.number().int().nonnegative(),
+              unknown: z.number().int().nonnegative(),
+            }),
+          )
+          .optional(),
         filters: z
-          .object({ providers: z.array(z.string()), modalities: z.array(z.string()) })
+          .object({
+            providers: z.array(z.string()),
+            modalities: z.array(z.string()),
+            canonical_activity_types: z.array(z.string()).optional(),
+            required_meals: z.array(z.string()).optional(),
+          })
           .strict(),
         interpretation: z
           .object({
@@ -97,6 +145,9 @@ export const recoveryTrainingSeriesOutputSchema = z
           z
             .object({
               date: z.string(),
+              weekday: z.string().optional(),
+              row_id: z.string().optional(),
+              sleep_episode_ids: z.array(z.string()).optional(),
               health: z
                 .object({
                   hrv: healthValueSchema,
@@ -109,11 +160,10 @@ export const recoveryTrainingSeriesOutputSchema = z
               sleep: z
                 .union([
                   z.object({ status: z.literal("missing"), reason: z.string().min(1) }).strict(),
-                  z
-                    .object({
+                  sleepEpisodeTimingSchema
+                    .omit({ local_time_context: true })
+                    .extend({
                       status: z.literal("observed"),
-                      started_at: z.string(),
-                      ended_at: z.string().nullable(),
                       duration_minutes: nullableNumber,
                       efficiency_pct: nullableNumber,
                       stages_minutes: z
@@ -131,10 +181,9 @@ export const recoveryTrainingSeriesOutputSchema = z
                           "efficiency_pct",
                           "stages_minutes",
                           "ended_at",
+                          "awake_minutes",
                         ]),
                       ),
-                      source_providers: z.array(z.string()),
-                      selected_session_id: z.string().nullable(),
                       local_time_context: localTimeContextSchema,
                     })
                     .strict(),
@@ -166,7 +215,7 @@ export const recoveryTrainingSeriesOutputSchema = z
                   duration: z
                     .object({
                       value_minutes: nullableNumber,
-                      status: z.enum(["observed", "partial", "unavailable"]),
+                      status: z.enum(["observed", "partial", "unavailable", "no_records"]),
                       reason: z.string().nullable(),
                       supported_activities: z.number().int().nonnegative(),
                       total_activities: z.number().int().nonnegative(),
@@ -188,6 +237,7 @@ export const recoveryTrainingSeriesOutputSchema = z
                     .strict(),
                 })
                 .strict()
+                .or(preSleepActivitySchema)
                 .optional(),
               nutrition: nutritionSummaryItemSchema.nullable().optional(),
             })
