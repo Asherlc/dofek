@@ -48,6 +48,14 @@ final class WhoopBleConnectionManager {
     var pendingPoweredOnCompletion: (([String: Any?]?) -> Void)?
     var handshakeTimeoutWorkItem: DispatchWorkItem?
     let connectTimeoutSeconds: TimeInterval
+
+    private struct JoinedConnectWaiter {
+        let timeout: DispatchWorkItem
+        let completion: (Result<Bool, WhoopBleConnectionError>) -> Void
+    }
+
+    // Confined to the BLE queue and scoped to the currently owned attempt.
+    private var joinedConnectWaiters: [UUID: JoinedConnectWaiter] = [:]
     private var collectionActivityObserver: NSObjectProtocol?
 
     /// Last write error for diagnostics.
@@ -158,6 +166,24 @@ final class WhoopBleConnectionManager {
                 return
             }
 
+            guard self.state != .disconnecting else {
+                completion(.failure(.disconnected(nil)))
+                return
+            }
+
+            if self.connectedPeripheral?.identifier == uuid {
+                switch self.state {
+                case .connecting, .discoveringServices, .subscribing:
+                    self.addJoinedConnectWaiter(completion)
+                    return
+                case .ready, .streaming:
+                    completion(.success(true))
+                    return
+                default:
+                    break
+                }
+            }
+
             let peripherals = centralManager.retrievePeripherals(withIdentifiers: [uuid])
             guard let nativePeripheral = peripherals.first else {
                 completion(.failure(.peripheralNotFound(peripheralId)))
@@ -175,6 +201,32 @@ final class WhoopBleConnectionManager {
         }
     }
 
+    private func addJoinedConnectWaiter(_ completion: @escaping (Result<Bool, WhoopBleConnectionError>) -> Void) {
+        let token = UUID()
+        let timeout = DispatchWorkItem { [weak self] in
+            let waiter = self?.joinedConnectWaiters.removeValue(forKey: token)
+            waiter?.completion(.failure(.timeout))
+        }
+        joinedConnectWaiters[token] = JoinedConnectWaiter(timeout: timeout, completion: completion)
+        bleQueue.asyncAfter(deadline: .now() + connectTimeoutSeconds, execute: timeout)
+    }
+
+    /// Settle the attempt's owner and all remaining callers at most once.
+    func finishConnect(_ result: Result<Bool, WhoopBleConnectionError>) {
+        handshakeTimeoutWorkItem?.cancel()
+        handshakeTimeoutWorkItem = nil
+        let completion = connectCompletion
+        connectCompletion = nil
+        let waiters = joinedConnectWaiters.values
+        joinedConnectWaiters.removeAll()
+
+        completion?(result)
+        for waiter in waiters {
+            waiter.timeout.cancel()
+            waiter.completion(result)
+        }
+    }
+
     // MARK: - Retry
 
     func retryConnection(completion: @escaping (Bool) -> Void) {
@@ -183,7 +235,7 @@ final class WhoopBleConnectionManager {
         bleQueue.async {
             self.recordConnectionEvent("retry_requested", reason: "explicit_retry")
             if let peripheral = self.connectedPeripheral,
-               peripheral.state == .connected || self.state == .connecting {
+               peripheral.state == .connected || self.state == .connecting || self.state == .disconnecting {
                 NSLog("[WhoopBLE] retryConnection: existing connection owns recovery")
                 completion(true)
                 return
@@ -325,6 +377,16 @@ final class WhoopBleConnectionManager {
     }
 
     func setConnectedPeripheral(_ peripheral: (any WhoopBlePeripheralConnection)?) {
+        if let peripheral, let previous = connectedPeripheral, previous.identifier != peripheral.identifier {
+            let cancellationPending = state == .disconnecting
+            recordConnectionEvent("disconnected", reason: "peripheral_replaced")
+            cleanup()
+            if !cancellationPending {
+                previous.cancelConnection()
+            }
+            publishDisconnection(peripheralId: previous.identifier.uuidString, error: nil)
+            finishConnect(.failure(.disconnected(nil)))
+        }
         connectedPeripheral = peripheral
     }
 

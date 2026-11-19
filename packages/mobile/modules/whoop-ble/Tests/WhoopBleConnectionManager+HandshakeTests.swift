@@ -194,6 +194,51 @@ final class WhoopBlePendingReconnectTests: XCTestCase {
         }
     }
 
+    func testRestoredConnectionAllowsExplicitCallerToWaitForReadiness() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let manager = WhoopBleConnectionManager(
+            connectionDiagnostics: WhoopBleConnectionDiagnostics(diagnosticDefaults: defaults)
+        )
+        let peripheral = TestWhoopPeripheralConnection()
+        peripheral.state = .connecting
+        var results: [Result<Bool, WhoopBleConnectionError>] = []
+
+        manager.syncOnBleQueue {
+            manager.centralManager = TestWhoopCentralManager()
+            manager.handleRestoredPeripheral(peripheral)
+            XCTAssertEqual(manager.state, .connecting)
+            XCTAssertNil(manager.handshakeTimeoutWorkItem)
+        }
+
+        manager.connect(peripheralId: peripheral.identifier.uuidString) { results.append($0) }
+
+        manager.syncOnBleQueue {
+            if case let .failure(error) = results.first {
+                XCTFail("Connection settled before readiness: \(error.rejection.code)")
+                return
+            }
+            XCTAssertTrue(results.isEmpty)
+            XCTAssertEqual(peripheral.connections, 0)
+            XCTAssertEqual(peripheral.cancellations, 0)
+            XCTAssertTrue(manager.autoReconnect)
+            XCTAssertNil(manager.handshakeTimeoutWorkItem)
+
+            manager.handlePeripheralConnected(peripheral)
+            XCTAssertEqual(manager.state, .discoveringServices)
+            manager.setState(.subscribing)
+            let previousStreamingIntent = manager.settleNotificationSubscriptionUpdate(
+                .ready,
+                failureDetail: "unused",
+                cancelPeripheral: { XCTFail("Readiness cancelled the restored connection") }
+            )
+            XCTAssertEqual(previousStreamingIntent, true)
+            XCTAssertEqual(results.count, 1)
+            guard case .success(true) = results.first else {
+                return XCTFail("Expected the connection waiter to succeed after readiness")
+            }
+        }
+    }
+
     private func afterDeadline(_ manager: WhoopBleConnectionManager, check: @escaping () -> Void) {
         let checked = expectation(description: "observed after handshake deadline")
         manager.bleQueue.asyncAfter(deadline: .now() + 0.05) {

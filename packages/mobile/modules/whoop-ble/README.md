@@ -125,14 +125,19 @@ actual relaunch eligibility follows Apple's [Bluetooth restoration rules](https:
 
 Automatic reconnection keeps the Core Bluetooth connection request pending
 while the strap is unavailable. Service discovery and notification subscription
-have a ten-second deadline after Bluetooth connects; explicit `connect()` calls
-retain a bounded wait. Foreground discovery and retry preserve an existing
-pending connection. This follows Apple's
-[pending connection behavior](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/connect(_:options:));
-the [native handshake lifecycle](ios/WhoopBleConnectionManager+Handshake.swift) owns the
-application deadlines and cancellation. A pending request alone does not prove
-capture has resumed: check new data notifications and parsed sample timestamps.
-Explicit Disconnect also [stops active scanning](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/stopscan())
+have a ten-second deadline after Bluetooth connects. Apple describes the system's
+[pending connection behavior](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/connect(_:options:)).
+
+`connect()` for the same strap returns immediately if it is ready or streaming.
+During native connection setup, including a restored connection, it waits for
+notification readiness. If that caller's wait expires, native recovery and any
+setup deadline continue. A new explicit connection has ten seconds to reach
+readiness. `retryConnection()` acknowledges an existing or newly initiated
+connection. To confirm capture has resumed, check
+new data notifications and parsed sample timestamps. See Apple's
+[Core Bluetooth state restoration guide](https://developer.apple.com/library/archive/documentation/NetworkingInternetWeb/Conceptual/CoreBluetooth_concepts/CoreBluetoothBackgroundProcessingForIOSApps/PerformingTasksWhileYourAppIsInTheBackground.html).
+
+Explicit Disconnect [stops active scanning](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/stopscan())
 before completing cleanup.
 
 Requested IMU capture survives unsuccessful automatic reconnect attempts and
