@@ -39487,3 +39487,43 @@ Local qualification and CI are separate from production throughput acceptance. T
   the previous web image's configuration and verifying both replicas. The
   regression fixtures and a Docker CLI configuration round trip cover the
   rolling and maintenance paths. [Deployment workflow](../.github/workflows/deploy-web-stack.yml).
+
+## 2026-11-19 — Metric-stream ownership still blocks analytics after rollout
+
+- Axiom recorded 44 analytics admission failures from November 18 at
+  16:38:17 UTC through November 19 at 03:43:49 UTC. The first fatal message was
+  `Analytics resource metric-stream-source is BLOCKED: verified recovery must establish that the previous executor and ClickHouse requests terminated`.
+  New builds stop before dbt and affected read models can go stale. Sentry
+  showed 426 lifetime events and regressed status. These background events
+  carry no user IDs, so direct user impact is unmeasured. The November 19
+  deployment of `35500faed` succeeded and the same error recurred.
+  [Sentry issue](https://east-bay-software.sentry.io/issues/7838431803/) and
+  [November 19 release](https://github.com/Asherlc/dofek/actions/runs/44447473156).
+- The November 19 03:45 UTC read-only Postgres check found owner
+  `6dda562e-bebd-47ee-abff-16b993141bf8` with a metric-stream intent and a
+  November 18 16:16:35.134335 UTC reservation. Backend `833191` was absent
+  and both `quiescent` and `query_terminal` were false. ClickHouse returned
+  no matching active process or query-log entry for
+  `b28a1138-c915-4a68-9c86-a749557019be`. That leaves the original request
+  outcome unverified. Swarm showed the analytics worker and all three
+  ClickHouse sinks at one replica each. The replacement analytics worker
+  returned HTTP 200 with `status=starting` and `lastSuccessAt=null`.
+  [Ownership guard](../src/analytics/analytics-query-owner.ts) and
+  [analytics recovery requirements](plans/2026-11-09-erasure-safety-decisions.md#recovery-cutover-and-key-changes).
+- The reservation predates the failed deploy's live-sink update at 16:16:39
+  and ClickHouse replacement beginning at 16:16:47 UTC. Axiom's last live-sink
+  batch before that update was at 16:16:27 UTC. Docker recorded forced exits
+  during the same minute, but the available records do not tie those exits
+  to this owner or establish what happened to its ClickHouse request. The
+  rollout is a candidate trigger. The exact interruption and publication
+  outcome remain unresolved.
+  [November 18 deploy log](https://github.com/Asherlc/dofek/actions/runs/44343743471/job/134942094952).
+- Recovery remains pending. Verify the exact executor and request termination,
+  then recover and replay the retained intent with its original reservation.
+  Confirm sink progress and a successful analytics build before closing the
+  issue. Replica counts and the readiness HTTP status alone did not establish
+  processing progress. For the next rollout, consider recording the active
+  owner, executor identity and last successful publication before quiescence
+  and checking them after rollout while task history is still available.
+  [Prior exact-owner recovery](evidence/kafka-retention-20261112/owner-recovery-notes.md)
+  and [production log skill](../.agents/skills/check-logs/SKILL.md).
