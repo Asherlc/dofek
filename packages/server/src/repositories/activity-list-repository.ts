@@ -31,6 +31,10 @@ export interface SearchInput {
   endDate: string;
   query?: string;
   limit: number;
+  cursor?: string;
+  compact?: boolean;
+  provider?: string;
+  canonicalType?: string;
 }
 
 export interface CountVisibleInWindowInput {
@@ -89,20 +93,33 @@ export class ActivityListRepository extends BaseRepository {
     return { items: hydratedRows.map((row) => this.#toListItem(row)), totalCount };
   }
 
-  async search(input: SearchInput): Promise<{ items: ActivityListItem[]; totalCount: number }> {
+  async search(input: SearchInput) {
     const escapedQuery = input.query?.replace(/[%_\\]/g, (character) => `\\${character}`);
     const queryPattern = escapedQuery ? `%${escapedQuery}%` : null;
-    const rows = await this.#exactRangeRows(
-      input.startDate,
-      input.endDate,
-      undefined,
+    const options = {
+      startDate: input.startDate,
+      endDate: input.endDate,
       queryPattern,
-      input.limit,
-    );
-    const hydratedRows = await withActivitySummaries(rows, this.#sensorStore, this.userId);
+      limit: input.limit + 1,
+      cursor: input.cursor,
+      provider: input.provider,
+      canonicalType: input.canonicalType,
+    };
+    const rows = await this.#exactRangeRows(options);
+    const page = rows.slice(0, input.limit);
+    const hydratedRows = input.compact
+      ? page.map((row) => ({ ...row, location: null }))
+      : await withActivitySummaries(page, this.#sensorStore, this.userId);
+    const totalCount =
+      rows[0]?.total_count ??
+      (input.cursor
+        ? ((await this.#exactRangeRows({ ...options, cursor: undefined, limit: 1 }))[0]
+            ?.total_count ?? 0)
+        : 0);
     return {
       items: hydratedRows.map((row) => this.#toListItem(row)),
-      totalCount: hydratedRows[0]?.total_count ?? 0,
+      totalCount,
+      nextCursor: rows.length > input.limit ? (page.at(-1)?.id ?? null) : null,
     };
   }
 
@@ -111,7 +128,7 @@ export class ActivityListRepository extends BaseRepository {
     endDate: string,
     activityTypes?: string[],
   ): Promise<ActivityListItem[]> {
-    const rows = await this.#exactRangeRows(startDate, endDate, activityTypes);
+    const rows = await this.#exactRangeRows({ startDate, endDate, activityTypes });
     const hydratedRows = await withActivitySummaries(rows, this.#sensorStore, this.userId);
     return hydratedRows.map((row) => this.#toListItem(row));
   }
@@ -146,13 +163,25 @@ export class ActivityListRepository extends BaseRepository {
     };
   }
 
-  #exactRangeRows(
-    startDate: string,
-    endDate: string,
-    activityTypes?: string[],
-    queryPattern: string | null = null,
-    limit?: number,
-  ) {
+  #exactRangeRows({
+    startDate,
+    endDate,
+    activityTypes,
+    queryPattern,
+    limit,
+    cursor,
+    provider,
+    canonicalType,
+  }: {
+    startDate: string;
+    endDate: string;
+    activityTypes?: string[];
+    queryPattern?: string | null;
+    limit?: number;
+    cursor?: string;
+    provider?: string;
+    canonicalType?: string;
+  }) {
     const typeFilter =
       activityTypes && activityTypes.length > 0
         ? sql`AND a.canonical_type IN (${sql.join(
@@ -164,18 +193,29 @@ export class ActivityListRepository extends BaseRepository {
       ? sql`AND (a.name ILIKE ${queryPattern} OR a.canonical_type::text ILIKE ${queryPattern})`
       : sql``;
     const limitClause = limit == null ? sql`` : sql`LIMIT ${limit}`;
+    const cursorFilter = cursor
+      ? sql`WHERE (activity.sort_started_at, activity.id) < (
+          SELECT sort_started_at, id FROM filtered_activities WHERE id = ${cursor}::uuid
+        )`
+      : sql``;
     return this.query(
       activityListRowSchema,
-      sql`SELECT
-            ${activityListColumns}
-          FROM fitness.v_activity a
-          WHERE a.user_id = ${this.userId}
-            AND a.started_at >= (${startDate}::date AT TIME ZONE ${this.timezone})
-            AND a.started_at < ((${endDate}::date + 1) AT TIME ZONE ${this.timezone})
-            ${typeFilter}
-            ${queryFilter}
-            ${this.timestampAccessPredicate(sql`a.started_at`)}
-          ORDER BY a.started_at DESC
+      sql`WITH filtered_activities AS (
+            SELECT ${activityListColumns}, a.started_at AS sort_started_at
+            FROM fitness.v_activity a
+            WHERE a.user_id = ${this.userId}
+              AND a.started_at >= (${startDate}::date AT TIME ZONE ${this.timezone})
+              AND a.started_at < ((${endDate}::date + 1) AT TIME ZONE ${this.timezone})
+              ${typeFilter}
+              ${queryFilter}
+              ${provider ? sql`AND ${provider} = ANY(a.source_providers)` : sql``}
+              ${canonicalType ? sql`AND a.canonical_type::text = ${canonicalType}` : sql``}
+              ${this.timestampAccessPredicate(sql`a.started_at`)}
+          )
+          SELECT activity.*
+          FROM filtered_activities activity
+          ${cursorFilter}
+          ORDER BY activity.sort_started_at DESC, activity.id DESC
           ${limitClause}`,
     );
   }

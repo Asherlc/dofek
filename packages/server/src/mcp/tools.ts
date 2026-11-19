@@ -1,4 +1,5 @@
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
+import { CANONICAL_ACTIVITY_TYPES } from "@dofek/training/activity-types";
 import { McpServer } from "@modelcontextprotocol/server";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
@@ -20,7 +21,10 @@ import { DailyMetricsRepository } from "../repositories/daily-metrics-repository
 import { DataCoverageRepository } from "../repositories/data-coverage-repository.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import { localDateString } from "../repositories/resting-heart-rate-query.ts";
-import { SleepRepository } from "../repositories/sleep-repository.ts";
+import {
+  analysisTimezoneSchema,
+  listSleepEpisodes,
+} from "../repositories/sleep-episode-analysis.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
 import { ensureProvidersRegistered, toJobId } from "../routers/sync-helpers.ts";
 import { registerActivityDetailsTool } from "./activity-details-tool.ts";
@@ -292,29 +296,24 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Get Sleep Summary",
       description:
-        "Summarize sleep by night, including duration, efficiency, stages, and timing, for an exact date range.",
+        "Summarize sleep episodes by local wake date, with original UTC times, stages, and source records. An explicit timezone uses that IANA zone for both endpoints.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
-        timezone: z.string().optional(),
+        timezone: analysisTimezoneSchema.optional(),
+        providers: z.array(z.string().min(1)).max(20).optional(),
+        include_naps: z.boolean().optional(),
       }),
       outputSchema: mcpOutputSchemas.sleepSummary,
     },
-    async ({ start_date, end_date, timezone }) => {
+    async ({ start_date, end_date, timezone, providers, include_naps }) => {
       requireMcpScope(context.scopes, "health:read");
       assertDateRange(start_date, end_date);
       const requestedTimezone = timezone ?? context.timezone;
       if (!context.sensorStore) {
         throw new Error("get_sleep_summary requires the ClickHouse analytics store");
       }
-      const repository = new SleepRepository(
-        context.db,
-        context.userId,
-        requestedTimezone,
-        { kind: "full", paid: true, reason: "paid_grant" },
-        context.sensorStore,
-      );
       const metricsRepository = new DailyMetricsRepository(
         context.db,
         context.userId,
@@ -322,7 +321,15 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         context.sensorStore,
       );
       const [rows, dailyMetrics] = await Promise.all([
-        repository.listRange(start_date, end_date),
+        listSleepEpisodes(context.sensorStore, {
+          userId: context.userId,
+          startDate: start_date,
+          endDate: end_date,
+          profileTimezone: context.timezone,
+          analysisTimezone: timezone,
+          providers,
+          includeNaps: include_naps,
+        }),
         metricsRepository.listRange(start_date, end_date),
       ]);
       const respiratoryRateByDate = new Map(
@@ -331,47 +338,46 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       return jsonToolResult(
         rows.map((row) => {
           const localTimeContext = {
-            timezone: row.timezone,
-            startUtcOffsetMinutes: row.start_utc_offset_minutes,
-            endUtcOffsetMinutes: row.end_utc_offset_minutes,
-            source: row.local_time_source,
+            ...row.timing.local_time_context,
+            timezone: row.timing.display_timezone,
           };
           const onsetTime = formatRecordLocalTime(
-            row.started_at,
+            row.timing.started_at,
             localTimeContext,
             "start",
             undefined,
             requestedTimezone,
           );
           const wakeTime =
-            row.ended_at == null
+            row.timing.ended_at == null
               ? "--"
               : formatRecordLocalTime(
-                  row.ended_at,
+                  row.timing.ended_at,
                   localTimeContext,
                   "end",
                   undefined,
                   requestedTimezone,
                 );
           return {
+            ...row.timing,
             date: row.date,
             staging_available: row.staging_available,
             total_duration_minutes: row.duration_minutes,
             sleep_efficiency_pct: row.efficiency_pct,
             time_in_bed_minutes:
-              row.duration_minutes == null ? null : row.duration_minutes + (row.awake_minutes ?? 0),
+              row.duration_minutes == null || row.stages_minutes.awake == null
+                ? null
+                : row.duration_minutes + row.stages_minutes.awake,
             onset_time: onsetTime === "--" ? null : onsetTime,
             wake_time: wakeTime === "--" ? null : wakeTime,
-            local_time_context: localTimeContext,
             stages: {
-              rem_minutes: row.rem_minutes,
-              sws_minutes: row.deep_minutes,
-              light_minutes: row.light_minutes,
-              awake_minutes: row.awake_minutes,
+              rem_minutes: row.stages_minutes.rem,
+              sws_minutes: row.stages_minutes.deep,
+              light_minutes: row.stages_minutes.light,
+              awake_minutes: row.stages_minutes.awake,
             },
             sleep_consistency_pct: null,
             respiratory_rate_avg: respiratoryRateByDate.get(row.date) ?? null,
-            source_provider: row.provider_id,
           };
         }),
       );
@@ -384,30 +390,48 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     {
       title: "Search Activities",
       description:
-        "Show authenticated user activities in an optional date range (defaulting to the last 30 days), optionally filtered by text.",
+        "Page through authenticated user activities in an optional date range (defaulting to the last 30 days), with text, provider and type filters.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: z.object({
         from: dateSchema.optional(),
         to: dateSchema.optional(),
+        timezone: analysisTimezoneSchema.optional(),
         query: z.string().max(200).optional(),
         include: z.array(z.literal("mapPreview")).optional(),
         limit: z.number().int().min(1).max(25).optional(),
+        cursor: z.string().uuid().optional(),
+        detail: z.literal("compact").optional(),
+        provider: z.string().min(1).max(200).optional(),
+        canonical_type: z.enum(CANONICAL_ACTIVITY_TYPES).optional(),
       }),
       outputSchema: mcpOutputSchemas.searchActivities,
     },
-    async ({ from, to, query, include, limit }) => {
+    async ({
+      from,
+      to,
+      timezone,
+      query,
+      include,
+      limit,
+      cursor,
+      detail,
+      provider,
+      canonical_type,
+    }) => {
       requireMcpScope(context.scopes, "activity:read");
-      const endDate = to ?? localDateString(new Date(), context.timezone);
+      const analysisZone = timezone ?? context.timezone;
+      const endDate = to ?? localDateString(new Date(), analysisZone);
       const startDate = from ?? dateDaysBefore(endDate, 29);
       assertDateRange(startDate, endDate);
       const repository = new ActivityRepository(
         context.db,
         context.userId,
-        context.timezone,
+        analysisZone,
         { kind: "full", paid: true, reason: "paid_grant" },
         context.sensorStore,
       );
       const resultLimit = limit ?? 10;
+      const compact = detail === "compact";
       let result: Awaited<ReturnType<ActivityRepository["search"]>>;
       try {
         result = await repository.search({
@@ -415,17 +439,47 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           endDate,
           query,
           limit: resultLimit,
+          ...(cursor && { cursor }),
+          ...(compact && { compact }),
+          ...(provider && { provider }),
+          ...(canonical_type && { canonicalType: canonical_type }),
         });
       } catch (error: unknown) {
         captureException(error, {
           tags: { mcp_tool: "search_activities" },
-          extra: { startDate, endDate, hasQuery: query !== undefined, limit: resultLimit },
+          extra: {
+            startDate,
+            endDate,
+            hasQuery: query !== undefined,
+            limit: resultLimit,
+          },
         });
         throw error;
       }
-      if (include?.includes("mapPreview")) return jsonToolResult(result);
+      const nextCursor = result.nextCursor ?? null;
+      if (compact) {
+        return jsonToolResult({
+          items: result.items.map((item) => ({
+            id: item.id,
+            canonical_type: item.canonical_type,
+            started_at: item.started_at,
+            ended_at: item.ended_at,
+            source_providers: item.source_providers,
+          })),
+          totalCount: result.totalCount,
+          next_cursor: nextCursor,
+        });
+      }
+      if (include?.includes("mapPreview")) {
+        return jsonToolResult({
+          items: result.items,
+          totalCount: result.totalCount,
+          next_cursor: nextCursor,
+        });
+      }
       return jsonToolResult({
-        ...result,
+        totalCount: result.totalCount,
+        next_cursor: nextCursor,
         items: result.items.map((item) => {
           const location = item.location;
           if (typeof location !== "object" || location === null || !("mapPreview" in location)) {

@@ -1,4 +1,7 @@
-import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
+import {
+  localTimeSourceSchema,
+  recordLocalTimeContextSchema,
+} from "@dofek/format/record-local-time";
 import { healthMetricSchema } from "@dofek/mcp-contracts/health-explorer";
 import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import { z } from "zod";
@@ -16,6 +19,7 @@ import {
   fingerLoadingGripPositionSchema,
   fingerLoadingLateralitySchema,
 } from "../repositories/climbing-training-log-repository.ts";
+import { sleepEpisodeTimingSchema } from "../repositories/sleep-episode-analysis.ts";
 import { sourceReferenceSchema } from "./analytical-evidence.ts";
 import { analyticalTrainingLoadOutputSchema } from "./analytical-training-load-output.ts";
 import { cyclingTrainingMetricsOutputSchema } from "./cycling-training-metrics-output.ts";
@@ -111,22 +115,9 @@ export const dataCoverageOutputSchema = jsonResult(
   ),
 );
 
-const localTimeContextSchema = z.object({
-  timezone: nullableString,
-  startUtcOffsetMinutes: z.number().nullable(),
-  endUtcOffsetMinutes: z.number().nullable(),
-  source: z.enum([
-    "provider_timezone",
-    "provider_offset",
-    "device_timezone",
-    "device_offset",
-    "user_home_timezone",
-    "unknown",
-  ]),
-});
 export const sleepSummaryOutputSchema = jsonResult(
   z.array(
-    z.object({
+    sleepEpisodeTimingSchema.extend({
       date: z.string(),
       staging_available: z.boolean(),
       total_duration_minutes: nullableNumber,
@@ -134,7 +125,6 @@ export const sleepSummaryOutputSchema = jsonResult(
       time_in_bed_minutes: nullableNumber,
       onset_time: nullableString,
       wake_time: nullableString,
-      local_time_context: localTimeContextSchema,
       stages: z.object({
         rem_minutes: nullableNumber,
         sws_minutes: nullableNumber,
@@ -143,7 +133,6 @@ export const sleepSummaryOutputSchema = jsonResult(
       }),
       sleep_consistency_pct: z.null(),
       respiratory_rate_avg: nullableNumber,
-      source_provider: nullableString,
     }),
   ),
 );
@@ -166,7 +155,7 @@ const activityListItemSchema = z.object({
   timezone: nullableString,
   start_utc_offset_minutes: nullableNumber,
   end_utc_offset_minutes: nullableNumber,
-  local_time_source: localTimeContextSchema.shape.source,
+  local_time_source: localTimeSourceSchema,
   source_providers: z.array(z.string()),
   avg_hr: nullableNumber,
   max_hr: nullableNumber,
@@ -184,8 +173,19 @@ const activityListItemSchema = z.object({
   sample_count: nullableNumber.optional(),
   location: activitySearchLocationSchema.nullable().optional(),
 });
+const compactActivityListItemSchema = z.strictObject({
+  id: z.string(),
+  canonical_type: z.string(),
+  started_at: z.string(),
+  ended_at: nullableString,
+  source_providers: z.array(z.string()),
+});
 export const searchActivitiesOutputSchema = jsonResult(
-  z.object({ items: z.array(activityListItemSchema), totalCount: z.number().int().nonnegative() }),
+  z.object({
+    items: z.array(z.union([activityListItemSchema, compactActivityListItemSchema])),
+    totalCount: z.number().int().nonnegative(),
+    next_cursor: nullableString,
+  }),
 );
 
 const activityPowerSummarySchema = z.object({
@@ -626,7 +626,7 @@ const activityDetailSchema = z.object({
   timezone: nullableString,
   start_utc_offset_minutes: nullableNumber,
   end_utc_offset_minutes: nullableNumber,
-  local_time_source: localTimeContextSchema.shape.source,
+  local_time_source: localTimeSourceSchema,
   subsource: nullableString,
   source_providers: z.array(z.string()),
   source_external_ids: z

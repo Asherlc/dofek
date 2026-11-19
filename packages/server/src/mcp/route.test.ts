@@ -154,10 +154,9 @@ vi.mock("../repositories/food-repository.ts", () => ({
   }),
 }));
 
-vi.mock("../repositories/sleep-repository.ts", () => ({
-  SleepRepository: vi.fn(function vitestConstructor() {
-    return { listRange: toolTestMocks.sleepListRange };
-  }),
+vi.mock("../repositories/sleep-episode-analysis.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../repositories/sleep-episode-analysis.ts")>()),
+  listSleepEpisodes: toolTestMocks.sleepListRange,
 }));
 
 vi.mock("../repositories/body-repository.ts", () => ({
@@ -2817,40 +2816,57 @@ describe("createMcpRouter", () => {
   it("returns sleep summaries with stages and local sleep times", async () => {
     authorizeMcpToken();
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([
-      { date: "2026-05-18", respiratory_rate_avg: 14.2 },
+      { date: "2026-05-19", respiratory_rate_avg: 14.2 },
     ]);
     toolTestMocks.sleepListRange.mockResolvedValue([
       {
-        awake_minutes: 30,
-        date: "2026-05-18",
-        deep_minutes: 80,
+        date: "2026-05-19",
         duration_minutes: 420,
         efficiency_pct: 90,
-        ended_at: "2026-05-19T14:00:00.000Z",
-        timezone: null,
-        start_utc_offset_minutes: -420,
-        end_utc_offset_minutes: -420,
-        local_time_source: "provider_offset",
-        light_minutes: 240,
-        provider_id: "whoop",
-        rem_minutes: 100,
+        stages_minutes: { awake: 30, deep: 80, light: 240, rem: 100 },
         staging_available: true,
-        started_at: "2026-05-19T06:00:00.000Z",
+        timing: {
+          started_at: "2026-05-19T06:00:00.000Z",
+          ended_at: "2026-05-19T14:00:00.000Z",
+          local_start_date: "2026-05-18",
+          local_start_time: "23:00:00",
+          local_wake_date: "2026-05-19",
+          local_wake_time: "07:00:00",
+          display_timezone: "America/Los_Angeles",
+          timezone_source: "caller",
+          local_time_context: {
+            timezone: null,
+            startUtcOffsetMinutes: -420,
+            endUtcOffsetMinutes: -420,
+            source: "provider_offset",
+          },
+          selected_session_id: "sleep-fixture",
+          source_session_ids: ["sleep-fixture"],
+          source_providers: ["whoop"],
+          source_provider: "whoop",
+          source_name: null,
+          is_nap: false,
+          sleep_kind_recorded: true,
+          elapsed_minutes: 480,
+        },
       },
     ]);
 
     const response = await request(createTestApp(makeMockSensorStore()), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_sleep_summary", {
-        end_date: "2026-05-18",
-        start_date: "2026-05-18",
+        end_date: "2026-05-19",
+        start_date: "2026-05-19",
         timezone: "America/Los_Angeles",
       }),
     });
 
-    expect(parseToolCallText(response.text)).toEqual([
+    expect(parseToolCallText(response.text)).toMatchObject([
       {
-        date: "2026-05-18",
+        date: "2026-05-19",
+        local_start_date: "2026-05-18",
+        local_wake_date: "2026-05-19",
+        timezone_source: "caller",
         onset_time: "11:00 PM",
         respiratory_rate_avg: 14.2,
         sleep_consistency_pct: null,
@@ -2876,21 +2892,35 @@ describe("createMcpRouter", () => {
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
     toolTestMocks.sleepListRange.mockResolvedValue([
       {
-        awake_minutes: null,
         date: "2026-05-18",
-        deep_minutes: null,
         duration_minutes: null,
         efficiency_pct: null,
-        ended_at: null,
-        timezone: null,
-        start_utc_offset_minutes: null,
-        end_utc_offset_minutes: null,
-        local_time_source: "unknown",
-        light_minutes: null,
-        provider_id: "apple_health",
-        rem_minutes: null,
+        stages_minutes: { awake: null, deep: null, light: null, rem: null },
         staging_available: false,
-        started_at: "2026-05-19T06:00:00.000Z",
+        timing: {
+          started_at: "2026-05-19T06:00:00.000Z",
+          ended_at: null,
+          local_start_date: "2026-05-18",
+          local_start_time: "23:00:00",
+          local_wake_date: null,
+          local_wake_time: null,
+          display_timezone: "America/Los_Angeles",
+          timezone_source: "caller",
+          local_time_context: {
+            timezone: null,
+            startUtcOffsetMinutes: null,
+            endUtcOffsetMinutes: null,
+            source: "unknown",
+          },
+          selected_session_id: "apple-fixture",
+          source_session_ids: ["apple-fixture"],
+          source_providers: ["apple_health"],
+          source_provider: "apple_health",
+          source_name: null,
+          is_nap: false,
+          sleep_kind_recorded: false,
+          elapsed_minutes: null,
+        },
       },
     ]);
 
@@ -3366,6 +3396,14 @@ describe("createMcpRouter", () => {
 
   it("returns daily nutrition totals using the nutrition read scope", async () => {
     authorizeMcpToken(["nutrition:read"]);
+    const contributionCoverage = {
+      food_entry_count: 4,
+      recorded_meal_labels: ["dinner", "lunch"],
+      timed_food_entry_count: 0,
+      first_consumed_at: null,
+      last_consumed_at: null,
+      missing_nutrient_inputs: [],
+    };
     toolTestMocks.foodDailyTotalsRange.mockResolvedValue([
       {
         calories: 2_450,
@@ -3374,6 +3412,7 @@ describe("createMcpRouter", () => {
         fatGrams: 85,
         fiberGrams: 32,
         mealCount: 4,
+        contributionCoverage,
         loggingCompleteness: "unknown_completeness",
         loggingCompletenessReason:
           "Nutrition was logged, but no source explicitly reported whether the day was complete.",
@@ -3401,6 +3440,7 @@ describe("createMcpRouter", () => {
         fat_g: 85,
         fiber_g: 32,
         meal_count: 4,
+        ...contributionCoverage,
         logging_completeness: "unknown_completeness",
         logging_completeness_reason:
           "Nutrition was logged, but no source explicitly reported whether the day was complete.",
@@ -3426,6 +3466,14 @@ describe("createMcpRouter", () => {
         fatGrams: null,
         fiberGrams: null,
         mealCount: 4,
+        contributionCoverage: {
+          food_entry_count: 0,
+          recorded_meal_labels: [],
+          timed_food_entry_count: 0,
+          first_consumed_at: null,
+          last_consumed_at: null,
+          missing_nutrient_inputs: ["total_calories", "protein_g", "carbs_g", "fat_g", "fiber_g"],
+        },
         loggingCompleteness: "unknown_completeness",
         loggingCompletenessReason:
           "Nutrition was logged, but no source explicitly reported whether the day was complete.",

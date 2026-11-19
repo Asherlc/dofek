@@ -193,7 +193,7 @@ export class ActivityRepository extends BaseRepository {
   }
 
   /** Activities inside an exact inclusive local-date range, optionally filtered before paging. */
-  async search(input: SearchInput): Promise<{ items: ActivityListItem[]; totalCount: number }> {
+  async search(input: SearchInput) {
     return this.#listRepository.search(input);
   }
 

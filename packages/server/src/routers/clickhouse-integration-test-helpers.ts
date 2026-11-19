@@ -152,6 +152,7 @@ const rawTableSyncs: RawTableSync[] = [
       "efficiency_pct",
       "staging_available",
       "sleep_type",
+      "is_nap",
       "source_name",
       "timezone",
       "start_utc_offset_minutes",
@@ -570,6 +571,12 @@ export async function createClickHouseTestActivitySensorReaderStore(
   testContext: ClickHouseSyncTestContext,
 ): Promise<ActivitySensorStore> {
   return createClickHouseTestStore(testContext, async () => {});
+}
+
+export async function createClickHouseTestRawSensorStore(
+  testContext: ClickHouseSyncTestContext,
+): Promise<ActivitySensorStore> {
+  return createClickHouseTestStore(testContext, syncClickHouseRawTablesWithClient);
 }
 
 export async function createClickHouseTestActivityPowerCurveStore(

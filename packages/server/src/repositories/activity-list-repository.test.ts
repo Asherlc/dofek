@@ -456,6 +456,7 @@ describe("ActivityListRepository", () => {
 
       expect(result).toEqual({
         totalCount: 1,
+        nextCursor: null,
         items: [
           expect.objectContaining({
             id: "search-activity",
@@ -470,7 +471,7 @@ describe("ActivityListRepository", () => {
       expect(result.items[0]).not.toHaveProperty("total_count");
       const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
       expect(compiledQuery.params).toContain("%Morning%");
-      expect(compiledQuery.params).toContain(20);
+      expect(compiledQuery.params).toContain(21);
     });
 
     it("escapes wildcard characters in search text", async () => {
