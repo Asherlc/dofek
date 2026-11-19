@@ -33,6 +33,8 @@ export function makeWhoopCaptureStats(): WhoopCaptureStats {
       lastUploadError: null,
       lastUploadOutcome: null,
       http5xxResponseCount: 0,
+      http408ResponseCount: 0,
+      http408RecoveredBatchCount: 0,
       bufferInstanceId: "11111111-1111-4111-8111-111111111111",
       bufferCreatedAt: "2026-10-23T00:00:00.000Z",
       checkpointAt: "2026-10-23T01:00:00.000Z",

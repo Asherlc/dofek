@@ -354,10 +354,33 @@ OpenTelemetry log through `getDataPathStats()`. It is cumulative for one native
 uploader lifetime, is not persisted, and appears on the next normal diagnostics
 snapshot; repeated snapshots report the same running total and must not be
 summed as separate failures. Older native builds may omit this optional field.
-Transport failures without a known HTTP 5xx response and unexpected validation,
-storage, authentication, or acknowledgment failures continue through Sentry.
+Unexpected validation, storage, authentication, and acknowledgment failures
+continue through Sentry. HTTP 408 and transport failures follow the reporting
+rules below.
 This field uses the standard log record attribute model described by
 OpenTelemetry's [Logs Data Model](https://opentelemetry.io/docs/specs/otel/logs/data-model/).
+
+Same-origin HTTP 408 responses increment `http408ResponseCount` and retain
+the upload outcome breadcrumb and last error. A valid acknowledgment that
+commits retirement of the affected reservation increments
+`http408RecoveredBatchCount` once. Both counters are cumulative for the native
+uploader's lifetime and appear in the next normal `capture_snapshot`. Compare
+successive snapshots from the same uploader as deltas. Older native builds
+may omit both fields, and a process restart resets recovery attribution.
+
+The native uploader records `whoop.upload.connection_loss` for each accepted
+URLSession path callback with `NSURLErrorNetworkConnectionLost`. A drop with a
+pending sibling keeps its diagnostic outcome and breadcrumb. Terminal drops
+and unexpected transport errors also report an exception. When the affected
+reservation's acknowledgment commits, the uploader emits
+`whoop.upload.connection_loss.recovered` once and
+records `whoop.upload.connection_loss.recovery_duration` in seconds from its
+first observed drop. Swift's
+[`ContinuousClock`](https://developer.apple.com/documentation/swift/continuousclock)
+includes time when the phone is asleep. A process restart resets the timing
+so a restored reservation can be measured from a newly observed drop. The
+metrics use the
+[Sentry Cocoa metrics API](https://github.com/getsentry/sentry-cocoa/blob/9.34.0/Sources/Swift/Integrations/Metrics/SentryMetricsApiProtocol.swift).
 
 Upload acknowledgments find their reserved sample rows through a partial index
 on non-null batch identities, rather than scanning the entire queued backlog.

@@ -108,6 +108,8 @@ function makeDataPathStats() {
       blockedUploadStreams: [],
       lastUploadError: null,
       http5xxResponseCount: 0,
+      http408ResponseCount: 4,
+      http408RecoveredBatchCount: 2,
       ...makeBufferCheckpoint(),
     },
   };
@@ -148,13 +150,31 @@ describe("WhoopBle native bridge", () => {
     });
   });
 
-  it("accepts queue diagnostics from native builds without the optional 5xx counter", async () => {
+  it("accepts queue diagnostics from native builds without the optional HTTP counters", async () => {
     const stats = makeDataPathStats();
-    const { http5xxResponseCount: _http5xxResponseCount, ...legacyBuffers } = stats.buffers;
+    const {
+      http5xxResponseCount: _http5xxResponseCount,
+      http408ResponseCount: _http408ResponseCount,
+      http408RecoveredBatchCount: _http408RecoveredBatchCount,
+      ...legacyBuffers
+    } = stats.buffers;
     nativeModule.getDataPathStats.mockResolvedValue({ ...stats, buffers: legacyBuffers });
 
-    await expect(getDataPathStats()).resolves.toMatchObject({ buffers: legacyBuffers });
+    await expect(getDataPathStats()).resolves.toEqual({ ...stats, buffers: legacyBuffers });
   });
+
+  it.each([{ http408ResponseCount: -1 }, { http408RecoveredBatchCount: 0.5 }])(
+    "rejects invalid HTTP 408 counters %j",
+    async (invalidCounts) => {
+      const stats = makeDataPathStats();
+      nativeModule.getDataPathStats.mockResolvedValue({
+        ...stats,
+        buffers: { ...stats.buffers, ...invalidCounts },
+      });
+
+      await expect(getDataPathStats()).rejects.toThrow();
+    },
+  );
 
   it("accepts unavailable device and capture dates as null", async () => {
     const stats = {

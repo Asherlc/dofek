@@ -1,5 +1,6 @@
 import Foundation
 import RNSentry
+import Sentry
 
 /// Dofek application bootstrap; excluded from the standalone protocol package.
 enum WhoopBleUploadRuntime {
@@ -46,5 +47,30 @@ enum WhoopBleUploadRuntime {
         breadcrumb.message = outcome.stage
         breadcrumb.data = outcome.sentryData
         SentrySDK.addBreadcrumb(breadcrumb)
+        reportConnectionLossMetrics(outcome)
+    }
+
+    private static func reportConnectionLossMetrics(_ outcome: WhoopUploadOutcome) {
+        guard outcome.transportConnectionLost || outcome.connectionLossRecoveryDuration != nil else { return }
+        let attributes: [String: SentryAttributeValue] = [
+            "stream": outcome.stream,
+            "cause": "network_connection_lost",
+        ]
+        if outcome.transportConnectionLost {
+            var dropAttributes = attributes
+            if let path = outcome.transportPath, path == "live" || path == "background" {
+                dropAttributes["transport_path"] = path
+            }
+            SentrySDK.metrics.count("whoop.upload.connection_loss", value: 1,
+                                    options: SentryMetricOptions(attributes: dropAttributes))
+        }
+        if let duration = outcome.connectionLossRecoveryDuration {
+            let components = duration.components
+            let seconds = Double(components.seconds) + Double(components.attoseconds) / 1e18
+            SentrySDK.metrics.count("whoop.upload.connection_loss.recovered", value: 1,
+                                    options: SentryMetricOptions(attributes: attributes))
+            SentrySDK.metrics.distribution("whoop.upload.connection_loss.recovery_duration", value: seconds,
+                                           options: SentryMetricOptions(unit: .second, attributes: attributes))
+        }
     }
 }

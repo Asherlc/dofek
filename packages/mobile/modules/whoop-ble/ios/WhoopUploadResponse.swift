@@ -1,10 +1,22 @@
 import Foundation
+import CoreFoundation
 
 struct WhoopUploadResponse {
     let status: Int?
     let data: Data
     let responseURL: URL?
     let error: Error?
+
+    var hasValidAcknowledgment: Bool {
+        guard data.count <= 65_536,
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let result = json["result"] as? [String: Any],
+              let value = result["data"] as? [String: Any],
+              let inserted = value["inserted"] as? NSNumber,
+              CFGetTypeID(inserted) != CFBooleanGetTypeID() else { return false }
+        return inserted.doubleValue.isFinite && inserted.doubleValue >= 0 &&
+            inserted.doubleValue.rounded() == inserted.doubleValue
+    }
 
     static func validatedOrigin(_ value: String) throws -> String {
         guard let parts = URLComponents(string: value), let host = parts.host, !host.isEmpty,

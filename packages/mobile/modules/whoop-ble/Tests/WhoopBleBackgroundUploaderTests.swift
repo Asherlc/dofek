@@ -223,7 +223,7 @@ extension WhoopBleBackgroundUploaderTests {
         let identity = try XCTUnwrap(transport.requests.first?.2)
         transport.failOnePath(identity: identity)
         try settle(uploader)
-        XCTAssertEqual(errors.count, 1, "A networkConnectionLost failure without HTTP status remains captured")
+        XCTAssertTrue(errors.isEmpty, "A connection loss with an active sibling remains a diagnostic outcome")
         XCTAssertEqual(try uploader.diagnostics()["http5xxResponseCount"] as? Int, 0)
         XCTAssertTrue(transport.tasks.contains(identity))
         XCTAssertNotNil(try uploader.diagnostics()["lastUploadError"] as? String)
