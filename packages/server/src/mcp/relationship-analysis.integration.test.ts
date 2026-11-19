@@ -438,7 +438,7 @@ describe("read-only relationship analysis through MCP", () => {
     ]);
   });
 
-  it("pages more than 25 canonical activities with tied and submillisecond start times", async () => {
+  it("pages more than 25 canonical activities with tied and microsecond start times", async () => {
     await context.db.execute(sql`INSERT INTO fitness.activity_group (id, user_id, anchor_activity_id)
       SELECT ('95000000-0000-4000-8000-' || lpad(number::text, 12, '0'))::uuid, ${TEST_USER_ID},
         ('96000000-0000-4000-8000-' || lpad(number::text, 12, '0'))::uuid
