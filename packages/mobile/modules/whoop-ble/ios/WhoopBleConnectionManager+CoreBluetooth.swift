@@ -121,9 +121,7 @@ extension WhoopBleConnectionManager {
 
         cleanup()
 
-        WhoopBleConnectionEvent.disconnected.post()
-        delegate?.connectionManagerDidDisconnect(self, peripheralId: peripheralId, error: error)
-
+        publishDisconnection(peripheralId: peripheralId, error: error)
         finishConnect(.failure(.disconnected(error?.localizedDescription)))
 
         if shouldReconnect {
@@ -132,6 +130,11 @@ extension WhoopBleConnectionManager {
             recordConnectionEvent("connect_requested", peripheralId: peripheralId, reason: "automatic_reconnect")
             reconnectPeripheral()
         }
+    }
+
+    func publishDisconnection(peripheralId: String, error: Error?) {
+        WhoopBleConnectionEvent.disconnected.post()
+        delegate?.connectionManagerDidDisconnect(self, peripheralId: peripheralId, error: error)
     }
 
     func handleServicesDiscovered(_ peripheral: any WhoopBlePeripheralConnection) {
