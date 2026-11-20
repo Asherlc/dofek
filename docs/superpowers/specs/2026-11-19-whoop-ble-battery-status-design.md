@@ -29,6 +29,13 @@ do not copy upstream implementation code.
 
 ## Behavior and boundaries
 
+The user selected **B · Battery badge** from the
+[interactive canvas variants](../../../design/whoop-battery-status/badge.html):
+a compact percentage pill aligned to the right of the WHOOP device name, with
+the charging label directly below. On November 20 the user requested a real
+Storybook story of this treatment before further native implementation.
+Preview through Storybook/Design tools only; do not control the user's desktop.
+
 - Read and subscribe within the existing Swift connection manager. Optional
   battery services and events must not become prerequisites for sensor readiness.
 - Decode validated WHOOP frames in Swift, using an independently written parser
