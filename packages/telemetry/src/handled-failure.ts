@@ -1,4 +1,9 @@
-type HandledFailure = "offline" | "cancelled" | "invalid_credentials" | "connection_lost";
+type HandledFailure =
+  | "offline"
+  | "cancelled"
+  | "invalid_credentials"
+  | "connection_lost"
+  | "bluetooth_timeout";
 
 /** Classify handled outcomes only; unknown failures remain reportable. */
 export function classifyHandledFailure(error: unknown, source?: string): HandledFailure | null {
@@ -24,6 +29,13 @@ export function classifyHandledFailure(error: unknown, source?: string): Handled
         current.message === "fetch failed: The network connection was lost."
       ) {
         kind ??= "connection_lost";
+      }
+      if (
+        (source === "whoop-ble-init-sync" || source === "whoop-ble-foreground-sync") &&
+        "code" in current &&
+        current.code === "TIMEOUT"
+      ) {
+        kind ??= "bluetooth_timeout";
       }
       if (
         current.name === "AbortError" ||
