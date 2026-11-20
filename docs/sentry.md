@@ -101,6 +101,14 @@ Verify session preservation and subsequent
 successful server authentication separately. Apple describes the underlying
 [connection-loss outcome](https://developer.apple.com/library/archive/qa/qa1941/_index.html).
 
+Automatic WHOOP Bluetooth connection attempts at startup and on foreground
+count a native `Error` with code `TIMEOUT` under source `whoop-ble-init-sync` or
+`whoop-ble-foreground-sync` as `bluetooth_timeout`. The mobile app writes an
+informational log for every classified timeout. For current sessions it also
+emits a PostHog `handled_failure` event with kind `bluetooth_timeout`. Other
+Bluetooth failures, unrelated sources, and unexpected underlying causes still
+reach exception reporting.
+
 The existing background sync policy counts known timeouts and lost connections
 as `background_transport`;
 it includes WHOOP IMU/realtime uploads and Apple Health sync-status uploads

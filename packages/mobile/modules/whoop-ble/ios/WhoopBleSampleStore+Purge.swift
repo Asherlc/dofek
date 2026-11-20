@@ -64,7 +64,7 @@ extension WhoopBleSampleStore {
         onStage(WhoopCleanupStage("store_delete_batches"))
         try execute("DELETE FROM batches")
         onStage(WhoopCleanupStage("store_clear_binding"))
-        try execute("DELETE FROM metadata WHERE key = ?", ["binding"])
+        try execute("DELETE FROM metadata WHERE key = ? OR key LIKE ?", ["binding", Self.managedHistoryKeyPrefix + "%"])
         onStage(WhoopCleanupStage("store_rotate_generation"))
         try setMetadata("generation", UUID().uuidString)
     }

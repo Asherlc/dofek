@@ -4,27 +4,50 @@ import Foundation
 // MARK: - WhoopBleConnectionManagerDelegate
 
 extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
+    func connectionManagerDidSelectPeripheral(_: WhoopBleConnectionManager) {
+        frameParser.reset()
+        cmdFrameParser.reset()
+        managedHistoryPeripheralId = nil
+        historyOffload.reset()
+    }
+
     func connectionManagerDidBecomeReady(
         _ manager: WhoopBleConnectionManager,
         peripheral: any WhoopBlePeripheralConnection,
         cmdCharacteristic: CBCharacteristic,
         wasStreaming: Bool
     ) {
+        let service = cmdCharacteristic.service?.uuid
+        let supportsManagedHistory = manager.hasCmdResponseCharacteristic && (
+            service == WhoopBleConstants.maverickServiceUUID || service == WhoopBleConstants.puffinServiceUUID
+        )
         publishReadyConnection(
             peripheralId: peripheral.identifier.uuidString,
             peripheralName: peripheral.name,
-            wasStreaming: wasStreaming
+            wasStreaming: wasStreaming,
+            supportsManagedHistory: supportsManagedHistory
         )
     }
 
     /// Publish and activate notification readiness on the connection manager's BLE queue.
-    func publishReadyConnection(peripheralId: String, peripheralName: String?, wasStreaming: Bool) {
+    func publishReadyConnection(
+        peripheralId: String, peripheralName: String?, wasStreaming: Bool, supportsManagedHistory: Bool = false
+    ) {
         guard !captureSuspended, captureFailure == nil else {
             connectionManager.disconnect()
             return
         }
         lastKnownDeviceId = peripheralId
         lastKnownDeviceName = peripheralName
+        lastKnownHistorySupported = supportsManagedHistory
+        if supportsManagedHistory, let identifier = UUID(uuidString: peripheralId) {
+            do {
+                if try uploader.isManagedHistoryEnabled(for: identifier) { managedHistoryPeripheralId = identifier }
+            } catch {
+                failCapture(error)
+                return
+            }
+        }
         emitDeviceState()
         guard !captureSuspended, captureFailure == nil else { return }
         MainThreadEventEmitter.emit([
@@ -51,8 +74,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
             }
         )
         if wasStreaming {
-            frameParser.reset()
-            cmdFrameParser.reset()
+            startManagedHistoryIfEnabled()
         }
     }
 
@@ -62,6 +84,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         error: Error?
     ) {
         watchdog.stop()
+        stopManagedHistory()
         frameParser.reset()
         cmdFrameParser.reset()
 
@@ -79,25 +102,34 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         _ manager: WhoopBleConnectionManager,
         didReceiveData data: Data
     ) {
-        guard !captureSuspended, captureFailure == nil else { return }
+        guard !captureSuspended, captureFailure == nil else {
+            // A restored link can deliver data before the outbox is ready.
+            // It may already have a history transfer we couldn't observe.
+            historyOffload.stop()
+            return
+        }
         guard let deviceId = manager.connectedPeripheral?.identifier.uuidString else { return }
 
         dataNotificationCount += 1
         captureDiagnostics.recordNotification()
         watchdog.recordDataReceived()
 
+        let malformedBeforeFeed = frameParser.malformedFrameCount
         let frames = frameParser.feed(data)
+        if frameParser.malformedFrameCount != malformedBeforeFeed { stopManagedHistory() }
         totalFramesParsed += UInt64(frames.count)
 
         var newImuSamples: [WhoopImuSample] = []
         var newRealtimeData: [WhoopRealtimeDataSample] = []
         var newSensorRecords: [[String: Any]] = []
+        var retainedR18Frames = IndexSet()
         var deviceInfo = manager.deviceInfo
         if let name = manager.connectedPeripheral?.name, !name.isEmpty { deviceInfo["name"] = String(name.prefix(200)) }
 
-        for frame in frames {
+        for (index, frame) in frames.enumerated() {
             if let record = WhoopBleSensorRecord.serialize(frame: frame, deviceInfo: deviceInfo) {
                 newSensorRecords.append(record)
+                if WhoopBleSensorRecord.hasCapturedR18Layout(frame) { retainedR18Frames.insert(index) }
             }
             packetTypeCounts[frame.packetType, default: 0] += 1
 
@@ -118,31 +150,40 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
                 newRealtimeData.append(realtimeData)
             }
         }
-
         captureDiagnostics.recordParsed(
             imuCount: newImuSamples.count,
             realtimeSamples: newRealtimeData
         )
 
-        if newImuSamples.isEmpty && newRealtimeData.isEmpty && newSensorRecords.isEmpty {
-            emptyExtractions += 1
-            return
-        }
-
-        totalSamplesExtracted += UInt64(newImuSamples.count)
-
-        publishOrientation(newImuSamples)
-
         do {
-            try uploader.append(deviceId: deviceId, samplesByStream: [
-                .sensorRecords: newSensorRecords,
-                .realtime: WhoopBleSampleSerializer.realtime(newRealtimeData),
-                .imu: WhoopBleSampleSerializer.imu(newImuSamples),
-            ])
+            try persistSamples(deviceId: deviceId, imu: newImuSamples, realtime: newRealtimeData, records: newSensorRecords)
         } catch {
             failCapture(error)
             return
         }
+
+        for (index, frame) in frames.enumerated() {
+            historyOffload.receiveCommittedFrame(
+                frame, historicalRecordRetained: retainedR18Frames.contains(index), send: sendHistoryCommand
+            )
+        }
+        startManagedHistoryIfEnabled()
+    }
+
+    private func persistSamples(
+        deviceId: String, imu: [WhoopImuSample], realtime: [WhoopRealtimeDataSample], records: [[String: Any]]
+    ) throws {
+        guard !imu.isEmpty || !realtime.isEmpty || !records.isEmpty else {
+            emptyExtractions += 1
+            return
+        }
+        totalSamplesExtracted += UInt64(imu.count)
+        publishOrientation(imu)
+        try uploader.append(deviceId: deviceId, samplesByStream: [
+            .sensorRecords: records,
+            .realtime: WhoopBleSampleSerializer.realtime(realtime),
+            .imu: WhoopBleSampleSerializer.imu(imu),
+        ])
         scheduleDeviceStatePublication()
     }
 
@@ -170,6 +211,11 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
 
         let frames = cmdFrameParser.feed(data)
         for frame in frames {
+            if !captureSuspended, captureFailure == nil {
+                historyOffload.receiveCommandResponse(frame, send: sendHistoryCommand)
+            } else {
+                historyOffload.stop()
+            }
             let responseHex = String(format: "0x%02X", frame.packetType)
 
             if frame.payload.count >= 3 {
@@ -205,6 +251,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
                 )
             }
         }
+        startManagedHistoryIfEnabled()
     }
 }
 

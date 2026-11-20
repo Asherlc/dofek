@@ -388,6 +388,7 @@ final class WhoopBleConnectionManager {
             finishConnect(.failure(.disconnected(nil)))
         }
         connectedPeripheral = peripheral
+        if peripheral != nil { delegate?.connectionManagerDidSelectPeripheral(self) }
     }
 
     func setDiscoveredCharacteristics(

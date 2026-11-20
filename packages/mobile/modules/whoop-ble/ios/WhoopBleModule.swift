@@ -28,6 +28,9 @@ public class WhoopBleModule: Module {
     internal let cmdFrameParser = WhoopBleFrameParser()
     internal var lastKnownDeviceId: String?
     internal var lastKnownDeviceName: String?
+    internal var lastKnownHistorySupported = false
+    internal var managedHistoryPeripheralId: UUID?
+    internal var historyOffload = WhoopBleHistoryOffload()
     internal var deviceStatePublicationScheduled = false
 
     // MARK: - Diagnostic counters
@@ -103,9 +106,8 @@ public class WhoopBleModule: Module {
                 self.connectionManager.writeToStrap(commandData)
 
                 self.watchdog.recordDataReceived()
-                self.frameParser.reset()
-                self.cmdFrameParser.reset()
                 self.orientationProcessor.reset()
+                self.startManagedHistoryIfEnabled()
 
                 NSLog("[WhoopBLE] startImuStreaming: now streaming")
                 self.emitDeviceState()
@@ -116,6 +118,7 @@ public class WhoopBleModule: Module {
         AsyncFunction("stopImuStreaming") { (promise: Promise) in
             self.connectionManager.bleQueue.async {
                 self.connectionManager.stopStreaming()
+                self.stopManagedHistory()
                 if self.connectionManager.cmdCharacteristic != nil {
                     let commandData = WhoopBleFrameParser.buildCommandData(
                         command: WhoopBleConstants.commandStopRawData
@@ -148,6 +151,10 @@ public class WhoopBleModule: Module {
 
         AsyncFunction("getDeviceSummary") { () -> [String: Any] in
             try self.deviceSummaryPayload()
+        }.runOnQueue(self.moduleQueue)
+
+        AsyncFunction("setManagedHistoryEnabled") { (peripheralId: String, enabled: Bool) in
+            try self.setManagedHistoryEnabled(peripheralId: peripheralId, enabled: enabled)
         }.runOnQueue(self.moduleQueue)
 
         AsyncFunction("getDataPathStats") { () -> [String: Any] in
@@ -234,7 +241,10 @@ public class WhoopBleModule: Module {
                 )
             }
             do {
-                self.connectionManager.syncOnBleQueue { self.captureSuspended = true }
+                self.connectionManager.syncOnBleQueue {
+                    self.captureSuspended = true
+                    self.stopManagedHistory()
+                }
                 try self.uploader.configure(userId: userId, serverURL: serverURL, token: token, headers: headers)
                 self.connectionManager.syncOnBleQueue {
                     self.captureFailure = nil
@@ -266,8 +276,11 @@ public class WhoopBleModule: Module {
         // MARK: - Disconnect
 
         Function("disconnect") { [self] in
-            self.connectionManager.disconnect { [weak self] in
-                self?.emitDeviceState()
+            self.connectionManager.bleQueue.async {
+                self.stopManagedHistory()
+                self.connectionManager.disconnect { [weak self] in
+                    self?.emitDeviceState()
+                }
             }
         }
 
@@ -290,6 +303,7 @@ public class WhoopBleModule: Module {
             do {
                 try self.connectionManager.syncOnBleQueue {
                     self.captureSuspended = true
+                    self.stopManagedHistory()
                     self.watchdog.stop()
                     try WhoopBleUploadRuntime.withUploaderForCleanup { uploader in
                         try uploader.purge(cutoff: retainedCutoff)
@@ -307,6 +321,7 @@ public class WhoopBleModule: Module {
                     self.captureDiagnostics = WhoopBleCaptureDiagnostics()
                     self.lastKnownDeviceId = nil
                     self.lastKnownDeviceName = nil
+                    self.lastKnownHistorySupported = false
                     self.connectionManager.disconnect { [weak self] in
                         self?.connectionManager.connectionDiagnostics.clear()
                         self?.emitDeviceState()
@@ -379,13 +394,18 @@ public class WhoopBleModule: Module {
             let connectedPeripheral = connectionManager.connectedPeripheral
             let peripheralId = connectedPeripheral?.identifier.uuidString ?? lastKnownDeviceId
             let peripheralName = connectedPeripheral?.name ?? lastKnownDeviceName
-            return [
+            var summary: [String: Any] = [
                 "id": (peripheralId as Any?) ?? NSNull(),
                 "name": (peripheralName as Any?) ?? NSNull(),
                 "connectionState": connectionManager.state.rawValue,
                 "imuBufferedSamples": try uploader.sampleCount(stream: .imu),
                 "realtimeBufferedSamples": try uploader.sampleCount(stream: .realtime),
             ]
+            if lastKnownHistorySupported, let peripheralId, peripheralId == lastKnownDeviceId,
+               let identifier = UUID(uuidString: peripheralId) {
+                summary["managedHistoryEnabled"] = try uploader.isManagedHistoryEnabled(for: identifier)
+            }
+            return summary
         }
     }
 
@@ -414,6 +434,7 @@ public class WhoopBleModule: Module {
         connectionManager.syncOnBleQueue {
             guard captureFailure == nil else { return }
             captureFailure = error.localizedDescription
+            stopManagedHistory()
             SentrySDK.capture(error: error)
             watchdog.stop()
             connectionManager.disconnect()

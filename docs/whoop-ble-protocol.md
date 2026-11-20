@@ -172,6 +172,62 @@ The WHOOP app performs this sequence on connection:
 9. App sends `HISTORICAL_DATA_RESULT (0x17)` ACKs for each chunk
 10. Concurrent: strap streams `REALTIME_DATA (0x28)` with HR + orientation quaternion at ~1 Hz
 
+### Historical offload checkpoint
+
+The March 29, 2026 WHOOP iOS PacketLogger capture shows the app reading the
+strap's `GET_DATA_RANGE (0x22)` and starting an offload with
+`SEND_HISTORICAL_DATA (0x16)`. Both requests carry a single `00` command-data
+byte. The strap brackets historical records with `METADATA (0x31)` subtypes
+`HISTORY_START (0x01)` and `HISTORY_END (0x02)`. With the captured eight-byte
+header, `HISTORY_END` carries an eight-byte token at frame offsets 21–28
+(payload offsets 13–20). The app echoes `01` followed by that exact token in
+`HISTORICAL_DATA_RESULT (0x17)` using an ATT Write Request. The strap returns
+a command response and advances to the next chunk. See the [retained ATT
+fixture](../packages/mobile/modules/whoop-ble/Tests/fixtures/imu-activation-capture.tsv#L347-L620)
+and the [independent WHOOP 5.0 offload experiments](https://github.com/ryanbr/noop/blob/2a1de7609843b095505274ad6fc811757210be80/docs/BLE_REVERSE_ENGINEERING.md#whoop-50-historical-offload).
+
+Reassembling captured ATT values by characteristic and checking the WHOOP
+payload CRC32 yielded five acknowledged chunks containing 71 `0x2F` R18
+records. The first little-endian word of the token advanced from `116403`
+through `116405`, `116406`, `116407`, and `116408`. The strap then emitted
+`HISTORY_COMPLETE (0x03)`. The next `GET_DATA_RANGE` response reported
+`116408` in all three range fields where the earlier response carried
+`116402`, `116407`, and `116402`. The app sent `0x16` with `00` again. The strap
+returned a `HISTORY_END` token of eight `FF` bytes with zero historical
+records, and the app sent `ABORT_HISTORICAL_TRANSMITS (0x14)`.
+[Packet decoder reference](https://www.wireshark.org/docs/man-pages/tshark.html).
+
+The range change and identical requests support a strap-owned checkpoint.
+The capture spans one uninterrupted WHOOP link. The expected behavior on
+reconnect is a fresh offload request that starts at the strap's unacknowledged
+history. To verify that, capture a disconnect before a chunk acknowledgment
+and another after the strap confirms one. Compare the first returned chunk
+with the last acknowledged token, and use source timestamps to establish
+whether records cover the time the link was down. This capture establishes
+stored R18 replay. Availability of samples from the separate high-rate IMU
+stream during a disconnect remains unverified.
+
+Dofek saves replayed samples from WHOOP sync by default. The optional
+**Dofek-managed history** setting appears in the iPhone's Bluetooth device
+details for a supported strap. Enable it when Dofek is the strap's sole sync
+client. You can revoke WHOOP's Bluetooth permission on this iPhone in
+**Settings → Privacy & Security → Bluetooth**. Enabling takes effect when
+capture starts on the next connection. Disabling stops future Dofek history
+requests and acknowledgments on the current connection. The setting is bound
+to the strap and local upload account. Sign-out and account erasure clear it.
+[Apple Bluetooth permissions](https://support.apple.com/en-us/102267).
+
+The [reconnect handler](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule+ConnectionManagerDelegate.swift)
+restores live stream activation and starts the optional offload after
+notification readiness. The offload accepts the captured format-1 response
+and R18 history layout. The chunk count at `HISTORY_END` payload bytes 9–12
+matched the number of history records, event frames and console frames in all
+five captured chunks. Dofek checks that count and waits for the notification's
+SQLite commit before sending a trim acknowledgment. Ambiguous, missing or
+unsupported historical records leave the chunk unacknowledged. The active
+mode has fixture and simulator coverage. Physical reconnect behavior and
+coverage of an actual outage still require a hardware trace.
+
 ## Authentication / Bonding
 
 The strap requires BLE bonding before accepting any commands:

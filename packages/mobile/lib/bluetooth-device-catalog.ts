@@ -30,6 +30,7 @@ export type BluetoothDevice =
       name: string;
       peripheralId: string | null;
       connectionState: string;
+      managedHistoryEnabled?: boolean;
       diagnostics: WhoopDiagnostics;
     }
   | {
@@ -55,6 +56,9 @@ function toWhoopDevice(summary: WhoopDeviceSummary): BluetoothDevice {
     name: summary.name ?? "WHOOP",
     peripheralId: summary.id,
     connectionState: summary.connectionState,
+    ...(summary.managedHistoryEnabled !== undefined
+      ? { managedHistoryEnabled: summary.managedHistoryEnabled }
+      : {}),
     diagnostics: {
       imuBufferedSamples: summary.imuBufferedSamples,
       realtimeBufferedSamples: summary.realtimeBufferedSamples,

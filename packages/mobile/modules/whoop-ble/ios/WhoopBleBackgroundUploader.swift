@@ -1,20 +1,5 @@
 import Foundation
 
-struct WhoopUploadTaskSnapshot {
-    let identities: Set<String>
-    /// Reservations with both a live request and an OS-managed fallback.
-    let pairedIdentities: Set<String>
-}
-
-protocol WhoopUploadTransport: AnyObject {
-    var onCompletion: WhoopUploadCompletion? { get set }
-    var onAttemptFailure: ((String, Error, Int?) -> Void)? { get set }
-    var onFinishEvents: (() -> Void)? { get set }
-    func allTasks(_ completion: @escaping (WhoopUploadTaskSnapshot) -> Void)
-    func start(request: URLRequest, file: URL, identity: String, attempt: Int)
-    func cancel(identity: String)
-}
-
 struct WhoopUploadError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
@@ -162,6 +147,14 @@ final class WhoopBleBackgroundUploader: NSObject {
                 schedule(partial: false, index: true)
             }
         }
+    }
+
+    func isManagedHistoryEnabled(for peripheralId: UUID) throws -> Bool {
+        try queue.sync { try store.isManagedHistoryEnabled(for: peripheralId) }
+    }
+
+    func setManagedHistoryEnabled(_ enabled: Bool, for peripheralId: UUID) throws {
+        try queue.sync { try store.setManagedHistoryEnabled(enabled, for: peripheralId) }
     }
 
     func flush() throws {
