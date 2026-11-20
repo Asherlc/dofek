@@ -15,12 +15,13 @@ description: Use when asked to open a specific Dofek Storybook story for review 
    browser Storybook with the Vite builder. [Canvas Comments requirements](https://storybook.js.org/addons/storybook-addon-canvas-comments#requirements)
 2. Reuse the matching workspace's running Storybook if it serves the requested
    story and has **UI Feedback** when annotation is needed. Otherwise start the
-   repository script in a persistent workspace terminal. Web Storybook already
-   registers Canvas Comments. Use an available port and leave other servers
+   repository script in a persistent workspace terminal. Both browser Storybooks
+   register Canvas Comments. Use an available port and leave other servers
    running. From the repository root, for example:
 
    ```bash
    rtk proxy mise exec -- pnpm storybook:web --host 127.0.0.1 --port 6106 --exact-port --ci --no-open --disable-telemetry
+   rtk proxy mise exec -- pnpm storybook:mobile:web --host 127.0.0.1 --port 6107 --exact-port --ci --no-open --disable-telemetry
    ```
 
    For a Vite Storybook without Canvas Comments that needs annotation, use
