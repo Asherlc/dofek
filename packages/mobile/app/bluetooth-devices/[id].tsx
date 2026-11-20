@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { WhoopBatteryStatus } from "../../components/WhoopBatteryStatus";
 import {
   type BluetoothDevice,
   getBluetoothDevices,
@@ -169,6 +170,14 @@ export default function BluetoothDeviceDetailScreen() {
   }
 
   const connected = isConnected(device.connectionState);
+  const hasCurrentBattery =
+    device.connectionState === "ready" || device.connectionState === "streaming";
+  const battery =
+    device.kind === "whoop" && device.battery
+      ? hasCurrentBattery
+        ? device.battery
+        : { percentage: null, isCharging: null }
+      : undefined;
   const connectionAction: DeviceAction = connected ? "disconnect" : "connect";
   const connectionLabel = connected ? `Disconnect ${device.name}` : `Connect ${device.name}`;
 
@@ -176,6 +185,15 @@ export default function BluetoothDeviceDetailScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>{device.name}</Text>
       <Text style={styles.connectionState}>{device.connectionState}</Text>
+
+      {battery ? (
+        <View style={[styles.card, styles.batteryCard]}>
+          <Text accessibilityRole="header" style={styles.cardTitle}>
+            Battery
+          </Text>
+          <WhoopBatteryStatus {...battery} style={styles.batteryReadout} />
+        </View>
+      ) : null}
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Native diagnostics</Text>
@@ -321,6 +339,15 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: fontWeight.bold,
     textTransform: "uppercase",
+  },
+  batteryCard: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  batteryReadout: {
+    maxWidth: "100%",
   },
   primaryDiagnostic: {
     color: colors.text,

@@ -39,10 +39,12 @@ final class WhoopBlePeripheralCallbackTests: XCTestCase {
             type: WhoopBleConstants.dataFromStrapUUID(forService: service.uuid),
             properties: .notify, value: nil, permissions: .readable)
         service.characteristics = [command, data]
+        owned.services = [service]
         manager.syncOnBleQueue {
             manager.setConnectedPeripheral(owned)
             manager.autoReconnect = true
             manager.setState(.discoveringServices)
+            manager.handleServicesDiscovered(owned)
             manager.handleCharacteristicsDiscovered(owned, service: service)
             XCTAssertEqual(manager.state, .subscribing)
 
@@ -163,7 +165,7 @@ final class WhoopBlePeripheralCallbackTests: XCTestCase {
             peripheral.state = .connected
             manager.handlePeripheralConnected(peripheral)
             XCTAssertEqual(manager.state, .discoveringServices)
-            XCTAssertEqual(peripheral.discoveredServices, WhoopBleConstants.allServiceUUIDs + [CBUUID(string: "180A")])
+            XCTAssertEqual(peripheral.discoveredServices, WhoopBleConstants.connectionServiceUUIDs)
         }
     }
 

@@ -377,12 +377,17 @@ public class WhoopBleModule: Module {
             let connectedPeripheral = connectionManager.connectedPeripheral
             let peripheralId = connectedPeripheral?.identifier.uuidString ?? lastKnownDeviceId
             let peripheralName = connectedPeripheral?.name ?? lastKnownDeviceName
+            let battery = connectionManager.batteryStatus
             return [
                 "id": (peripheralId as Any?) ?? NSNull(),
                 "name": (peripheralName as Any?) ?? NSNull(),
                 "connectionState": connectionManager.state.rawValue,
                 "imuBufferedSamples": try uploader.sampleCount(stream: .imu),
                 "realtimeBufferedSamples": try uploader.sampleCount(stream: .realtime),
+                "battery": [
+                    "percentage": (battery.percentage as Any?) ?? NSNull(),
+                    "isCharging": (battery.isCharging as Any?) ?? NSNull(),
+                ],
             ]
         }
     }

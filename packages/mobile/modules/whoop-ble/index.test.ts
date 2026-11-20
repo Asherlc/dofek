@@ -290,6 +290,84 @@ describe("WhoopBle native bridge", () => {
   });
 });
 
+const legacyDeviceSummary = {
+  id: "whoop-native",
+  name: "WHOOP MG",
+  connectionState: "ready",
+  imuBufferedSamples: 12,
+  realtimeBufferedSamples: 4,
+};
+
+function subscribeToDeviceStateEvents() {
+  const listener = vi.fn();
+  nativeModule.addListener.mockReturnValue({ remove: vi.fn() });
+  addDeviceStateListener(listener);
+  const emit = nativeModule.addListener.mock.calls[0]?.[1];
+  if (typeof emit !== "function") {
+    throw new Error("Expected native device-state listener");
+  }
+  expect(nativeModule.addListener).toHaveBeenCalledWith("onDeviceStateChanged", emit);
+  return { listener, emit };
+}
+
+describe("native battery readings", () => {
+  it.each([
+    {
+      label: "an older native summary",
+      nativeBattery: undefined,
+      percentage: null,
+      isCharging: null,
+    },
+    {
+      label: "a fractional reading",
+      nativeBattery: { percentage: 49.9, isCharging: false },
+      percentage: 49.9,
+      isCharging: false,
+    },
+    {
+      label: "a measured zero",
+      nativeBattery: { percentage: 0, isCharging: false },
+      percentage: 0,
+      isCharging: false,
+    },
+    {
+      label: "explicit unknown readings",
+      nativeBattery: { percentage: null, isCharging: null },
+      percentage: null,
+      isCharging: null,
+    },
+  ])(
+    "decodes $label in the snapshot and state event",
+    async ({ nativeBattery, percentage, isCharging }) => {
+      const raw = nativeBattery
+        ? { ...legacyDeviceSummary, battery: nativeBattery }
+        : legacyDeviceSummary;
+      const expected = { ...legacyDeviceSummary, battery: { percentage, isCharging } };
+      nativeModule.getDeviceSummary.mockResolvedValue(raw);
+      const { listener, emit } = subscribeToDeviceStateEvents();
+
+      await expect(getDeviceSummary()).resolves.toEqual(expected);
+      emit(raw);
+      expect(listener).toHaveBeenCalledWith(expected);
+    },
+  );
+
+  it.each([
+    { label: "negative percentage", percentage: -0.1, isCharging: false },
+    { label: "percentage above 100", percentage: 100.1, isCharging: true },
+    { label: "text percentage", percentage: "57", isCharging: true },
+    { label: "numeric charging state", percentage: 57, isCharging: 0 },
+  ])("rejects $label in the snapshot and state event", async ({ percentage, isCharging }) => {
+    const raw = { ...legacyDeviceSummary, battery: { percentage, isCharging } };
+    nativeModule.getDeviceSummary.mockResolvedValue(raw);
+    const { listener, emit } = subscribeToDeviceStateEvents();
+
+    await expect(getDeviceSummary()).rejects.toThrow(/battery/);
+    expect(() => emit(raw)).toThrow(/battery/);
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
+
 describe("native upload ownership", () => {
   it("awaits configuring, flushing, and disabling native uploads", async () => {
     const bridge = await import("./index");

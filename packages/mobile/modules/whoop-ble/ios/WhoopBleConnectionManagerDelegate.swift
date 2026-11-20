@@ -22,4 +22,11 @@ protocol WhoopBleConnectionManagerDelegate: AnyObject {
 
     /// Called when a command response arrives on CMD_FROM_STRAP.
     func connectionManager(_ manager: WhoopBleConnectionManager, didReceiveCommandResponse data: Data)
+
+    /// Called on the BLE queue when either observed battery fact changes or clears.
+    func connectionManager(_: WhoopBleConnectionManager, didUpdateBatteryStatus: WhoopBleBatteryStatus)
+}
+
+extension WhoopBleConnectionManagerDelegate {
+    func connectionManager(_: WhoopBleConnectionManager, didUpdateBatteryStatus _: WhoopBleBatteryStatus) {}
 }

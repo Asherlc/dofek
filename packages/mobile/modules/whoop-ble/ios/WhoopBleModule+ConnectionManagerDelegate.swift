@@ -75,6 +75,10 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         emitDeviceState()
     }
 
+    func connectionManager(_: WhoopBleConnectionManager, didUpdateBatteryStatus _: WhoopBleBatteryStatus) {
+        emitDeviceState()
+    }
+
     func connectionManager(
         _ manager: WhoopBleConnectionManager,
         didReceiveData data: Data

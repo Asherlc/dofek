@@ -31,7 +31,7 @@ export type BluetoothDevice =
       peripheralId: string | null;
       connectionState: string;
       diagnostics: WhoopDiagnostics;
-      battery?: { percentage: number | null; isCharging: boolean | null };
+      battery?: WhoopDeviceSummary["battery"];
     }
   | {
       id: string;
@@ -56,6 +56,7 @@ function toWhoopDevice(summary: WhoopDeviceSummary): BluetoothDevice {
     name: summary.name ?? "WHOOP",
     peripheralId: summary.id,
     connectionState: summary.connectionState,
+    battery: summary.battery,
     diagnostics: {
       imuBufferedSamples: summary.imuBufferedSamples,
       realtimeBufferedSamples: summary.realtimeBufferedSamples,
