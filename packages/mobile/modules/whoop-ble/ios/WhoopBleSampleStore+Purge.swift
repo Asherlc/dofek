@@ -59,6 +59,8 @@ extension WhoopBleSampleStore {
         try execute("UPDATE stats SET received = 0, confirmed = 0, erased = 0, cleared = 0, lastConfirmed = NULL")
         onStage(WhoopCleanupStage("store_delete_samples"))
         try execute("DELETE FROM samples")
+        // Whole purge drops staged summaries without decoding or copying them.
+        try execute("DELETE FROM incoming_samples")
         onStage(WhoopCleanupStage("store_delete_batches"))
         try execute("DELETE FROM batches")
         onStage(WhoopCleanupStage("store_clear_binding"))

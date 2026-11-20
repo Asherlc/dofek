@@ -130,4 +130,57 @@ final class WhoopBleUploadBootstrapTests: XCTestCase {
         _ = try service.diagnostics()
         wait(for: [completed], timeout: 2)
     }
+
+    func testFailedColdCleanupRetainsTemporaryUploaderUntilCleanupSucceeds() throws {
+        let (temporary, _) = try uploader()
+        let (normal, _) = try uploader()
+        var normalFactoryRuns = 0
+        let bootstrap = WhoopBleUploadBootstrap(makeUploader: {
+            normalFactoryRuns += 1
+            return normal
+        }, reportError: { XCTFail("Unexpected bootstrap error: \($0)") })
+
+        // Cold cleanup fails; the temporary service is retained privately, not published.
+        XCTAssertThrowsError(try bootstrap.withUploaderForCleanup(
+            makeCleanupUploader: { temporary },
+            operation: { _ in throw OpenError() }
+        )) { XCTAssertTrue($0 is OpenError) }
+
+        // Ordinary loads reject cleanup-incomplete without running the normal factory,
+        // so no second transport/session with the fixed identifier is created.
+        XCTAssertThrowsError(try bootstrap.shared()) {
+            XCTAssertTrue($0 is WhoopBleUploadBootstrap.CleanupIncompleteError)
+        }
+        XCTAssertEqual(normalFactoryRuns, 0)
+        let prepareRejected = expectation(description: "prepare rejected")
+        bootstrap.prepare { error in
+            XCTAssertTrue(error is WhoopBleUploadBootstrap.CleanupIncompleteError)
+            prepareRejected.fulfill()
+        }
+        wait(for: [prepareRejected], timeout: 2)
+        XCTAssertEqual(normalFactoryRuns, 0)
+
+        // A successful retry reuses the SAME temporary service and publishes it.
+        let retried = try bootstrap.withUploaderForCleanup(
+            makeCleanupUploader: { XCTFail("Must reuse the retained temporary uploader"); return normal },
+            operation: { service in service }
+        )
+        XCTAssertTrue(retried === temporary)
+        XCTAssertTrue(try bootstrap.shared() === temporary)
+        XCTAssertEqual(normalFactoryRuns, 0)
+    }
+
+    func testFailedCleanupOnPublishedUploaderLeavesItUsable() throws {
+        let (service, _) = try uploader()
+        let bootstrap = WhoopBleUploadBootstrap(makeUploader: { service }, reportError: {
+            XCTFail("Unexpected bootstrap error: \($0)")
+        })
+        XCTAssertTrue(try bootstrap.shared() === service)
+        XCTAssertThrowsError(try bootstrap.withUploaderForCleanup(
+            makeCleanupUploader: { XCTFail("Should reuse the published uploader"); return service },
+            operation: { _ in throw OpenError() }
+        )) { XCTAssertTrue($0 is OpenError) }
+        // The already-normal service stays published and unguarded.
+        XCTAssertTrue(try bootstrap.shared() === service)
+    }
 }

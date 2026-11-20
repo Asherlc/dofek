@@ -5,10 +5,20 @@ import Sentry
 /// Dofek application bootstrap; excluded from the standalone protocol package.
 enum WhoopBleUploadRuntime {
     static let sessionIdentifier = "app.dofek.whoop-ble.upload.v1"
-    private static let bootstrap = WhoopBleUploadBootstrap(makeUploader: makeUploader, reportError: reportNativeError)
+    private static let bootstrap = WhoopBleUploadBootstrap(makeUploader: { try makeUploader() }, reportError: reportNativeError)
 
     static func shared() throws -> WhoopBleBackgroundUploader {
         try bootstrap.shared()
+    }
+
+    /// Cold whole-account cleanup cannot decode a staged chunk on reopen. The
+    /// bootstrap builds a cleanup-only service when none is cached and caches
+    /// it only after the operation succeeds.
+    static func withUploaderForCleanup<T>(_ operation: (WhoopBleBackgroundUploader) throws -> T) throws -> T {
+        try bootstrap.withUploaderForCleanup(
+            makeCleanupUploader: { try makeUploader(forCleanup: true) },
+            operation: operation
+        )
     }
 
     static func prepare(onFailure: @escaping (Error) -> Void) {
@@ -19,18 +29,20 @@ enum WhoopBleUploadRuntime {
         bootstrap.handleBackgroundEvents(completionHandler: completionHandler)
     }
 
-    private static func makeUploader() throws -> WhoopBleBackgroundUploader {
+    private static func makeUploader(forCleanup: Bool = false) throws -> WhoopBleBackgroundUploader {
         let base = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appendingPathComponent("WhoopBleUploads", isDirectory: true)
-        let store = try WhoopBleSampleStore(directory: base)
-        if let cutoff = UserDefaults.standard.object(forKey: "dofek_device_erasure_cutoff_v1") as? Date {
+        let store = try WhoopBleSampleStore(directory: base, skipInboxCutoffReconciliation: forCleanup)
+        if !forCleanup,
+           let cutoff = UserDefaults.standard.object(forKey: "dofek_device_erasure_cutoff_v1") as? Date {
             try store.advanceErasureCutoff(to: cutoff)
         }
         return try WhoopBleBackgroundUploader(
             store: store,
             directory: base.appendingPathComponent("bodies", isDirectory: true),
             transport: WhoopURLSessionTransport(), reportError: reportNativeError,
-            reportUploadOutcome: reportNativeUploadOutcome
+            reportUploadOutcome: reportNativeUploadOutcome,
+            skipStartupInboxIndexing: forCleanup
         )
     }
 

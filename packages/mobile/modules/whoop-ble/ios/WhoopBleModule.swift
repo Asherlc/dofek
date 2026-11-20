@@ -305,7 +305,9 @@ public class WhoopBleModule: Module {
                     self.captureSuspended = true
                     self.stopManagedHistory()
                     self.watchdog.stop()
-                    try self.uploader.purge(cutoff: retainedCutoff)
+                    try WhoopBleUploadRuntime.withUploaderForCleanup { uploader in
+                        try uploader.purge(cutoff: retainedCutoff)
+                    }
                     self.frameParser.reset()
                     self.cmdFrameParser.reset()
                     self.orientationProcessor.reset()
