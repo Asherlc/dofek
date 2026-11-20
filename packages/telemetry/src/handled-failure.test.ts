@@ -129,4 +129,60 @@ describe("classifyHandledFailure", () => {
     expect(classifyHandledFailure(null)).toBeNull();
     expect(classifyHandledFailure(undefined)).toBeNull();
   });
+
+  const nativeWhoopTimeout = () =>
+    Object.assign(new Error("Connection timed out"), { code: "TIMEOUT" });
+
+  it.each(["whoop-ble-init-sync", "whoop-ble-foreground-sync"])(
+    "classifies the native WHOOP BLE connection timeout under %s",
+    (source) => {
+      expect(classifyHandledFailure(nativeWhoopTimeout(), source)).toBe("bluetooth_timeout");
+      expect(
+        classifyHandledFailure(new Error("connect", { cause: nativeWhoopTimeout() }), source),
+      ).toBe("bluetooth_timeout");
+    },
+  );
+
+  it.each([undefined, "react-query", "whoop-ble-start-streaming", "whoop-ble-native-capture"])(
+    "retains the WHOOP timeout outside the approved connection sources (%s)",
+    (source) => {
+      expect(classifyHandledFailure(nativeWhoopTimeout(), source)).toBeNull();
+    },
+  );
+
+  it.each([
+    ["message only", new Error("Connection timed out")],
+    [
+      "a different native code",
+      Object.assign(new Error("Connection timed out"), { code: "DISCONNECTED" }),
+    ],
+    ["a non-Error object", { code: "TIMEOUT", message: "Connection timed out" }],
+  ])("retains the %s without a typed native TIMEOUT Error", (_label, error) => {
+    expect(classifyHandledFailure(error, "whoop-ble-init-sync")).toBeNull();
+  });
+
+  it("keeps an unexpected underlying cause reportable under a WHOOP timeout", () => {
+    expect(
+      classifyHandledFailure(
+        Object.assign(new Error("Connection timed out"), {
+          code: "TIMEOUT",
+          cause: new Error("Failed to write value."),
+        }),
+        "whoop-ble-init-sync",
+      ),
+    ).toBeNull();
+  });
+
+  it.each([
+    [new SyntaxError("Connection timed out", { cause: nativeWhoopTimeout() }), null],
+    [
+      Object.assign(nativeWhoopTimeout(), { data: { handledFailure: "invalid_credentials" } }),
+      "invalid_credentials",
+    ],
+  ])(
+    "respects existing leaf and credential protections under a WHOOP timeout (%#)",
+    (error, expected) => {
+      expect(classifyHandledFailure(error, "whoop-ble-init-sync")).toBe(expected);
+    },
+  );
 });
