@@ -172,12 +172,22 @@ HTTP 5xx outcomes remain in the existing operational counter and are omitted
 from these breadcrumbs. Transport and origin-validation errors remain reportable
 even if the task exposes a raw 5xx status.
 
-Captured samples are committed to [SQLite](ios/WhoopBleSampleStore.swift) before
-scheduling delivery. All streams decoded from one BLE notification commit in one
-transaction; an invalid stream rolls back that notification's samples and counters
-together. Capture never buffers across notifications, and FULL synchronous
-durability remains enabled. Grouping transaction work follows Apple's
+All streams decoded from one BLE notification commit to
+[SQLite](ios/WhoopBleSampleStore.swift) in a single FULL synchronous
+transaction before the capture callback returns. The transaction writes one
+unindexed inbox row per retained stream. Each row holds timestamps and validated
+sample payloads in a binary property list compressed with Foundation's
+[LZFSE](https://developer.apple.com/documentation/foundation/nsdata/compressionalgorithm).
+An invalid stream rolls back the entire notification.
+
+Startup, configuration, explicit flush, and the existing five-second capture
+schedule move inbox rows into the indexed upload queue. The move inserts
+samples in capture order, updates received totals, and deletes the inbox rows
+in one transaction. Upload acknowledgments work on the indexed queue.
+Diagnostics include committed inbox rows immediately, including their oldest
+and newest timestamps. Grouping index updates follows Apple's
 [disk-write guidance](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
+
 The queue uses 1 KiB SQLite pages to reduce bytes written per notification.
 Opening an older queue rebuilds it in place once, before capture or upload uses
 it, then restores WAL mode. If startup is interrupted, the next open resumes
@@ -185,10 +195,14 @@ from the persisted page size. The one-time rebuild requires temporary free
 space and preserves pending batches, account ownership, and the erasure cutoff.
 [SQLite WAL format](https://www.sqlite.org/fileformat2.html#wal_file_format) and
 [SQLite database rebuilds](https://www.sqlite.org/lang_vacuum.html).
-Rows survive app recreation and are not evicted at the old
-memory limits. Account changes and sign-out purge the old queue and cancel its
-tasks; account erasure also retains its monotonic device cutoff. Queue files and
-transport bodies are excluded from backups and use locked-device-accessible
+Rows survive app recreation and can wait offline. Account changes and sign-out
+purge both the inbox and indexed queue and cancel their tasks. The SQLite
+ownership trigger also clears inbox rows when an older build rotates the queue
+generation. The store reapplies the retained device cutoff to staged rows on
+reopen. Whole-account cleanup can delete unreadable inbox contents without
+decoding them, including on a cold launch.
+
+Queue files and transport bodies are excluded from backups and use locked-device-accessible
 [iOS file protection](https://developer.apple.com/documentation/foundation/fileprotectiontype/completeuntilfirstuserauthentication).
 
 For stalled session cleanup, query Sentry's `dofek-mobile` logs with

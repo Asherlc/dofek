@@ -39612,3 +39612,40 @@ Local qualification and CI are separate from production throughput acceptance. T
   [Traefik log coverage](axiom-observability-runbook.md#traefik-server-error-access-logs) · [Cloudflare 408 behavior](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/4xx-client-error/error-408/) · [Request-log availability](https://developers.cloudflare.com/logs/logpull/).
 - A local test of the shipped Swift uploader and SQLite outbox confirmed that an injected 408 preserves the batch and that a later valid acknowledgment retires the same reservation. It used a stub transport, so the production response issuer was outside the test's scope.
 - Retrospective: matching the wire batch UUID and queue generation across Sentry and Axiom exposed later delivery that the error record alone could not show. For recurrence, compare native outcomes and server publication for that batch, and use the original response's correlation metadata to identify its issuer. See the [WHOOP diagnostic procedure](whoop-ble-protocol.md#diagnosing-capture-upload-and-visibility).
+
+## 2026-11-19 — WHOOP capture disk-write warning recurred after the page-size reduction
+
+- At 00:18:11 UTC on November 20, MetricKit reported 4.29 GB written on iOS
+  build `1795128463` (release `d474d1255`), which already contained the 1 KiB
+  SQLite page change. This was the fourth warning for one user. The stack shows
+  the Bluetooth capture callback committing to the SQLite write-ahead log.
+  No thread crashed. Later upload acknowledgments appeared in Sentry. Any
+  effect on sample completeness remains unverified.
+  [Sentry event](https://east-bay-software.sentry.io/issues/7852012407/events/00ad62ccaff34f4999c3dcad47e846b5/)
+  · [Prior page-size fix](https://github.com/Asherlc/dofek/pull/3413)
+  · [Apple MetricKit](https://developer.apple.com/documentation/metrickit/mxdiskwriteexceptiondiagnostic).
+- The capture transaction updated the secondary indexes and counters for
+  every notification that produced samples. Axiom snapshots before the
+  warning, from 23:55:20.643 to 23:56:18.830 UTC, recorded 5,800 additional
+  IMU samples and 58 each for realtime and raw sensor records. That workload
+  guided the replay. An uncompressed inbox that copied one row per sample
+  increased bytes written in the IMU-heavy replay.
+  [Axiom query runbook](axiom-observability-runbook.md#queries)
+  · [Previous capture path](https://github.com/Asherlc/dofek/blob/d474d125519892391a46f796f8b0d3343d6badc5/packages/mobile/modules/whoop-ble/ios/WhoopBleSampleStore.swift#L167-L203).
+- The fix commits each notification to a compressed SQLite inbox before the
+  callback returns. The existing capture schedule batches index and counter
+  updates. The move, counters, and inbox deletion commit together. The SQLite
+  generation trigger clears staged rows when earlier binaries change the queue
+  owner. Native tests cover reopening, failed moves, erasure across both tables,
+  and cold whole-account cleanup with an unreadable payload.
+  [Queue implementation](../packages/mobile/modules/whoop-ble/README.md)
+  · [SQLite WAL](https://www.sqlite.org/wal.html).
+- With indexing every five notifications, the native replay measured 83 versus
+  150 WAL frames for the low-fanout fixture (44.7% fewer) and 6,224 versus 7,457
+  for the 120-notification fixture with 100 IMU samples per notification (16.5%
+  fewer). The IMU fixture uses the production serializer. These measurements
+  cover capture and indexing. A physical iPhone was offline during validation.
+  Use a sustained capture on the rebuilt app and compare disk writes per
+  received sample in Instruments before closing the Sentry issue.
+  [Native WAL replay](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleStore%2BInboxWriteTests.swift)
+  · [Apple disk-write profiling](https://developer.apple.com/documentation/xcode/reducing-disk-writes).

@@ -74,7 +74,7 @@ final class WhoopBleSampleStore {
     }
     var secureDeleteToRestore: Int?
     private let lock = NSLock()
-    private let formatter: ISO8601DateFormatter = {
+    let formatter: ISO8601DateFormatter = {
         let value = ISO8601DateFormatter()
         value.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return value
@@ -84,8 +84,14 @@ final class WhoopBleSampleStore {
         init(_ message: String) { errorDescription = message }
     }
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    let inboxEncoder: PropertyListEncoder = {
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        return encoder
+    }()
+    let inboxDecoder = PropertyListDecoder()
 
-    init(directory: URL) throws {
+    init(directory: URL, skipInboxCutoffReconciliation: Bool = false) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var directory = directory
         var resources = URLResourceValues()
@@ -105,7 +111,7 @@ final class WhoopBleSampleStore {
         }
         sqlite3_busy_timeout(database, 5000)
         do {
-            try prepareDatabase()
+            try prepareDatabase(skipInboxCutoffReconciliation: skipInboxCutoffReconciliation)
             #if os(iOS)
             try FileManager.default.setAttributes(
                 [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: path
@@ -120,13 +126,27 @@ final class WhoopBleSampleStore {
 
     deinit { sqlite3_close(database) }
 
-    private func prepareDatabase() throws {
+    private func prepareDatabase(skipInboxCutoffReconciliation: Bool) throws {
         try configureJournal()
         try execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         try execute("""
             CREATE TABLE IF NOT EXISTS samples (
                 id INTEGER PRIMARY KEY, stream TEXT NOT NULL, device TEXT NOT NULL,
                 timestamp REAL NOT NULL, payload BLOB NOT NULL, batch TEXT)
+            """)
+        // Staging inbox: one compressed row per retained stream of one notification.
+        // No secondary indexes; promotion drains it in rowid order into `samples`.
+        try execute("""
+            CREATE TABLE IF NOT EXISTS incoming_samples (
+                id INTEGER PRIMARY KEY, stream TEXT NOT NULL, device TEXT NOT NULL,
+                count INTEGER NOT NULL, oldest REAL NOT NULL, newest REAL NOT NULL, payload BLOB NOT NULL)
+            """)
+        // Older binaries rotate ownership with INSERT OR REPLACE on this key.
+        // Fencing the inbox here prevents their staged rows surviving a downgrade.
+        try execute("""
+            CREATE TRIGGER IF NOT EXISTS incoming_samples_clear_on_generation
+            AFTER INSERT ON metadata WHEN NEW.key = 'generation'
+            BEGIN DELETE FROM incoming_samples; END
             """)
         try execute("CREATE INDEX IF NOT EXISTS samples_stream_device ON samples(stream, device, id)")
         try execute("CREATE INDEX IF NOT EXISTS samples_stream_id ON samples(stream, id)")
@@ -149,6 +169,14 @@ final class WhoopBleSampleStore {
         }
         if try metadata("generation") == nil { try setMetadata("generation", UUID().uuidString) }
         try finishPendingPurgeLocked()
+        // A previous binary could advance the durable cutoff without knowing
+        // about the inbox. Reconcile staged rows before any read or reservation.
+        // Cold whole-account cleanup skips this: it purges staged rows without
+        // decoding them and must not fail on a corrupt chunk first.
+        if !skipInboxCutoffReconciliation,
+           let cutoff = try metadata("cutoff").flatMap(Double.init) {
+            try transaction { try applyInboxErasure(cutoff: cutoff) }
+        }
     }
 
     var binding: WhoopUploadBinding? { get throws { try synchronized { try readBinding() } } }
@@ -164,50 +192,23 @@ final class WhoopBleSampleStore {
         }
     }
 
-    func append(deviceId: String, samplesByStream: [WhoopUploadStream: [[String: Any]]]) throws {
-        try transaction {
-            guard try readBinding() != nil else { throw StoreError("Configure an authenticated WHOOP account before capture") }
-            for stream in WhoopUploadStream.allCases {
-                guard let samples = samplesByStream[stream], !samples.isEmpty else { continue }
-                try appendLocked(stream: stream, deviceId: deviceId, samples: samples)
-            }
-        }
-    }
-
-    private func appendLocked(stream: WhoopUploadStream, deviceId: String, samples: [[String: Any]]) throws {
-        let cutoff = try metadata("cutoff").flatMap(Double.init)
-        try execute("UPDATE stats SET received = received + ? WHERE stream = ?", [samples.count, stream.rawValue])
-        // One prepared statement per notification, including larger replay fixtures.
-        let statement = try prepare("INSERT INTO samples(stream, device, timestamp, payload) VALUES (?, ?, ?, ?)")
-        defer { sqlite3_finalize(statement) }
-        var erased = 0
-        for sample in samples {
-            guard let timestamp = sample["timestamp"] as? String,
-                  let date = formatter.date(from: timestamp) ?? ISO8601DateFormatter().date(from: timestamp) else {
-                throw StoreError("WHOOP sample requires a valid ISO8601 timestamp")
-            }
-            guard JSONSerialization.isValidJSONObject(sample) else { throw StoreError("WHOOP sample is not valid JSON") }
-            let erasureTime = stream == .sensorRecords
-                ? WhoopBleSensorRecord.erasureTime(sample: sample, receivedAt: date)
-                : date.timeIntervalSince1970
-            if let cutoff, erasureTime <= cutoff { erased += 1; continue }
-            let payload = try JSONSerialization.data(withJSONObject: sample, options: [.sortedKeys])
-            guard payload.count <= stream.bodyLimit - 2048 else {
-                throw StoreError("WHOOP sensor record exceeds the upload body limit")
-            }
-            sqlite3_reset(statement)
-            sqlite3_clear_bindings(statement)
-            try bind([stream.rawValue, deviceId, erasureTime, payload], to: statement)
-            try finish(statement)
-        }
-        try execute("UPDATE stats SET erased = erased + ? WHERE stream = ?", [erased, stream.rawValue])
-    }
-
     func reserve(
         stream: WhoopUploadStream,
         limit: Int = 500,
+        includeInbox: Bool = true,
         reportWrites: ((WhoopSQLiteWriteMeasurement?) -> Void)? = nil
     ) throws -> WhoopStoredBatch? {
+        // Promotion runs before the measured transaction so staging writes never
+        // contaminate reservation-only write telemetry. An existing reservation or
+        // a nonpositive limit must never wait on an unreadable inbox.
+        if includeInbox {
+            let shouldDrain = try synchronized {
+                guard limit > 0, try readBinding() != nil else { return false }
+                let batches = try readBatches()
+                return !batches.contains { $0.stream == stream }
+            }
+            if shouldDrain { try drainInbox() }
+        }
         var reserved = false
         let measurementCallback: ((WhoopSQLiteWriteMeasurement?) -> Void)?
         if let reportWrites {
@@ -278,20 +279,13 @@ final class WhoopBleSampleStore {
     }
 
     func pendingBatches() throws -> [WhoopStoredBatch] { try synchronized { try readBatches() } }
-    func queuedCount(stream: WhoopUploadStream, limit: Int = 500) throws -> Int {
-        guard limit > 0 else { return 0 }
-        return try synchronized {
-            let result = try rows("""
-                SELECT received - confirmed - erased - cleared AS count FROM stats WHERE stream = ?
-                """, [stream.rawValue])
-            guard let row = result.first else { throw StoreError("WHOOP queue count is missing") }
-            return min(limit, try field("count", in: row) as Int)
-        }
-    }
-    func advanceErasureCutoff(to date: Date) throws {
+    func advanceErasureCutoff(to date: Date, discardInbox: Bool = false) throws {
         try transaction {
             let cutoff = max(try metadata("cutoff").flatMap(Double.init) ?? -Double.greatestFiniteMagnitude, date.timeIntervalSince1970)
             try setMetadata("cutoff", String(cutoff))
+            // Whole-account erase covers every staged row without decoding it;
+            // indexed rows still use the supplied real cutoff.
+            try applyInboxErasure(cutoff: discardInbox ? Double.greatestFiniteMagnitude : cutoff)
             for stream in WhoopUploadStream.allCases {
                 try execute("""
                     UPDATE stats SET erased = erased +
@@ -304,38 +298,7 @@ final class WhoopBleSampleStore {
         }
     }
 
-    func statistics(stream: WhoopUploadStream) throws -> [String: Any] {
-        try synchronized {
-            let counts = try rows("""
-                SELECT
-                    (SELECT MIN(timestamp) FROM samples WHERE stream = ?) AS oldest,
-                    (SELECT MAX(timestamp) FROM samples WHERE stream = ?) AS newest
-                """, [stream.rawValue, stream.rawValue])
-            guard let row = counts.first,
-                  let counters = try rows("""
-                    SELECT *, received - confirmed - erased - cleared AS count FROM stats WHERE stream = ?
-                    """, [stream.rawValue]).first else {
-                throw StoreError("WHOOP queue diagnostics are missing")
-            }
-            func date(_ value: Any?) -> Any {
-                (value as? Double).map { formatter.string(from: Date(timeIntervalSince1970: $0)) } ?? (NSNull() as Any)
-            }
-            return [
-                "count": try field("count", in: counters) as Int,
-                "oldestTimestamp": date(row["oldest"]),
-                "newestTimestamp": date(row["newest"]),
-                "receivedCount": try field("received", in: counters) as Int,
-                "confirmedCount": try field("confirmed", in: counters) as Int,
-                "overflowDiscardedCount": 0,
-                "erasureDiscardedCount": try field("erased", in: counters) as Int,
-                "clearedCount": try field("cleared", in: counters) as Int,
-                "legacyDrainedCount": 0,
-                "lastConfirmedAt": date(counters["lastConfirmed"]),
-            ]
-        }
-    }
-
-    private func readBinding() throws -> WhoopUploadBinding? {
+    func readBinding() throws -> WhoopUploadBinding? {
         guard let value = try metadata("binding") else { return nil }
         return try JSONDecoder().decode(WhoopUploadBinding.self, from: Data(value.utf8))
     }
@@ -372,7 +335,7 @@ final class WhoopBleSampleStore {
         lock.lock(); defer { lock.unlock() }
         return try action()
     }
-    private func transaction<T>(
+    func transaction<T>(
         onStage: WhoopCleanupStageHandler = { _ in },
         reportWrites: ((WhoopSQLiteWriteMeasurement?) -> Void)? = nil,
         _ action: () throws -> T
@@ -416,12 +379,12 @@ final class WhoopBleSampleStore {
         onStage(WhoopCleanupStage("store_completed"))
         return result
     }
-    private func prepare(_ sql: String) throws -> OpaquePointer {
+    func prepare(_ sql: String) throws -> OpaquePointer {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else { throw databaseError() }
         return statement
     }
-    private func bind(_ values: [Any], to statement: OpaquePointer) throws {
+    func bind(_ values: [Any], to statement: OpaquePointer) throws {
         for (offset, value) in values.enumerated() {
             let index = Int32(offset + 1)
             let result: Int32
@@ -438,7 +401,7 @@ final class WhoopBleSampleStore {
             guard result == SQLITE_OK else { throw databaseError() }
         }
     }
-    private func finish(_ statement: OpaquePointer) throws {
+    func finish(_ statement: OpaquePointer) throws {
         var result = sqlite3_step(statement)
         while result == SQLITE_ROW { result = sqlite3_step(statement) }
         guard result == SQLITE_DONE else { throw databaseError() }
@@ -448,34 +411,39 @@ final class WhoopBleSampleStore {
         try bind(values, to: statement)
         try finish(statement)
     }
+    /// Decode the row a statement is currently positioned on. Callers step the
+    /// statement themselves so large moves never materialize every chunk.
+    func currentRow(_ statement: OpaquePointer) throws -> [String: Any] {
+        var row: [String: Any] = [:]
+        for index in 0..<sqlite3_column_count(statement) {
+            let name = String(cString: sqlite3_column_name(statement, index))
+            switch sqlite3_column_type(statement, index) {
+            case SQLITE_INTEGER: row[name] = Int(sqlite3_column_int64(statement, index))
+            case SQLITE_FLOAT: row[name] = sqlite3_column_double(statement, index)
+            case SQLITE_TEXT: row[name] = String(cString: sqlite3_column_text(statement, index))
+            case SQLITE_BLOB:
+                let count = Int(sqlite3_column_bytes(statement, index))
+                if let bytes = sqlite3_column_blob(statement, index) {
+                    row[name] = Data(bytes: bytes, count: count)
+                } else {
+                    row[name] = Data()
+                }
+            default: row[name] = NSNull()
+            }
+        }
+        return row
+    }
     func rows(_ sql: String, _ values: [Any] = []) throws -> [[String: Any]] {
         let statement = try prepare(sql); defer { sqlite3_finalize(statement) }
         try bind(values, to: statement)
         var rows: [[String: Any]] = []
         var result = sqlite3_step(statement)
         while result == SQLITE_ROW {
-            var row: [String: Any] = [:]
-            for index in 0..<sqlite3_column_count(statement) {
-                let name = String(cString: sqlite3_column_name(statement, index))
-                switch sqlite3_column_type(statement, index) {
-                case SQLITE_INTEGER: row[name] = Int(sqlite3_column_int64(statement, index))
-                case SQLITE_FLOAT: row[name] = sqlite3_column_double(statement, index)
-                case SQLITE_TEXT: row[name] = String(cString: sqlite3_column_text(statement, index))
-                case SQLITE_BLOB:
-                    let count = Int(sqlite3_column_bytes(statement, index))
-                    if let bytes = sqlite3_column_blob(statement, index) {
-                        row[name] = Data(bytes: bytes, count: count)
-                    } else {
-                        row[name] = Data()
-                    }
-                default: row[name] = NSNull()
-                }
-            }
-            rows.append(row)
+            rows.append(try currentRow(statement))
             result = sqlite3_step(statement)
         }
         guard result == SQLITE_DONE else { throw databaseError() }
         return rows
     }
-    private func databaseError() -> StoreError { StoreError("WHOOP sample storage: \(String(cString: sqlite3_errmsg(database)))") }
+    func databaseError() -> StoreError { StoreError("WHOOP sample storage: \(String(cString: sqlite3_errmsg(database)))") }
 }

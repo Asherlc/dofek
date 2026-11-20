@@ -12,7 +12,7 @@ extension WhoopBleSampleStoreTests {
                 try probe.executeFixture("PRAGMA secure_delete = \(setting)")
                 if fails {
                     try probe.executeFixture("""
-                        CREATE TRIGGER reject_purge BEFORE DELETE ON samples
+                        CREATE TRIGGER reject_purge BEFORE DELETE ON incoming_samples
                         BEGIN SELECT RAISE(ABORT, 'purge rejected'); END
                         """)
                     XCTAssertThrowsError(try store.purge())
@@ -128,14 +128,14 @@ extension WhoopBleSampleStoreTests {
     func testPurgeIdentifiesFailedSqliteOperationAndRollsBackTheStore() throws {
         let failures = [
             ("""
-            CREATE TRIGGER reject_sample_delete BEFORE DELETE ON samples
+            CREATE TRIGGER reject_sample_delete BEFORE DELETE ON incoming_samples
             BEGIN SELECT RAISE(ABORT, 'purge fixture rejected delete'); END;
             """, "store_delete_samples", "purge fixture rejected delete"),
             ("""
             PRAGMA foreign_keys = ON;
             CREATE TABLE purge_commit_guard (
                 stream TEXT REFERENCES stats(stream) DEFERRABLE INITIALLY DEFERRED);
-            CREATE TRIGGER reject_purge_commit AFTER DELETE ON samples
+            CREATE TRIGGER reject_purge_commit AFTER DELETE ON incoming_samples
             BEGIN INSERT INTO purge_commit_guard VALUES ('missing'); END;
             """, "store_commit", "FOREIGN KEY constraint failed"),
         ]
@@ -158,7 +158,7 @@ extension WhoopBleSampleStoreTests {
             XCTAssertEqual(try store.generation, generation)
             XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
             XCTAssertEqual(try store.statistics(stream: .realtime)["receivedCount"] as? Int, 1)
-            XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM samples"), 1)
+            XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM incoming_samples"), 1)
         }
     }
 }

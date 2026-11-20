@@ -291,7 +291,9 @@ public class WhoopBleModule: Module {
                 try self.connectionManager.syncOnBleQueue {
                     self.captureSuspended = true
                     self.watchdog.stop()
-                    try self.uploader.purge(cutoff: retainedCutoff)
+                    try WhoopBleUploadRuntime.withUploaderForCleanup { uploader in
+                        try uploader.purge(cutoff: retainedCutoff)
+                    }
                     self.frameParser.reset()
                     self.cmdFrameParser.reset()
                     self.orientationProcessor.reset()
