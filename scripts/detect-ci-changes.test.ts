@@ -177,6 +177,15 @@ describe("CI change detector", () => {
     });
   });
 
+  it.each([
+    "packages/oura-ble/ios/OuraBluetoothTransport.swift",
+    "packages/oura-ble/Tests/OuraBluetoothPermissionTests.swift",
+    "packages/oura-ble/Package.swift",
+    "packages/oura-ble/mutantkit.yml",
+  ])("runs mobile checks for the Oura native input %s", (changedFile) => {
+    expect(detectChangedAreas(changedFile).mobile).toBe(true);
+  });
+
   it("keeps local native module documentation changes outside mobile scope", () => {
     expect(detectChangedAreas("packages/mobile/modules/whoop-ble/README.md")).toEqual({
       analytics: false,

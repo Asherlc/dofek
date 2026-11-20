@@ -70,7 +70,7 @@ private final class OuraIOSClient {
     func discover() async throws -> [[String: Any]] {
         try beginOperation()
         defer { operationInProgress = false }
-        return try await OuraBluetoothTransport().discover().map { ring in
+        return try await OuraBluetoothTransport(bundle: .main).discover().map { ring in
             ["peripheralId": ring.peripheralID.uuidString, "name": ring.name as Any? ?? NSNull()]
         }
     }
@@ -218,7 +218,7 @@ private final class OuraIOSClient {
     ) async throws -> Result {
         try beginOperation()
         defer { operationInProgress = false }
-        let transport = OuraBluetoothTransport()
+        let transport = OuraBluetoothTransport(bundle: .main)
         try await transport.connect(peripheralID: peripheralID)
 
         let writer = RingPacketWriter { [weak transport] frame in

@@ -20,6 +20,7 @@ final class OuraBluetoothTransport: NSObject, @preconcurrency CBCentralManagerDe
     var onFrame: ((Data) -> Void)?
     var onDisconnection: (() -> Void)?
 
+    private let bundle: Bundle
     private lazy var central = CBCentralManager(delegate: self, queue: nil)
     private var scannedRings: [UUID: DiscoveredOuraRing] = [:]
     private var discovery: CheckedContinuation<[DiscoveredOuraRing], Error>?
@@ -30,6 +31,11 @@ final class OuraBluetoothTransport: NSObject, @preconcurrency CBCentralManagerDe
     private var writer: CBCharacteristic?
     private var subscriptions = Set<CBUUID>()
     private var timeout: Task<Void, Never>?
+
+    init(bundle: Bundle) {
+        self.bundle = bundle
+        super.init()
+    }
 
     func discover() async throws -> [DiscoveredOuraRing] {
         try checkPermissionConfiguration()
@@ -72,7 +78,7 @@ final class OuraBluetoothTransport: NSObject, @preconcurrency CBCentralManagerDe
     }
 
     private func checkPermissionConfiguration() throws {
-        guard let description = Bundle.main.object(forInfoDictionaryKey: "NSBluetoothAlwaysUsageDescription") as? String,
+        guard let description = bundle.object(forInfoDictionaryKey: "NSBluetoothAlwaysUsageDescription") as? String,
               !description.isEmpty else {
             throw OuraAdapterError("Add NSBluetoothAlwaysUsageDescription to the iOS app's Info.plist.")
         }

@@ -84,3 +84,8 @@ licenses. The Rust dependency versions and native sources are in
 [`native`](https://github.com/Asherlc/dofek/tree/main/packages/oura-ble/native).
 [Upstream build](https://github.com/Th0rgal/open_health/blob/main/apps/ios/build-xcframework.sh) ·
 [cargo-about](https://embarkstudios.github.io/cargo-about/)
+
+Run `swift test --package-path packages/oura-ble` from the repository root
+to exercise the Swift transport and pairing code on macOS. The native mutation
+runner uses the same SwiftPM target. To verify the Expo bridge, install the
+packed tarball in an Expo app and build it with CocoaPods.
