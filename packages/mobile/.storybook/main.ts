@@ -6,6 +6,7 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 
 const config: StorybookConfig = {
   core: { allowedHosts: [".trycloudflare.com"] },
+  addons: ["storybook-addon-canvas-comments"],
   stories: ["../components/**/*.stories.@(ts|tsx)", "../app-stories/**/*.stories.@(ts|tsx)"],
   staticDirs: ["../../web/src/public"],
   framework: "@storybook/react-native-web-vite",

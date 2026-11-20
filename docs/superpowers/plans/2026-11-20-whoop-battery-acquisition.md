@@ -114,3 +114,27 @@ service family before trusting a standard battery value and distinguish compiler
 coverage from app-hosted bridge tests and physical delivery. The existing native
 README already documents those separate checks; no new skill or guidance change
 is proposed.
+
+## PR integration
+
+PR [#3433](https://github.com/Asherlc/dofek/pull/3433) initially conflicted with
+the history-sync feature merged into main. Merge `origin/main` at `a3b782619`
+into the existing branch, preserving both optional managed-history settings and
+battery facts in the native summary, Zod schema, and device catalog. No branch
+switch, rebase, or behavior redesign is needed. Review automatic merges as well
+as the three additive conflicts, repeat affected validation, then commit/push
+and monitor the updated PR's checks and actionable review feedback.
+
+The resolved merge passed 275 Swift tests, 2,491 mobile tests, full lint,
+all-package typechecks, strict SwiftLint across 206 repository-owned files, and
+the mobile Storybook build with main's Canvas Comments addon. Frozen dependency
+installation preserved main's lockfile. Independent integration review confirmed
+that battery events still publish immediately and buffer events retain the
+existing history feature's throttle. The complete Debug iOS rebuild also passed
+for both simulator architectures after refreshing the generated Pods source
+inventory. No app UI was launched; the earlier runtime/hardware limits remain.
+
+The automated PR review identified uncited runtime claims in the generated
+Design README. Those claims were removed; the document now states the project's
+local-only, offline artboard conventions without asserting Paseo internals.
+The prose-only adjustment passed staged and unstaged diff checks.

@@ -19,6 +19,7 @@ final class WhoopBleFrameParser {
 
     /// Accumulated bytes from BLE notifications (frames may span multiple notifications)
     private var accumulator = Data()
+    var hasIncompleteFrame: Bool { !accumulator.isEmpty }
 
     /// Number of malformed byte ranges discarded while resynchronizing.
     /// Each drop can represent up to 100 IMU samples.
@@ -437,22 +438,17 @@ final class WhoopBleFrameParser {
     /// Header (8 bytes):
     ///   [SOF: 0xAA] [ver: 0x01] [payloadLen: u16 LE] [role1: 0x00] [role2: 0x01] [CRC16: u16 LE]
     /// Payload (payloadLen bytes):
-    ///   [0x23] [seq] [cmd] [params: 01 01 00 00 00] [CRC32: u32 LE]
+    ///   [0x23] [seq] [cmd] [arguments] [CRC32: u32 LE]
     /// ```
     ///
     /// - Header CRC16: CRC16-MODBUS of the first 6 header bytes
     /// - Payload CRC32: IEEE 802.3 CRC32 of the command bytes (excluding the CRC32 itself)
-    static func buildCommandData(command: UInt8) -> Data {
+    static func buildCommandData(command: UInt8, arguments: Data = Data([0x01, 0x01, 0x00, 0x00, 0x00])) -> Data {
         let seq = commandSequence
         commandSequence &+= 1
 
         // Command bytes (before CRC32)
-        let commandBytes = Data([
-            WhoopBleConstants.packetTypeCommand,  // 0x23
-            seq,
-            command,
-            0x01, 0x01, 0x00, 0x00, 0x00,        // parameters
-        ])
+        let commandBytes = Data([WhoopBleConstants.packetTypeCommand, seq, command]) + arguments
 
         // Payload = command bytes + CRC32 trailer
         let payloadCrc = crc32ieee(commandBytes)

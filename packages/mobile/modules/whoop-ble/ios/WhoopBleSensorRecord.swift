@@ -2,6 +2,12 @@ import Foundation
 
 /// Retain the wire record once; new measurement interpretation belongs to the server.
 enum WhoopBleSensorRecord {
+    /// This history layout can be retained in the outbox with a verified source clock for erasure.
+    static func hasCapturedR18Layout(_ frame: WhoopFrame) -> Bool {
+        frame.rawData.count == 124 && frame.packetType == WhoopBleConstants.packetTypeHistoricalData
+            && frame.recordType == 18 && frame.payload[2] == 0x80
+    }
+
     /// Erasure covers both observation time and a capture-backed source clock.
     static func erasureTime(sample: [String: Any], receivedAt: Date) -> TimeInterval {
         guard let hex = sample["frameHex"] as? String, hex.count == 248 else { return receivedAt.timeIntervalSince1970 }
@@ -13,8 +19,7 @@ enum WhoopBleSensorRecord {
             data.append(byte)
             index = end
         }
-        guard let frame = WhoopBleFrameParser.parseFrame(data), frame.packetType == 47,
-              frame.recordType == 18, frame.payload[2] == 0x80 else {
+        guard let frame = WhoopBleFrameParser.parseFrame(data), hasCapturedR18Layout(frame) else {
             return receivedAt.timeIntervalSince1970
         }
         let sourceTime = TimeInterval(frame.dataTimestamp) + TimeInterval(frame.subSeconds) / 32_768

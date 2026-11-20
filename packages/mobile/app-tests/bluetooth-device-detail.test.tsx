@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   BluetoothDevice,
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   whoopConnect: vi.fn(),
   whoopDisconnect: vi.fn(),
   whoopFind: vi.fn(),
+  whoopSetManagedHistoryEnabled: vi.fn(),
   whoopStartImuStreaming: vi.fn(),
   whoopStopImuStreaming: vi.fn(),
 }));
@@ -44,6 +46,7 @@ vi.mock("../modules/whoop-ble", () => ({
   connect: mocks.whoopConnect,
   disconnect: mocks.whoopDisconnect,
   findWhoop: mocks.whoopFind,
+  setManagedHistoryEnabled: mocks.whoopSetManagedHistoryEnabled,
   startImuStreaming: mocks.whoopStartImuStreaming,
   stopImuStreaming: mocks.whoopStopImuStreaming,
 }));
@@ -85,6 +88,7 @@ describe("BluetoothDeviceDetailScreen", () => {
     mocks.whoopConnect.mockResolvedValue(true);
     mocks.whoopStartImuStreaming.mockResolvedValue(true);
     mocks.whoopStopImuStreaming.mockResolvedValue(true);
+    mocks.whoopSetManagedHistoryEnabled.mockResolvedValue(undefined);
   });
 
   it("shows a device's incoming native data and specific connection error", async () => {
@@ -321,6 +325,60 @@ describe("BluetoothDeviceDetailScreen", () => {
 
     await waitFor(() => expect(mocks.whoopConnect).toHaveBeenCalledWith("whoop-retained"));
     expect(mocks.whoopFind).not.toHaveBeenCalled();
+  });
+
+  it("requires confirmation before enabling managed history on the selected strap", async () => {
+    const strap = { ...whoop, peripheralId: "whoop-native", managedHistoryEnabled: false };
+    mocks.params.id = "whoop";
+    mocks.getBluetoothDevices
+      .mockResolvedValueOnce([strap])
+      .mockResolvedValue([{ ...strap, managedHistoryEnabled: true }]);
+    const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
+    render(<BluetoothDeviceDetailScreen />);
+
+    fireEvent.click(
+      await screen.findByRole("switch", { name: "Dofek-managed history", checked: false }),
+    );
+    expect(mocks.whoopSetManagedHistoryEnabled).not.toHaveBeenCalled();
+    const buttons = vi.mocked(Alert.alert).mock.lastCall?.[2];
+    expect(buttons?.find((button) => button.text === "Cancel")?.style).toBe("cancel");
+    const confirm = buttons?.find((button) => button.text === "Enable")?.onPress;
+    expect(confirm).toBeTypeOf("function");
+    act(() => confirm?.());
+
+    expect(
+      await screen.findByRole("switch", { name: "Dofek-managed history", checked: true }),
+    ).toBeTruthy();
+    expect(mocks.whoopSetManagedHistoryEnabled).toHaveBeenCalledWith("whoop-native", true);
+  });
+
+  it("disables managed history without prompting", async () => {
+    const strap = { ...whoop, peripheralId: "whoop-native", managedHistoryEnabled: true };
+    mocks.params.id = "whoop";
+    mocks.getBluetoothDevices
+      .mockResolvedValueOnce([strap])
+      .mockResolvedValue([{ ...strap, managedHistoryEnabled: false }]);
+    const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
+    render(<BluetoothDeviceDetailScreen />);
+
+    fireEvent.click(
+      await screen.findByRole("switch", { name: "Dofek-managed history", checked: true }),
+    );
+    expect(
+      await screen.findByRole("switch", { name: "Dofek-managed history", checked: false }),
+    ).toBeTruthy();
+    expect(mocks.whoopSetManagedHistoryEnabled).toHaveBeenCalledWith("whoop-native", false);
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it("hides managed history when the native snapshot omits support", async () => {
+    mocks.params.id = "whoop";
+    mocks.getBluetoothDevices.mockResolvedValue([{ ...whoop, peripheralId: "whoop-native" }]);
+    const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
+    render(<BluetoothDeviceDetailScreen />);
+
+    expect(await screen.findByText("WHOOP")).toBeTruthy();
+    expect(screen.queryByRole("switch", { name: "Dofek-managed history" })).toBeNull();
   });
 
   it("shows the specific initial catalog failure rather than a missing-device state", async () => {

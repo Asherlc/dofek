@@ -335,7 +335,7 @@ final class WhoopBleSampleStore {
         }
     }
 
-    private func readBinding() throws -> WhoopUploadBinding? {
+    func readBinding() throws -> WhoopUploadBinding? {
         guard let value = try metadata("binding") else { return nil }
         return try JSONDecoder().decode(WhoopUploadBinding.self, from: Data(value.utf8))
     }
@@ -372,7 +372,7 @@ final class WhoopBleSampleStore {
         lock.lock(); defer { lock.unlock() }
         return try action()
     }
-    private func transaction<T>(
+    func transaction<T>(
         onStage: WhoopCleanupStageHandler = { _ in },
         reportWrites: ((WhoopSQLiteWriteMeasurement?) -> Void)? = nil,
         _ action: () throws -> T

@@ -1,7 +1,15 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { WhoopBatteryStatus } from "../../components/WhoopBatteryStatus";
 import {
@@ -19,12 +27,19 @@ import {
   connect as connectWhoop,
   disconnect as disconnectWhoop,
   findWhoop,
+  setManagedHistoryEnabled,
   startImuStreaming,
   stopImuStreaming,
 } from "../../modules/whoop-ble";
 import { colors, fontSize, fontWeight, radius, spacing } from "../../theme";
 
-type DeviceAction = "connect" | "disconnect" | "forget" | "start-streaming" | "stop-streaming";
+type DeviceAction =
+  | "connect"
+  | "disconnect"
+  | "forget"
+  | "start-streaming"
+  | "stop-streaming"
+  | "toggle-managed-history";
 
 function errorMessage(error: unknown): string {
   return userFacingErrorMessage(
@@ -129,6 +144,13 @@ export default function BluetoothDeviceDetailScreen() {
           await startImuStreaming();
         } else if (action === "stop-streaming") {
           await stopImuStreaming();
+        } else if (action === "toggle-managed-history") {
+          const peripheralId = device.peripheralId;
+          if (!peripheralId) {
+            throw new Error("Cannot toggle managed history without a peripheral ID");
+          }
+          const currentState = device.managedHistoryEnabled ?? false;
+          await setManagedHistoryEnabled(peripheralId, !currentState);
         }
         await loadDevice();
       } catch (actionError: unknown) {
@@ -147,6 +169,35 @@ export default function BluetoothDeviceDetailScreen() {
     },
     [device, loadDevice, pendingAction, router],
   );
+
+  const handleManagedHistoryPress = () => {
+    if (
+      pendingAction ||
+      !device ||
+      device.kind !== "whoop" ||
+      !device.peripheralId ||
+      device.managedHistoryEnabled === undefined
+    ) {
+      return;
+    }
+    const currentState = device.managedHistoryEnabled;
+    if (currentState) {
+      void runAction("toggle-managed-history");
+      return;
+    }
+    Alert.alert(
+      "Enable Dofek-managed history",
+      "WHOOP Bluetooth access must be off to enable Dofek-managed history. WHOOP may miss samples if both apps sync. Dofek starts on the next connection.",
+      [
+        {
+          text: "Enable",
+          style: "default",
+          onPress: () => void runAction("toggle-managed-history"),
+        },
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
+  };
 
   if (loading && devices.length === 0) {
     return (
@@ -297,6 +348,29 @@ export default function BluetoothDeviceDetailScreen() {
           </Text>
         </Pressable>
       ) : null}
+      {device.kind === "whoop" &&
+        device.peripheralId &&
+        device.managedHistoryEnabled !== undefined && (
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityLabel="Dofek-managed history"
+            accessibilityState={{
+              busy: pendingAction === "toggle-managed-history",
+              disabled: pendingAction !== null,
+              checked: device.managedHistoryEnabled,
+            }}
+            disabled={pendingAction !== null}
+            onPress={handleManagedHistoryPress}
+            style={[
+              styles.secondaryButton,
+              pendingAction === "toggle-managed-history" ? styles.disabledButton : null,
+            ]}
+          >
+            <Text style={styles.streamingButtonText}>
+              {device.managedHistoryEnabled ? "Disable" : "Enable"} Dofek-managed history
+            </Text>
+          </Pressable>
+        )}
     </ScrollView>
   );
 }

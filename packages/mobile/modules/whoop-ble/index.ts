@@ -21,6 +21,7 @@ export const WhoopDeviceSummarySchema = z.object({
       isCharging: z.boolean().nullable(),
     })
     .default({ percentage: null, isCharging: null }),
+  managedHistoryEnabled: z.boolean().optional(),
 });
 
 export type WhoopDeviceSummary = z.infer<typeof WhoopDeviceSummarySchema>;
@@ -115,6 +116,23 @@ export function getBufferedSampleCount(): number {
 /** Get the current WHOOP identity, connection, battery, and buffer state without scanning or connecting. */
 export async function getDeviceSummary(): Promise<WhoopDeviceSummary> {
   return WhoopDeviceSummarySchema.parse(await WhoopBleModule.getDeviceSummary());
+}
+
+/**
+ * Set whether Dofek manages WHOOP strap history for the identified peripheral.
+ *
+ * Enabling requires the user to confirm that WHOOP no longer has Bluetooth
+ * access to the strap; the setting applies on the next connection. Disabling
+ * is immediate. Older native builds omit the setting from the summary.
+ *
+ * @param peripheralId — UUID string from `findWhoop()`.
+ * @param enabled — true to opt in to Dofek-managed history.
+ */
+export async function setManagedHistoryEnabled(
+  peripheralId: string,
+  enabled: boolean,
+): Promise<void> {
+  await WhoopBleModule.setManagedHistoryEnabled(peripheralId, enabled);
 }
 
 const DiagnosticCountSchema = z.number().int().nonnegative();

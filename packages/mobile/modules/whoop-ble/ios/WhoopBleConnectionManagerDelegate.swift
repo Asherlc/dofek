@@ -2,6 +2,9 @@ import CoreBluetooth
 
 /// Events emitted by the connection manager to its delegate (the module).
 protocol WhoopBleConnectionManagerDelegate: AnyObject {
+    /// Called when the manager adopts a peripheral, before it sets up its delegate or subscriptions.
+    func connectionManagerDidSelectPeripheral(_ manager: WhoopBleConnectionManager)
+
     /// Called when connection is fully established and characteristics are ready.
     func connectionManagerDidBecomeReady(
         _ manager: WhoopBleConnectionManager,
@@ -29,4 +32,8 @@ protocol WhoopBleConnectionManagerDelegate: AnyObject {
 
 extension WhoopBleConnectionManagerDelegate {
     func connectionManager(_: WhoopBleConnectionManager, didUpdateBatteryStatus _: WhoopBleBatteryStatus) {}
+}
+
+extension WhoopBleConnectionManagerDelegate {
+    func connectionManagerDidSelectPeripheral(_ manager: WhoopBleConnectionManager) {}
 }

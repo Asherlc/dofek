@@ -75,9 +75,13 @@ enum WhoopBleConstants {
     // MARK: - Packet types (first byte of payload)
 
     static let packetTypeCommand: UInt8 = 0x23
+    static let packetTypeCommandResponse: UInt8 = 0x24
     static let packetTypeRealtimeData: UInt8 = 0x28
     static let packetTypeRealtimeRawData: UInt8 = 0x2B
     static let packetTypeHistoricalData: UInt8 = 0x2F
+    static let packetTypeEvent: UInt8 = 0x30
+    static let packetTypeMetadata: UInt8 = 0x31
+    static let packetTypeConsole: UInt8 = 0x32
     static let packetTypeRealtimeIMU: UInt8 = 0x33
     static let packetTypeHistoricalIMU: UInt8 = 0x34
 
@@ -99,6 +103,9 @@ enum WhoopBleConstants {
     // MARK: - Command bytes (written to CMD_TO_STRAP)
 
     static let commandToggleRealtimeHr: UInt8 = 0x03
+    static let commandSendHistoricalData: UInt8 = 0x16
+    static let commandHistoricalDataResult: UInt8 = 0x17
+    static let commandGetDataRange: UInt8 = 0x22
     static let commandStopRawData: UInt8 = 0x52
     static let commandToggleImuMode: UInt8 = 0x6A
     static let commandToggleOpticalMode: UInt8 = 0x6C

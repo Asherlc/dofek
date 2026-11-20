@@ -34,9 +34,9 @@ points at elements and writes comments, and asks you to revise.
 
 ## Writing pages
 
-- Each page is complete HTML that works offline. Put CSS in `<style>` or in local .css files,
-  and use local images and fonts. The canvas blocks loading from the network, CDNs included.
-- Scripts run, so prototypes can be interactive. Keep them local too.
+- Write each artboard as a complete HTML page that works offline. Use inline CSS or local
+  stylesheets, local images, and local fonts. Avoid network and CDN dependencies.
+- Use local scripts for interactive prototypes.
 - Put `data-dc-id="<short-name>"` on every element the user may want to talk about: sections,
   cards, buttons, headings, images, form fields. Keep existing ids when you revise, so comments
   stay attached to their elements.
