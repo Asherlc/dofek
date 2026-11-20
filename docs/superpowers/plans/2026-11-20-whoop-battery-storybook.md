@@ -47,4 +47,23 @@ and [selected canvas artboard](../../../design/whoop-battery-status/badge.html).
 
 ## Evidence
 
-- Pending implementation and validation.
+- Completed the four scoped files. The real list renders the selected B badge
+  when a WHOOP battery object is present; older catalog snapshots omit it.
+- Nine new regression cases failed before implementation. All 15 focused cases
+  then passed; the full mobile tier passed 227 files and 2,473 tests.
+- `pnpm lint` and all-package typechecks passed. Lint retained existing broken
+  skill-symlink warnings and configured SQL large-file skips.
+- The mobile Storybook build passed. Existing unrelated Expo Updates mock-export
+  warnings remain in its output. All six battery stories appear in the live
+  index, and the exact main story response returned HTTP 200.
+- Independent review found a normal-badge contrast issue. Replacing its colors
+  with the existing operational success pair resolved it; follow-up review found
+  no remaining material findings. Focused Biome and mobile typecheck passed after
+  that final palette-only correction.
+- Preview URL: <http://127.0.0.1:6007/?path=/story/settings-bluetoothdevicelist--battery-badge>.
+  The user opens it themselves. No screen or browser control was used for the
+  Storybook task; visual verification of the Storybook render remains theirs.
+- Retrospective: the existing component and Storybook configuration covered the
+  presentation without new dependencies. Contrast needed a review correction;
+  prefer the existing operational color pairs for small status text next time.
+  Native acquisition and its protocol/device validation remain pending.

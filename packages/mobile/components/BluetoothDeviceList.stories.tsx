@@ -1,37 +1,45 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
+import type { BluetoothDevice } from "../lib/bluetooth-device-catalog";
+import { spacing } from "../theme";
 import { BluetoothDeviceList } from "./BluetoothDeviceList";
 
-const devices = [
-  {
-    id: "whoop",
-    kind: "whoop" as const,
-    name: "WHOOP",
-    peripheralId: null,
-    connectionState: "ready",
-    diagnostics: { imuBufferedSamples: 12, realtimeBufferedSamples: 4 },
+const whoop = {
+  id: "whoop",
+  kind: "whoop",
+  name: "WHOOP",
+  peripheralId: null,
+  connectionState: "ready",
+  diagnostics: { imuBufferedSamples: 12, realtimeBufferedSamples: 4 },
+} satisfies BluetoothDevice;
+
+const polar = {
+  id: "polar",
+  kind: "heart-rate",
+  name: "Polar H10",
+  connectionState: "disconnected",
+  diagnostics: {
+    bufferedSampleCount: 3,
+    lastHeartRateBpm: 142,
+    lastMeasurementAt: "2026-08-24T19:00:00.000Z",
+    lastRrIntervalsMs: [820],
   },
-  {
-    id: "polar",
-    kind: "heart-rate" as const,
-    name: "Polar H10",
-    connectionState: "disconnected",
-    diagnostics: {
-      bufferedSampleCount: 3,
-      lastHeartRateBpm: 142,
-      lastMeasurementAt: "2026-08-24T19:00:00.000Z",
-      lastRrIntervalsMs: [820],
-    },
-  },
-];
+} satisfies BluetoothDevice;
 
 const meta = {
   title: "Settings/BluetoothDeviceList",
   component: BluetoothDeviceList,
-  decorators: [(Story) => <View style={{ width: 360, padding: 16 }}>{Story()}</View>],
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (Story) => (
+      <View style={{ alignSelf: "center", width: "100%", maxWidth: 390, padding: spacing.md }}>
+        {Story()}
+      </View>
+    ),
+  ],
   args: {
     connecting: false,
-    devices,
+    devices: [whoop, polar],
     error: null,
     loading: false,
     onConnectDevice: () => undefined,
@@ -44,6 +52,47 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Populated: Story = {};
+
+function batteryDevices(
+  percentage: number | null,
+  isCharging: boolean | null,
+  connectionState = "ready",
+): BluetoothDevice[] {
+  return [
+    {
+      ...whoop,
+      name: "WHOOP MG",
+      connectionState,
+      diagnostics: { imuBufferedSamples: 12_480, realtimeBufferedSamples: 126 },
+      battery: { percentage, isCharging },
+    },
+    { ...polar, connectionState: "ready" },
+  ];
+}
+
+export const BatteryBadge: Story = {
+  args: { devices: batteryDevices(57, true) },
+};
+
+export const BatteryNotCharging: Story = {
+  args: { devices: batteryDevices(57, false) },
+};
+
+export const BatteryLow: Story = {
+  args: { devices: batteryDevices(12, false) },
+};
+
+export const BatteryEmpty: Story = {
+  args: { devices: batteryDevices(0, false) },
+};
+
+export const BatteryUnknown: Story = {
+  args: { devices: batteryDevices(null, null) },
+};
+
+export const BatteryDisconnected: Story = {
+  args: { devices: batteryDevices(57, true, "disconnected") },
+};
 
 export const Loading: Story = {
   args: { devices: [], loading: true },

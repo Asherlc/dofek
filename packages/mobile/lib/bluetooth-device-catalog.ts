@@ -31,6 +31,7 @@ export type BluetoothDevice =
       peripheralId: string | null;
       connectionState: string;
       diagnostics: WhoopDiagnostics;
+      battery?: { percentage: number | null; isCharging: boolean | null };
     }
   | {
       id: string;

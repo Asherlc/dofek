@@ -44,11 +44,53 @@ describe("BluetoothDeviceList", () => {
       screen.getByText("12 inertial measurement unit (IMU) samples · 4 realtime samples"),
     ).toBeTruthy();
     expect(screen.getByText("142 bpm · 3 buffered samples")).toBeTruthy();
+    expect(screen.queryByText("Battery unavailable")).toBeNull();
     expect(screen.getAllByRole("header").map((header) => header.textContent)).toEqual([
       "WHOOP",
       "Heart-rate monitors",
     ]);
   });
+
+  it.each([
+    ["streaming", 57, true, "57%", "Charging"],
+    ["ready", 57, false, "57%", "Not charging"],
+    ["ready", 12, false, "12%", "Not charging"],
+    ["ready", 0, false, "0%", "Not charging"],
+    ["ready", 57, null, "57%", "Charging unknown"],
+    ["ready", null, true, "Battery unavailable", "Charging"],
+    ["ready", null, null, "Battery unavailable", "Charging unknown"],
+    ["disconnected", 57, true, "Battery unavailable", "Charging unknown"],
+    ["connecting", 57, true, "Battery unavailable", "Charging unknown"],
+  ] as const)(
+    "shows battery facts for %s with percentage %s and charging %s",
+    (connectionState, percentage, isCharging, percentageText, chargingText) => {
+      const device = {
+        ...whoop,
+        name: "WHOOP MG",
+        connectionState,
+        battery: { percentage, isCharging },
+      };
+      const onSelectDevice = vi.fn();
+      render(
+        <BluetoothDeviceList
+          {...baseProps}
+          devices={[device, polar]}
+          onSelectDevice={onSelectDevice}
+        />,
+      );
+
+      expect(screen.getByText(percentageText)).toBeTruthy();
+      expect(screen.getByText(chargingText)).toBeTruthy();
+      const batteryLabel = percentageText.endsWith("%")
+        ? `Battery ${percentageText}`
+        : percentageText;
+      const row = screen.getByRole("button", {
+        name: `WHOOP MG, ${connectionState}, ${batteryLabel}, ${chargingText}`,
+      });
+      fireEvent.click(row);
+      expect(onSelectDevice).toHaveBeenCalledWith(device);
+    },
+  );
 
   it("selects the exact device row that was pressed", () => {
     const onSelectDevice = vi.fn();
