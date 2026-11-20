@@ -6,6 +6,29 @@ import XCTest
 import SQLite3
 
 final class WhoopBleModuleConnectionManagerDelegateTests: XCTestCase {
+    func testBatterySnapshotPreservesExplicitNullZeroAndFalseAcrossExpo() async throws {
+        let (context, module) = try makeModule()
+        let runtime = try context.runtime
+        let readBattery = """
+            expo.modules.WhoopBle.getDeviceSummary().then(({ battery }) =>
+                [battery.percentage, battery.isCharging]
+                    .map(value => value === null ? 'null' : typeof value + ':' + String(value))
+                    .join(',')
+            )
+            """
+
+        let unknown = try await runtime.evalAsync(readBattery).ref()
+        let unknownFacts = try await runtime.execute { try unknown.take().asString() }
+        XCTAssertEqual(unknownFacts, "null,null")
+
+        module.connectionManager.syncOnBleQueue {
+            module.connectionManager.setBatteryStatus(WhoopBleBatteryStatus(percentage: 0, isCharging: false))
+        }
+        let empty = try await runtime.evalAsync(readBattery).ref()
+        let emptyFacts = try await runtime.execute { try empty.take().asString() }
+        XCTAssertEqual(emptyFacts, "number:0,boolean:false")
+    }
+
     func testReadinessAfterCaptureFailureDoesNotPublishOrStartWatchdog() async throws {
         let (context, module) = try makeModule()
         module.failCapture(captureError)

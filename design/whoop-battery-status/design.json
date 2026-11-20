@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "title": "WHOOP · Battery status",
+  "kind": "prototype",
+  "description": "Three mobile UI treatments for WHOOP battery percentage and charging status. Tap the WHOOP row to view device details; use preview controls to compare reported states.",
+  "artboards": [
+    {
+      "id": "inline",
+      "title": "A · Inline status",
+      "file": "inline.html",
+      "width": 390,
+      "height": 844,
+      "group": "battery-ui"
+    },
+    {
+      "id": "badge",
+      "title": "B · Battery badge",
+      "file": "badge.html",
+      "width": 390,
+      "height": 844,
+      "group": "battery-ui"
+    },
+    {
+      "id": "meter",
+      "title": "C · Battery meter",
+      "file": "meter.html",
+      "width": 390,
+      "height": 844,
+      "group": "battery-ui"
+    }
+  ],
+  "tweaks": [
+    {
+      "id": "accent",
+      "label": "Accent color",
+      "var": "--accent",
+      "type": "color",
+      "default": "#2d7a56"
+    },
+    {
+      "id": "card-radius",
+      "label": "Card corners",
+      "var": "--card-radius",
+      "type": "range",
+      "min": 8,
+      "max": 24,
+      "step": 2,
+      "unit": "px",
+      "default": 12
+    },
+    {
+      "id": "page-gap",
+      "label": "Page spacing",
+      "var": "--page-gap",
+      "type": "range",
+      "min": 12,
+      "max": 24,
+      "step": 2,
+      "unit": "px",
+      "default": 16
+    }
+  ]
+}

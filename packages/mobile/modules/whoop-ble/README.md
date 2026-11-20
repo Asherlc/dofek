@@ -57,6 +57,36 @@ and Apple's
 
 ## Usage
 
+### Battery percentage and charging
+
+`getDeviceSummary()` and `addDeviceStateListener()` expose a `battery` object
+with nullable `percentage` and `isCharging` fields. The mobile Bluetooth device
+list and WHOOP details render the same compact badge. An observed `0` is empty;
+`false` means not charging, while `null` means unknown. Older native binaries
+that omit battery status decode as unknown values.
+
+Percentage is read from the optional standard Bluetooth Battery Service and
+updated through supported notifications. Charging comes from supported WHOOP
+events, independently of the percentage; connecting alone does not establish
+whether the strap is charging. Each valid update preserves the other known
+fact, and disconnect/replacement clears both. Unsupported or missing battery
+channels leave sensor collection available. See the
+[protocol and provenance reference](../../../../docs/whoop-ble-protocol.md#battery-status)
+and Bluetooth's [Battery Service specification](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/BAS_v1.1/out/en/index-en.html).
+The Harvard/WHOOP 4 standard battery characteristic is excluded because
+[recorded upstream evidence](https://github.com/ryanbr/noop/blob/2a1de7609843b095505274ad6fc811757210be80/android/app/src/main/java/com/noop/ble/BatterySource.kt#L17-L30)
+shows an incorrect level. This change does not add Harvard-specific battery
+commands or framing; unsupported readings stay unavailable.
+
+Live acquisition requires a rebuilt native iOS binary. A JavaScript OTA update
+cannot install the Swift acquisition code; Expo describes that boundary in its
+[native development workflow](https://docs.expo.dev/workflow/customizing/).
+Swift/bridge tests establish decoding and state propagation, not physical strap
+notification delivery or firmware compatibility. Verify plugging/unplugging the
+charger and reconnecting on a physical strap with the matching binary.
+
+### Start capture
+
 ```ts
 import {
   connect,

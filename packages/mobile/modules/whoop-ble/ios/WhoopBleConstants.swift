@@ -20,6 +20,12 @@ enum WhoopBleConstants {
         puffinServiceUUID,
     ]
 
+    static let deviceInformationServiceUUID = CBUUID(string: "180A")
+    static let batteryServiceUUID = CBUUID(string: "180F")
+    static let batteryLevelUUID = CBUUID(string: "2A19")
+    static let connectionServiceUUIDs = allServiceUUIDs + [deviceInformationServiceUUID, batteryServiceUUID]
+    static let eventCharacteristicUUIDs = allServiceUUIDs.map { eventUUID(forService: $0) }
+
     // MARK: - Characteristic UUID derivation
 
     /// Derive a characteristic UUID from a service UUID by replacing the
@@ -49,6 +55,10 @@ enum WhoopBleConstants {
     /// DATA_FROM_STRAP characteristic (notify): suffix 0005
     static func dataFromStrapUUID(forService serviceUUID: CBUUID) -> CBUUID {
         characteristicUUID(forService: serviceUUID, suffix: "0005")
+    }
+
+    static func eventUUID(forService serviceUUID: CBUUID) -> CBUUID {
+        characteristicUUID(forService: serviceUUID, suffix: "0004")
     }
 
     // MARK: - Frame format

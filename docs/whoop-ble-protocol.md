@@ -24,6 +24,52 @@ All generations use the same suffix pattern — replace the `0001` in the servic
 | `0005` | DATA_FROM_STRAP | Strap → Phone | Notify |
 | `0007` | MEMFAULT | Strap → Phone | Notify |
 
+## Battery status
+
+Battery percentage and charging are local connection facts, not health samples.
+The native module discovers the optional standard Battery Service (`180F`),
+reads Battery Level (`2A19`), and subscribes when the characteristic supports
+notifications. Accept exactly one byte in the range 0–100. The Bluetooth SIG
+defines the [Battery Level characteristic's behavior](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/BAS_v1.1/out/en/index-en.html).
+A [WHOOP MG service capture](https://github.com/megablocks/openwhoop/blob/main/whoop-mg-protocol-analysis.md#1-gatt-service-map)
+observed this characteristic with read/notify properties; its absence on another
+device does not prevent sensor capture.
+
+Only use the standard level after this connection's WHOOP service has identified
+the family. Harvard/WHOOP 4 is excluded: the pinned upstream
+[battery-source evidence](https://github.com/ryanbr/noop/blob/2a1de7609843b095505274ad6fc811757210be80/android/app/src/main/java/com/noop/ble/BatterySource.kt#L17-L30)
+records its standard characteristic reporting 81% while the vendor report showed
+39.2%. The current acquisition does not add the Harvard-specific command or
+frame decoder, so unsupported Harvard battery readings remain unavailable.
+
+The standard level does not establish charging. Subscribe separately to the
+WHOOP event characteristic (suffix `0004`) and decode supported, CRC-validated
+`EVENT` (`0x30`) frames. In the eight-byte Maverick/Puffin envelope:
+
+| Field | Offset within inner payload | Meaning |
+|---|---|---|
+| Event number | 2 | 3 = battery level; 7/8 = charging on/off |
+| Event body length | 10–11 | Little-endian length of the body beginning at byte 12 |
+| Battery level in event 3 | 13–14 | Little-endian decipercent; divide by 10, valid 0–1000 |
+| Charging in event 3 | 22 | Bit 0; set means charging |
+
+These offsets refer to the packet payload, excluding the eight-byte frame
+header. The existing native frame object retains the four-byte CRC32 trailer,
+so length checks must exclude that trailer before accessing event fields.
+The pinned upstream [WHOOP 5 event evidence](https://github.com/ryanbr/noop/blob/2a1de7609843b095505274ad6fc811757210be80/Packages/WhoopProtocol/Tests/WhoopProtocolTests/Whoop5EventTests.swift)
+includes a real packet reporting 49.9%, not charging; its
+[protocol reference](https://github.com/ryanbr/noop/blob/2a1de7609843b095505274ad6fc811757210be80/docs/PROTOCOL.md)
+documents the charging bit and on/off event numbers. Regression mutations that
+set the bit or change an event number are synthetic test inputs, not additional
+hardware captures. This addition does not add Harvard frame transport support.
+
+Standard level updates preserve an observed charging state, and charging-only
+events preserve an observed percentage. Charging remains unknown until reported.
+Malformed packets cannot introduce new values. The connection manager clears
+both facts and event fragments on disconnect or peripheral replacement, and
+optional battery channels do not participate in required sensor readiness.
+No battery history, battery-pack estimate, command polling, or upload is added.
+
 ## Frame Format
 
 ### Maverick/Puffin (8-byte header, confirmed)

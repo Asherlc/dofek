@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bluetooth Devices · Battery meter</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --accent: #2d7a56;
+      --card-radius: 12px;
+      --page-gap: 16px;
+      --background: #eef3ed;
+      --surface: #f5f9f5;
+      --border: #e8ede7;
+      --text: #1a2e1a;
+      --secondary: #4a6a4a;
+      --neutral: #59635b;
+      --warning: #95471f;
+      --danger: #a13736;
+      --gutter: 16px;
+      font: 16px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--background);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    button, select { font: inherit; }
+    button, select, summary { -webkit-tap-highlight-color: transparent; }
+    button, summary { cursor: pointer; }
+    button { color: inherit; }
+    button:focus-visible, select:focus-visible, summary:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+    h1, h2, p, dl, dd { margin: 0; }
+    .status-bar {
+      height: 48px;
+      display: flex;
+      flex: none;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 27px 0;
+      font-size: 14px;
+      font-weight: 650;
+      color: #182018;
+    }
+    .status-icons { display: flex; align-items: center; gap: 6px; }
+    .navigation {
+      display: flex;
+      align-items: center;
+      min-height: 44px;
+      padding-inline: 8px var(--gutter);
+    }
+    .back {
+      display: inline-flex;
+      gap: 3px;
+      align-items: center;
+      min-width: 44px;
+      min-height: 44px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      padding: 0 8px 0 5px;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .back svg { width: 19px; height: 19px; }
+    .view { padding: 10px var(--gutter) var(--page-gap); }
+    .page-header { margin-bottom: calc(var(--page-gap) + 7px); }
+    h1 {
+      font-size: clamp(29px, 8.5vw, 34px);
+      line-height: 1.1;
+      font-weight: 730;
+      letter-spacing: -.045em;
+    }
+    h1:focus { outline: none; }
+    .sections { display: grid; gap: var(--page-gap); }
+    .section-title {
+      margin: 0 0 7px 2px;
+      color: var(--secondary);
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: var(--card-radius);
+      background: var(--surface);
+    }
+    .whoop-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-rows: auto auto;
+      align-items: center;
+      gap: 6px 11px;
+      width: 100%;
+      min-height: 108px;
+      padding: 13px 12px;
+      text-align: left;
+    }
+    .whoop-row:hover, .connect-device:hover, .back:hover {
+      background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+    }
+    .device-icon {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      color: var(--accent);
+      background: #e4efe5;
+    }
+    .device-icon svg { width: 22px; height: 22px; }
+    .whoop-row .device-icon { grid-column: 1; grid-row: 1 / 3; }
+    .device-info { display: grid; gap: 3px; min-width: 0; }
+    .whoop-row .device-info { grid-column: 2; grid-row: 1; align-self: end; }
+    .device-name { font-size: 17px; font-weight: 650; line-height: 1.2; }
+    .connection-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 13px;
+      color: var(--secondary);
+    }
+    .connection-status::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      flex: none;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .connection-status[data-connected="false"] { color: var(--neutral); }
+    .connection-status[data-connected="false"]::before { background: var(--neutral); }
+    .whoop-row .chevron { grid-column: 3; grid-row: 1 / 3; }
+    .chevron { color: #687b6a; }
+    .battery {
+      --battery-tone: var(--accent);
+      min-width: 0;
+      display: grid;
+      justify-items: start;
+      gap: 5px;
+      font-variant-numeric: tabular-nums;
+      color: var(--battery-tone);
+    }
+    .whoop-row .battery { grid-column: 2; grid-row: 2; align-self: start; }
+    .battery[data-tone="low"] { --battery-tone: var(--warning); }
+    .battery[data-tone="empty"] { --battery-tone: var(--danger); }
+    .battery[data-tone="unknown"] { --battery-tone: var(--neutral); }
+    .battery-line {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      column-gap: 6px;
+      row-gap: 1px;
+    }
+    .battery-value { font-size: 15px; font-weight: 700; }
+    .battery[data-tone="unknown"] .battery-value { font-size: 13px; }
+    .separator, .charging { color: var(--secondary); }
+    .battery[data-tone="unknown"] :is(.separator, .charging) { color: var(--neutral); }
+    .charging { font-size: 13px; display: inline-flex; align-items: center; gap: 2px; }
+    .charging .bolt { color: var(--accent); width: 12px; height: 12px; }
+    .polar-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 11px;
+      padding: 12px;
+    }
+    .heart-icon { color: #925455; background: #f2e9e7; }
+    .hr-value {
+      font-size: 17px;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .hr-unit { color: var(--secondary); font-size: 13px; font-weight: 500; }
+    .connect-device, .connection-action {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 7px;
+      width: 100%;
+      min-height: 48px;
+      padding: 8px 12px;
+      font-weight: 650;
+    }
+    .connect-device { color: var(--accent); }
+    .notice {
+      margin-top: 10px;
+      color: var(--secondary);
+      font-size: 13px;
+    }
+    .detail-header .connection-status { margin-top: 8px; }
+    .detail-battery { padding: 14px; }
+    .detail-battery .section-title { margin-left: 0; }
+    .detail-battery .battery-value { font-size: 23px; }
+    .detail-battery .battery[data-tone="unknown"] .battery-value { font-size: 16px; }
+    .detail-battery .meter-track { width: min(100%, 192px); }
+    .diagnostics summary {
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      list-style: none;
+      font-weight: 650;
+      border-radius: inherit;
+    }
+    .diagnostics summary::-webkit-details-marker { display: none; }
+    .diagnostics[open] summary .chevron { transform: rotate(90deg); }
+    .diagnostics dl {
+      padding: 0 14px 5px;
+      color: var(--secondary);
+      font-size: 14px;
+    }
+    .diagnostic-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      border-top: 1px solid var(--border);
+      padding-block: 10px;
+    }
+    .diagnostic-row dd { font-variant-numeric: tabular-nums; color: var(--text); }
+    .connection-action { color: var(--danger); }
+    .connection-action[data-connected="false"] {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .preview {
+      margin: auto var(--gutter) 0;
+      padding: 12px 0 10px;
+      border-top: 1px solid #d7e1d6;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .preview-label {
+      color: var(--secondary);
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .preview-field { position: relative; min-width: 0; width: min(60%, 202px); }
+    .preview-field select {
+      appearance: none;
+      display: block;
+      width: 100%;
+      min-height: 44px;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid #d7e1d6;
+      border-radius: 9px;
+      padding: 0 30px 0 10px;
+      font-size: 14px;
+      font-weight: 550;
+    }
+    .preview-field svg {
+      position: absolute;
+      top: 50%;
+      right: 9px;
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+    .home-indicator {
+      flex: none;
+      width: 120px;
+      height: 4px;
+      background: #1c271d;
+      border-radius: 4px;
+      margin: 7px auto 8px;
+    }
+
+    .meter-track {
+      display: block;
+      width: min(100%, 144px);
+      height: 5px;
+      overflow: hidden;
+      border-radius: 5px;
+      background: #dce7dc;
+    }
+    .meter-fill {
+      display: block;
+      width: var(--battery-fill, 57%);
+      height: 100%;
+      border-radius: inherit;
+      background: var(--battery-tone);
+    }
+    .meter[data-tone="unknown"] .meter-track { background: #e1e5e1; }
+    .meter[data-tone="unknown"] .meter-fill { visibility: hidden; }
+  </style>
+  <link rel="stylesheet" href="tweaks.css">
+</head>
+<body>
+  <div class="status-bar" data-dc-id="status-bar" aria-hidden="true">
+    <span>9:41</span>
+    <span class="status-icons">
+      <svg width="18" height="13" viewBox="0 0 18 13" fill="currentColor"><rect x="1" y="8" width="3" height="4" rx=".8"/><rect x="5" y="6" width="3" height="6" rx=".8"/><rect x="9" y="3" width="3" height="9" rx=".8"/><rect x="13" y="1" width="3" height="11" rx=".8"/></svg>
+      <svg width="16" height="13" viewBox="0 0 16 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M1.2 4.2a10 10 0 0 1 13.6 0M3.8 6.8a6.2 6.2 0 0 1 8.4 0M6.3 9a2.5 2.5 0 0 1 3.4 0"/><circle cx="8" cy="11" r=".85" fill="currentColor" stroke="none"/></svg>
+      <svg width="25" height="13" viewBox="0 0 25 13" fill="currentColor"><rect x="1" y="2" width="20.5" height="9" rx="2.2" fill="none" stroke="currentColor" opacity=".55"/><rect x="2.7" y="3.7" width="17.1" height="5.6" rx="1"/><path d="M23 4.6v3.8a2 2 0 0 0 0-3.8Z" opacity=".55"/></svg>
+    </span>
+  </div>
+
+  <nav class="navigation" aria-label="Back navigation" data-dc-id="navigation">
+    <button type="button" class="back" id="settings" data-dc-id="settings-back"><svg class="" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m10 3-5 5 5 5"/></svg>Settings</button>
+    <button type="button" class="back" id="back" data-dc-id="back-to-list" aria-label="Back to Bluetooth Devices" hidden><svg class="" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m10 3-5 5 5 5"/></svg>Bluetooth Devices</button>
+  </nav>
+
+  <main>
+    <section class="view" id="device-list" aria-labelledby="list-title" data-dc-id="device-list">
+      <header class="page-header">
+        <h1 id="list-title" data-dc-id="section-header">Bluetooth Devices</h1>
+      </header>
+
+      <div class="sections">
+        <section aria-labelledby="whoop-title" data-dc-id="whoop-section">
+          <h2 class="section-title" id="whoop-title" data-dc-id="whoop-heading">WHOOP</h2>
+          <div data-dc-id="whoop-card">
+            <button type="button" class="card whoop-row" id="whoop-row" data-dc-id="whoop-row">
+              <span class="device-icon" aria-hidden="true"><svg class="" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4.2" y="1.7" width="7.6" height="12.6" rx="3"/><rect x="3" y="5.7" width="10" height="4.6" rx="1.6"/></svg></span>
+              <span class="device-info">
+                <span class="device-name" data-dc-id="whoop-name">WHOOP MG</span>
+                <span class="connection-status" data-connection data-connected="true" data-dc-id="status">Connected</span>
+              </span>
+              <span class="battery meter" data-tone="normal" data-dc-id="battery-readout">
+                <span class="battery-line" data-dc-id="meter-text"><span class="battery-value" data-percent data-dc-id="battery">57%</span><span class="separator" aria-hidden="true">·</span><span class="charging" data-dc-id="charging-label"><svg class="bolt" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 1.8-5 7h3.8L7 14.2l5-7H8.2L9 1.8Z" fill="currentColor" stroke="none"/></svg><span data-charging data-dc-id="charging">Charging</span></span></span>
+                <span class="meter-track" aria-hidden="true" data-dc-id="charge-meter"><span class="meter-fill" data-dc-id="meter-fill"></span></span>
+              </span>
+              <svg class="chevron" data-dc-id="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 3 5 5-5 5"/></svg>
+            </button>
+          </div>
+        </section>
+
+        <section aria-labelledby="hr-title" data-dc-id="heart-rate">
+          <h2 class="section-title" id="hr-title" data-dc-id="heart-rate-heading">Heart-rate monitors</h2>
+          <div class="card polar-row" data-dc-id="polar-row">
+            <span class="device-icon heart-icon" aria-hidden="true"><svg class="" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13s-5.8-3.5-5.8-7a3 3 0 0 1 5.8-1 3 3 0 0 1 5.8 1C13.8 9.5 8 13 8 13Z"/></svg></span>
+            <span class="device-info">
+              <span class="device-name" data-dc-id="polar-name">Polar H10</span>
+              <span class="connection-status" data-connected="true" data-dc-id="polar-status">Connected</span>
+            </span>
+            <span class="hr-value" data-dc-id="hr-value">142 <span class="hr-unit">bpm</span></span>
+          </div>
+        </section>
+
+        <div>
+          <button class="card connect-device" type="button" id="connect-device" data-dc-id="connect-device"><svg class="" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.8 4.6 11.4 11 8 14V2l3.4 3L3.8 11.4"/></svg>Connect Bluetooth device</button>
+          <p class="notice" id="list-notice" data-dc-id="list-notice" role="status"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="device-detail" aria-labelledby="detail-title" data-dc-id="device-detail" hidden>
+      <header class="page-header detail-header">
+        <h1 id="detail-title" tabindex="-1" data-dc-id="detail-heading">WHOOP MG</h1>
+        <span class="connection-status" data-connection data-connected="true" data-dc-id="detail-status">Connected</span>
+      </header>
+
+      <div class="sections">
+        <section class="card detail-battery" aria-labelledby="battery-title" data-dc-id="detail-card">
+          <h2 class="section-title" id="battery-title" data-dc-id="battery-heading">Battery</h2>
+          <span class="battery meter" data-tone="normal" data-dc-id="detail-battery-readout">
+                <span class="battery-line" data-dc-id="detail-meter-text"><span class="battery-value" data-percent data-dc-id="detail-battery">57%</span><span class="separator" aria-hidden="true">·</span><span class="charging" data-dc-id="detail-charging-label"><svg class="bolt" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 1.8-5 7h3.8L7 14.2l5-7H8.2L9 1.8Z" fill="currentColor" stroke="none"/></svg><span data-charging data-dc-id="detail-charging">Charging</span></span></span>
+                <span class="meter-track" aria-hidden="true" data-dc-id="detail-charge-meter"><span class="meter-fill" data-dc-id="detail-meter-fill"></span></span>
+              </span>
+        </section>
+
+        <details class="card diagnostics" id="diagnostics" data-dc-id="diagnostics">
+          <summary data-dc-id="diagnostics-toggle">Diagnostics<svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 3 5 5-5 5"/></svg></summary>
+          <dl data-dc-id="diagnostics-counts">
+            <div class="diagnostic-row" data-dc-id="imu-samples"><dt>IMU samples</dt><dd>12,480</dd></div>
+            <div class="diagnostic-row" data-dc-id="realtime-samples"><dt>Realtime samples</dt><dd>126</dd></div>
+          </dl>
+        </details>
+
+        <button type="button" class="card connection-action" id="connection-action" data-connected="true" data-dc-id="connect-btn">Disconnect</button>
+      </div>
+    </section>
+  </main>
+
+  <aside class="preview" aria-labelledby="preview-label" data-dc-id="preview-strip">
+    <label class="preview-label" id="preview-label" for="preview-state" data-dc-id="preview-label">Preview state</label>
+    <span class="preview-field">
+      <select id="preview-state" data-dc-id="preview-select">
+        <option value="charging" selected>Charging (57%)</option>
+        <option value="idle">Not charging (57%)</option>
+        <option value="low">Low (12%)</option>
+        <option value="empty">Empty (0%)</option>
+        <option value="unknown">Unknown</option>
+        <option value="disconnected">Disconnected</option>
+      </select>
+      <svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg>
+    </span>
+  </aside>
+  <div class="home-indicator" aria-hidden="true"></div>
+
+  <script>
+    const states = {
+      charging: { percent: 57, charging: true, connected: true, tone: 'normal' },
+      idle: { percent: 57, charging: false, connected: true, tone: 'normal' },
+      low: { percent: 12, charging: false, connected: true, tone: 'low' },
+      empty: { percent: 0, charging: false, connected: true, tone: 'empty' },
+      unknown: { percent: null, charging: null, connected: true, tone: 'unknown' },
+      disconnected: { percent: null, charging: null, connected: false, tone: 'unknown' },
+    };
+
+    const preview = document.getElementById('preview-state');
+    const action = document.getElementById('connection-action');
+    const list = document.getElementById('device-list');
+    const detail = document.getElementById('device-detail');
+    const row = document.getElementById('whoop-row');
+    const settings = document.getElementById('settings');
+    const back = document.getElementById('back');
+    const notice = document.getElementById('list-notice');
+    let state = 'charging';
+    let connectedState = state;
+
+    function showState(nextState) {
+      state = nextState;
+      const { percent, charging, connected, tone } = states[state];
+      if (connected) connectedState = state;
+      preview.value = state;
+
+      for (const readout of document.querySelectorAll('.battery')) {
+        readout.dataset.tone = tone;
+        readout.style.setProperty('--battery-fill', (percent ?? 0) + '%');
+        readout.querySelector('[data-percent]').textContent = percent === null ? 'Battery unavailable' : percent + '%';
+        readout.querySelector('[data-charging]').textContent =
+          charging === null ? 'Charging unknown' : charging ? 'Charging' : 'Not charging';
+        readout.querySelector('.bolt').toggleAttribute('hidden', charging !== true);
+      }
+
+      for (const status of document.querySelectorAll('[data-connection]')) {
+        status.dataset.connected = connected;
+        status.textContent = connected ? 'Connected' : 'Disconnected';
+      }
+      action.dataset.connected = connected;
+      action.textContent = connected ? 'Disconnect' : 'Connect';
+    }
+
+    function showDetail(open) {
+      list.hidden = open;
+      settings.hidden = open;
+      detail.hidden = !open;
+      back.hidden = !open;
+      notice.textContent = '';
+      if (open) {
+        document.getElementById('diagnostics').open = false;
+        document.getElementById('detail-title').focus();
+      } else {
+        row.focus();
+      }
+    }
+
+    row.addEventListener('click', () => showDetail(true));
+    back.addEventListener('click', () => showDetail(false));
+    preview.addEventListener('change', () => showState(preview.value));
+    action.addEventListener('click', () => showState(states[state].connected ? 'disconnected' : connectedState));
+    settings.addEventListener('click', () => { notice.textContent = 'This preview starts in Bluetooth Devices.'; });
+    document.getElementById('connect-device').addEventListener('click', () => {
+      notice.textContent = 'This preview uses WHOOP MG and Polar H10.';
+    });
+    showState(preview.value);
+  </script>
+</body>
+</html>

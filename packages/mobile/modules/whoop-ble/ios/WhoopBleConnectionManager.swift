@@ -29,6 +29,12 @@ final class WhoopBleConnectionManager {
     var centralManager: (any WhoopBleCentralManaging)?
     var cmdResponseCharacteristic: CBCharacteristic?
     var dataCharacteristic: CBCharacteristic?
+    var whoopService: CBService?
+    var batteryService: CBService?
+    var batteryLevelCharacteristic: CBCharacteristic?
+    var batteryEventCharacteristic: CBCharacteristic?
+    let batteryEventParser = WhoopBleFrameParser()
+    private(set) var batteryStatus = WhoopBleBatteryStatus()
     var notificationSubscriptionTracker: WhoopBleNotificationSubscriptionTracker?
     var autoReconnect = false
     var wasStreaming = false
@@ -377,7 +383,8 @@ final class WhoopBleConnectionManager {
     }
 
     func setConnectedPeripheral(_ peripheral: (any WhoopBlePeripheralConnection)?) {
-        if let peripheral, let previous = connectedPeripheral, previous.identifier != peripheral.identifier {
+        if let peripheral, let previous = connectedPeripheral,
+           previous.notificationSource !== peripheral.notificationSource {
             let cancellationPending = state == .disconnecting
             recordConnectionEvent("disconnected", reason: "peripheral_replaced")
             cleanup()
@@ -389,6 +396,12 @@ final class WhoopBleConnectionManager {
         }
         connectedPeripheral = peripheral
         if peripheral != nil { delegate?.connectionManagerDidSelectPeripheral(self) }
+    }
+
+    func setBatteryStatus(_ status: WhoopBleBatteryStatus) {
+        guard status != batteryStatus else { return }
+        batteryStatus = status
+        delegate?.connectionManager(self, didUpdateBatteryStatus: status)
     }
 
     func setDiscoveredCharacteristics(
@@ -407,8 +420,14 @@ final class WhoopBleConnectionManager {
         cmdCharacteristic = nil
         cmdResponseCharacteristic = nil
         dataCharacteristic = nil
+        whoopService = nil
+        batteryService = nil
+        batteryLevelCharacteristic = nil
+        batteryEventCharacteristic = nil
+        batteryEventParser.reset()
         notificationSubscriptionTracker = nil
         deviceInfo = [:]
+        setBatteryStatus(WhoopBleBatteryStatus())
     }
 
     /// Applies the asynchronous notification-subscription result to the

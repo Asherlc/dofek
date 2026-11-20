@@ -61,7 +61,7 @@ extension WhoopBleConnectionManager {
         error: Error,
         cancelPeripheral: () -> Void
     ) {
-        if serviceUUID == CBUUID(string: "180A") {
+        if serviceUUID == WhoopBleConstants.deviceInformationServiceUUID {
             recordConnectionEvent("device_information_discovery_failed", error: error)
             return
         }
@@ -78,7 +78,7 @@ extension WhoopBleConnectionManager {
         with error: WhoopBleConnectionError,
         underlyingError: Error? = nil
     ) {
-        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        guard connectedPeripheral?.notificationSource === peripheral.notificationSource else { return }
         abortHandshake(with: error, underlyingError: underlyingError) {
             peripheral.cancelConnection()
         }

@@ -2,6 +2,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import type { BluetoothDevice } from "../lib/bluetooth-device-catalog";
 import { colors, fontSize, fontWeight, radius, spacing } from "../theme";
 import { QueryStatePanel } from "./QueryStatePanel";
+import { WhoopBatteryStatus, whoopBatteryLabels } from "./WhoopBatteryStatus";
 
 export interface BluetoothDeviceListProps {
   connecting: boolean;
@@ -105,22 +106,49 @@ function DeviceSection({
         {title}
       </Text>
       {devices.map((device) => (
-        <Pressable
+        <DeviceRow
           key={`${device.kind}:${device.id}`}
-          accessibilityRole="button"
-          accessibilityLabel={`${device.name}, ${device.connectionState}`}
-          onPress={() => onSelectDevice(device)}
-          style={styles.deviceRow}
-        >
-          <View style={styles.deviceText}>
-            <Text style={styles.deviceName}>{device.name}</Text>
-            <Text style={styles.connectionState}>{device.connectionState}</Text>
-            <Text style={styles.diagnostics}>{diagnosticSummary(device)}</Text>
-          </View>
-          <Text style={styles.chevron}>›</Text>
-        </Pressable>
+          device={device}
+          onSelectDevice={onSelectDevice}
+        />
       ))}
     </View>
+  );
+}
+
+function DeviceRow({
+  device,
+  onSelectDevice,
+}: {
+  device: BluetoothDevice;
+  onSelectDevice: (device: BluetoothDevice) => void;
+}) {
+  const connected = device.connectionState === "ready" || device.connectionState === "streaming";
+  const battery =
+    device.kind === "whoop" && device.battery
+      ? connected
+        ? device.battery
+        : { percentage: null, isCharging: null }
+      : undefined;
+  const deviceLabel = `${device.name}, ${device.connectionState}`;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={
+        battery ? `${deviceLabel}, ${whoopBatteryLabels(battery).accessibilityLabel}` : deviceLabel
+      }
+      onPress={() => onSelectDevice(device)}
+      style={styles.deviceRow}
+    >
+      <View style={styles.deviceText}>
+        <Text style={styles.deviceName}>{device.name}</Text>
+        <Text style={styles.connectionState}>{device.connectionState}</Text>
+        <Text style={styles.diagnostics}>{diagnosticSummary(device)}</Text>
+      </View>
+      {battery ? <WhoopBatteryStatus {...battery} style={styles.battery} /> : null}
+      <Text style={styles.chevron}>›</Text>
+    </Pressable>
   );
 }
 
@@ -184,6 +212,10 @@ const styles = StyleSheet.create({
   diagnostics: {
     color: colors.textTertiary,
     fontSize: fontSize.xs,
+  },
+  battery: {
+    marginHorizontal: spacing.sm,
+    maxWidth: "42%",
   },
   chevron: {
     color: colors.textTertiary,

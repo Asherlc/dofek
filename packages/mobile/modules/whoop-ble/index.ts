@@ -8,13 +8,19 @@ export interface WhoopDevice {
   name: string | null;
 }
 
-/** A read-only snapshot of the current WHOOP connection and buffer state. */
+/** A read-only snapshot of the current WHOOP connection, battery, and buffer state. */
 export const WhoopDeviceSummarySchema = z.object({
   id: z.string().nullable(),
   name: z.string().nullable(),
   connectionState: z.string().min(1),
   imuBufferedSamples: z.number().int().nonnegative(),
   realtimeBufferedSamples: z.number().int().nonnegative(),
+  battery: z
+    .object({
+      percentage: z.number().min(0).max(100).nullable(),
+      isCharging: z.boolean().nullable(),
+    })
+    .default({ percentage: null, isCharging: null }),
   managedHistoryEnabled: z.boolean().optional(),
 });
 
@@ -107,7 +113,7 @@ export function getBufferedSampleCount(): number {
   return WhoopBleModule.getBufferedSampleCount();
 }
 
-/** Get the current WHOOP identity, connection state, and buffer counts without scanning or connecting. */
+/** Get the current WHOOP identity, connection, battery, and buffer state without scanning or connecting. */
 export async function getDeviceSummary(): Promise<WhoopDeviceSummary> {
   return WhoopDeviceSummarySchema.parse(await WhoopBleModule.getDeviceSummary());
 }
@@ -294,7 +300,7 @@ export function addConnectionStateListener(
   return WhoopBleModule.addListener("onConnectionStateChanged", callback);
 }
 
-/** Subscribe to WHOOP identity, connection, streaming, and buffer snapshot changes. */
+/** Subscribe to WHOOP identity, connection, streaming, battery, and buffer snapshot changes. */
 export function addDeviceStateListener(
   callback: (summary: WhoopDeviceSummary) => void,
 ): EventSubscription {

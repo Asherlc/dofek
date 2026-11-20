@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { WhoopDeviceSummary } from "../modules/whoop-ble";
 
 const mockHeartRate = vi.hoisted(() => {
   let stateListener: ((snapshot: unknown) => void) | undefined;
@@ -38,18 +39,18 @@ const mockHeartRate = vi.hoisted(() => {
 });
 
 const mockWhoop = vi.hoisted(() => {
-  let listener: ((event: unknown) => void) | undefined;
+  let listener: ((event: WhoopDeviceSummary) => void) | undefined;
   const remove = vi.fn();
 
   return {
-    addDeviceStateListener: vi.fn((callback: (event: unknown) => void) => {
+    addDeviceStateListener: vi.fn((callback: (event: WhoopDeviceSummary) => void) => {
       listener = callback;
       return { remove };
     }),
-    emitDeviceStateChanged(event: unknown) {
+    emitDeviceStateChanged(event: WhoopDeviceSummary) {
       listener?.(event);
     },
-    getDeviceSummary: vi.fn(),
+    getDeviceSummary: vi.fn<() => Promise<WhoopDeviceSummary>>(),
     remove,
     reset() {
       listener = undefined;
@@ -94,6 +95,7 @@ describe("bluetooth-device-catalog", () => {
       connectionState: "idle",
       imuBufferedSamples: 0,
       realtimeBufferedSamples: 0,
+      battery: { percentage: null, isCharging: null },
     });
   });
 
@@ -105,6 +107,7 @@ describe("bluetooth-device-catalog", () => {
       connectionState: "ready",
       imuBufferedSamples: 12,
       realtimeBufferedSamples: 4,
+      battery: { percentage: 49.9, isCharging: false },
     });
 
     const { getBluetoothDevices } = await import("./bluetooth-device-catalog.ts");
@@ -117,6 +120,7 @@ describe("bluetooth-device-catalog", () => {
         peripheralId: null,
         connectionState: "ready",
         diagnostics: { imuBufferedSamples: 12, realtimeBufferedSamples: 4 },
+        battery: { percentage: 49.9, isCharging: false },
       },
       {
         id: "polar",
@@ -154,35 +158,36 @@ describe("bluetooth-device-catalog", () => {
     );
   });
 
-  it("publishes an updated list when WHOOP changes connection, streaming, or buffer state", async () => {
+  it("publishes battery-only updates from the WHOOP native device-state listener", async () => {
     const { subscribeBluetoothDevices } = await import("./bluetooth-device-catalog.ts");
     const listener = vi.fn();
     subscribeBluetoothDevices(listener);
-    mockWhoop.getDeviceSummary.mockResolvedValue({
+    const summary = {
       id: "whoop-123",
-      name: "WHOOP 4.0",
+      name: "WHOOP MG",
       connectionState: "streaming",
       imuBufferedSamples: 3,
       realtimeBufferedSamples: 1,
-    });
+      battery: { percentage: 0, isCharging: true },
+    };
+    mockWhoop.getDeviceSummary.mockResolvedValue(summary);
+    mockWhoop.emitDeviceStateChanged(summary);
+    await vi.waitFor(() => expect(listener).toHaveBeenCalledOnce());
 
-    mockWhoop.emitDeviceStateChanged({
-      id: "whoop-123",
-      name: "WHOOP 4.0",
-      connectionState: "streaming",
-      imuBufferedSamples: 3,
-      realtimeBufferedSamples: 1,
-    });
+    const changed = { ...summary, battery: { percentage: 0, isCharging: false } };
+    mockWhoop.getDeviceSummary.mockResolvedValue(changed);
+    mockWhoop.emitDeviceStateChanged(changed);
 
     await vi.waitFor(() =>
-      expect(listener).toHaveBeenCalledWith({
+      expect(listener).toHaveBeenLastCalledWith({
         state: "ready",
         devices: [
           expect.objectContaining({
             id: "whoop",
-            name: "WHOOP 4.0",
+            name: "WHOOP MG",
             peripheralId: "whoop-123",
             connectionState: "streaming",
+            battery: { percentage: 0, isCharging: false },
           }),
         ],
         error: null,

@@ -164,6 +164,8 @@ final class TestWhoopPeripheralConnection: WhoopBlePeripheralConnection {
     private(set) var connections = 0
     private(set) var cancellations = 0
     private(set) var discoveredServices: [CBUUID]?
+    private(set) var characteristicDiscoveries: [([CBUUID]?, CBService)] = []
+    private(set) var notificationRequests: [(Bool, CBCharacteristic)] = []
     var onCancel: () -> Void = {}
     private(set) var reads: [CBCharacteristic] = []
     private(set) var writes: [(Data, CBCharacteristic, CBCharacteristicWriteType)] = []
@@ -179,8 +181,12 @@ final class TestWhoopPeripheralConnection: WhoopBlePeripheralConnection {
         onCancel()
     }
     func discoverServices(_ serviceUUIDs: [CBUUID]?) { discoveredServices = serviceUUIDs }
-    func discoverCharacteristics(_ characteristicUUIDs: [CBUUID]?, for service: CBService) {}
-    func setNotifyValue(_ enabled: Bool, for characteristic: CBCharacteristic) {}
+    func discoverCharacteristics(_ characteristicUUIDs: [CBUUID]?, for service: CBService) {
+        characteristicDiscoveries.append((characteristicUUIDs, service))
+    }
+    func setNotifyValue(_ enabled: Bool, for characteristic: CBCharacteristic) {
+        notificationRequests.append((enabled, characteristic))
+    }
     func readValue(for characteristic: CBCharacteristic) { reads.append(characteristic) }
     func writeValue(_ data: Data, for characteristic: CBCharacteristic, type: CBCharacteristicWriteType) {
         writes.append((data, characteristic, type))

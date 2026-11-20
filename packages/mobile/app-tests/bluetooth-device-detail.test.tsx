@@ -3,7 +3,10 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BluetoothDevice } from "../lib/bluetooth-device-catalog";
+import type {
+  BluetoothDevice,
+  BluetoothDeviceCatalogUpdate,
+} from "../lib/bluetooth-device-catalog";
 
 const mocks = vi.hoisted(() => ({
   back: vi.fn(),
@@ -97,6 +100,7 @@ describe("BluetoothDeviceDetailScreen", () => {
     expect(await screen.findByText("142 bpm")).toBeTruthy();
     expect(screen.getByText("R-R intervals: 820 ms")).toBeTruthy();
     expect(screen.getByText("Buffered samples: 3")).toBeTruthy();
+    expect(screen.queryByText("Battery")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Connect Polar H10" }));
 
     expect(await screen.findByText(connectionError.message)).toBeTruthy();
@@ -141,6 +145,67 @@ describe("BluetoothDeviceDetailScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Disconnect WHOOP" }));
 
     await waitFor(() => expect(mocks.whoopDisconnect).toHaveBeenCalledOnce());
+  });
+
+  it.each([
+    ["ready", { percentage: 0, isCharging: false }, "0%", "Not charging"],
+    ["ready", { percentage: null, isCharging: null }, "Battery unavailable", "Charging unknown"],
+    [
+      "disconnected",
+      { percentage: 57, isCharging: true },
+      "Battery unavailable",
+      "Charging unknown",
+    ],
+    ["connecting", { percentage: 57, isCharging: true }, "Battery unavailable", "Charging unknown"],
+  ] as const)(
+    "shows the WHOOP battery facts for %s",
+    async (connectionState, battery, level, charging) => {
+      mocks.params.id = "whoop";
+      mocks.getBluetoothDevices.mockResolvedValue([{ ...whoop, connectionState, battery }]);
+      const { default: BluetoothDeviceDetailScreen } = await import(
+        "../app/bluetooth-devices/[id]"
+      );
+      render(<BluetoothDeviceDetailScreen />);
+
+      expect(await screen.findByText("Battery")).toBeTruthy();
+      expect(screen.getByText(level)).toBeTruthy();
+      expect(screen.getByText(charging)).toBeTruthy();
+      expect(screen.queryByText("57%")).toBeNull();
+      expect(screen.queryByText("Charging", { exact: true })).toBeNull();
+    },
+  );
+
+  it("updates and clears the detail badge as the native device catalog publishes changes", async () => {
+    let publish: ((update: BluetoothDeviceCatalogUpdate) => void) | undefined;
+    mocks.params.id = "whoop";
+    const charging = { ...whoop, battery: { percentage: 49.9, isCharging: true } };
+    mocks.getBluetoothDevices.mockResolvedValue([charging]);
+    mocks.subscribeBluetoothDevices.mockImplementation((listener) => {
+      publish = listener;
+      return { remove: mocks.remove };
+    });
+    const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
+    render(<BluetoothDeviceDetailScreen />);
+    expect(await screen.findByText("49.9%")).toBeTruthy();
+    expect(screen.getByText("Charging")).toBeTruthy();
+
+    const measuredZero = { ...whoop, battery: { percentage: 0, isCharging: false } };
+    act(() => publish?.({ state: "ready", devices: [measuredZero], error: null }));
+    expect(screen.getByText("0%")).toBeTruthy();
+    expect(screen.getByText("Not charging")).toBeTruthy();
+    expect(screen.queryByText("49.9%")).toBeNull();
+
+    act(() =>
+      publish?.({
+        state: "ready",
+        devices: [{ ...measuredZero, connectionState: "disconnected" }],
+        error: null,
+      }),
+    );
+    expect(screen.getByText("Battery unavailable")).toBeTruthy();
+    expect(screen.getByText("Charging unknown")).toBeTruthy();
+    expect(screen.queryByText("0%")).toBeNull();
+    expect(screen.queryByText("Not charging")).toBeNull();
   });
 
   it("starts WHOOP IMU streaming and renders the updated streaming status", async () => {
