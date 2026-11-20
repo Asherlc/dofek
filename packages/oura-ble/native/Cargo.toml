@@ -1,0 +1,28 @@
+[package]
+name = "oura-ble-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+name = "oura_ble_core"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[features]
+bindgen = ["uniffi/cli"]
+
+[dependencies]
+async-trait = "=0.1.89"
+oura-link = { git = "https://github.com/Th0rgal/open_oura", rev = "4f7957d3304c4084f0e1e703f3d84606bf10b781", default-features = false }
+oura-protocol = { git = "https://github.com/Th0rgal/open_oura", rev = "4f7957d3304c4084f0e1e703f3d84606bf10b781" }
+oura-store = { git = "https://github.com/Th0rgal/open_oura", rev = "4f7957d3304c4084f0e1e703f3d84606bf10b781" }
+rusqlite = "=0.31.0"
+thiserror = "=2.0.18"
+tokio = { version = "=1.52.3", features = ["macros", "rt", "sync", "time"] }
+uniffi = { version = "=0.32.2", features = ["tokio"] }

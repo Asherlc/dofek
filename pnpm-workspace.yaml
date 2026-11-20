@@ -24,6 +24,7 @@ packages:
   - packages/web
   - packages/mobile
   - packages/mobile/modules/whoop-ble
+  - packages/oura-ble
   - packages/whoop-whoop
   - packages/eight-sleep
   - packages/zwift-client

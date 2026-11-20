@@ -20,6 +20,7 @@
       ".github/actions/**/*.test.ts",
       "src/**",
       "packages/*/src/**",
+      "packages/oura-ble/scripts/**",
       "packages/zepp/src/**",
       "packages/zepp/page/**",
       "packages/zepp/app-side/**",

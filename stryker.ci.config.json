@@ -17,6 +17,7 @@
     "packages/training/src/**/*.ts",
     "packages/cycling-power/src/**/*.ts",
     "packages/climbing-catalogue/src/**/*.ts",
+    "packages/oura-ble/src/**/*.ts",
     "packages/recovery/src/**/*.ts",
     "packages/zones/src/**/*.ts",
     "packages/stats/src/**/*.ts",
