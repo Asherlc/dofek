@@ -14,8 +14,32 @@ extension WhoopBleBackgroundUploaderTests {
             store: store, directory: directory.appendingPathComponent("bodies"),
             transport: transport, reportError: { XCTFail("Unexpected uploader error: \($0)") }
         )
+        try settle(uploader)
 
         try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
+        try settle(uploader)
+
+        XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM samples WHERE stream = 'realtime'"), 1)
+        XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM incoming_samples"), 0)
+        XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
+        XCTAssertTrue(transport.requests.isEmpty)
+    }
+
+    /// Startup reconciliation indexes an already authenticated staged row even
+    /// before any upload token is configured.
+    func testStartupIndexesAuthenticatedStagedRowWithoutToken() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: directory) }
+        let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: directory) }
+        try store.configure(WhoopUploadBinding(userId: "alice", serverURL: "https://example.com"))
+        try store.append(deviceId: "a", samplesByStream: [.realtime: rows])
+        XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM incoming_samples"), 1)
+
+        let transport = TestWhoopUploadTransport()
+        let uploader = try WhoopBleBackgroundUploader(
+            store: store, directory: directory.appendingPathComponent("bodies"),
+            transport: transport, reportError: { XCTFail("Unexpected uploader error: \($0)") }
+        )
         try settle(uploader)
 
         XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM samples WHERE stream = 'realtime'"), 1)

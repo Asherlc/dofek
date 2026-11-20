@@ -131,23 +131,31 @@ extension WhoopBleSampleStore {
     func eraseInboxLocked(stream: String, cutoff: Double) throws -> Int {
         var erased = 0
         let covered = try rows(
-            "SELECT id, count FROM incoming_samples WHERE stream = ? AND newest <= ? ORDER BY id",
+            """
+            SELECT COALESCE(SUM(count), 0) AS total FROM incoming_samples
+            WHERE stream = ? AND newest <= ?
+            """,
             [stream, cutoff]
         )
-        for row in covered {
+        erased += try field("total", in: covered[0])
+        try execute("DELETE FROM incoming_samples WHERE stream = ? AND newest <= ?", [stream, cutoff])
+
+        // Generated rowids are positive, so zero is below the first key. Each
+        // query finishes before its UPDATE/DELETE, and the keyset advances past
+        // the captured row so a rewrite cannot select it again.
+        var lastID = 0
+        while true {
+            let partial = try rows(
+                """
+                SELECT id, payload FROM incoming_samples
+                WHERE stream = ? AND oldest <= ? AND newest > ? AND id > ?
+                ORDER BY id LIMIT 1
+                """,
+                [stream, cutoff, cutoff, lastID]
+            )
+            guard let row = partial.first else { break }
             let id: Int = try field("id", in: row)
-            erased += try field("count", in: row)
-            try execute("DELETE FROM incoming_samples WHERE id = ?", [id])
-        }
-        let partial = try rows(
-            """
-            SELECT id, payload FROM incoming_samples
-            WHERE stream = ? AND oldest <= ? AND newest > ? ORDER BY id
-            """,
-            [stream, cutoff, cutoff]
-        )
-        for row in partial {
-            let id: Int = try field("id", in: row)
+            lastID = id
             let compressed: Data = try field("payload", in: row)
             let entries = try decodeInboxPayload(compressed)
             let kept = entries.filter { $0.timestamp > cutoff }
