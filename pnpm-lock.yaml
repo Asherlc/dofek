@@ -1161,6 +1161,9 @@ importers:
       storybook:
         specifier: 10.6.2
         version: 10.6.2(@types/react@19.3.0)(prettier@3.9.5)(react@19.3.0)
+      storybook-addon-canvas-comments:
+        specifier: 0.3.10
+        version: 0.3.10(react@19.3.0)(storybook@10.6.2)(typescript@6.0.3)(vite@8.1.6)
       tailwindcss:
         specifier: 4.3.3
         version: 4.3.3
@@ -16105,6 +16108,25 @@ packages:
   stoppable@1.1.0:
     resolution: {integrity: sha512-KXDYZ9dszj6bzvnEMRYvxgeTHU74QBFL54XKtP3nyMuJ81CFYtABZ3bAzL2EdFUaEwJOBOgENyFj3R7oTzDyyw==}
     engines: {node: '>=4', npm: '>=6'}
+
+  storybook-addon-canvas-comments@0.3.10:
+    resolution: {integrity: sha512-XsGop4PR+EQ7UcNxMmNEH2fgwFYdcf820lm7znZDYgK8K/RqX3jIl6hniGTZ/5du3L63oLTRk2ACe49ghBxUyg==}
+    engines: {node: '>=20'}
+    hasBin: true
+    peerDependencies:
+      react: 19.3.0
+      storybook: '>=8'
+      typescript: '>=5'
+      vite: '>=5'
+    peerDependenciesMeta:
+      react:
+        optional: true
+      storybook:
+        optional: true
+      typescript:
+        optional: true
+      vite:
+        optional: true
 
   storybook@10.6.2:
     resolution: {integrity: sha512-qHDINMiapxFUxYb+xC3j8u7Y+85X3u+/PlytE/wmnyg+bU0agCW3jUmWP4vIh2MioO2jTK/2B3Lcw6IpRFzQBA==}
@@ -35561,6 +35583,15 @@ snapshots:
       internal-slot: 1.1.0
 
   stoppable@1.1.0: {}
+
+  storybook-addon-canvas-comments@0.3.10(react@19.3.0)(storybook@10.6.2)(typescript@6.0.3)(vite@8.1.6):
+    dependencies:
+      dom-accessibility-api: 0.6.3
+    optionalDependencies:
+      react: 19.3.0
+      storybook: 10.6.2(@types/react@19.3.0)(prettier@3.9.5)(react@19.3.0)
+      typescript: 6.0.3
+      vite: 8.1.6(@types/node@26.6.6)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
 
   storybook@10.6.2(@types/react@19.3.0)(prettier@3.9.5)(react@19.3.0):
     dependencies:
