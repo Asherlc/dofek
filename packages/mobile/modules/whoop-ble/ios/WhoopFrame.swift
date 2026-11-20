@@ -9,6 +9,10 @@ struct WhoopFrame {
     let payload: Data
     let rawData: Data
 
+    var hasFormatOneHeader: Bool {
+        rawData.count >= WhoopBleConstants.maverickHeaderSize && rawData[rawData.startIndex + 1] == 1
+    }
+
     init(packetType: UInt8, recordType: UInt8, dataTimestamp: UInt32, subSeconds: UInt16,
          payload: Data, rawData: Data = Data()) {
         self.packetType = packetType; self.recordType = recordType
