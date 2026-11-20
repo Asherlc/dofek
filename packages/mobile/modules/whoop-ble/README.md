@@ -148,8 +148,9 @@ Dofek saves historical samples it receives during WHOOP sync by default. To
 manage history with Dofek, open the strap's Bluetooth device details on the
 iPhone and enable **Dofek-managed history** after removing WHOOP's access to
 that strap. The setting applies when capture starts on the next connection.
-Disabling stops further Dofek history writes immediately. Format and storage
-limits are described in the [WHOOP protocol reference](../../../../docs/whoop-ble-protocol.md#historical-offload-checkpoint).
+Disabling immediately stops Dofek from issuing history requests and
+acknowledgments. Dofek continues to save any historical samples it receives.
+Format and storage limits are described in the [WHOOP protocol reference](../../../../docs/whoop-ble-protocol.md#historical-offload-checkpoint).
 
 `getDataPathStats()` also exposes `lastKnownDeviceId`, capture timestamps, and a typed `buffers`
 snapshot containing `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`,
