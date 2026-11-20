@@ -284,6 +284,10 @@ function classifyChanges(
     changedFiles.some(
       (changedFile) => changedFile.startsWith("packages/mobile/") && !changedFile.endsWith(".md"),
     ) ||
+    hasMatchingFile(
+      changedFiles,
+      /^packages\/oura-ble\/(?:ios\/|Tests\/|Package\.swift$|mutantkit\.yml$)/,
+    ) ||
     sharedCheckWorkflowChange ||
     mobileCheckWorkflowChange ||
     hasMatchingFile(changedFiles, /^\.github\/workflows\/build-mobile\.yml$/);

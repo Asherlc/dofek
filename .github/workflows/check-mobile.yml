@@ -118,6 +118,9 @@ jobs:
       - name: Run WHOOP BLE Swift tests
         working-directory: packages/mobile/modules/whoop-ble
         run: swift test
+      - name: Run Oura BLE Swift tests
+        working-directory: packages/oura-ble
+        run: swift test
       - name: Run Swift tests with coverage
         id: healthkit-coverage
         run: pnpm tsx scripts/check-health-kit-coverage.ts

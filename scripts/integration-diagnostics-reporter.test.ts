@@ -141,10 +141,37 @@ export default defineConfig({ test: { reporters: [new ObservedReporter()], proje
     );
     writeFileSync(
       config,
-      `import { spawn } from "node:child_process"; spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "inherit" }); import { defineConfig } from "vitest/config"; import root from ${JSON.stringify(path.join(process.cwd(), "vitest.config.ts"))}; import Reporter from ${JSON.stringify(path.join(process.cwd(), "scripts/integration-diagnostics-reporter.ts"))}; const integration = root.test.projects.find((project) => typeof project !== "string" && project.test?.name === "integration"); export default defineConfig({ test: { reporters: [new Reporter()], projects: [{ test: { name: "unit", sequence: { groupOrder: 0 }, include: [${JSON.stringify(unitFile)}] } }, { ...integration, test: { ...integration.test, setupFiles: [], include: [${JSON.stringify(testFile)}] } }] } });`,
+      `import { spawn } from "node:child_process";
+import { defineConfig } from "vitest/config";
+import root from ${JSON.stringify(path.join(process.cwd(), "vitest.config.ts"))};
+import Reporter from ${JSON.stringify(path.join(process.cwd(), "scripts/integration-diagnostics-reporter.ts"))};
+class ObservedReporter extends Reporter {
+  onHookStart(hook) {
+    spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "inherit" });
+    super.onHookStart(hook);
+  }
+}
+const integration = root.test.projects.find(
+  (project) => typeof project !== "string" && project.test?.name === "integration",
+);
+export default defineConfig({
+  test: {
+    reporters: [new ObservedReporter()],
+    projects: [
+      { test: { name: "unit", sequence: { groupOrder: 0 }, include: [${JSON.stringify(unitFile)}] } },
+      {
+        ...integration,
+        test: { ...integration.test, setupFiles: [], include: [${JSON.stringify(testFile)}] },
+      },
+    ],
+  },
+});`,
     );
     try {
-      const output = await new Promise<string>((resolve, reject) => {
+      const { output, signal } = await new Promise<{
+        output: string;
+        signal: NodeJS.Signals | null;
+      }>((resolve, reject) => {
         const child = spawn(
           process.execPath,
           [
@@ -157,29 +184,60 @@ export default defineConfig({ test: { reporters: [new ObservedReporter()], proje
           { cwd: process.cwd(), detached: true, stdio: ["ignore", "pipe", "pipe"] },
         );
         let text = "";
-        let stderr = "";
+        let stderrLength = 0;
+        let hookObserved = false;
+        let killed = false;
+        let settled = false;
+        const killGroup = () => {
+          if (killed || !child.pid) return;
+          killed = true;
+          try {
+            process.kill(-child.pid, "SIGKILL");
+          } catch (error) {
+            if (
+              typeof error !== "object" ||
+              error === null ||
+              !("code" in error) ||
+              error.code !== "ESRCH"
+            )
+              throw error;
+          }
+        };
+        const settle = (complete: () => void) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          complete();
+        };
+        const fail = (message: string) => settle(() => reject(new Error(message)));
+        const succeed = (closeSignal: NodeJS.Signals | null) =>
+          settle(() => resolve({ output: text, signal: closeSignal }));
         child.stderr.on("data", (chunk: Buffer) => {
-          stderr += chunk.toString();
+          stderrLength += chunk.length;
         });
         const timer = setTimeout(() => {
-          if (child.pid) process.kill(-child.pid, "SIGKILL");
-          reject(
-            new Error(
-              `Runner pipes did not close; hook observed: ${text.includes('"event":"hook.start"')}; stderr empty: ${stderr.length === 0}`,
-            ),
+          killGroup();
+          fail(
+            `Runner pipes did not close; hook observed: ${hookObserved}; stderr empty: ${stderrLength === 0}`,
           );
         }, 10_000);
+        child.on("exit", (code, exitSignal) => {
+          if (!hookObserved) {
+            killGroup();
+            fail(`Runner exited before hook start; code: ${code}; signal: ${exitSignal}`);
+          }
+        });
         child.stdout.on("data", (chunk: Buffer) => {
           text += chunk.toString();
-          if (text.includes('"event":"hook.start"') && child.pid)
-            process.kill(-child.pid, "SIGKILL");
+          if (!hookObserved && text.includes('"event":"hook.start"')) {
+            hookObserved = true;
+            killGroup();
+          }
         });
-        child.on("error", reject);
-        child.on("close", () => {
-          clearTimeout(timer);
-          resolve(text);
-        });
+        child.on("error", (error) => fail(`Runner failed to spawn: ${error.message}`));
+        child.on("close", (_code, closeSignal) => succeed(closeSignal));
       });
+      expect(signal).toBe("SIGKILL");
       expect(existsSync(marker)).toBe(true);
       expect(output).not.toContain("other.integration.test.ts");
       expect(output).toContain('"event":"module.start"');
