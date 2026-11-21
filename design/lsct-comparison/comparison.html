@@ -15,7 +15,6 @@
       --soft: #b9bdc6;
       --accent: #d4ed91;
       --earlier: #a0a9bd;
-      --caution: #f1d5a0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: var(--text);
       background: var(--background);
@@ -27,7 +26,7 @@
     h1, h2, h3, p { margin: 0; }
     h1 { font-size: clamp(27px, 4vw, 37px); line-height: 1.12; letter-spacing: -.045em; }
     h2 { font-size: 17px; letter-spacing: -.018em; }
-    .topline, .heading, .figure-heading, .stage-heading, .ride, summary {
+    .topline, .heading, .stage-heading, summary {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
     }
     .topline { margin-bottom: 24px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
@@ -39,9 +38,8 @@
     .subhead { margin-top: 9px; color: var(--soft); font-size: 14px; line-height: 1.45; }
     section, details { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
     section { padding: 18px 20px; margin-bottom: 12px; }
-    .figure-heading { align-items: flex-start; margin-bottom: 17px; }
-    .figure-heading p { margin-top: 5px; }
-    .setup, .context, .muted { color: var(--soft); font-size: 12px; line-height: 1.45; }
+    .figure-heading { margin-bottom: 17px; }
+    .muted { color: var(--soft); font-size: 12px; line-height: 1.45; }
     .stages { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .stage { padding: 13px 14px; background: var(--inset); border: 1px solid var(--border); border-radius: 8px; }
     .stage-heading { margin-bottom: 13px; }
@@ -67,9 +65,10 @@
     tbody tr:last-child > * { border-bottom: 0; }
     .reading { display: block; white-space: nowrap; font-weight: 610; }
     .unavailable { color: var(--soft); font-size: 12px; }
-    .ride { margin-top: 10px; align-items: flex-start; }
-    .ride strong { font-size: 13px; font-weight: 650; }
-    .ride .reason { text-align: right; color: var(--caution); font-size: 12px; line-height: 1.4; }
+    .test-history { margin: 10px 0 0; padding: 0; list-style: none; }
+    .test-history li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding: 9px 0; }
+    .test-history li + li { border-top: 1px solid var(--border); }
+    .test-history time { min-width: 48px; font-size: 13px; font-weight: 650; }
     details { margin-top: 12px; }
     summary { padding: 12px 20px; cursor: pointer; font-size: 13px; font-weight: 600; list-style: none; }
     summary::-webkit-details-marker { display: none; }
@@ -84,10 +83,7 @@
       .heading { flex-direction: column; align-items: flex-start; }
       .topline { margin-bottom: 18px; }
       section { padding: 15px; }
-      .figure-heading { flex-direction: column; gap: 8px; }
       .stages { grid-template-columns: 1fr; gap: 8px; }
-      .ride { display: block; }
-      .ride .reason { text-align: left; margin-top: 3px; }
     }
   </style>
 </head>
@@ -100,34 +96,34 @@
     <div class="heading">
       <div>
         <h1 data-dc-id="title">Lamberts Submaximal Cycle Test</h1>
-        <p class="subhead" data-dc-id="eligible-count">3 verified tests in this range. 2 used the same indoor setup.</p>
+        <p class="subhead" data-dc-id="eligible-count">3 verified tests in this range.</p>
       </div>
       <p class="period" data-dc-id="date-range">Nov 1–21, 2026</p>
     </div>
 
     <section aria-labelledby="power-heading" data-dc-id="power-comparison">
       <div class="figure-heading">
-        <div>
-          <h2 id="power-heading" data-dc-id="power-heading">Mean power at the same heart-rate targets</h2>
-          <p class="setup" data-dc-id="comparison-setup">Indoor · Wahoo KICKR · Directly measured power</p>
-        </div>
+        <h2 id="power-heading" data-dc-id="power-heading">Mean power at the same heart-rate targets</h2>
+        <p data-dc-id="comparison-setup" hidden></p>
       </div>
       <div class="stages">
-        <div class="stage" role="img" data-dc-id="stage-2-power" aria-label="Stage 2, 80 percent of maximum heart rate. Mean power rose from 222 watts on November 7 to 230 watts on November 21.">
+        <div class="stage" role="img" data-dc-id="stage-2-power" aria-label="Stage 2, 80 percent of maximum heart rate. Mean power was 222 watts on November 7, 225 watts on November 14, and 230 watts on November 21. The change from first to latest was 8 watts.">
           <div class="stage-heading">
             <div><h3>Stage 2</h3><p class="target">80% of maximum HR</p></div>
             <p class="delta">+8 <span>W</span></p>
           </div>
           <div class="bar-row"><span class="bar-date">Nov 7</span><div class="bar-track"><span class="bar" style="--width:69.375%"></span></div><span class="bar-value">222 W</span></div>
+          <div class="bar-row"><span class="bar-date">Nov 14</span><div class="bar-track"><span class="bar" style="--width:70.3125%"></span></div><span class="bar-value">225 W</span></div>
           <div class="bar-row"><span class="bar-date">Nov 21</span><div class="bar-track"><span class="bar latest" style="--width:71.875%"></span></div><span class="bar-value">230 W</span></div>
           <div class="axis"><span>0</span><span>160</span><span>320 W</span></div>
         </div>
-        <div class="stage" role="img" data-dc-id="stage-3-power" aria-label="Stage 3, 90 percent of maximum heart rate. Mean power rose from 278 watts on November 7 to 289 watts on November 21.">
+        <div class="stage" role="img" data-dc-id="stage-3-power" aria-label="Stage 3, 90 percent of maximum heart rate. Mean power was 278 watts on November 7, 284 watts on November 14, and 289 watts on November 21. The change from first to latest was 11 watts.">
           <div class="stage-heading">
             <div><h3>Stage 3</h3><p class="target">90% of maximum HR</p></div>
             <p class="delta">+11 <span>W</span></p>
           </div>
           <div class="bar-row"><span class="bar-date">Nov 7</span><div class="bar-track"><span class="bar" style="--width:86.875%"></span></div><span class="bar-value">278 W</span></div>
+          <div class="bar-row"><span class="bar-date">Nov 14</span><div class="bar-track"><span class="bar" style="--width:88.75%"></span></div><span class="bar-value">284 W</span></div>
           <div class="bar-row"><span class="bar-date">Nov 21</span><div class="bar-track"><span class="bar latest" style="--width:90.3125%"></span></div><span class="bar-value">289 W</span></div>
           <div class="axis"><span>0</span><span>160</span><span>320 W</span></div>
         </div>
@@ -138,24 +134,24 @@
       <h2 id="results-heading" data-dc-id="results-heading">Test results</h2>
       <div class="table-scroll">
         <table aria-labelledby="results-heading">
-          <thead><tr><th scope="col">Measurement</th><th scope="col">Nov 7</th><th scope="col">Nov 21</th></tr></thead>
+          <thead><tr><th scope="col">Measurement</th><th scope="col">Nov 7</th><th scope="col">Nov 14</th><th scope="col">Nov 21</th></tr></thead>
           <tbody>
-            <tr data-dc-id="stage-1-result"><th scope="row">Stage 1 · 60% max HR</th><td><span class="reading">118 W</span><span class="muted">114 bpm · 83 rpm</span></td><td><span class="reading">121 W</span><span class="muted">114 bpm · 85 rpm</span></td></tr>
-            <tr data-dc-id="stage-2-result"><th scope="row">Stage 2 · 80% max HR</th><td><span class="reading">222 W</span><span class="muted">152 bpm · 90 rpm</span></td><td><span class="reading">230 W</span><span class="muted">152 bpm · 91 rpm</span></td></tr>
-            <tr data-dc-id="stage-3-result"><th scope="row">Stage 3 · 90% max HR</th><td><span class="reading">278 W</span><span class="muted">170 bpm · 94 rpm</span></td><td><span class="reading">289 W</span><span class="muted">171 bpm · 95 rpm</span></td></tr>
-            <tr data-dc-id="recovery-result"><th scope="row">60-second HR recovery</th><td><span class="reading">42 bpm drop</span></td><td><span class="reading">44 bpm drop</span></td></tr>
-            <tr data-dc-id="exertion-result"><th scope="row">Stage perceived exertion</th><td class="unavailable">Not recorded</td><td class="unavailable">Not recorded</td></tr>
+            <tr data-dc-id="stage-1-result"><th scope="row">Stage 1 · 60% max HR</th><td><span class="reading">118 W</span><span class="muted">114 bpm · 83 rpm</span></td><td class="unavailable">Unavailable</td><td><span class="reading">121 W</span><span class="muted">114 bpm · 85 rpm</span></td></tr>
+            <tr data-dc-id="stage-2-result"><th scope="row">Stage 2 · 80% max HR</th><td><span class="reading">222 W</span><span class="muted">152 bpm · 90 rpm</span></td><td><span class="reading">225 W</span></td><td><span class="reading">230 W</span><span class="muted">152 bpm · 91 rpm</span></td></tr>
+            <tr data-dc-id="stage-3-result"><th scope="row">Stage 3 · 90% max HR</th><td><span class="reading">278 W</span><span class="muted">170 bpm · 94 rpm</span></td><td><span class="reading">284 W</span></td><td><span class="reading">289 W</span><span class="muted">171 bpm · 95 rpm</span></td></tr>
+            <tr data-dc-id="recovery-result"><th scope="row">60-second HR recovery</th><td><span class="reading">42 bpm drop</span></td><td class="unavailable">Unavailable</td><td><span class="reading">44 bpm drop</span></td></tr>
+            <tr data-dc-id="exertion-result"><th scope="row">Stage perceived exertion</th><td class="unavailable">Not recorded</td><td class="unavailable">Not recorded</td><td class="unavailable">Not recorded</td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
     <section aria-labelledby="other-heading" data-dc-id="different-trainer">
-      <h2 id="other-heading" data-dc-id="other-heading">Other verified test</h2>
-      <div class="ride" data-dc-id="other-test-summary">
-        <div><strong>Nov 14</strong><p class="context">Indoor · Tacx NEO · 225 W at stage 2 · 284 W at stage 3</p></div>
-        <p class="reason" data-dc-id="comparison-exclusion">Different trainer. Excluded from the power comparison.</p>
-      </div>
+      <h2 id="other-heading" data-dc-id="other-heading">Previous tests</h2>
+      <ul class="test-history">
+        <li data-dc-id="other-test-summary"><time datetime="2026-11-14">Nov 14</time><p class="muted" data-dc-id="comparison-exclusion">225 W at stage 2 · 284 W at stage 3</p></li>
+        <li><time datetime="2026-11-07">Nov 7</time><p class="muted">222 W at stage 2 · 278 W at stage 3</p></li>
+      </ul>
     </section>
     <details data-dc-id="protocol-evidence">
       <summary data-dc-id="evidence-toggle">Protocol and source evidence</summary>
