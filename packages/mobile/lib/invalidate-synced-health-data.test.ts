@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { invalidateSyncedHealthData } from "./invalidate-synced-health-data";
 
 describe("invalidateSyncedHealthData", () => {
-  it.each(["volumeIncrease", "attemptIncrease"])(
+  it.each(["volumeIncrease", "attemptIncrease", "bestOnsight"])(
     "refreshes %s when its first fetch overlaps a completed sync",
     async (procedure) => {
       const queryClient = new QueryClient();
@@ -36,6 +36,7 @@ describe("invalidateSyncedHealthData", () => {
       [["mobileDashboard", "trainingV2"], { type: "query" }],
       [["climbing", "volumeIncrease"], { type: "query" }],
       [["climbing", "attemptIncrease"], { type: "query" }],
+      [["climbing", "bestOnsight"], { type: "query" }],
       [["calendar", "weekListV2"], { type: "query" }],
       [["calendar", "activityOverview"], { type: "query" }],
       [["activity", "list"], { type: "query" }],

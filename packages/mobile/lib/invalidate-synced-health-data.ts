@@ -1,12 +1,16 @@
 import type { QueryClient } from "@tanstack/react-query";
 
-const CLIMBING_ALERT_QUERY_PATHS = new Set(["climbing.volumeIncrease", "climbing.attemptIncrease"]);
+const CLIMBING_SYNC_QUERY_PATHS = new Set([
+  "climbing.volumeIncrease",
+  "climbing.attemptIncrease",
+  "climbing.bestOnsight",
+]);
 
 const SYNCED_HEALTH_DATA_QUERY_PATHS = new Set([
   "mobileDashboard.dashboardV2",
   "mobileDashboard.recovery",
   "mobileDashboard.trainingV2",
-  ...CLIMBING_ALERT_QUERY_PATHS,
+  ...CLIMBING_SYNC_QUERY_PATHS,
   "calendar.weekListV2",
   "calendar.activityOverview",
   "activity.list",
@@ -33,9 +37,7 @@ export async function invalidateSyncedHealthData(queryClient: QueryClient): Prom
     fetchStatus: "fetching",
     predicate: (query) => {
       const path = queryPath(query.queryKey);
-      return (
-        query.state.data === undefined && path !== null && CLIMBING_ALERT_QUERY_PATHS.has(path)
-      );
+      return query.state.data === undefined && path !== null && CLIMBING_SYNC_QUERY_PATHS.has(path);
     },
   });
 

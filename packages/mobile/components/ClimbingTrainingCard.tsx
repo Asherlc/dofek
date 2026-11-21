@@ -1,10 +1,12 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import type { ClimbingBestOnsight as ClimbingBestOnsightData } from "@dofek/training/climbing-best-onsight";
 import { climbingGradeProgressionSchema } from "@dofek/training/climbing-progression";
 import { StyleSheet, Text, View } from "react-native";
 import { z } from "zod";
 import { safeParseData, safeParseRows } from "../lib/safe-parse";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
+import { ClimbingBestOnsight } from "./ClimbingBestOnsight";
 import { ClimbingGradeProgressionChart } from "./ClimbingGradeProgressionChart";
 import { HangboardingSummary } from "./HangboardingSummary";
 
@@ -177,9 +179,11 @@ class ClimbingSectionModel {
 export function ClimbingTrainingCard({
   data,
   loading = false,
+  bestOnsight,
 }: {
   data: unknown;
   loading?: boolean;
+  bestOnsight?: { data?: ClimbingBestOnsightData; error?: unknown; loading?: boolean };
 }) {
   const parsed = parseMobileClimbingData(data);
   const model = new ClimbingSectionModel(parsed.data);
@@ -194,16 +198,25 @@ export function ClimbingTrainingCard({
           )}
         </Text>
       ) : null}
-      <ClimbingSection model={model} loading={loading} />
+      <ClimbingSection model={model} loading={loading} bestOnsight={bestOnsight} />
       <HangboardingSummary data={model.hangboarding} loading={loading} />
     </View>
   );
 }
 
-function ClimbingSection({ model, loading }: { model: ClimbingSectionModel; loading: boolean }) {
+function ClimbingSection({
+  model,
+  loading,
+  bestOnsight,
+}: {
+  model: ClimbingSectionModel;
+  loading: boolean;
+  bestOnsight?: { data?: ClimbingBestOnsightData; error?: unknown; loading?: boolean };
+}) {
   return (
     <View style={styles.climbingStack}>
       <ClimbingGradeProgressionChart data={model.gradeProgression} loading={loading} />
+      {bestOnsight ? <ClimbingBestOnsight {...bestOnsight} /> : null}
 
       <View style={styles.climbingSubsection}>
         <Text style={styles.climbingSubsectionTitle}>Volume by Grade</Text>

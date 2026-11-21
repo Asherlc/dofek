@@ -1,3 +1,4 @@
+import { climbingBestOnsightFixture } from "@dofek/training/fixtures/climbing-best-onsight";
 import { sportVolumeMetricSchema, sportVolumeMetrics } from "@dofek/training/sport-volume";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -14,6 +15,7 @@ import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
 } from "../../app-fixtures/(tabs)/processing-status-story-fixture";
+import { createClimbingRecordDetailLink } from "../../components/climbing-best-onsight-story-helpers";
 import { climbingLocationMapFixture } from "../../components/climbing-location-map-fixtures";
 import {
   climbingAttachmentActivities,
@@ -31,6 +33,7 @@ const STRAIN_COMPANION_RESPONSES = {
   "climbing.attachClimbingLogEntry": { attached: true },
   "climbing.locationMap": climbingLocationMapFixture,
   "climbing.strengths": climbingStrengthsFixture,
+  "climbing.bestOnsight": climbingBestOnsightFixture(),
   "climbing.volumeIncrease": {
     status: "increase",
     recentMinutes: 300,
@@ -316,6 +319,11 @@ function createSeededProviders(
     climbingStrengthsFixture,
   );
 
+  queryClient.setQueryData(
+    [["climbing", "bestOnsight"], { type: "query" }],
+    climbingBestOnsightFixture(),
+  );
+
   const processingStatus = seedReadyProcessingStatus(queryClient, [
     "activity",
     "recovery",
@@ -349,6 +357,7 @@ function MockProviders({
       queryClient: seededProviders.queryClient,
       trpcClient: trpc.createClient({
         links: [
+          createClimbingRecordDetailLink(),
           createSportVolumeStoryLink(),
           ...(trainingUnavailable ? [createTrainingFailureStoryLink()] : []),
           createProcessingStatusStoryLink(

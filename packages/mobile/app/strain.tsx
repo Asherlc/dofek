@@ -24,6 +24,7 @@ import { useIsFocused } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
+import { ClimbingBestOnsight } from "../components/ClimbingBestOnsight";
 import { ClimbingFilters } from "../components/ClimbingFilters";
 import { ClimbingLocationMapCard } from "../components/ClimbingLocationMapCard";
 import { ClimbingStrengths } from "../components/ClimbingStrengths";
@@ -153,6 +154,11 @@ export function TrainingAnalysis({
     undefined,
     climbingIncreaseQueryOptions,
   );
+  const bestOnsight = trpc.climbing.bestOnsight.useQuery(undefined, {
+    ...climbingIncreaseQueryOptions,
+    placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+  });
+  useReportQueryError(bestOnsight);
   const climbingVolumeQuery = trpc.climbing.volumeOverTime.useQuery(
     { days, ...climbingFilters },
     {
@@ -247,6 +253,7 @@ export function TrainingAnalysis({
         utils.climbing.strengths.invalidate(),
         utils.climbing.volumeIncrease.invalidate(),
         utils.climbing.attemptIncrease.invalidate(),
+        utils.climbing.bestOnsight.invalidate(),
         utils.climbing.volumeOverTime.invalidate(),
         utils.strength.volumeOverTime.invalidate(),
         utils.training.hrZones.invalidate(),
@@ -501,7 +508,21 @@ export function TrainingAnalysis({
         <ClimbingTrainingCard
           data={trainingData?.climbing}
           loading={trainingQuery.isLoading && trainingData == null}
+          bestOnsight={{
+            data: bestOnsight.data,
+            error: bestOnsight.error,
+            loading: bestOnsight.isLoading,
+          }}
         />
+      ) : null}
+      {show("climbing") && shouldShowTrainingQueryError && bestOnsight.data ? (
+        <View style={styles.card}>
+          <ClimbingBestOnsight
+            data={bestOnsight.data}
+            error={bestOnsight.error}
+            loading={bestOnsight.isLoading}
+          />
+        </View>
       ) : null}
 
       {show("overview") && !isLoading && !shouldShowTrainingQueryError && (
