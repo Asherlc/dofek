@@ -39680,16 +39680,29 @@ Local qualification and CI are separate from production throughput acceptance. T
   [History recovery and pause](#2026-11-11--strava-history-recovery-remains-paused-server-7h)
   · [BullMQ queue pausing](https://docs.bullmq.io/guide/workers/pausing-queues)
   · [Axiom query runbook](axiom-observability-runbook.md#queries).
-- **Recovery pending approval.** Confirm the queue can reopen and use the
-  existing BullMQ resume operation with monitoring. Verify a new successful
-  Strava sync and check date coverage against the queued requests, whose
-  one-day windows are anchored to their original request times. The historical
-  operation's downstream processing was verified on November 16. This check
-  was read-only in production. The alert remains open and API quota headroom
-  is unverified.
+- **Recovery.** After user approval, the existing BullMQ resume operation
+  reopened the queue at 18:20:56.237 UTC. Immediately before resume, worker
+  readiness passed, memory was 207.2 MiB of 512 MiB, and the data mount had
+  70,606,753,792 bytes available. The worker recorded a first webhook success
+  at 18:21:25.602 UTC and a scheduled success at 18:24:27.735 UTC. Dofek
+  subsequently reported `stale=false`, and public health returned OK.
+- **Coverage and remaining work.** The first successful scheduled job was
+  queued on November 6. The deployed provider queried the Strava activity list
+  after November 5 at 00:00 UTC without an upper date filter, covering the
+  overdue period. Postgres recorded eight processed activity records and eight
+  present Strava activities after that cutoff. Three started after the prior
+  successful sync, with the latest on November 18 at 21:29:44 UTC. At 18:26:26
+  UTC, five of the 26 admitted jobs had succeeded, two were active and 19 were
+  waiting. The queue remained open, and inspected logs showed no HTTP 429
+  following resume. Existing jobs continue under the normal worker. The
+  historical operation's downstream processing was verified on November 16.
   [Sync window handling](../src/jobs/sync-job-window.ts)
+  · [Strava provider](../src/providers/strava/provider.ts)
+  · [Strava activity list](https://developers.strava.com/docs/reference/#api-Activities-getLoggedInAthleteActivities)
   · [Historical operation completion](#2026-11-16--cdc-publication-recovery-and-strava-operation-reconciliation-server-7h).
 - **Retrospective.** Checking the pause event and job payload summaries
-  explained the lack of attempts. The processing runbook could ask operators
-  to record who owns reopening a provider queue after a bounded recovery.
+  explained the lack of attempts. Webhook success refreshed the displayed
+  sync timestamp before scheduled success cleared the overdue status. The
+  processing runbook could ask operators to record who owns reopening a
+  provider queue after a bounded recovery and confirm a scheduled success.
   [Processing status runbook](processing-status-runbook.md#diagnosis).
