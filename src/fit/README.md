@@ -133,10 +133,11 @@ summary; recovery does not invent a missing session.
 ## Structured cycling intervals
 
 During a clean FIT Activity import, Dofek can match laps to timed workout steps when the file
-contains one cycling Session, one Workout, and an unambiguous link from the Lap's
-`wkt_step_index` to a Workout Step's `message_index`. A custom absolute target can be a
-point or range in watts. Relative targets require the FTP or zone settings used for the recorded
-plan. Dofek stores the matched intervals with their provider attribution,
+is a single, unchained FIT with one cycling Session, one Workout whose `num_valid_steps` is
+positive, and an unambiguous link from the Lap's `wkt_step_index` to a Workout Step's
+`message_index` below that declared count. A custom absolute target can be a point or range in
+watts. Relative targets require the FTP or zone settings used for the recorded plan. Dofek stores
+the matched intervals with their provider attribution,
 planned time, and any recorded lap timer time. Elapsed time sets the boundaries for reading
 power samples. See Garmin's [Activity file](https://developer.garmin.com/fit/file-types/activity)
 and [Workout file](https://developer.garmin.com/fit/file-types/workout) references.
@@ -162,10 +163,11 @@ see the official [`child_process.spawn()` documentation](https://nodejs.org/api/
 Consumers receive the raw `file_id` through `FitStreamMetadata.fileId` and raw device observations
 through the required asynchronous `onDeviceInfoBatch(messages)` callback. These raw fields retain
 the SDK's snake-case names and numeric enums. The optional `onLapBatch` and `onWorkoutStepBatch`
-callbacks receive raw laps and workout steps (see the native protocol for unit scaling), and
-`FitStreamMetadata.sessionMessageCount`/`workoutMessageCount` give exact Session and Workout
-message counts. The final `messageCount` includes devices, laps, workout steps and
-records/weights. The adapter waits for every callback before acknowledging its batch; see the
+callbacks receive raw laps and workout steps. The native protocol documents their unit scaling.
+`FitStreamMetadata.sessionMessageCount` and `workoutMessageCount` give exact Session and Workout
+message counts. `workoutStepCount` carries the single Workout header's declared step count. The
+final `messageCount` includes devices, laps, workout steps, and records or weights. The adapter
+waits for every callback before acknowledging its batch. See the
 [adapter implementation](stream-decoder.ts) and [native protocol](../../native/fit-decoder/README.md#protocol).
 Garmin distinguishes the file creator from device observations in its
 [activity file specification](https://developer.garmin.com/fit/articles/file-types/activity.html).

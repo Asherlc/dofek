@@ -21,6 +21,7 @@
 #include "fit_runtime_exception.hpp"
 #include "fit_record_mesg.hpp"
 #include "fit_session_mesg.hpp"
+#include "fit_workout_mesg.hpp"
 #include "field-json.hpp"
 
 namespace {
@@ -181,9 +182,14 @@ class MetadataListener final : public fit::MesgListener {
         }
         break;
       }
-      case FIT_MESG_NUM_WORKOUT:
+      case FIT_MESG_NUM_WORKOUT: {
         ++workout_message_count_;
+        const fit::WorkoutMesg workout(message);
+        if (workout_message_count_ == 1 && workout.IsNumValidStepsValid()) {
+          workout_declared_step_count_ = workout.GetNumValidSteps();
+        }
         break;
+      }
       case FIT_MESG_NUM_WEIGHT_SCALE:
         has_weight_messages_ = true;
         break;
@@ -199,6 +205,11 @@ class MetadataListener final : public fit::MesgListener {
   std::size_t TimestampedRecordCount() const { return timestamped_record_count_; }
   std::size_t SessionMessageCount() const { return session_message_count_; }
   std::size_t WorkoutMessageCount() const { return workout_message_count_; }
+  // The single Workout header's `num_valid_steps`; absent when there is not exactly one header or
+  // the field is invalid.
+  std::optional<unsigned int> WorkoutStepCount() const {
+    return workout_message_count_ == 1 ? workout_declared_step_count_ : std::nullopt;
+  }
   const std::optional<std::string>& SessionJson() const { return session_json_; }
   const std::optional<std::string>& SportName() const { return sport_name_; }
   const std::optional<std::string>& SubSportName() const { return sub_sport_name_; }
@@ -249,6 +260,7 @@ class MetadataListener final : public fit::MesgListener {
   std::size_t timestamped_record_count_ = 0;
   std::size_t session_message_count_ = 0;
   std::size_t workout_message_count_ = 0;
+  std::optional<unsigned int> workout_declared_step_count_;
   std::optional<std::string> session_json_;
   std::optional<std::string> sport_name_;
   std::optional<std::string> sub_sport_name_;
@@ -374,6 +386,12 @@ void WriteMetadata(const MetadataListener& metadata, const std::optional<std::st
   }
   output << ",\"sessionMessageCount\":" << metadata.SessionMessageCount()
          << ",\"workoutMessageCount\":" << metadata.WorkoutMessageCount();
+  output << ",\"workoutStepCount\":";
+  if (metadata.WorkoutStepCount().has_value()) {
+    output << *metadata.WorkoutStepCount();
+  } else {
+    output << "null";
+  }
   output << ",\"subSportName\":";
   if (metadata.SubSportName().has_value()) {
     output << JsonString(*metadata.SubSportName());
@@ -472,9 +490,11 @@ int Run(const std::string& file_path) {
       {is_weight_file ? FIT_MESG_NUM_WEIGHT_SCALE : FIT_MESG_NUM_RECORD,
        is_weight_file ? "weights" : "records"},
       {FIT_MESG_NUM_DEVICE_INFO, "devices"}};
-  // Interval evidence is only meaningful for an activity that embeds exactly one workout.
+  // Interval evidence is only meaningful for one unchained activity that embeds exactly one
+  // workout; metadata counts aggregate every chained segment, so a lap in one segment must not
+  // link to a standalone workout in another.
   if (!is_weight_file && metadata.FileType() == FIT_FILE_ACTIVITY &&
-      metadata.WorkoutMessageCount() == 1) {
+      metadata.WorkoutMessageCount() == 1 && FitsWithinFirstDeclaredSegment(file_path)) {
     batch_types.emplace(FIT_MESG_NUM_LAP, "laps");
     batch_types.emplace(FIT_MESG_NUM_WORKOUT_STEP, "workoutSteps");
   }

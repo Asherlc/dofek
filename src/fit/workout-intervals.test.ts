@@ -23,6 +23,7 @@ function metadata(overrides: Partial<FitStreamMetadata> = {}): FitStreamMetadata
     recoveryError: null,
     sessionMessageCount: 1,
     workoutMessageCount: 1,
+    workoutStepCount: 2,
     session: cyclingSession,
     ...overrides,
   };
@@ -173,6 +174,8 @@ describe("FitWorkoutIntervalCollector", () => {
     ["two workout headers", { workoutMessageCount: 2 }],
     ["recovered", { recoveryError: "truncated" }],
     ["no session", { session: null }],
+    ["missing declared step count", { workoutStepCount: null }],
+    ["zero declared step count", { workoutStepCount: 0 }],
   ];
   it.each(ineligibleFiles)("is ineligible when the file is %s", (_name, overrides) => {
     expect(build([step(0)], [lap(0, 0, 0)], metadata(overrides))).toEqual([]);
@@ -217,9 +220,19 @@ describe("FitWorkoutIntervalCollector", () => {
     expect(build([step(0)], [lap(0, 0, 0, { total_elapsed_time: 1e300 })])).toEqual([]);
   });
 
+  it("links only steps below the Workout header's declared step count", () => {
+    const meta = metadata({ workoutStepCount: 1 });
+    const rows = build([step(0), step(1)], [lap(0, 0, 0), lap(1, 1, 180)], meta);
+    expect(rows.map((row) => row.stepMessageIndex)).toEqual([0]);
+    expect(build([step(0), step(1)], [lap(0, 0, 0), lap(1, 1, 180)])).toHaveLength(2);
+    expect(build([step(0)], [lap(0, 0, 0)], metadata({ workoutStepCount: 2 }))).toHaveLength(1);
+  });
+
   it("bounds identity maps by the plain FIT message index mask (0-4095)", () => {
     expect(build([step(4096)], [lap(0, 4096, 0)])).toEqual([]);
     expect(build([step(0x8000)], [lap(0, 0x8000, 0)])).toEqual([]);
-    expect(build([step(4095)], [lap(0, 4095, 0)])).toHaveLength(1);
+    expect(
+      build([step(4095)], [lap(0, 4095, 0)], metadata({ workoutStepCount: 4096 })),
+    ).toHaveLength(1);
   });
 });

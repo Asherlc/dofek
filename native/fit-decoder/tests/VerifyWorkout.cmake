@@ -30,6 +30,10 @@ foreach(line IN LISTS protocol_lines)
     if(NOT session_count EQUAL 1 OR NOT workout_count EQUAL 1)
       message(FATAL_ERROR "Expected one session and one workout, got ${session_count}/${workout_count}")
     endif()
+    string(JSON declared_steps GET "${line}" workoutStepCount)
+    if(NOT declared_steps EQUAL 2)
+      message(FATAL_ERROR "Expected the Workout header's two declared steps, got ${declared_steps}")
+    endif()
   elseif(type STREQUAL "workoutSteps")
     string(JSON step_count LENGTH "${line}" messages)
     if(NOT step_count EQUAL 2)
@@ -91,4 +95,42 @@ endif()
 string(FIND "${plain_output}" "\"workoutMessageCount\":0" plain_workout_count)
 if(plain_workout_count EQUAL -1)
   message(FATAL_ERROR "Expected zero workout messages in plain-laps metadata")
+endif()
+
+function(decode_fixture mode output_variable)
+  set(path "${CMAKE_CURRENT_BINARY_DIR}/${mode}.fit")
+  execute_process(COMMAND "${FIXTURE_WRITER}" "${path}" "${mode}" RESULT_VARIABLE write_result)
+  if(NOT write_result EQUAL 0)
+    message(FATAL_ERROR "Unable to write ${mode} fixture")
+  endif()
+  execute_process(
+    COMMAND "${DECODER}" "${path}"
+    INPUT_FILE "${acknowledgement_file}"
+    OUTPUT_VARIABLE decoded
+    ERROR_VARIABLE decode_error
+    RESULT_VARIABLE decode_result
+  )
+  if(NOT decode_result EQUAL 0)
+    message(FATAL_ERROR "FIT decoder failed on ${mode} (${decode_result}): ${decode_error}")
+  endif()
+  set(${output_variable} "${decoded}" PARENT_SCOPE)
+endfunction()
+
+# A Workout header without num_valid_steps reports a null declared step count.
+decode_fixture(workout-no-count no_count_output)
+if(NOT no_count_output MATCHES "\"workoutStepCount\":null")
+  message(FATAL_ERROR "A missing num_valid_steps must be reported as null: ${no_count_output}")
+endif()
+
+# Chained segments: an activity segment with lap links followed by a standalone Workout file
+# aggregates one session and one workout in metadata, but must not stream a cross-segment link.
+decode_fixture(workout-chained chained_output)
+if(NOT chained_output MATCHES "\"workoutMessageCount\":1")
+  message(FATAL_ERROR "Chained fixture should aggregate one workout message: ${chained_output}")
+endif()
+if(chained_output MATCHES "\"type\":\"(laps|workoutSteps)\"")
+  message(FATAL_ERROR "Chained FIT segments must not stream lap or workout step batches: ${chained_output}")
+endif()
+if(NOT chained_output MATCHES "\"type\":\"records\"")
+  message(FATAL_ERROR "Chained FIT records must remain streamed: ${chained_output}")
 endif()

@@ -176,6 +176,8 @@ function isEligibleFile(metadata: FitStreamMetadata): boolean {
     metadata.recoveryError === null &&
     metadata.sessionMessageCount === 1 &&
     metadata.workoutMessageCount === 1 &&
+    metadata.workoutStepCount !== null &&
+    metadata.workoutStepCount > 0 &&
     metadata.session?.sport.toLowerCase() === "cycling"
   );
 }
@@ -214,10 +216,13 @@ export class FitWorkoutIntervalCollector {
     const sessionEnd = sessionStart + session.totalElapsedTime * 1000;
     if (!Number.isFinite(sessionStart) || !Number.isFinite(sessionEnd)) return [];
 
+    // Garmin's Workout header declares `num_valid_steps`; a step or lap link outside
+    // 0 <= index < count cannot refer to a step of this workout.
+    const declaredSteps = metadata.workoutStepCount ?? 0;
     const candidates: Array<Omit<FitWorkoutInterval, "intervalIndex">> = [];
     for (const [lapIndex, lap] of this.#laps) {
       if (lap === AMBIGUOUS) continue;
-      const step = this.#steps.get(lap.stepIndex);
+      const step = lap.stepIndex < declaredSteps ? this.#steps.get(lap.stepIndex) : undefined;
       if (!step || step === AMBIGUOUS) continue;
       // Garmin documents a Lap's span as start_time + total_elapsed_time; `timestamp` is
       // provenance only because its precision can differ.

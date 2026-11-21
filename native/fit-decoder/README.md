@@ -47,15 +47,20 @@ device observations separately; see Garmin's [activity file documentation](https
 
 Metadata includes `sessionMessageCount` and `workoutMessageCount`, the exact counts of FIT Session and
 Workout messages (`session` itself is only the first Session), so a caller can require a single
-session and a single workout without accumulating messages. `workoutSteps` and `laps` batches are
-emitted only for an activity file whose `workoutMessageCount` is 1 (standalone workout files and
-activities without an embedded workout stream neither) and carry unmodified SDK fields. Observed raw values: `duration_value` is milliseconds for time steps (180000
-is 180 s); absolute power targets arrive in `custom_target_value_low`/`high` with the FIT 1000 W
-offset still applied (1250 is 250 W) beside `target_type` 4 and `target_value` 0; Lap
-`total_timer_time` and `total_elapsed_time` are already seconds, and `wkt_step_index` links a Lap to a
-Workout Step `message_index`. See Garmin's
-[FIT workout file documentation](https://developer.garmin.com/fit/file-types/workout/) and the
-[workout test](tests/VerifyWorkout.cmake).
+session and a single workout without accumulating messages. `workoutStepCount` contains the
+single Workout header's `num_valid_steps` when present and valid. It is otherwise `null`.
+`workoutSteps` and `laps` batches carry unmodified SDK fields. The decoder emits these batches
+for an unchained Activity file with one Workout header. Metadata counts cover every segment of
+a chained file, so the decoder checks the first segment's declared size before streaming links.
+
+For timed steps, raw `duration_value` is in milliseconds. Absolute power targets arrive in
+`custom_target_value_low` and `custom_target_value_high` with the FIT 1000 W offset still applied
+(1250 is 250 W), beside `target_type` 4 and `target_value` 0. Lap `total_timer_time` and
+`total_elapsed_time` are in seconds. `wkt_step_index` links a Lap to a Workout Step
+`message_index`. See Garmin's
+[FIT workout file documentation](https://developer.garmin.com/fit/file-types/workout/), the
+[FIT protocol](https://developer.garmin.com/fit/articles/fit-protocol/fit_protocol.html) on chained
+files, and the [workout test](tests/VerifyWorkout.cmake).
 
 Metadata always includes `recoveryError`, which is `null` for a clean decode. A Garmin SDK decode
 failure is recoverable only when the file declares activity type, contains no weight messages, the

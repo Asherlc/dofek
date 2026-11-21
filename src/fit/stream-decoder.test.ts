@@ -81,6 +81,7 @@ function metadataMessage(overrides: Record<string, unknown> = {}): Record<string
     subSportName: null,
     sessionMessageCount: 1,
     workoutMessageCount: 0,
+    workoutStepCount: null,
     fieldOccurrences: [],
     ...overrides,
   };
@@ -400,6 +401,7 @@ describe("streamFitFile", () => {
           subSportName: "mountain",
           sessionMessageCount: 1,
           workoutMessageCount: 0,
+          workoutStepCount: null,
           fieldOccurrences: [{ messageType: "file_id", field: "time_created", occurrences: 1 }],
         });
         await decoder.waitForAcknowledgement(1);
@@ -592,6 +594,7 @@ describe("streamFitFile", () => {
         subSportName: null,
         sessionMessageCount: 1,
         workoutMessageCount: 0,
+        workoutStepCount: null,
         fieldOccurrences: [],
       });
       await decoder.waitForAcknowledgement(1);
@@ -798,6 +801,7 @@ describe("streamFitFile", () => {
         subSportName: null,
         sessionMessageCount: 1,
         workoutMessageCount: 0,
+        workoutStepCount: null,
         fieldOccurrences: [],
       });
       await decoder.waitForAcknowledgement(1);
@@ -929,6 +933,7 @@ describe("streamFitFile", () => {
         subSportName: null,
         sessionMessageCount: 1,
         workoutMessageCount: 0,
+        workoutStepCount: null,
         fieldOccurrences: [],
       });
       await decoder.waitForAcknowledgement(1);
@@ -1010,6 +1015,7 @@ describe("streamFitFile", () => {
       subSportName: null,
       sessionMessageCount: 1,
       workoutMessageCount: 0,
+      workoutStepCount: null,
       fieldOccurrences: [],
     });
     await decoder.waitForAcknowledgement(1);

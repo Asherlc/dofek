@@ -38,6 +38,7 @@ const metadataMessageSchema = z.object({
   subSportName: z.string().nullable(),
   sessionMessageCount: z.number().int().nonnegative(),
   workoutMessageCount: z.number().int().nonnegative(),
+  workoutStepCount: z.number().int().nonnegative().nullable(),
   fieldOccurrences: z.array(fieldOccurrenceSchema).max(4096),
 });
 
@@ -104,6 +105,8 @@ export interface FitStreamMetadata {
   sessionMessageCount: number;
   /** Exact number of FIT Workout messages in the file. */
   workoutMessageCount: number;
+  /** The single Workout header's `num_valid_steps`; null when absent, invalid or not a single header. */
+  workoutStepCount: number | null;
 }
 
 export interface FitStreamConsumer {
@@ -298,6 +301,7 @@ export async function streamFitFile(
               : null,
             sessionMessageCount: message.sessionMessageCount,
             workoutMessageCount: message.workoutMessageCount,
+            workoutStepCount: message.workoutStepCount,
           });
           await writeContinue(child.stdin);
           armIdleTimeout();
