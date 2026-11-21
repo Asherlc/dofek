@@ -180,6 +180,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_activity_details` | `activity:read` | Returns one activity with its strength, climbing, and finger-loading details. |
 | `get_activity_streams` | `activity:read` | Returns a capped, downsampled activity sensor stream with caller-selected channels. |
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type, ISO week, modality, or purpose, including unclassified and power coverage. |
+| `get_running_race_forecast` | `activity:read` | Estimates a 10K or half-marathon finish from a shorter imported race and returns the source evidence. |
 | `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
 | `get_training_load` | `activity:read`; also `nutrition:read` when requested | Returns daily load and rolling windows; analytical detail preserves modality channels and can include aligned nutrition. |
 | `get_recovery_training_series` | Scope depends on selected fields and grain: `health:read`, `activity:read`, and/or `nutrition:read` | Aligns selected observations by local day or main sleep, with workout timing and coverage evidence. |
@@ -204,6 +205,23 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_body_metrics` | `health:read` | Returns reconciled body metrics, value kinds, source values, and 7/28-day rolling weight statistics. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
+
+### Running race forecast
+
+Call `get_running_race_forecast` with inclusive `start_date` and `end_date` in
+`YYYY-MM-DD` format and `target` set to `10k` or `half_marathon`. The tool uses
+the recorded local date of each race and excludes dates after today in the
+account time zone. It selects the longest eligible race shorter than the
+target. At equal distances, it prefers the newest race date and then sorts by
+provider and source activity ID. Eligible official distances are 5 km, 5 miles,
+10 km, and 10 miles.
+
+An estimated result contains the source provider, source activity ID, race
+name, date and original date-time, distance in meters, and official elapsed
+seconds. The estimate uses `finish_seconds × (target_meters / source_meters)^1.07`.
+The result preserves full precision and clients can round to whole seconds for
+display. If the date range contains no eligible finish, the result has
+`status: "unavailable"`. [Vickers and Vertosick](https://doi.org/10.1186/s13102-016-0052-y)
 
 ### Food record lifecycle
 
