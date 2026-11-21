@@ -39664,3 +39664,18 @@ Local qualification and CI are separate from production throughput acceptance. T
   received sample in Instruments before closing the Sentry issue.
   [Native WAL replay](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleStore%2BInboxWriteTests.swift)
   · [Apple disk-write profiling](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
+
+## 2026-11-21 — Docker VM AIO exhaustion during cycling durability validation
+
+- The local command `pnpm test:integration -- src/db/cycling-durability-effort.integration.test.ts`
+  stopped during `compose:up`, before test collection. Redpanda repeatedly exited
+  with code 133. PostgreSQL and Redis were healthy when inspected. The failure
+  interrupted local validation. Production was unaffected.
+- Redpanda’s first fatal message began `Could not setup Async I/O: unknown error`.
+  A read-only check in the workspace PostgreSQL container returned `65536` for
+  both `aio-nr` and `aio-max-nr`, confirming that the shared Docker Desktop Linux
+  VM could not allocate another AIO slot. [Linux kernel AIO settings](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+- Requested authorization for the documented temporary VM limit increase to
+  `1048576`. The runtime limit remains unchanged and the canonical integration
+  check remains pending. After authorization or available capacity, verify the
+  value and rerun the same command. [Shared Docker VM resource checks](testing.md#shared-docker-vm-resource-pressure).
