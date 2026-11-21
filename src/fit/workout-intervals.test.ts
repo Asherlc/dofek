@@ -112,7 +112,7 @@ describe("FitWorkoutIntervalCollector", () => {
     });
   });
 
-  it("preserves subsecond elapsed time and does not require timestamp equality", () => {
+  it("preserves fractional-second elapsed time and does not require timestamp equality", () => {
     const [row] = build(
       [step(0)],
       [lap(0, 0, 0, { total_elapsed_time: 179.5, timestamp: "2026-07-01T12:03:00.9Z" })],
@@ -216,7 +216,7 @@ describe("FitWorkoutIntervalCollector", () => {
     expect(build([step(0)], [lap(0, 0, 0, { total_elapsed_time: 0.0004 })])).toEqual([]);
   });
 
-  it("rejects an unrepresentable lap end", () => {
+  it("rejects a lap end outside the Date range", () => {
     expect(build([step(0)], [lap(0, 0, 0, { total_elapsed_time: 1e300 })])).toEqual([]);
   });
 
