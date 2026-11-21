@@ -1,4 +1,5 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import { climbingBestOnsightSchema } from "@dofek/training/climbing-best-onsight";
 import { climbingCatalogueContextSchema } from "@dofek/training/climbing-catalogue";
 import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { climbingLocationMapSchema } from "@dofek/training/climbing-location-map";
@@ -19,6 +20,7 @@ import { dateWindowStartString } from "../lib/date-window.ts";
 import { activityImagesOutputSchema } from "../repositories/activity-images-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { climbingAttemptIncreaseSchema } from "../repositories/climbing-attempt-increase.ts";
+import { ClimbingBestOnsightRepository } from "../repositories/climbing-best-onsight-repository.ts";
 import { ClimbingCatalogueRepository } from "../repositories/climbing-catalogue-repository.ts";
 import { ClimbingImagesRepository } from "../repositories/climbing-images-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
@@ -304,6 +306,20 @@ export const climbingRouter = router({
         ]);
         return { attached: true as const };
       }),
+    ),
+
+  bestOnsight: protectedProcedure
+    .input(z.void())
+    .output(climbingBestOnsightSchema)
+    .query(({ ctx }) =>
+      runClimbingQuery(() =>
+        new ClimbingBestOnsightRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+        ).getBestOnsight(),
+      ),
     ),
 
   gradeProgression: cachedProtectedQuery({
