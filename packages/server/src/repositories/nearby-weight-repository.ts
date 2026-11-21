@@ -7,6 +7,7 @@ import {
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import {
   type DirectWeightObservation,
+  MAX_NEARBY_WEIGHT_DAYS,
   selectNearbyWeight,
   type UnavailableWeightEvidence,
   type WeightEvidence,
@@ -45,8 +46,8 @@ export async function loadDirectWeightObservations(
         AND body.weight_kg IS NOT NULL
         AND body.weight_kg > 0${access ? `\n        ${access}` : ""}
         AND toDate(toTimeZone(body.recorded_at, {timezone:String})) BETWEEN
-          addDays(toDate({startDate:String}), -30)
-          AND addDays(toDate({endDate:String}), 30)
+          addDays(toDate({startDate:String}), -${MAX_NEARBY_WEIGHT_DAYS})
+          AND addDays(toDate({endDate:String}), ${MAX_NEARBY_WEIGHT_DAYS})
       ORDER BY body.recorded_at ASC
       SETTINGS prefer_column_name_to_alias = 1`,
     {

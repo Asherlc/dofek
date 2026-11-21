@@ -34,6 +34,7 @@ const mcpToolNames = new Set([
   "get_health_trends",
   "get_nutrition_summary",
   "get_recovery_training_series",
+  "get_running_race_forecast",
   "get_sleep_summary",
   "get_strength_progression",
   "get_strength_sessions",

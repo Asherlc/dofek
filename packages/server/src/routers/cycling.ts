@@ -3,11 +3,16 @@ import { formatDateYmdInTimeZone, shiftDateYmd } from "@dofek/format/format";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import {
+  cyclingDurabilityResultSchema,
+  cyclingDurabilitySelectionSchema,
+} from "../contracts/cycling-durability.ts";
 import { cyclingPowerProfileSchema } from "../contracts/cycling-power-profile.ts";
 import { trainingChartAvailabilitySchema } from "../contracts/training-chart-availability.ts";
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
+import { CyclingDurabilityRepository } from "../repositories/cycling-durability-repository.ts";
 import { CyclingPowerProfileRepository } from "../repositories/cycling-power-profile-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
 
@@ -155,7 +160,7 @@ const activitiesOutputSchema = z.object({
   }),
 });
 
-function requireCyclingStore(
+function requireSensorStore(
   sensorStore: ConstructorParameters<typeof CyclingAnalyticsRepository>[3] | undefined,
 ) {
   if (!sensorStore) {
@@ -179,7 +184,7 @@ function requireRepository(ctx: {
     ctx.db,
     ctx.userId,
     ctx.timezone,
-    requireCyclingStore(ctx.sensorStore),
+    requireSensorStore(ctx.sensorStore),
     ctx.accessWindow,
   );
 }
@@ -192,7 +197,7 @@ export const cyclingRouter = router({
       const endDate = formatDateYmdInTimeZone(new Date(), ctx.timezone);
       return new CyclingPowerProfileRepository(
         ctx.db,
-        requireCyclingStore(ctx.sensorStore),
+        requireSensorStore(ctx.sensorStore),
         ctx.userId,
         ctx.timezone,
         ctx.accessWindow,
@@ -201,7 +206,38 @@ export const cyclingRouter = router({
         endDate,
       });
     },
-    { expiresAt: "localDayBoundary", outputSchema: cyclingPowerProfileSchema },
+    {
+      expiresAt: "localDayBoundary",
+      outputSchema: cyclingPowerProfileSchema,
+      scopeByAccessWindow: true,
+    },
+  ),
+  durability: selectedChartCustomRangeQuery(
+    "cycling.durability",
+    CacheTTL.LONG,
+    cyclingDurabilitySelectionSchema.extend({
+      days: selectedChartRangeDaysSchema("cycling.durability"),
+    }),
+    ({ ctx, range, input }) =>
+      new CyclingDurabilityRepository(
+        requireSensorStore(ctx.sensorStore),
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).getComparison(
+        range,
+        {
+          durationSeconds: input.durationSeconds,
+          minimumWorkKilojoulesPerKg: input.minimumWorkKilojoulesPerKg,
+        },
+        formatDateYmdInTimeZone(new Date(), ctx.timezone),
+      ),
+    cyclingDurabilityResultSchema,
+    {
+      keyVersion: "cycling-durability-v1",
+      expiresAt: "localDayBoundary",
+      scopeByAccessWindow: true,
+    },
   ),
   performance: selectedChartRangeQuery(
     "cycling.performance",

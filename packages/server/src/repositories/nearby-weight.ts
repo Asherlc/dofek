@@ -34,6 +34,7 @@ export interface UnavailableWeightEvidence {
 }
 
 const DAY_MILLISECONDS = 86_400_000;
+export const MAX_NEARBY_WEIGHT_DAYS = 30;
 
 function dayNumber(date: string): number {
   return Date.parse(`${date}T00:00:00.000Z`) / DAY_MILLISECONDS;
@@ -111,7 +112,7 @@ export function selectNearbyWeight(
       distance: Math.abs(dayNumber(measurement.date) - effortDay),
       measurement,
     }))
-    .filter(({ distance }) => distance <= 30)
+    .filter(({ distance }) => distance <= MAX_NEARBY_WEIGHT_DAYS)
     .sort(
       (left, right) =>
         left.distance - right.distance ||

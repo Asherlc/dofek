@@ -121,6 +121,7 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   fatsecret: { label: "fatsecret", logo: { type: "png" } },
   ziva: { label: "Ziva", logo: { type: "png" } },
   mapmyfitness: { label: "MapMyFitness", logo: { type: "png" } },
+  runalyze: { label: "Runalyze" },
   ultrahuman: { label: "Ultrahuman", logo: { type: "png" } },
   "amazfit-zepp": { label: "Amazfit/Zepp", family: zeppCloud, logo: { id: "zepp", type: "png" } },
   "zos-app": { label: "Zepp OS App", family: zeppApp, logo: { id: "zepp", type: "png" } },

@@ -1,6 +1,7 @@
 import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import { attemptScopeSchema, ropeMethodSchema } from "@dofek/training/climbing-log";
 import { z } from "zod";
+import { estimateStrengthSources } from "./strength-set-estimate.ts";
 
 export interface StrengthComparisonRow {
   activity_id: string;
@@ -14,6 +15,12 @@ export interface StrengthComparisonRow {
   weight_kg: number | null;
   reps: number | null;
   rpe: number | null;
+  exercise_name: string;
+  equipment: string | null;
+  raw: Record<string, unknown>;
+  distance_meters: number | null;
+  duration_seconds: number | null;
+  notes: string | null;
 }
 
 export const performanceClimbingRowSchema = z.object({
@@ -171,12 +178,16 @@ function consolidateStrengthRows(rows: StrengthComparisonRow[]) {
   return consolidated;
 }
 
-export function computeStrengthComparisonMetrics(rows: StrengthComparisonRow[]) {
+export function computeStrengthComparisonMetrics(
+  rows: StrengthComparisonRow[],
+  exerciseId?: string,
+) {
   if (rows.length === 0) return null;
   const sets = consolidateStrengthRows(rows);
   let volume = 0;
   let validVolumeSets = 0;
   let bestE1rm: number | null = null;
+  let excludedEstimate = false;
   let suspiciousSets = 0;
   let workingSets = 0;
   let missingVolumeSets = 0;
@@ -201,9 +212,19 @@ export function computeStrengthComparisonMetrics(rows: StrengthComparisonRow[]) 
       validVolume = true;
       volume += weightKg * reps;
       validVolumeSets += 1;
-      if (reps >= 1 && reps <= 12 && weightKg > 0) {
-        const estimate = weightKg * (1 + reps / 30);
-        bestE1rm = bestE1rm === null ? estimate : Math.max(bestE1rm, estimate);
+    }
+    if (exerciseId === row.exercise_id) {
+      const matchingEvidence = set.sourceRows.every(
+        (source) =>
+          source.distance_meters === row.distance_meters &&
+          source.duration_seconds === row.duration_seconds &&
+          source.notes === row.notes,
+      );
+      const { value, reason } = estimateStrengthSources(set.sourceRows);
+      if (reason === "conflicting_failure_evidence") excludedEstimate = true;
+      if (value !== null) {
+        if (flags.length > 0 || !matchingEvidence) excludedEstimate = true;
+        else bestE1rm = bestE1rm === null ? value : Math.max(bestE1rm, value);
       }
     }
     if ((working && !validVolume) || (!working && flags.length > 0)) excludedSets += 1;
@@ -217,7 +238,7 @@ export function computeStrengthComparisonMetrics(rows: StrengthComparisonRow[]) 
   const estimatedOneRepMaxStatus =
     bestE1rm === null
       ? ("unavailable" as const)
-      : volumeStatus === "complete"
+      : !excludedEstimate
         ? ("complete" as const)
         : ("partial" as const);
   return {

@@ -1,7 +1,9 @@
 /** @vitest-environment jsdom */
 
+import { keepPreviousData } from "@tanstack/react-query";
 import { cleanup } from "@testing-library/react";
-import { afterEach, beforeEach, describe, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import {
   expectRegistryInputs,
   renderRoute,
@@ -23,5 +25,14 @@ describe("strength route range plumbing", () => {
     state.days = null;
     await renderRoute("/training/strength", () => import("./strength.lazy.tsx"));
     expectRegistryInputs("strength", null);
+  });
+
+  it("keeps previous logged-set data across selected ranges with slow query options", async () => {
+    resetRangePlumbingState();
+    state.days = 30;
+    await renderRoute("/training/strength", () => import("./strength.lazy.tsx"));
+    expect(
+      state.queryCalls.find((call) => call.name === "strength.loggedSetComparison")?.options,
+    ).toEqual({ ...TRAINING_SLOW_QUERY_OPTIONS, placeholderData: keepPreviousData });
   });
 });

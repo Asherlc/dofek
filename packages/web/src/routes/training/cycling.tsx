@@ -5,6 +5,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { ComponentProps } from "react";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
+import { CyclingDurability } from "../../components/CyclingDurability.tsx";
 import { CyclingPowerProfile } from "../../components/CyclingPowerProfile.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
@@ -152,6 +153,7 @@ function CyclingContent({
       )}
 
       <CyclingPowerProfile {...profile} />
+      <CyclingDurability days={days} />
       {!performanceUnavailable && (
         <>
           {estimateEvidence && (

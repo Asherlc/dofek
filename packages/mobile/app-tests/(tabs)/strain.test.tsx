@@ -130,7 +130,8 @@ describe("StrainScreen", () => {
     const { default: StrainScreen } = await import("../../app/strain");
     const view = render(<StrainScreen />);
 
-    const { sportVolume, ...rangeQueries } = mockQueryState.rangeQueryCalls;
+    const { durability, sportVolume, ...rangeQueries } = mockQueryState.rangeQueryCalls;
+    expect(durability).toHaveLength(0);
     expect(sportVolume).toHaveLength(0);
     for (const calls of Object.values(rangeQueries)) {
       expect(calls.at(-1)?.options.enabled).toBe(false);
@@ -155,7 +156,7 @@ describe("StrainScreen", () => {
     mockQueryState.timeRangePreference.days = 90;
     view.rerender(<StrainScreen />);
 
-    for (const calls of Object.values(mockQueryState.rangeQueryCalls)) {
+    for (const calls of [sportVolume, ...Object.values(rangeQueries)]) {
       expect(calls.at(-1)?.options.placeholderData).toBeTypeOf("function");
     }
   });

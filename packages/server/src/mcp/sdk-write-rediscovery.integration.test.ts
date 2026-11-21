@@ -177,8 +177,9 @@ describe("MCP SDK write and fresh discovery", () => {
       await firstClient.connect(firstTransport);
       const listed = await firstClient.listTools();
       expect(listed.nextCursor).toBeUndefined();
-      expect(listed.tools).toHaveLength(36);
+      expect(listed.tools).toHaveLength(37);
       const initialToolNames = listed.tools.map((tool) => tool.name).toSorted();
+      expect(initialToolNames).toContain("get_running_race_forecast");
       const createTool = listed.tools.find((tool) => tool.name === "create_food_entry");
       expect(createTool).toBeDefined();
       expect(createTool?.annotations).toMatchObject({
@@ -243,7 +244,7 @@ describe("MCP SDK write and fresh discovery", () => {
         await freshClient.connect(freshTransport);
         const freshTools = await freshClient.listTools();
         expect(freshTools.nextCursor).toBeUndefined();
-        expect(freshTools.tools).toHaveLength(36);
+        expect(freshTools.tools).toHaveLength(37);
         expect(freshTools.tools.map((tool) => tool.name).toSorted()).toEqual(initialToolNames);
         expect(
           freshTools.tools.find((tool) => tool.name === "search_food_entries")?.annotations,

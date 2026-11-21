@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { StrengthProgressionRepository } from "./strength-progression-repository.ts";
 
 describe("StrengthProgressionRepository database semantics", () => {
   const userId = randomUUID();
-  const primaryProvider = `strength-primary-${randomUUID()}`;
+  const primaryProvider = "strong-csv";
   const mirrorProvider = `strength-mirror-${randomUUID()}`;
   const firstActivity = randomUUID();
   const mirrorActivity = randomUUID();
@@ -26,6 +28,7 @@ describe("StrengthProgressionRepository database semantics", () => {
       VALUES
         (${primaryProvider}, 'Primary strength fixture', ${userId}::uuid),
         (${mirrorProvider}, 'Mirror strength fixture', ${userId}::uuid)
+      ON CONFLICT (id) DO NOTHING
     `);
     await context.db.execute(sql`
       INSERT INTO fitness.exercise (
@@ -64,15 +67,15 @@ describe("StrengthProgressionRepository database semantics", () => {
         weight_kg, reps, rpe, raw
       ) VALUES
         (${priorActivity}::uuid, ${benchExercise}::uuid, 0, 0, 'working',
-          90, 5, 8, '{"weight":90,"weightUnit":"kg","reps":5,"rpe":8}'::jsonb),
+          90, 5, 8, '{"weight":90,"setTag":"Failure","exerciseName":"Bench Press (Barbell)","reportedWeightUnit":"kg","weightUnit":"kg","reps":5,"rpe":8}'::jsonb),
         (${firstActivity}::uuid, ${benchExercise}::uuid, 0, 0, 'working',
-          100, 5, 8, '{"weight":100,"weightUnit":"kg","reps":5,"rpe":8}'::jsonb),
+          100, 5, 8, '{"weight":100,"setTag":"Failure","exerciseName":"Bench Press (Barbell)","reportedWeightUnit":"kg","weightUnit":"kg","reps":5,"rpe":8}'::jsonb),
         (${mirrorActivity}::uuid, ${benchExercise}::uuid, 0, 0, 'working',
           100, 5, 8, '{"weight_kg":100,"number_of_reps":5,"complete":true}'::jsonb),
         (${latestActivity}::uuid, ${benchExercise}::uuid, 0, 0, 'warmup',
           60, 5, NULL, '{"weight":60,"weightUnit":"kg","reps":5}'::jsonb),
         (${latestActivity}::uuid, ${benchExercise}::uuid, 0, 1, 'working',
-          110, 5, 9, '{"weight":110,"weightUnit":"kg","reps":5,"rpe":9}'::jsonb),
+          110, 5, 9, '{"weight":110,"setTag":"Failure","exerciseName":"Bench Press (Barbell)","reportedWeightUnit":"kg","weightUnit":"kg","reps":5,"rpe":9}'::jsonb),
         (${latestActivity}::uuid, ${benchExercise}::uuid, 0, 2, 'working',
           4.989512, 140, 7, '{"weight":11,"weightUnit":"lbs","reps":140,"rpe":7}'::jsonb)
     `);
@@ -121,10 +124,10 @@ describe("StrengthProgressionRepository database semantics", () => {
         total_volume_kg_reps: 1050,
         estimated_one_rep_max: expect.objectContaining({
           formula: "Epley",
-          first_kg: 116.67,
-          latest_kg: 128.33,
+          first_kg: 116.65,
+          latest_kg: 128.32,
           change_kg: 11.66,
-          best_kg: 128.33,
+          best_kg: 128.32,
         }),
         daily: [
           {
@@ -134,7 +137,7 @@ describe("StrengthProgressionRepository database semantics", () => {
             valid_working_sets: 1,
             total_volume_kg_reps: 500,
             max_weight_kg: 100,
-            best_estimated_one_rep_max_kg: 116.67,
+            best_estimated_one_rep_max_kg: 116.65,
           },
           {
             date: "2026-07-01",
@@ -143,30 +146,150 @@ describe("StrengthProgressionRepository database semantics", () => {
             valid_working_sets: 1,
             total_volume_kg_reps: 550,
             max_weight_kg: 110,
-            best_estimated_one_rep_max_kg: 128.33,
+            best_estimated_one_rep_max_kg: 128.32,
           },
         ],
         prs: [
           expect.objectContaining({
             date: "2026-05-01",
-            value_kg: 116.67,
-            previous_best_kg: 105,
+            value_kg: 116.65,
+            previous_best_kg: 104.99,
             previous_best_evidence: expect.objectContaining({
               activity_id: priorActivity,
               date: "2026-04-01",
               reps: 5,
-              value_kg: 105,
+              value_kg: 104.99,
               weight_kg: 90,
             }),
           }),
           expect.objectContaining({
             date: "2026-07-01",
-            value_kg: 128.33,
-            previous_best_kg: 116.67,
+            value_kg: 128.32,
+            previous_best_kg: 116.65,
           }),
         ],
       }),
     ]);
+  });
+
+  it("bounds logged comparisons by timestamp and access before deduplicating canonical sessions", async () => {
+    const all = await new StrengthProgressionRepository(
+      context.db,
+      userId,
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(all.exercises[0]).toMatchObject({ exerciseId: benchExercise, totalLoggedSets: 3 });
+    expect(all.exercises[0]?.sessions).toHaveLength(3);
+    expect(all.exercises[0]?.comparisons[0]).toMatchObject({
+      observedDates: 3,
+      first: { weightKg: 90 },
+      latest: { weightKg: 110 },
+    });
+    const restricted = await new StrengthProgressionRepository(context.db, userId, "UTC", {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2026-05-01",
+      endDateExclusive: "2026-06-01",
+    }).listLoggedSetComparison(null);
+    expect(restricted.exercises[0]).toMatchObject({ totalLoggedSets: 1 });
+    expect(restricted.exercises[0]?.sessions[0]).toMatchObject({
+      date: "2026-05-01",
+      sourceProviders: expect.arrayContaining([primaryProvider, mirrorProvider]),
+    });
+    expect(restricted.exercises[0]?.comparisons[0]?.latest).toBeNull();
+    const futureActivity = randomUUID();
+    await context.db.execute(sql`
+      INSERT INTO fitness.activity (
+        id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+        started_at, ended_at, raw
+      ) VALUES (
+        ${futureActivity}::uuid, ${futureActivity}::uuid, ${primaryProvider}, ${userId}::uuid,
+        'future-session', 'strength', 'strength_training',
+        CURRENT_TIMESTAMP + INTERVAL '1 day', CURRENT_TIMESTAMP + INTERVAL '2 days', '{}'::jsonb
+      )
+    `);
+    await context.db.execute(sql`
+      INSERT INTO fitness.strength_set (
+        activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps, raw
+      ) VALUES (${futureActivity}::uuid, ${benchExercise}::uuid, 0, 0, 'working', 200, 5, '{}'::jsonb)
+    `);
+    const withFuture = await new StrengthProgressionRepository(
+      context.db,
+      userId,
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(withFuture.exercises[0]?.totalLoggedSets).toBe(3);
+    const recent = await new StrengthProgressionRepository(
+      context.db,
+      userId,
+      "UTC",
+    ).listLoggedSetComparison(1);
+    expect(recent.exercises).toEqual([]);
+    const [clock] = await executeWithSchema(
+      context.db,
+      z.object({ now: timestampStringSchema }),
+      sql`SELECT CURRENT_TIMESTAMP::text AS now`,
+    );
+    if (!clock) throw new Error("Database clock is required");
+    const now = new Date(clock.now);
+    const offsetStart = new Date(now);
+    offsetStart.setUTCDate(offsetStart.getUTCDate() - 3);
+    offsetStart.setUTCHours(0, 30, 0, 0);
+    const offsetDate = new Date(offsetStart.getTime() - 120 * 60_000).toISOString().slice(0, 10);
+    const insideId = randomUUID();
+    const outsideId = randomUUID();
+    const offsetId = randomUUID();
+    for (const observation of [
+      { id: insideId, start: new Date(now.getTime() - (30 * 24 - 1) * 3_600_000), offset: null },
+      { id: outsideId, start: new Date(now.getTime() - (30 * 24 + 1) * 3_600_000), offset: null },
+      { id: offsetId, start: offsetStart, offset: -120 },
+    ]) {
+      await context.db.execute(sql`
+        INSERT INTO fitness.activity (
+          id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+          started_at, ended_at, raw, start_utc_offset_minutes, local_time_source
+        ) VALUES (
+          ${observation.id}::uuid, ${observation.id}::uuid, ${primaryProvider}, ${userId}::uuid,
+          ${observation.id}, 'strength', 'strength_training',
+          ${observation.start.toISOString()}::timestamptz,
+          ${new Date(observation.start.getTime() + 60_000).toISOString()}::timestamptz,
+          '{}'::jsonb, ${observation.offset},
+          ${observation.offset === null ? "unknown" : "provider_offset"}
+        )
+      `);
+      await context.db.execute(sql`
+        INSERT INTO fitness.strength_set (
+          activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps, raw
+        ) VALUES (${observation.id}::uuid, ${benchExercise}::uuid, 0, 0, 'working', 120, 5, '{}'::jsonb)
+      `);
+    }
+    const selected = await new StrengthProgressionRepository(
+      context.db,
+      userId,
+      "UTC",
+    ).listLoggedSetComparison(30);
+    expect(selected.exercises[0]?.totalLoggedSets).toBe(2);
+    expect(selected.exercises[0]?.sessions.map((session) => session.activityId).sort()).toEqual(
+      [insideId, offsetId].sort(),
+    );
+    expect(
+      selected.exercises[0]?.sessions.find((session) => session.activityId === offsetId)?.date,
+    ).toBe(offsetDate);
+    const unbounded = await new StrengthProgressionRepository(
+      context.db,
+      userId,
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(
+      unbounded.exercises[0]?.sessions.some((session) => session.activityId === outsideId),
+    ).toBe(true);
+    const otherUser = await new StrengthProgressionRepository(
+      context.db,
+      randomUUID(),
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(otherUser.exercises).toEqual([]);
   });
 
   it("returns suspicious original values but excludes them without correcting them", async () => {
@@ -185,6 +308,12 @@ describe("StrengthProgressionRepository database semantics", () => {
       date: "2026-07-01",
       quality_flags: expect.arrayContaining(["contains_suspicious_strength_records"]),
       timezone: expect.objectContaining({ assumed: true, analysis_timezone: "UTC" }),
+    });
+    expect(result.exercises[0]?.estimated_one_rep_max).toMatchObject({
+      first_kg: 128.32,
+      latest_kg: 128.32,
+      change_kg: null,
+      change_percent: null,
     });
     const suspicious = session?.exercises[0]?.sets.find((set) => set.normalized.reps === 140);
     expect(suspicious).toMatchObject({
