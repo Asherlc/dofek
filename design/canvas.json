@@ -1,6 +1,7 @@
 {
   "version": 1,
   "agents": {
-    "whoop-battery-status": "7882f4e8-4c8c-4046-bde8-fe969e33e90a"
+    "whoop-battery-status": "7882f4e8-4c8c-4046-bde8-fe969e33e90a",
+    "climbing-best-onsight": "15c01ffd-9469-4f9e-b60a-46a3ede54261"
   }
 }

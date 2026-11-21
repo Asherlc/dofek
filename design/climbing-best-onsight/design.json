@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "title": "Best recorded onsight",
+  "kind": "prototype",
+  "description": "Sample 12-month climbing results by type and setting, shown on the climbing page and in a chat answer.",
+  "artboards": [
+    {
+      "id": "climbing-page",
+      "title": "Climbing page",
+      "file": "climbing-page.html",
+      "width": 640,
+      "group": "Delivery options"
+    },
+    {
+      "id": "chat-answer",
+      "title": "Chat answer",
+      "file": "chat-answer.html",
+      "width": 640,
+      "group": "Delivery options"
+    }
+  ]
+}

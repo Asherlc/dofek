@@ -1,0 +1,138 @@
+:root {
+  color-scheme: light dark;
+  --page: light-dark(#f3f5f8, #111318);
+  --surface: light-dark(#ffffff, #191c23);
+  --ink: light-dark(#1c2230, #eff2f8);
+  --muted: light-dark(#536072, #abb4c4);
+  --line: light-dark(#dce2ea, #343a45);
+  --inset: light-dark(#f3f6fa, #232833);
+  --accent: light-dark(#254f81, #a9ccfc);
+  --radius: 14px;
+  --gutter: clamp(12px, 4vw, 24px);
+  font: 14px/1.5 system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: var(--gutter);
+  background: var(--page);
+  color: var(--ink);
+}
+
+.surface {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.climbing-path {
+  padding: 11px var(--gutter);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.climbing-path strong {
+  color: var(--ink);
+}
+
+.content {
+  padding: var(--gutter);
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.3;
+}
+
+.period,
+.legend,
+.evidence {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.period {
+  margin: 4px 0 0;
+}
+
+.legend {
+  margin: 12px 0 0;
+}
+
+table {
+  width: 100%;
+  margin-top: 14px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+th,
+td {
+  padding: 8px clamp(4px, 1.7vw, 10px);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+th:first-child {
+  width: 28%;
+}
+
+thead th {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.climbing-page thead th {
+  background: var(--inset);
+}
+
+tbody th {
+  font-weight: 550;
+}
+
+tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.empty {
+  color: var(--muted);
+}
+
+.evidence {
+  display: block;
+  margin: 3px 0 0;
+}
+
+summary {
+  width: fit-content;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.chat {
+  --page: light-dark(#f7f7f7, #191919);
+  --surface: light-dark(#ffffff, #212121);
+  --ink: light-dark(#202020, #f0f0f0);
+  --muted: light-dark(#545454, #b9b9b9);
+  --line: light-dark(#e0e0e0, #424242);
+  --inset: light-dark(#f2f2f2, #303030);
+}
+
+.chat-question {
+  width: fit-content;
+  max-width: 84%;
+  margin: 0 0 18px auto;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--inset);
+}
