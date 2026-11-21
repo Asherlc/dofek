@@ -54,6 +54,6 @@ repository cycling FIT fixtures and the sampled public activity fixtures did
 not provide a linked cycling workout. Garmin's official SDK successfully
 encoded and decoded a synthetic file with absolute range and point targets,
 repeat lap links, and a second lap of 134 timer seconds and 145 elapsed seconds.
-That validates the documented representation. A device-produced example remains
-unverified. The implementation plan records this open decision and requires
-device evidence before claiming support for live recordings.
+That validates the documented representation. The user approved starting with
+this SDK fixture. A device-produced example remains unverified and is required
+before claiming support for live recordings.

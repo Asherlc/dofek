@@ -11,6 +11,7 @@ import { UnrecoverableError } from "bullmq";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { replaceActivityDeviceObservations } from "../db/activity-device-observations.ts";
+import { replaceFitWorkoutIntervals } from "../db/fit-workout-intervals.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import {
   replaceMetricStreamBatch,
@@ -31,6 +32,7 @@ import {
   type ParsedFitWeight,
   streamFitFile,
 } from "../fit/stream-decoder.ts";
+import { FitWorkoutIntervalCollector } from "../fit/workout-intervals.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
@@ -537,6 +539,7 @@ export async function importFitFile(
   await onRetained?.(retainedArtifactKey);
   await onProgress({ percentage: 25, message: "Decoding FIT file..." });
   const spool = await createFitImportSpool();
+  const workoutIntervals = new FitWorkoutIntervalCollector();
   try {
     let importType: "activity" | "unsupported" | "weight" | undefined;
     let streamMetadata: FitStreamMetadata | undefined;
@@ -571,6 +574,12 @@ export async function importFitFile(
         },
         onDeviceInfoBatch: async (messages) => {
           if (importType === "activity") await stageDeviceBatch(spool, messages);
+        },
+        onLapBatch: async (messages) => {
+          if (importType === "activity") workoutIntervals.addLaps(messages);
+        },
+        onWorkoutStepBatch: async (messages) => {
+          if (importType === "activity") workoutIntervals.addWorkoutSteps(messages);
         },
       });
     } catch (error) {
@@ -645,6 +654,11 @@ export async function importFitFile(
           db,
           { activityId, userId: data.userId },
           replayDeviceBatches(spool, streamMetadata.fileId),
+        );
+        await replaceFitWorkoutIntervals(
+          db,
+          { activityId, userId: data.userId, providerId: data.providerId },
+          workoutIntervals.build(streamMetadata),
         );
         await db.execute(sql`UPDATE fitness.activity
           SET fit_recovery_error = ${streamMetadata.recoveryError}
