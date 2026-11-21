@@ -39664,3 +39664,9 @@ Local qualification and CI are separate from production throughput acceptance. T
   received sample in Instruments before closing the Sentry issue.
   [Native WAL replay](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleStore%2BInboxWriteTests.swift)
   · [Apple disk-write profiling](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
+
+## 2026-11-21 — Local late-workouts integration baseline blocked by Docker AIO capacity
+
+- **Impact.** The workspace integration wrapper stopped before Vitest. The existing sleep and pre-sleep matching unit baseline passed all 73 tests. Production was outside the affected workspace.
+- **Evidence and cause.** `rtk pnpm test:integration -- packages/server/src/repositories/recovery-training-series-repository.integration.test.ts` stopped during `compose:up` with `container insights-late-workouts-and-sleep-redpanda-1 is unhealthy`. The broker's first fatal log line reported `Could not setup Async I/O` at `aio-max-nr 65536`. Both `/proc/sys/fs/aio-nr` and `/proc/sys/fs/aio-max-nr` read `65536` inside the healthy workspace Postgres container, establishing that the Docker VM had exhausted its shared allocation. Postgres, ClickHouse, and Redis were healthy. [Linux AIO counters](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+- **Mitigation and follow-up.** Stopped this workspace's restarting broker with `rtk pnpm compose -- stop redpanda`, preserving its volume. Integration validation remains pending capacity recovery. Measure the VM's allocation and rerun the original integration command after capacity is available. [Shared Docker VM resource procedure](testing.md#shared-docker-vm-resource-pressure).
