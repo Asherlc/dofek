@@ -66,6 +66,141 @@ const input = {
 };
 
 describe("StrengthProgressionRepository", () => {
+  it("keeps same-day sessions and selects daily maximums without comparing different reps", async () => {
+    const later = {
+      ...baseRow,
+      activity_id: "00000000-0000-4000-8000-000000000002",
+      session_date: "2026-07-02",
+      weight_kg: 105,
+    };
+    const sameDay = {
+      ...later,
+      activity_id: "00000000-0000-4000-8000-000000000003",
+      weight_kg: 110,
+    };
+    const otherReps = { ...sameDay, set_index: 1, reps: 8, weight_kg: 80 };
+    const result = await new StrengthProgressionRepository(
+      executeDb([sameDay, otherReps, later, baseRow]),
+      baseRow.activity_id,
+      "UTC",
+    ).listLoggedSetComparison(null);
+    const exercise = result.exercises[0];
+    expect(exercise?.sessions).toHaveLength(3);
+    expect(exercise?.comparisons).toMatchObject([
+      {
+        reps: 5,
+        observedDates: 2,
+        first: { date: "2026-07-01", weightKg: 100 },
+        latest: { date: "2026-07-02", activityId: sameDay.activity_id, weightKg: 110 },
+      },
+      { reps: 8, observedDates: 1, first: { weightKg: 80 }, latest: null },
+    ]);
+    expect(
+      exercise?.sessions
+        .find(({ activityId }) => activityId === later.activity_id)
+        ?.heaviestSets.map(({ reps }) => reps),
+    ).toEqual([5]);
+  });
+
+  it("compares heaviest logged sets for each observed rep count", async () => {
+    const rows = [
+      baseRow,
+      { ...baseRow, set_index: 1, set_id: "00000000-0000-4000-8000-000000000102", weight_kg: 110 },
+      {
+        ...baseRow,
+        set_index: 2,
+        set_id: "00000000-0000-4000-8000-000000000103",
+        reps: 8,
+        weight_kg: 80,
+      },
+    ];
+    const result = await new StrengthProgressionRepository(
+      executeDb(rows),
+      "00000000-0000-4000-8000-000000000004",
+      "UTC",
+    ).listLoggedSetComparison(30);
+    expect(result.exercises[0]?.sessions[0]?.loggedSets).toBe(3);
+    expect(result.exercises[0]?.comparisons.map(({ reps }) => reps)).toEqual([5, 8]);
+  });
+  it("compares distinct dates at matching reps and keeps same-day sessions separate", async () => {
+    const later = {
+      ...baseRow,
+      activity_id: "00000000-0000-4000-8000-000000000002",
+      session_date: "2026-07-02",
+      weight_kg: 110,
+    };
+    const sameDay = {
+      ...later,
+      activity_id: "00000000-0000-4000-8000-000000000003",
+      weight_kg: 115,
+    };
+    const otherReps = {
+      ...later,
+      set_id: "00000000-0000-4000-8000-000000000105",
+      set_index: 1,
+      reps: 8,
+    };
+    const result = await new StrengthProgressionRepository(
+      executeDb([baseRow, later, sameDay, otherReps]),
+      baseRow.activity_id,
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(result.exercises[0]?.sessions).toHaveLength(3);
+    expect(result.exercises[0]?.comparisons).toMatchObject([
+      {
+        reps: 5,
+        observedDates: 2,
+        first: { weightKg: 100 },
+        latest: { weightKg: 115, activityId: sameDay.activity_id },
+      },
+      { reps: 8, observedDates: 1, latest: null },
+    ]);
+  });
+
+  it("consolidates equivalent source records and excludes invalid or ambiguous load evidence", async () => {
+    const duplicate = {
+      ...baseRow,
+      set_provider: "whoop",
+      set_activity_id: "00000000-0000-4000-8000-000000000012",
+      set_id: "00000000-0000-4000-8000-000000000102",
+    };
+    const invalid = ["warmup", "rest", null].map((set_type, index) => ({
+      ...baseRow,
+      set_type,
+      set_index: index + 1,
+    }));
+    const missing = { ...baseRow, set_index: 4, weight_kg: null, set_provider: "crimpd" };
+    const result = await new StrengthProgressionRepository(
+      executeDb([baseRow, duplicate, ...invalid, missing]),
+      baseRow.activity_id,
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(result.exercises[0]?.totalLoggedSets).toBe(1);
+    expect(result.exercises[0]?.sessions[0]?.heaviestSets[0]?.sourceProviders).toEqual([
+      "strong",
+      "whoop",
+    ]);
+  });
+
+  it("keeps normalized exercise and equipment variants distinct", async () => {
+    const variant = {
+      ...baseRow,
+      exercise_id: "00000000-0000-4000-8000-000000000202",
+      equipment: "Dumbbell",
+    };
+    const result = await new StrengthProgressionRepository(
+      executeDb([baseRow, variant]),
+      baseRow.activity_id,
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(
+      result.exercises.map(({ equipment, totalLoggedSets }) => ({ equipment, totalLoggedSets })),
+    ).toEqual([
+      { equipment: "Barbell", totalLoggedSets: 1 },
+      { equipment: "Dumbbell", totalLoggedSets: 1 },
+    ]);
+  });
+
   it("computes exact progression, PR, filter, and pagination contracts for valid working sets", async () => {
     const laterRow = {
       ...baseRow,

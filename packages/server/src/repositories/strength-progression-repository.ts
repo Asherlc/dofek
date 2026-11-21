@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
-import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { LoggedSetComparison, LoggedSetExercise } from "../contracts/logged-set-comparison.ts";
+import { BaseRepository } from "../lib/base-repository.ts";
+import { ChartRange } from "../lib/chart-range.ts";
+import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 const sourceExternalIdSchema = z.object({
@@ -254,6 +257,17 @@ function qualityFlags(row: Row): string[] {
   return flags;
 }
 
+function setQualityFlags(set: ConsolidatedSet): string[] {
+  return [
+    ...qualityFlags(set.row),
+    ...(set.duplicateSameSourceIdentity ? ["duplicate_same_source_set_identity"] : []),
+    ...(set.ambiguousCrossProviderExerciseOccurrence
+      ? ["ambiguous_cross_provider_exercise_occurrence"]
+      : []),
+    ...(set.conflicting ? ["possible_overlapping_conflicting_set"] : []),
+  ];
+}
+
 function volumeResult(set: ConsolidatedSet, flags: string[]) {
   if (set.conflicting || flags.length > 0) {
     return { status: "unavailable" as const, value_kg_reps: null, reason: "quality_flags" };
@@ -353,17 +367,7 @@ function encodeCursor(row: Row, userId: string, shape: string): string {
 }
 
 /** Exact-range, anomaly-safe strength progression over canonical activity groups. */
-export class StrengthProgressionRepository {
-  readonly #db: Pick<Database, "execute">;
-  readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
-    this.#userId = userId;
-    this.#timezone = timezone;
-  }
-
+export class StrengthProgressionRepository extends BaseRepository {
   #localDateSql() {
     return sql`CASE
       WHEN a.local_time_source IN (
@@ -375,8 +379,167 @@ export class StrengthProgressionRepository {
         AND a.start_utc_offset_minutes IS NOT NULL
         THEN ((a.started_at AT TIME ZONE 'UTC')
           + a.start_utc_offset_minutes * INTERVAL '1 minute')::date
-      ELSE (a.started_at AT TIME ZONE ${this.#timezone})::date
+      ELSE (a.started_at AT TIME ZONE ${this.timezone})::date
     END`;
+  }
+
+  #readRows(predicate: SQL, prior = false) {
+    const localDate = this.#localDateSql();
+    return executeWithSchema(
+      this.db,
+      rowSchema,
+      sql`${prior ? sql`/* strength_progression_prior */` : sql``} SELECT
+            a.id::text AS activity_id,
+            a.name AS activity_name,
+            a.started_at::text AS activity_started_at,
+            a.ended_at::text AS activity_ended_at,
+            (${localDate})::text AS session_date,
+            a.source_providers,
+            a.source_external_ids,
+            a.member_activity_ids,
+            a.timezone,
+            a.start_utc_offset_minutes,
+            a.end_utc_offset_minutes,
+            a.local_time_source,
+            strength.id::text AS set_id,
+            strength.activity_id::text AS set_activity_id,
+            source_activity.provider_id AS set_provider,
+            exercise.id::text AS exercise_id,
+            exercise.name AS exercise_name,
+            exercise.equipment,
+            exercise.muscle_groups,
+            exercise.exercise_type,
+            exercise.movement,
+            strength.exercise_index,
+            strength.set_index,
+            strength.set_type,
+            strength.weight_kg,
+            strength.reps,
+            strength.distance_meters,
+            strength.duration_seconds,
+            strength.rpe,
+            strength.notes,
+            strength.raw
+          FROM fitness.v_activity AS a
+          JOIN fitness.strength_set AS strength
+            ON strength.activity_id = ANY(a.member_activity_ids)
+          JOIN fitness.activity AS source_activity ON source_activity.id = strength.activity_id
+          JOIN fitness.exercise AS exercise ON exercise.id = strength.exercise_id
+          WHERE a.user_id = ${this.userId}::uuid
+            AND ${predicate}
+          ORDER BY a.started_at ${prior ? sql`ASC` : sql`DESC`}, a.id, strength.exercise_index, strength.set_index,
+            strength.created_at, strength.id`,
+    );
+  }
+
+  async listLoggedSetComparison(days: RangeDays): Promise<LoggedSetComparison> {
+    const rows = await this.#readRows(sql`true
+      ${ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`)}
+      AND a.started_at <= CURRENT_TIMESTAMP
+      ${this.timestampAccessPredicate(sql`a.started_at`)}`);
+    const exercises = new Map<string, LoggedSetExercise>();
+    const sessions = new Map<string, LoggedSetExercise["sessions"][number]>();
+    for (const set of consolidateSets(rows).sets) {
+      if (volumeResult(set, setQualityFlags(set)).status !== "available") continue;
+      const row = set.row;
+      if (row.reps === null || row.weight_kg === null) continue;
+      const key = JSON.stringify([row.exercise_id, row.equipment]);
+      let exercise = exercises.get(key);
+      if (!exercise) {
+        exercise = {
+          exerciseId: row.exercise_id,
+          exerciseName: row.exercise_name,
+          equipment: row.equipment,
+          totalLoggedSets: 0,
+          sessions: [],
+          comparisons: [],
+        };
+        exercises.set(key, exercise);
+      }
+      const sessionKey = JSON.stringify([key, row.activity_id]);
+      let session = sessions.get(sessionKey);
+      if (!session) {
+        session = {
+          activityId: row.activity_id,
+          date: row.session_date,
+          loggedSets: 0,
+          sourceProviders: [],
+          heaviestSets: [],
+        };
+        exercise.sessions.push(session);
+        sessions.set(sessionKey, session);
+      }
+      exercise.totalLoggedSets++;
+      session.loggedSets++;
+      const providers = unique(set.sourceRows.map((source) => source.set_provider));
+      session.sourceProviders = unique([...session.sourceProviders, ...providers]);
+      const evidence = {
+        reps: row.reps,
+        weightKg: row.weight_kg,
+        setId: row.set_id,
+        sourceProviders: providers,
+      };
+      const current = session.heaviestSets.findIndex((value) => value.reps === row.reps);
+      const best = session.heaviestSets[current];
+      if (!best) session.heaviestSets.push(evidence);
+      else if (
+        evidence.weightKg > best.weightKg ||
+        (evidence.weightKg === best.weightKg && evidence.setId < best.setId)
+      ) {
+        session.heaviestSets[current] = evidence;
+      }
+    }
+    for (const exercise of exercises.values()) {
+      exercise.sessions.sort(
+        (a, b) => a.date.localeCompare(b.date) || a.activityId.localeCompare(b.activityId),
+      );
+      const byReps = new Map<
+        number,
+        Map<string, LoggedSetExercise["comparisons"][number]["first"]>
+      >();
+      for (const session of exercise.sessions) {
+        session.heaviestSets.sort((a, b) => a.reps - b.reps);
+        for (const set of session.heaviestSets) {
+          const dates = byReps.get(set.reps) ?? new Map();
+          byReps.set(set.reps, dates);
+          const endpoint = { ...set, activityId: session.activityId, date: session.date };
+          const current = dates.get(session.date);
+          if (
+            !current ||
+            endpoint.weightKg > current.weightKg ||
+            (endpoint.weightKg === current.weightKg &&
+              (endpoint.activityId < current.activityId ||
+                (endpoint.activityId === current.activityId && endpoint.setId < current.setId)))
+          ) {
+            dates.set(session.date, endpoint);
+          }
+        }
+      }
+      exercise.comparisons = [...byReps]
+        .map(([reps, dates]) => {
+          const observations = [...dates.values()].sort((a, b) => a.date.localeCompare(b.date));
+          const first = observations[0];
+          if (!first) throw new Error("Logged set comparison requires an observation");
+          return {
+            reps,
+            observedDates: observations.length,
+            first,
+            latest: observations.length > 1 ? (observations.at(-1) ?? null) : null,
+          };
+        })
+        .sort((a, b) => b.observedDates - a.observedDates || a.reps - b.reps);
+    }
+    return {
+      exercises: [...exercises.values()].sort(
+        (a, b) =>
+          a.exerciseName.localeCompare(b.exerciseName) || a.exerciseId.localeCompare(b.exerciseId),
+      ),
+      research: {
+        summary:
+          "Over eight weeks, the study found no statistically significant difference in tested squat or bench-press one-rep max gains among trained men assigned one, three, or five supervised sets per exercise per session, performed to failure. These observed logged sets and loads do not establish personal causation or prescribe set targets.",
+        url: "https://pmc.ncbi.nlm.nih.gov/articles/pmid/30153194/",
+      },
+    };
   }
 
   async listRange(input: StrengthProgressionInput) {
@@ -401,112 +564,23 @@ export class StrengthProgressionRepository {
             input.exerciseIds.map((exerciseId) => sql`${exerciseId}::uuid`),
             sql`, `,
           )})`;
-    const rows = await executeWithSchema(
-      this.#db,
-      rowSchema,
-      sql`SELECT
-            a.id::text AS activity_id,
-            a.name AS activity_name,
-            a.started_at::text AS activity_started_at,
-            a.ended_at::text AS activity_ended_at,
-            (${localDate})::text AS session_date,
-            a.source_providers,
-            a.source_external_ids,
-            a.member_activity_ids,
-            a.timezone,
-            a.start_utc_offset_minutes,
-            a.end_utc_offset_minutes,
-            a.local_time_source,
-            strength.id::text AS set_id,
-            strength.activity_id::text AS set_activity_id,
-            source_activity.provider_id AS set_provider,
-            exercise.id::text AS exercise_id,
-            exercise.name AS exercise_name,
-            exercise.equipment,
-            exercise.muscle_groups,
-            exercise.exercise_type,
-            exercise.movement,
-            strength.exercise_index,
-            strength.set_index,
-            strength.set_type,
-            strength.weight_kg,
-            strength.reps,
-            strength.distance_meters,
-            strength.duration_seconds,
-            strength.rpe,
-            strength.notes,
-            strength.raw
-          FROM fitness.v_activity AS a
-          JOIN fitness.strength_set AS strength
-            ON strength.activity_id = ANY(a.member_activity_ids)
-          JOIN fitness.activity AS source_activity ON source_activity.id = strength.activity_id
-          JOIN fitness.exercise AS exercise ON exercise.id = strength.exercise_id
-          WHERE a.user_id = ${this.#userId}::uuid
-            AND ${localDate} BETWEEN ${input.startDate}::date AND ${input.endDate}::date
-            AND ${providerPredicate}
-            AND ${exercisePredicate}
-          ORDER BY a.started_at DESC, a.id, strength.exercise_index, strength.set_index,
-            strength.created_at, strength.id`,
+    const rows = await this.#readRows(
+      sql`${localDate} BETWEEN ${input.startDate}::date AND ${input.endDate}::date AND ${providerPredicate} AND ${exercisePredicate}`,
     );
-
-    const priorRows = await executeWithSchema(
-      this.#db,
-      rowSchema,
-      sql`/* strength_progression_prior */
-          SELECT
-            a.id::text AS activity_id,
-            a.name AS activity_name,
-            a.started_at::text AS activity_started_at,
-            a.ended_at::text AS activity_ended_at,
-            (${localDate})::text AS session_date,
-            a.source_providers,
-            a.source_external_ids,
-            a.member_activity_ids,
-            a.timezone,
-            a.start_utc_offset_minutes,
-            a.end_utc_offset_minutes,
-            a.local_time_source,
-            strength.id::text AS set_id,
-            strength.activity_id::text AS set_activity_id,
-            source_activity.provider_id AS set_provider,
-            exercise.id::text AS exercise_id,
-            exercise.name AS exercise_name,
-            exercise.equipment,
-            exercise.muscle_groups,
-            exercise.exercise_type,
-            exercise.movement,
-            strength.exercise_index,
-            strength.set_index,
-            strength.set_type,
-            strength.weight_kg,
-            strength.reps,
-            strength.distance_meters,
-            strength.duration_seconds,
-            strength.rpe,
-            strength.notes,
-            strength.raw
-          FROM fitness.v_activity AS a
-          JOIN fitness.strength_set AS strength
-            ON strength.activity_id = ANY(a.member_activity_ids)
-          JOIN fitness.activity AS source_activity ON source_activity.id = strength.activity_id
-          JOIN fitness.exercise AS exercise ON exercise.id = strength.exercise_id
-          WHERE a.user_id = ${this.#userId}::uuid
-            AND ${localDate} < ${input.startDate}::date
-            AND ${providerPredicate}
-            AND ${exercisePredicate}
-          ORDER BY a.started_at, a.id, strength.exercise_index, strength.set_index,
-            strength.created_at, strength.id`,
+    const priorRows = await this.#readRows(
+      sql`${localDate} < ${input.startDate}::date AND ${providerPredicate} AND ${exercisePredicate}`,
+      true,
     );
 
     const [coverage] = await executeWithSchema(
-      this.#db,
+      this.db,
       coverageRowSchema,
       sql`SELECT MIN(${localDate})::text AS first_observed_date
           FROM fitness.v_activity AS a
           JOIN fitness.strength_set AS strength
             ON strength.activity_id = ANY(a.member_activity_ids)
           JOIN fitness.activity AS source_activity ON source_activity.id = strength.activity_id
-          WHERE a.user_id = ${this.#userId}::uuid
+          WHERE a.user_id = ${this.userId}::uuid
             AND ${providerPredicate}
             AND ${exercisePredicate}`,
     );
@@ -524,14 +598,7 @@ export class StrengthProgressionRepository {
       }
     >();
     for (const set of consolidateSets(priorRows).sets) {
-      const flags = [
-        ...qualityFlags(set.row),
-        ...(set.duplicateSameSourceIdentity ? ["duplicate_same_source_set_identity"] : []),
-        ...(set.ambiguousCrossProviderExerciseOccurrence
-          ? ["ambiguous_cross_provider_exercise_occurrence"]
-          : []),
-        ...(set.conflicting ? ["possible_overlapping_conflicting_set"] : []),
-      ];
+      const flags = setQualityFlags(set);
       const estimate = estimatedOneRepMaxResult(set, flags).value_kg;
       if (estimate === null) continue;
       const evidence = {
@@ -548,14 +615,7 @@ export class StrengthProgressionRepository {
       }
     }
     const evaluatedSets = sets.map((set) => {
-      const flags = [
-        ...qualityFlags(set.row),
-        ...(set.duplicateSameSourceIdentity ? ["duplicate_same_source_set_identity"] : []),
-        ...(set.ambiguousCrossProviderExerciseOccurrence
-          ? ["ambiguous_cross_provider_exercise_occurrence"]
-          : []),
-        ...(set.conflicting ? ["possible_overlapping_conflicting_set"] : []),
-      ];
+      const flags = setQualityFlags(set);
       return {
         set,
         flags,
@@ -565,8 +625,8 @@ export class StrengthProgressionRepository {
     });
 
     const sessionRows = [...new Map(rows.map((row) => [row.activity_id, row])).values()];
-    const shape = cursorShape(input, this.#timezone);
-    const cursor = decodeCursor(input.cursor, this.#userId, shape);
+    const shape = cursorShape(input, this.timezone);
+    const cursor = decodeCursor(input.cursor, this.userId, shape);
     const filteredSessionRows = cursor
       ? sessionRows.filter(
           (row) =>
@@ -658,7 +718,7 @@ export class StrengthProgressionRepository {
           start_utc_offset_minutes: row.start_utc_offset_minutes,
           end_utc_offset_minutes: row.end_utc_offset_minutes,
           local_time_source: row.local_time_source,
-          analysis_timezone: this.#timezone,
+          analysis_timezone: this.timezone,
           assumed: row.local_time_source === "unknown",
         },
         quality_flags: [
@@ -815,7 +875,7 @@ export class StrengthProgressionRepository {
     );
     const lastPageRow = pageRows.at(-1);
     return {
-      range: { start_date: input.startDate, end_date: input.endDate, timezone: this.#timezone },
+      range: { start_date: input.startDate, end_date: input.endDate, timezone: this.timezone },
       channel: {
         id: "strength" as const,
         interchangeable_with: [],
@@ -867,7 +927,7 @@ export class StrengthProgressionRepository {
       pagination: {
         limit: input.limit,
         has_more: hasMore,
-        next_cursor: hasMore && lastPageRow ? encodeCursor(lastPageRow, this.#userId, shape) : null,
+        next_cursor: hasMore && lastPageRow ? encodeCursor(lastPageRow, this.userId, shape) : null,
       },
     };
   }
