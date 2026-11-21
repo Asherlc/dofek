@@ -69,6 +69,7 @@ export const TRAINING_TERMINOLOGY = {
     plainLabel: "Estimated single-rep strength",
     plainDescription: "Shows the estimated maximum weight for one repetition.",
     technicalName: "Estimated 1-Rep Max (e1RM)",
-    details: "Uses the Epley formula: estimated max = weight × (1 + repetitions ÷ 30).",
+    details:
+      "Uses the Epley formula, weight × (1 + 0.0333 × repetitions), for barbell bench press, squat, and deadlift sets with 2–10 reps, verified units, and a Strong Failure tag. The trend uses the highest qualifying estimate per workout. Workout history shows recorded sets.",
   },
 } as const satisfies Record<string, TrainingTerminologyEntry & Record<string, string>>;

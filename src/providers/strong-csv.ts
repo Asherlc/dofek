@@ -40,6 +40,8 @@ export interface StrongCsvRow {
   notes: string | null;
   workoutNotes: string | null;
   rpe: number | null;
+  setTag?: "Failure";
+  reportedWeightUnit?: "kg" | "lbs";
 }
 
 export interface StrongWorkoutGroup {
@@ -311,10 +313,13 @@ export function parseStrongWallClockTimestamp(value: string): Date {
     : new Date(Number.NaN);
 }
 
-// Set line with weight: "Set 1: 50 lb × 13" or "Set 1: 50 lb × 13 [Failure]"
+// Set lines may carry a Strong tag, for example "Set 1: 50 lb × 13 [Failure]".
 const WEIGHTED_SET_RE = /^Set\s+(\d+):\s+([\d.]+)\s+(lb|kg)\s+×\s+(\d+)(?:\s+\[.*\])?$/;
-// Bodyweight set: "Set 1: 8 reps" or "Set 1: 8 reps [Failure]"
 const BODYWEIGHT_SET_RE = /^Set\s+(\d+):\s+(\d+)\s+reps(?:\s+\[.*\])?$/;
+
+function hasFailureTag(line: string): boolean {
+  return line.slice(line.indexOf("[")) === "[Failure]";
+}
 
 export interface StrongTextParseResult {
   groups: StrongWorkoutGroup[];
@@ -374,6 +379,14 @@ export function parseStrongText(text: string): StrongTextParseResult {
         notes: null,
         workoutNotes: null,
         rpe: null,
+        ...(hasFailureTag(line)
+          ? {
+              setTag: "Failure",
+              ...(Number.isFinite(Number(weightStr))
+                ? { reportedWeightUnit: unit === "lb" ? "lbs" : "kg" }
+                : {}),
+            }
+          : {}),
       });
       continue;
     }
@@ -395,6 +408,7 @@ export function parseStrongText(text: string): StrongTextParseResult {
         notes: null,
         workoutNotes: null,
         rpe: null,
+        ...(hasFailureTag(line) ? { setTag: "Failure" } : {}),
       });
       continue;
     }
@@ -608,8 +622,12 @@ export async function importStrongCsv(
               rpe: csvRow.rpe,
               seconds: csvRow.seconds,
               setOrder: csvRow.setOrder,
+              ...(csvRow.setTag === undefined ? {} : { setTag: csvRow.setTag }),
               weight: csvRow.weight,
               weightUnit: effectiveWeightUnit,
+              ...(csvRow.reportedWeightUnit === undefined
+                ? {}
+                : { reportedWeightUnit: csvRow.reportedWeightUnit }),
             },
           });
         }

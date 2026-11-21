@@ -15,6 +15,7 @@ import {
   ProviderActivityListSync,
   upsertProviderActivity,
 } from "../../../../src/db/provider-activity-sync.ts";
+import { activity } from "../../../../src/db/schema/activity.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
@@ -479,6 +480,10 @@ export async function upsertHealthKitWorkouts(
       workout.metadata ?? {},
     );
 
+    const workoutEffort =
+      normalizedWorkout.activityType.canonicalType === "cycling"
+        ? workout.workoutEffort
+        : undefined;
     const rawData = {
       duration: workout.duration,
       totalDistance: workout.totalDistance,
@@ -492,7 +497,15 @@ export async function upsertHealthKitWorkouts(
         : {}),
       ...(workout.device !== undefined ? { device: workout.device } : {}),
       ...(normalizedWorkout.hangTen ? { hangTen: normalizedWorkout.hangTen } : {}),
+      ...(workoutEffort ? { workoutEffort } : {}),
     };
+
+    // Omitted effort is ambiguous. Preserve its evidence atomically with the numeric rating.
+    const rawConflictValue = workoutEffort
+      ? rawData
+      : sql`excluded.raw
+            || jsonb_strip_nulls(jsonb_build_object('workoutEffort', ${activity.raw} -> 'workoutEffort'))`;
+    const effortConflictValue = workoutEffort ? { perceivedExertion: workoutEffort.value } : {};
 
     const values = {
       userId,
@@ -504,6 +517,7 @@ export async function upsertHealthKitWorkouts(
       name: normalizedWorkout.hangTen?.planName,
       sourceName: normalizedWorkout.sourceName,
       ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
+      ...effortConflictValue,
       raw: rawData,
     };
     await db.transaction(async (transactionDb) => {
@@ -514,7 +528,8 @@ export async function upsertHealthKitWorkouts(
         name: normalizedWorkout.hangTen?.planName,
         sourceName: normalizedWorkout.sourceName,
         ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
-        raw: rawData,
+        ...effortConflictValue,
+        raw: rawConflictValue,
       });
       if (returned && normalizedWorkout.hangTen) {
         await replaceHangTenIntervals(transactionDb, returned.id, normalizedWorkout);

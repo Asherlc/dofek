@@ -780,6 +780,84 @@ describe("registerFoodRecordTools", () => {
     });
   });
 
+  describe("consumption time", () => {
+    const consumedAt = "2026-11-21T00:15:00+02:00";
+    const createInput = {
+      request_id: requestId,
+      date: "2026-11-21",
+      food_name: "Gel",
+      nutrients: { calories: 100, protein: 0, carbohydrate: 25, fat: 0 },
+    };
+
+    it("forwards an offset-bearing consumed_at through create, update set, and clear", async () => {
+      const { tool } = setup();
+      await tool("create_food_entry").handler({ ...createInput, consumed_at: consumedAt });
+      expect(mocks.create).toHaveBeenLastCalledWith(expect.objectContaining({ consumedAt }));
+
+      await tool("update_food_entry").handler({
+        record_id: recordId,
+        expected_version: version,
+        request_id: requestId,
+        set: { consumed_at: consumedAt },
+        clear: [],
+        nutrient_set: {},
+        nutrient_clear: [],
+      });
+      expect(mocks.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({ set: { consumedAt } }),
+      );
+
+      await tool("update_food_entry").handler({
+        record_id: recordId,
+        expected_version: version,
+        request_id: requestId,
+        set: {},
+        clear: ["consumed_at"],
+        nutrient_set: {},
+        nutrient_clear: [],
+      });
+      expect(mocks.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({ clear: ["consumedAt"] }),
+      );
+    });
+
+    it("keeps consumed_at optional and rejects values without an explicit offset", () => {
+      const { tool } = setup();
+      const schema = z.object(tool("create_food_entry").inputSchema);
+      expect(schema.safeParse(createInput).success).toBe(true);
+      expect(schema.safeParse({ ...createInput, consumed_at: consumedAt }).success).toBe(true);
+      expect(schema.safeParse({ ...createInput, consumed_at: "2026-11-21T00:15:00" }).success).toBe(
+        false,
+      );
+      expect(schema.safeParse({ ...createInput, consumed_at: "yesterday" }).success).toBe(false);
+    });
+
+    it("transports a known consumption time with provenance and omits an unknown one", async () => {
+      const { tool } = setup();
+      const consumedRecord = {
+        ...domainRecord,
+        consumedAt: "2026-11-20T22:15:00.000Z",
+        provenance: {
+          ...domainRecord.provenance,
+          consumedAt: { origin: "human" as const, changeId },
+        },
+      };
+      mocks.get.mockResolvedValueOnce(consumedRecord).mockResolvedValueOnce(domainRecord);
+
+      const known = await tool("get_food_entry").handler({ record_id: recordId });
+      expect(parseResult(known)).toMatchObject({
+        consumed_at: "2026-11-20T22:15:00.000Z",
+        provenance: { consumed_at: { origin: "human", change_id: changeId } },
+      });
+      expect(tool("get_food_entry").outputSchema.safeParse(structuredContent(known)).success).toBe(
+        true,
+      );
+
+      const unknown = await tool("get_food_entry").handler({ record_id: recordId });
+      expect(parseResult(unknown)).not.toHaveProperty("consumed_at");
+    });
+  });
+
   it("returns mutation receipts, records, day summary, and UI metadata", async () => {
     const { tool } = setup();
 
