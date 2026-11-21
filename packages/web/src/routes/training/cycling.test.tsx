@@ -212,6 +212,12 @@ vi.mock("../../lib/trpc.ts", () => ({
             : undefined,
         }),
       },
+      durability: {
+        useQuery: (input: unknown) => ({
+          ...recordQuery("cycling.durability")(input),
+          data: undefined,
+        }),
+      },
     },
   },
 }));
@@ -395,6 +401,10 @@ describe("CyclingTab", () => {
           days: 365,
         },
       },
+      {
+        name: "cycling.durability",
+        input: { days: 365, durationSeconds: 300, minimumWorkKilojoulesPerKg: 30 },
+      },
     ]);
   });
 
@@ -410,6 +420,10 @@ describe("CyclingTab", () => {
         input: {
           days: null,
         },
+      },
+      {
+        name: "cycling.durability",
+        input: { days: null, durationSeconds: 300, minimumWorkKilojoulesPerKg: 30 },
       },
     ]);
   });
@@ -427,6 +441,10 @@ describe("CyclingTab", () => {
         input: {
           days: null,
         },
+      },
+      {
+        name: "cycling.durability",
+        input: { days: null, durationSeconds: 300, minimumWorkKilojoulesPerKg: 30 },
       },
     ]);
   });

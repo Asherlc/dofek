@@ -34,6 +34,7 @@ vi.mock("../trpc.ts", async () => {
 });
 
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
+import { CyclingDurabilityRepository } from "../repositories/cycling-durability-repository.ts";
 import { cyclingRouter } from "./cycling.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
@@ -51,6 +52,32 @@ function makeContext() {
 }
 
 describe("cyclingRouter", () => {
+  it("serves the approved selections on the selected chart range", async () => {
+    const comparison = {
+      status: "no_eligible_power_and_weight" as const,
+      range: { startDate: "2026-10-19", endDate: "2026-11-15" },
+      selection: { durationSeconds: 300, minimumWorkKilojoulesPerKg: 30 } as const,
+      presentation: { unit: "watts" as const, difference: 0, absoluteWorkCutoffKilojoules: null },
+      baseline: null,
+      afterWork: null,
+      sameEffort: false,
+    };
+    const getComparison = vi
+      .spyOn(CyclingDurabilityRepository.prototype, "getComparison")
+      .mockResolvedValue(comparison);
+    try {
+      const caller = createCaller(makeContext());
+      await expect(caller.durability({ days: 28, ...comparison.selection })).resolves.toEqual(
+        comparison,
+      );
+      expect(getComparison.mock.calls[0]?.[0].days).toBe(28);
+      expect(getComparison.mock.calls[0]?.[1]).toMatchObject(comparison.selection);
+      expect(getComparison.mock.calls[0]?.[2]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    } finally {
+      getComparison.mockRestore();
+    }
+  });
+
   it("versions the performance cache contract", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 3_600_000,
