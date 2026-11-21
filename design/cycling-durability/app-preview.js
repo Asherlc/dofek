@@ -1,53 +1,60 @@
 const host = document.querySelector('[data-durability]');
+const standalone = host.dataset.durability === 'standalone';
+const weightKg = 72;
+const dateLabel = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const amount = kilojoules => `${kilojoules.toLocaleString('en-US')} kJ`;
+const workLevels = [10, 20, 30, 40, 50];
 
 host.innerHTML = `
   <div class="durability-heading">
-    <h2 id="durability-heading" class="section-title" data-dc-id="durability-heading">Cycling Durability</h2>
-    <p class="muted" data-context>Outdoor rides · Sample data</p>
+    <h2 id="${standalone ? 'durability-title' : 'durability-heading'}" class="section-title" data-dc-id="${standalone ? 'title' : 'durability-heading'}">Power after sustained riding</h2>
+    <p class="muted" data-context></p>
   </div>
-  <div class="durability-controls">
-    <label>Effort duration
-      <select data-dc-id="effort-duration" data-duration>
-        <option value="0">10 seconds</option>
-        <option value="1">1 minute</option>
-        <option value="2" selected>5 minutes</option>
-        <option value="3">20 minutes</option>
-      </select>
-    </label>
-    <label>Minimum prior work
-      <select data-dc-id="minimum-work" data-work>
-        <option value="10">10 kJ/kg</option>
-        <option value="20">20 kJ/kg</option>
-        <option value="30" selected>30 kJ/kg</option>
-        <option value="40">40 kJ/kg</option>
-        <option value="50">50 kJ/kg</option>
-      </select>
-    </label>
-  </div>
+  <p class="durability-intro">Both numbers are your best power for the same effort length. The second counts only efforts that start after a set amount of pedaling in that ride.</p>
   <div class="durability-layout" aria-live="polite" aria-atomic="true">
-    <div class="durability-result" data-dc-id="comparison-result">
+    <div class="durability-result" data-dc-id="${standalone ? 'result' : 'comparison-result'}">
       <strong data-result></strong>
       <span class="muted" data-caption></span>
     </div>
     <div class="durability-bars">
-      <div class="bar-row" data-dc-id="reference-bar">
-        <span>Unrestricted best</span><b data-reference-value></b>
+      <div class="bar-row" data-dc-id="${standalone ? 'unrestricted-best' : 'reference-bar'}">
+        <span>Best at any point in a ride</span><b data-reference-value></b>
         <div class="bar-track" aria-hidden="true"><div class="bar-fill reference"></div></div>
       </div>
-      <div class="bar-row" data-dc-id="post-work-bar" data-late-row>
+      <div class="bar-row" data-dc-id="${standalone ? 'after-prior-work' : 'post-work-bar'}" data-late-row>
         <span data-threshold></span><b data-late-value></b>
         <div class="bar-track" aria-hidden="true"><div class="bar-fill" data-fill></div></div>
       </div>
     </div>
   </div>
-  <details class="evidence" data-dc-id="effort-evidence">
-    <summary>Effort evidence</summary>
-    <div class="evidence-grid">
-      <div><h3>Unrestricted best</h3><p data-reference-ride></p><p data-reference-work></p></div>
-      <div data-late-detail><h3>After prior work</h3><p data-late-ride></p><p data-late-work></p></div>
+  <p class="evidence-source" id="work-help">Kilojoules (kJ) measure work at the pedals. Harder pedaling adds them faster.</p>
+  <details class="durability-disclosure" data-dc-id="comparison-settings">
+    <summary>Change comparison</summary>
+    <div class="durability-controls">
+      <label>Effort length
+        <select data-dc-id="effort-duration" data-duration>
+          <option value="0">10 seconds</option>
+          <option value="1">1 minute</option>
+          <option value="2" selected>5 minutes</option>
+          <option value="3">20 minutes</option>
+        </select>
+      </label>
+      <label>Pedaling before the effort
+        <select data-dc-id="${standalone ? 'work-threshold' : 'minimum-work'}" data-work aria-describedby="work-help">
+          ${workLevels.map(level => `<option value="${level}"${level === 30 ? ' selected' : ''}>At least ${amount(level * weightKg)}</option>`).join('')}
+        </select>
+      </label>
     </div>
-    <p class="evidence-source">Strava · Meter power · 1-second samples · Complete coverage through effort end</p>
-    <p class="evidence-source">Weight source · 72.0 kg scale reading on each ride date</p>
+  </details>
+  <details class="durability-disclosure"${standalone ? '' : ' data-dc-id="effort-evidence"'}>
+    <summary${standalone ? ' data-dc-id="effort-evidence"' : ''}>See the rides behind these numbers</summary>
+    <div class="evidence-grid"${standalone ? ' data-dc-id="effort-details"' : ''}>
+      <div><h3>Best at any point</h3><p data-reference-ride></p><p data-reference-work></p></div>
+      <div data-late-detail><h3>Best after extra pedaling</h3><p data-late-ride></p><p data-late-work></p></div>
+    </div>
+    <p class="evidence-source">This example compares outdoor rides so both efforts come from the same riding setting.</p>
+    <p class="evidence-source" data-cutoff></p>
+    <p class="evidence-source">Power meter data from Strava · One reading per second · Complete data from ride start through each effort</p>
   </details>`;
 
 const durations = ['10-second', '1-minute', '5-minute', '20-minute'];
@@ -58,25 +65,23 @@ const samples = [
   { ride: 'Saturday endurance ride', day: 7, watts: [681, 417, 296, 243], work: 2246, offset: '3:22:16' },
   { ride: 'Long valley loop', day: 15, watts: [627, 390, 281, 231], work: 2932, offset: '4:19:42' },
 ];
-const weightKg = 72;
 const endDate = Date.UTC(2026, 10, 15);
-const dateLabel = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const get = name => host.querySelector(`[data-${name}]`);
 const write = (name, content) => { get(name).textContent = content; };
-const displayPower = watts => `${watts} W · ${(watts / weightKg).toFixed(2)} W/kg`;
 
 function showEvidence(prefix, effort) {
   write(`${prefix}-ride`, `${effort.ride} · Nov ${effort.day} · ${effort.offset} into ride`);
-  write(`${prefix}-work`, `${effort.work.toLocaleString('en-US')} kJ before effort · ${(effort.work / weightKg).toFixed(1)} kJ/kg`);
+  write(`${prefix}-work`, `${amount(effort.work)} of pedaling before the effort`);
 }
 
 function render() {
   const range = document.querySelector('[name="range"]:checked');
-  const days = Number(range.value);
+  const days = range ? Number(range.value) : 28;
   const firstDay = 16 - days;
   const start = Number.isFinite(days) ? dateLabel.format(endDate - (days - 1) * 86_400_000) : 'All dates';
   const duration = Number(get('duration').value);
   const threshold = Number(get('work').value);
+  const thresholdAmount = amount(threshold * weightKg);
   const activities = samples.filter(sample => sample.day >= firstDay);
   const efforts = activities.map(sample => ({
     ...sample,
@@ -87,22 +92,23 @@ function render() {
   const best = efforts[0];
   const late = efforts.find(effort => effort.work / weightKg >= threshold);
   const displayedRange = days === Infinity ? start : `${start}–Nov 15`;
-  write('context', `Outdoor rides · ${displayedRange} · Sample data`);
-  write('reference-value', displayPower(best.watts));
+  write('context', `${displayedRange} · Sample data`);
+  write('reference-value', `${best.watts} W`);
+  write('cutoff', `The work cutoff scales with body weight. At the sample rider’s measured ${weightKg} kg, ${thresholdAmount} equals ${threshold} kJ/kg.`);
   showEvidence('reference', best);
   get('late-row').hidden = late == null;
   get('late-detail').hidden = late == null;
   if (late) {
-    const ratio = late.watts / best.watts;
-    write('result', ratio === 1 ? 'Same as unrestricted best' : `${((1 - ratio) * 100).toFixed(1)}% lower`);
-    write('caption', `${durations[duration]} power after ${threshold} kJ/kg`);
-    write('threshold', `After at least ${threshold} kJ/kg`);
-    write('late-value', displayPower(late.watts));
-    get('fill').style.width = `${ratio * 100}%`;
+    const difference = best.watts - late.watts;
+    write('result', difference === 0 ? 'Same power' : `${difference} W lower`);
+    write('caption', `Best ${durations[duration]} power after at least ${thresholdAmount} of pedaling`);
+    write('threshold', `Best after at least ${thresholdAmount}`);
+    write('late-value', `${late.watts} W`);
+    get('fill').style.width = `${late.watts / best.watts * 100}%`;
     showEvidence('late', late);
   } else {
-    write('result', 'Comparison unavailable');
-    write('caption', `No eligible ${durations[duration]} effort after ${threshold} kJ/kg`);
+    write('result', 'No matching effort');
+    write('caption', `No ${durations[duration]} effort was recorded after at least ${thresholdAmount} of pedaling.`);
   }
 
   const recentValues = durations.map((_, index) => Math.max(...activities.map(activity => activity.watts[index])));
@@ -119,5 +125,5 @@ function render() {
 }
 
 host.addEventListener('change', render);
-document.querySelector('.range').addEventListener('change', render);
+document.querySelector('.range')?.addEventListener('change', render);
 render();
