@@ -260,6 +260,15 @@ const EXPORT_TABLES: ExportTableConfig[] = [
         sql`SELECT a.* FROM fitness.climbing_attempt a JOIN fitness.climbing_log_entry e ON e.id=a.climbing_log_entry_id WHERE e.user_id=${userId} ORDER BY a.climbing_log_entry_id,a.attempt_index NULLS LAST,a.id`,
       ),
   },
+  {
+    name: "planned-workouts.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT * FROM fitness.planned_workout WHERE user_id = ${userId} ORDER BY start_date, start_time NULLS FIRST, external_id`,
+      ),
+  },
 ];
 
 function csvHeaders(rows: Record<string, unknown>[]): string[] {

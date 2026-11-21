@@ -177,12 +177,13 @@ describe("ensureProvidersRegistered failure path", () => {
     await ensureProvidersRegistered();
 
     const registeredIds = mockRegisterProvider.mock.calls.map(([provider]) => provider.id);
-    expect(registeredIds).toHaveLength(42);
+    expect(registeredIds).toHaveLength(43);
     expect(registeredIds).toEqual(
       expect.arrayContaining([
         "bodyspec",
         "boardsesh",
         "cycling_analytics",
+        "intervals.icu",
         "openbeta",
         "thecrag",
         "ultrahuman",

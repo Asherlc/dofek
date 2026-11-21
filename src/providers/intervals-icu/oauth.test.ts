@@ -92,10 +92,21 @@ describe("createIntervalsIcuAuthSetup", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns undefined when configuration is invalid", () => {
+  it("returns a minimal revocation-only setup when app credentials are missing", () => {
     delete process.env.INTERVALS_ICU_CLIENT_ID;
     delete process.env.INTERVALS_ICU_CLIENT_SECRET;
-    expect(createIntervalsIcuAuthSetup()).toBeUndefined();
+
+    const setup = createIntervalsIcuAuthSetup();
+    expect(setup).toBeDefined();
+    if (!setup) throw new Error("Expected auth setup to be defined");
+
+    // No OAuth connect flow when credentials are unconfigured.
+    expect(setup.oauthConfig).toBeUndefined();
+    expect(setup.exchangeCode).toBeUndefined();
+
+    // Revocation-only hooks remain available (use saved bearer tokens).
+    expect(setup.revokeExistingTokens).toBeTypeOf("function");
+    expect(setup.revokeTokensForAccountErasure).toBeTypeOf("function");
   });
 
   it("configures OAuth endpoints, S256 PKCE, comma-separated scopes, and replace strategy", () => {
@@ -350,6 +361,27 @@ describe("Intervals.icu token revocation (disconnect & erasure)", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+  });
+
+  it("revokes saved bearer tokens for disconnect and erasure without app credentials", async () => {
+    delete process.env.INTERVALS_ICU_CLIENT_ID;
+    delete process.env.INTERVALS_ICU_CLIENT_SECRET;
+    const authorizations: (string | null)[] = [];
+    server.use(
+      http.delete(`${API_BASE}/disconnect-app`, ({ request }) => {
+        authorizations.push(request.headers.get("authorization"));
+        return new HttpResponse(null, { status: 200 });
+      }),
+    );
+
+    const setup = createIntervalsIcuAuthSetup();
+    await requireRevokeTokens(setup)(mockTokens);
+    await requireErasureRevokeTokens(setup)(mockTokens);
+
+    expect(authorizations).toEqual([
+      `Bearer ${mockTokens.accessToken}`,
+      `Bearer ${mockTokens.accessToken}`,
+    ]);
   });
 
   it("sends Bearer DELETE /api/v1/disconnect-app and succeeds on HTTP 200", async () => {

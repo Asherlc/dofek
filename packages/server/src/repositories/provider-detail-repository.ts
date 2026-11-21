@@ -323,6 +323,7 @@ export const PROVIDER_DATA_TABLES = [
   "fitness.climb",
   "fitness.area",
   "fitness.activity",
+  "fitness.planned_workout",
 ];
 
 /** All provider-scoped tables removed when deleting an account. */

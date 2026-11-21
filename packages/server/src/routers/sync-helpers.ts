@@ -141,6 +141,11 @@ async function doRegisterProviders() {
       "zos-app",
       () => import("dofek/providers/zos-app/provider").then((m) => new m.ZosAppProvider()),
     ],
+    [
+      "intervals.icu",
+      () =>
+        import("dofek/providers/intervals-icu/provider").then((m) => new m.IntervalsIcuProvider()),
+    ],
   ] as const;
 
   for (const [name, loadProvider] of providers) {

@@ -1352,6 +1352,13 @@
       "when": 1795049128821,
       "tag": "0192_exclude_catalog_only_daily_metrics_view",
       "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1795135528821,
+      "tag": "0193_planned_workout",
+      "breakpoints": true
     }
   ]
 }

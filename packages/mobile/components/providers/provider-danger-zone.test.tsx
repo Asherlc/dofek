@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   findNodeHandle: vi.fn<() => number | null | undefined>(),
   setAccessibilityFocus: vi.fn(),
   dailyMetricsRecordedInvalidate: vi.fn<() => Promise<void>>(),
+  upcomingWorkoutsInvalidate: vi.fn<() => Promise<void>>(),
   deleteAllData: vi.fn(),
   deletionStatus: vi.fn(),
   otherInvalidate: vi.fn<() => Promise<void>>(),
@@ -67,6 +68,7 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
       dailyMetrics: { recorded: { invalidate: mocks.dailyMetricsRecordedInvalidate } },
+      calendar: { upcomingWorkouts: { invalidate: mocks.upcomingWorkoutsInvalidate } },
       processing: { status: { invalidate: mocks.otherInvalidate } },
       sync: {
         providers: { invalidate: mocks.otherInvalidate },
@@ -121,7 +123,7 @@ describe("ProviderDangerZone", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("invalidates provider-reported daily metrics when source deletion completes", async () => {
+  it("invalidates calendar and provider-reported daily metrics when source deletion completes", async () => {
     render(
       <ProviderDangerZone
         canDisconnect={false}

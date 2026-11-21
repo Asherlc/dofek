@@ -7,6 +7,7 @@ import { ProviderAuthenticationFailedError } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "../types.ts";
 import { syncIntervalsIcuActivities } from "./activities.ts";
+import { syncIntervalsIcuPlannedWorkouts } from "./calendar.ts";
 import { IntervalsIcuClient } from "./client.ts";
 import {
   bindIntervalsIcuAthlete,
@@ -15,7 +16,7 @@ import {
 } from "./oauth.ts";
 import { syncIntervalsIcuWellness } from "./wellness.ts";
 
-/** Shared shape returned by both independent Intervals.icu feeds. */
+/** Shared shape returned by the independent Intervals.icu feeds. */
 type FeedResult = Pick<SyncResult, "recordsSynced" | "errors" | "degradations">;
 
 export class IntervalsIcuProvider implements SyncProvider {
@@ -75,6 +76,11 @@ export class IntervalsIcuProvider implements SyncProvider {
         name: "Wellness",
         dataType: "wellness",
         sync: () => syncIntervalsIcuWellness(client, run, this.id),
+      },
+      {
+        name: "Planned workouts",
+        dataType: "planned_workouts",
+        sync: () => syncIntervalsIcuPlannedWorkouts(client, run, this.id),
       },
     ];
     let recordsSynced = 0;

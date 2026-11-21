@@ -7,18 +7,24 @@ const operationId = "30000000-0000-4000-8000-000000000001";
 const mockMutateAsync = vi.fn().mockResolvedValue({ success: true, operationId });
 const mockDisconnectMutateAsync = vi.fn().mockResolvedValue({ success: true });
 const mockInvalidate = vi.fn().mockResolvedValue(undefined);
-const { mockProcessingStatusInvalidate, mockRecordedInvalidate, mockDeletionStatusQuery } =
-  vi.hoisted(() => ({
-    mockRecordedInvalidate: vi.fn().mockResolvedValue(undefined),
-    mockProcessingStatusInvalidate: vi.fn().mockResolvedValue(undefined),
-    mockDeletionStatusQuery: vi.fn(),
-  }));
+const {
+  mockProcessingStatusInvalidate,
+  mockRecordedInvalidate,
+  mockUpcomingWorkoutsInvalidate,
+  mockDeletionStatusQuery,
+} = vi.hoisted(() => ({
+  mockRecordedInvalidate: vi.fn().mockResolvedValue(undefined),
+  mockProcessingStatusInvalidate: vi.fn().mockResolvedValue(undefined),
+  mockUpcomingWorkoutsInvalidate: vi.fn().mockResolvedValue(undefined),
+  mockDeletionStatusQuery: vi.fn(),
+}));
 
 vi.mock("../lib/telemetry.ts", () => ({ captureException: vi.fn() }));
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     useUtils: () => ({
       dailyMetrics: { recorded: { invalidate: mockRecordedInvalidate } },
+      calendar: { upcomingWorkouts: { invalidate: mockUpcomingWorkoutsInvalidate } },
       processing: {
         status: { invalidate: mockProcessingStatusInvalidate },
       },
@@ -142,7 +148,7 @@ describe("ProviderDangerZone", () => {
     expect(screen.getByText("Provider data deletion")).not.toBeNull();
   });
 
-  it("invalidates processing status when deletion completes", async () => {
+  it("invalidates calendar and processing status when deletion completes", async () => {
     const { rerender } = render(
       <ProviderDangerZone canDisconnect providerId="strava" providerName="Strava" />,
     );
@@ -162,6 +168,7 @@ describe("ProviderDangerZone", () => {
 
     await waitFor(() => expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce());
     expect(mockRecordedInvalidate).toHaveBeenCalledOnce();
+    expect(mockUpcomingWorkoutsInvalidate).toHaveBeenCalledOnce();
   });
 
   it("names, focuses, and allows dismissal of the idle confirmation dialog", async () => {

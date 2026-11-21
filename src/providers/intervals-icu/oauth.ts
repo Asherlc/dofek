@@ -71,12 +71,15 @@ async function revokeIntervalsIcuTokens(tokens: TokenSet): Promise<void> {
   throw new Error(`Intervals.icu disconnect failed (${response.status})`);
 }
 
-export function createIntervalsIcuAuthSetup(options?: {
-  host?: string;
-}): ProviderAuthSetup | undefined {
+export function createIntervalsIcuAuthSetup(options?: { host?: string }): ProviderAuthSetup {
   const clientId = process.env.INTERVALS_ICU_CLIENT_ID?.trim();
   const clientSecret = process.env.INTERVALS_ICU_CLIENT_SECRET?.trim();
-  if (!clientId || !clientSecret) return undefined;
+  const revocation = {
+    apiBaseUrl: INTERVALS_ICU_API_BASE,
+    revokeExistingTokens: revokeIntervalsIcuTokens,
+    revokeTokensForAccountErasure: revokeIntervalsIcuTokens,
+  };
+  if (!clientId || !clientSecret) return revocation;
 
   const oauthConfig: OAuthConfig = {
     clientId,
@@ -176,8 +179,8 @@ export function createIntervalsIcuAuthSetup(options?: {
   };
 
   return {
+    ...revocation,
     oauthConfig,
-    apiBaseUrl: INTERVALS_ICU_API_BASE,
     reconnectStrategy: "replace",
     assertCanConnect: async (db, userId, tokens) => {
       const athleteId = tokens.providerAccountId?.trim();
@@ -185,7 +188,5 @@ export function createIntervalsIcuAuthSetup(options?: {
       await bindIntervalsIcuAthlete(db, userId, athleteId);
     },
     exchangeCode,
-    revokeExistingTokens: revokeIntervalsIcuTokens,
-    revokeTokensForAccountErasure: revokeIntervalsIcuTokens,
   };
 }

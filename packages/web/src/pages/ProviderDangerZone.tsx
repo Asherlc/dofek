@@ -93,6 +93,7 @@ export function ProviderDangerZone({
       trpcUtils.providerDetail.logs.invalidate({ providerId }),
       trpcUtils.providerDetail.records.invalidate({ providerId }),
       trpcUtils.dailyMetrics.recorded.invalidate(),
+      trpcUtils.calendar.upcomingWorkouts.invalidate(),
     ]);
     setOperationId(null);
     closeConfirm();

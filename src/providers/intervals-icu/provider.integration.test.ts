@@ -5,6 +5,7 @@ import { z } from "zod";
 import { activity, dailyMetrics } from "../../db/schema/activity.ts";
 import { TEST_USER_ID } from "../../db/schema/core.ts";
 import { syncLog } from "../../db/schema/events.ts";
+import { plannedWorkout } from "../../db/schema/planned-workout.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
 import { executeWithSchema } from "../../db/typed-sql.ts";
@@ -51,6 +52,23 @@ const streamsFixture = [
 function useWellness(body: JsonBody | "fail" = []) {
   server.use(
     http.get(`${API}/athlete/0/wellness`, () =>
+      body === "fail" ? new HttpResponse("boom", { status: 500 }) : HttpResponse.json(body),
+    ),
+  );
+}
+
+const plannedEvent = (id: number, day: string, extra: Record<string, unknown> = {}) => ({
+  id,
+  category: "WORKOUT",
+  start_date_local: `${day}T06:30:00`,
+  name: `Session ${id}`,
+  ...extra,
+});
+
+/** Default calendar fixture: no authored workouts unless a case overrides it. */
+function useCalendar(body: JsonBody | "fail" = []) {
+  server.use(
+    http.get(`${API}/athlete/0/events`, () =>
       body === "fail" ? new HttpResponse("boom", { status: 500 }) : HttpResponse.json(body),
     ),
   );
@@ -110,9 +128,11 @@ describe("IntervalsIcuProvider.sync() (integration)", () => {
   beforeEach(async () => {
     await ctx.db.delete(activity).where(eq(activity.providerId, PROVIDER_ID));
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, PROVIDER_ID));
+    await ctx.db.delete(plannedWorkout).where(eq(plannedWorkout.providerId, PROVIDER_ID));
     await ctx.db.delete(syncLog).where(eq(syncLog.providerId, PROVIDER_ID));
     capture.publishedMetricStreamRows.length = 0;
     capture.deletedMetricStreamScopes.length = 0;
+    useCalendar();
   });
   afterEach(() => server.resetHandlers());
   afterAll(async () => {
@@ -130,6 +150,8 @@ describe("IntervalsIcuProvider.sync() (integration)", () => {
     )[0];
   const published = (channel: string) =>
     capture.publishedMetricStreamRows.filter((row) => row.channel === channel);
+  const plannedRows = () =>
+    ctx.db.select().from(plannedWorkout).where(eq(plannedWorkout.providerId, PROVIDER_ID));
   const recordedWellness = async () =>
     executeWithSchema(
       ctx.db,
@@ -388,5 +410,81 @@ describe("IntervalsIcuProvider.sync() (integration)", () => {
         .from(syncLog)
         .where(and(eq(syncLog.providerId, PROVIDER_ID), eq(syncLog.status, "success"))),
     ).toEqual([]);
+  });
+
+  it("imports activities, wellness, and planned workouts across all three feeds", async () => {
+    useList([activityFixture("a1", { stream_types: [] })]);
+    useWellness([{ id: "2026-03-01", weight: 70.5 }]);
+    useCalendar([plannedEvent(1, "2026-03-10"), plannedEvent(2, "2026-03-11")]);
+
+    const result = await provider.sync(run());
+
+    expect(result.errors).toEqual([]);
+    // One activity, one wellness day, two authored workouts.
+    expect(result.recordsSynced).toBe(4);
+    expect(await byExternalId("a1")).toBeDefined();
+    expect(await recordedWellness()).toEqual([
+      { date: "2026-03-01", metric_type_id: "weight", value: 70.5 },
+    ]);
+    expect((await plannedRows()).map((row) => row.externalId).sort()).toEqual(["1", "2"]);
+  });
+
+  it("keeps both partner writes when the planned-workout feed fails", async () => {
+    useList([activityFixture("a1", { stream_types: [] })]);
+    useWellness([{ id: "2026-03-01", weight: 70.5 }]);
+    useCalendar("fail");
+
+    const result = await provider.sync(run());
+
+    expect(result.errors.some((error) => error.message.startsWith("Planned workouts"))).toBe(true);
+    expect(result.recordsSynced).toBe(2);
+    expect(await byExternalId("a1")).toBeDefined();
+    expect(await recordedWellness()).toEqual([
+      { date: "2026-03-01", metric_type_id: "weight", value: 70.5 },
+    ]);
+    expect(await plannedRows()).toEqual([]);
+  });
+
+  it("counts an authoritative empty calendar as a deletion-only refresh", async () => {
+    useList([]);
+    useCalendar([plannedEvent(1, "2026-03-10")]);
+    await provider.sync(run());
+    expect(await plannedRows()).toHaveLength(1);
+
+    useCalendar([]);
+    const result = await provider.sync(run());
+
+    expect(result.errors).toEqual([]);
+    // No rows upserted, one removed from the exact window.
+    expect(result.recordsSynced).toBe(1);
+    expect(await plannedRows()).toEqual([]);
+  });
+
+  it("never stores a coach-hidden workout in the athlete-facing snapshot", async () => {
+    useList([]);
+    useCalendar([
+      plannedEvent(1, "2026-03-10"),
+      plannedEvent(2, "2026-03-11", { hide_from_athlete: true }),
+    ]);
+
+    const result = await provider.sync(run());
+
+    expect(result.errors).toEqual([]);
+    expect((await plannedRows()).map((row) => row.externalId)).toEqual(["1"]);
+  });
+
+  it("removes a previously stored workout when the coach hides it on reconciliation", async () => {
+    useList([]);
+    useCalendar([plannedEvent(3, "2026-03-10")]);
+    await provider.sync(run());
+    expect((await plannedRows()).map((row) => row.externalId)).toEqual(["3"]);
+
+    useCalendar([plannedEvent(3, "2026-03-10", { hide_from_athlete: true })]);
+    const result = await provider.sync(run());
+
+    expect(result.errors).toEqual([]);
+    // The hidden event is absent from the authoritative snapshot, so the
+    // reconciliation delete removes the previously visible row.
+    expect(await plannedRows()).toEqual([]);
   });
 });

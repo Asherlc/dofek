@@ -9,6 +9,7 @@ const SYNCED_HEALTH_DATA_QUERY_PATHS = new Set([
   ...CLIMBING_ALERT_QUERY_PATHS,
   "calendar.weekListV2",
   "calendar.activityOverview",
+  "calendar.upcomingWorkouts",
   "activity.list",
   "food.byDateV2",
   "processing.status",
