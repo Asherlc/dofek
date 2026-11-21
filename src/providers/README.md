@@ -229,3 +229,16 @@ settings, and Decathlon users must manually unlink Dofek; both must then
 disconnect the provider in Dofek before starting erasure.
 [COROS third-party app disconnection](https://support.coros.com/hc/en-us/articles/360040256591-Syncing-with-3rd-Party-Apps),
 [Decathlon login logout documentation](https://login-doc.decathlon.com/logout.html).
+
+### Runalyze
+
+Runalyze Supporter and Premium users can connect with a Personal API token
+from Runalyze Account Settings. Each successful on-demand sync replaces that account's
+inventory of completed, nonvirtual race finishes linked to a Running activity.
+Deleting provider data clears the stored finishes. Starting another sync imports
+the available history again.
+To remove access before deleting your Dofek account, revoke the token in
+Runalyze Account Settings and disconnect Runalyze in Dofek.
+
+[Personal API setup](https://runalyze.com/help/article/personal-api) ·
+[Runalyze Supporter OpenAPI](https://runalyze.com/doc/api/supporter)

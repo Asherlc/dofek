@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   date,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -103,6 +104,25 @@ export const fingerLoadingEntry = fitness.table(
 // ============================================================
 // Cardio / endurance activities
 // ============================================================
+
+export const runningRaceResult = fitness.table(
+  "running_race_result",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    sourceActivityId: text("source_activity_id").notNull(),
+    sourceName: text("source_name"),
+    sourceSport: text("source_sport").notNull(),
+    sourceDateTime: text("source_date_time").notNull(),
+    distanceMeters: doublePrecision("distance_meters").notNull(),
+    finishSeconds: doublePrecision("finish_seconds").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.providerId, table.sourceActivityId] })],
+);
 
 export const activityGroup = fitness.table(
   "activity_group",

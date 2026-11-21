@@ -180,6 +180,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_activity_details` | `activity:read` | Returns one activity with its strength, climbing, and finger-loading details. |
 | `get_activity_streams` | `activity:read` | Returns a capped, downsampled activity sensor stream with caller-selected channels. |
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type, ISO week, modality, or purpose, including unclassified and power coverage. |
+| `get_running_race_forecast` | `activity:read` | Estimates a 10K or half-marathon finish from a shorter imported race and returns the source evidence. |
 | `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
 | `get_cycling_training_metrics` | `activity:read` | Returns per-ride cycling metrics or compares recorded Lamberts tests when given a test protocol. |
 | `get_training_load` | `activity:read`; also `nutrition:read` when requested | Returns daily load and rolling windows; analytical detail preserves modality channels and can include aligned nutrition. |
@@ -205,6 +206,23 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_body_metrics` | `health:read` | Returns reconciled body metrics, value kinds, source values, and 7/28-day rolling weight statistics. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
+
+### Running race forecast
+
+Call `get_running_race_forecast` with inclusive `start_date` and `end_date` in
+`YYYY-MM-DD` format and `target` set to `10k` or `half_marathon`. The tool uses
+the recorded local date of each race and excludes dates after today in the
+account time zone. It selects the longest eligible race shorter than the
+target. At equal distances, it prefers the newest race date and then sorts by
+provider and source activity ID. Eligible official distances are 5 km, 5 miles,
+10 km, and 10 miles.
+
+An estimated result contains the source provider, source activity ID, race
+name, date and original date-time, distance in meters, and official elapsed
+seconds. The estimate uses `finish_seconds × (target_meters / source_meters)^1.07`.
+The result preserves full precision and clients can round to whole seconds for
+display. If the date range contains no eligible finish, the result has
+`status: "unavailable"`. [Vickers and Vertosick](https://doi.org/10.1186/s13102-016-0052-y)
 
 ### Food record lifecycle
 
@@ -296,6 +314,20 @@ non-negative amount or explicit `null`; `nutrient_clear` resumes following the
 raw nutrient. A field or nutrient cannot appear in both forms, and an update
 must contain at least one decision; supplied zero-calorie evidence counts as a
 description decision ([service schema](../packages/server/src/services/food-record-service.ts)).
+
+`consumed_at` is an optional intake time for itemized Dofek food records. When
+the user reports when they ate or drank an item, pass that time to
+`create_food_entry` or in `update_food_entry` `set`. Supply an ISO 8601
+timestamp with an explicit UTC offset, such as `2026-11-21T00:15:00+02:00`.
+The server returns the validated string unchanged with its field provenance.
+The diary `date` is independent of this instant. A date-only create has unknown
+intake time. An update that omits the time preserves the current value. To
+return it to unknown, list `consumed_at` in `clear`. Effective responses omit
+unknown times, and history preserves each reported value and clear decision.
+Setting or clearing the field on an imported or non-itemized food record
+returns `PRECONDITION_FAILED`. Retrying an identical create replays it. Reusing
+the request ID with a different time returns `CONFLICT`.
+
 `delete_food_entry` hides the effective
 record and removes its contribution from canonical nutrition without deleting
 the raw provider row. `restore_food_entry` makes the same effective record
@@ -610,7 +642,15 @@ workouts from being counted twice. Cycling power, heart rate, cadence, distance,
 sample coverage come from deduplicated `analytics.activity_summary_rows FINAL`; average activity
 temperature is calculated from `analytics.activity_sensor_sample FINAL`. Numeric deltas are
 candidate minus the requested reference or earliest in-range match. Missing values stay null.
-Strength volume and Epley estimates exclude suspicious or conflicting sets. Exact cross-provider climbing
+Strength volume and Epley estimates exclude suspicious or conflicting sets. The estimate uses
+`weight_kg × (1 + 0.0333 × reps)` for 2–10 completed reps of barbell bench press,
+squat, back squat, or deadlift with verified source units and a Strong text-share
+Failure tag. A single rep stays in workout history. RPE supplies no fatigue evidence.
+Comparison estimates require the caller to specify the exact exercise ID. The chart needs three qualifying workouts.
+Logged sets cannot establish form, setup, or rest protocols.
+[LeSuer et al.](https://doi.org/10.1519/00124278-199711000-00001)
+
+Exact cross-provider climbing
 observations and strength sets are consolidated, while conflicting observations are excluded and
 reported; climbing attempts and outcomes preserve partial/unavailable state and never produce exact
 deltas unless both performances have complete coverage. Strength volume and estimated-1RM values

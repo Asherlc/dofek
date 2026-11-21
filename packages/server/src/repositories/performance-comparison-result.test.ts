@@ -62,6 +62,7 @@ function comparisonInput(
     sensorRows: [],
     climbingRows: [],
     strengthRows: [],
+    estimateExerciseId: undefined,
     timezone: "UTC",
     evidenceFor: (activityId) => describeComparisonEvidence(equivalence, [], USER_ID, activityId),
     ...overrides,
@@ -123,7 +124,20 @@ describe("buildPerformanceComparisonRows", () => {
       activity_id: activityId,
       set_id: setId,
       set_activity_id: activityId,
-      set_provider: "hevy",
+      set_provider: "strong-csv",
+      exercise_name: "Bench Press",
+      equipment: "barbell",
+      raw: {
+        setTag: "Failure",
+        exerciseName: "Bench Press (Barbell)",
+        weight,
+        reps: 5,
+        weightUnit: "kg",
+        reportedWeightUnit: "kg",
+      },
+      distance_meters: null,
+      duration_seconds: null,
+      notes: null,
       exercise_id: BENCHMARK_ID,
       exercise_index: 0,
       set_index: 0,
@@ -141,8 +155,20 @@ describe("buildPerformanceComparisonRows", () => {
       climbing_attempts: 1,
       climbing_sends: 0,
       strength_volume_kg_reps: 50,
-      strength_estimated_one_rep_max_kg: expect.closeTo(11.66, 2),
+      strength_estimated_one_rep_max_kg: null,
     });
+
+    const scoped = buildPerformanceComparisonRows(
+      comparisonInput([first, second], {
+        strengthRows,
+        equivalence: resolveExplicit({ kind: "strength_exercise_id", exerciseId: BENCHMARK_ID }),
+        estimateExerciseId: BENCHMARK_ID,
+      }),
+    );
+    expect(scoped.performances[1]?.delta_to_baseline.strength_estimated_one_rep_max_kg).toBeCloseTo(
+      11.67,
+      2,
+    );
   });
 
   it("keeps route and benchmark evidence discriminators aligned with their payloads", () => {
@@ -212,6 +238,7 @@ describe("buildPerformanceComparisonRows", () => {
       sensorRows: [],
       climbingRows: [],
       strengthRows: [],
+      estimateExerciseId: undefined,
       timezone: "UTC",
       evidenceFor: (activityId) => describeComparisonEvidence(equivalence, [], USER_ID, activityId),
     });

@@ -103,6 +103,10 @@ async function doRegisterProviders() {
       () => import("dofek/providers/trainerroad").then((m) => new m.TrainerRoadProvider()),
     ],
     [
+      "runalyze",
+      () => import("dofek/providers/runalyze").then((module) => new module.RunalyzeProvider()),
+    ],
+    [
       "ultrahuman",
       () => import("dofek/providers/ultrahuman").then((m) => new m.UltrahumanProvider()),
     ],

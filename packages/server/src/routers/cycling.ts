@@ -1,11 +1,17 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import {
+  cyclingDurabilityResultSchema,
+  cyclingDurabilitySelectionSchema,
+} from "../contracts/cycling-durability.ts";
 import { trainingChartAvailabilitySchema } from "../contracts/training-chart-availability.ts";
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
+import { CyclingDurabilityRepository } from "../repositories/cycling-durability-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
 
 const powerModelSchema = z.object({
@@ -152,6 +158,19 @@ const activitiesOutputSchema = z.object({
   }),
 });
 
+function requireSensorStore(
+  sensorStore: ConstructorParameters<typeof CyclingAnalyticsRepository>[3] | undefined,
+) {
+  if (!sensorStore) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message:
+        "ClickHouse activity analytics store is required for cycling analytics. Set CLICKHOUSE_URL and retry.",
+    });
+  }
+  return sensorStore;
+}
+
 function requireRepository(ctx: {
   db: ConstructorParameters<typeof CyclingAnalyticsRepository>[0];
   userId: string;
@@ -159,23 +178,43 @@ function requireRepository(ctx: {
   sensorStore: ConstructorParameters<typeof CyclingAnalyticsRepository>[3] | undefined;
   accessWindow: ConstructorParameters<typeof CyclingAnalyticsRepository>[4];
 }) {
-  if (!ctx.sensorStore) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message:
-        "ClickHouse activity analytics store is required for cycling analytics. Set CLICKHOUSE_URL and retry.",
-    });
-  }
   return new CyclingAnalyticsRepository(
     ctx.db,
     ctx.userId,
     ctx.timezone,
-    ctx.sensorStore,
+    requireSensorStore(ctx.sensorStore),
     ctx.accessWindow,
   );
 }
 
 export const cyclingRouter = router({
+  durability: selectedChartCustomRangeQuery(
+    "cycling.durability",
+    CacheTTL.LONG,
+    cyclingDurabilitySelectionSchema.extend({
+      days: selectedChartRangeDaysSchema("cycling.durability"),
+    }),
+    ({ ctx, range, input }) =>
+      new CyclingDurabilityRepository(
+        requireSensorStore(ctx.sensorStore),
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).getComparison(
+        range,
+        {
+          durationSeconds: input.durationSeconds,
+          minimumWorkKilojoulesPerKg: input.minimumWorkKilojoulesPerKg,
+        },
+        formatDateYmdInTimeZone(new Date(), ctx.timezone),
+      ),
+    cyclingDurabilityResultSchema,
+    {
+      keyVersion: "cycling-durability-v1",
+      expiresAt: "localDayBoundary",
+      scopeByAccessWindow: true,
+    },
+  ),
   performance: selectedChartRangeQuery(
     "cycling.performance",
     CacheTTL.LONG,
