@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cycling Polarization Index</title>
+<style>:root { color-scheme: light dark; } body { margin: 0; background: light-dark(#f1f5fa, #101620); }</style>
+</head>
+<body>
+<div class="viz-dotted-background" id="cycling-polarization-mockup">
+  <article class="endurance-card" data-dc-id="endurance-card">
+    <div class="preview-caption"><span>Dofek · Training · Endurance</span><span>Sample data</span></div>
+    <header>
+      <div>
+        <h2 data-dc-id="title">Cycling Polarization Index</h2>
+        <p>Weekly training balance by ride modality</p>
+      </div>
+      <span class="range" data-dc-id="date-range">Last 30 days</span>
+    </header>
+
+    <div class="chart-wrap" data-dc-id="weekly-chart" role="group" aria-label="Weekly Polarization Index by ride modality">
+      <svg class="plot" role="img" aria-label="Weekly road and indoor Polarization Index. The dashed line marks Treff’s 2.00 reference."></svg>
+      <div class="week-buttons" data-dc-id="week-buttons" role="group" aria-label="Inspect a week">
+        <button type="button" aria-label="Week of October 26">Oct 26</button>
+        <button type="button" aria-label="Week of November 2">Nov 2</button>
+        <button type="button" aria-label="Week of November 9">Nov 9</button>
+        <button type="button" aria-label="Week of November 16" aria-pressed="true">Nov 16</button>
+      </div>
+    </div>
+
+    <div class="week-details" data-dc-id="weekly-breakdown" aria-live="polite">
+      <h3 class="detail-title">Week of Nov 16 <span>· Through Nov 21</span></h3>
+      <div class="ride-grid grid-labels" aria-hidden="true">
+        <span>Modality</span><span>Index</span><span>Recorded time in zone</span>
+      </div>
+      <div class="ride-rows"></div>
+    </div>
+
+    <details class="method" data-dc-id="method">
+      <summary>How it’s calculated <span>· HRmax proxy</span></summary>
+      <p>Dofek applies Treff’s equation to bands based on profile maximum heart rate. These bands approximate ride intensity.</p>
+      <dl data-dc-id="hrmax-boundaries">
+        <div><dt>Easy</dt><dd>Below 80% HRmax</dd></div>
+        <div><dt>Middle</dt><dd>80% to below 90% HRmax</dd></div>
+        <div><dt>High</dt><dd>90% HRmax and above</dd></div>
+      </dl>
+      <p>The 2.00 line is Treff’s descriptive reference for training distribution.</p>
+      <a href="https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2019.00707/full" target="_blank" rel="noopener noreferrer">Treff et al. (2019) ↗</a>
+    </details>
+  </article>
+</div>
+
+<style>
+  #cycling-polarization-mockup {
+    color-scheme: light dark;
+    --end-surface: light-dark(#fff, #151b25);
+    --end-text: light-dark(#182337, #e8edf5);
+    --end-muted: light-dark(#4d5d72, #a4b2c5);
+    --end-border: light-dark(#dce4ed, #344156);
+    --end-track: light-dark(#eef2f7, #253149);
+    --end-road: light-dark(#125ed4, #83b2ff);
+    --end-indoor: light-dark(#8438aa, #d7a5f0);
+    --end-easy: light-dark(#72a8ed, #6b9fe2);
+    --end-middle: light-dark(#4470b4, #9e88d4);
+    --end-high: light-dark(#233e74, #d5c2fc);
+    color: var(--end-text);
+    font: 14px/1.5 system-ui, sans-serif;
+    padding: 16px;
+  }
+  #cycling-polarization-mockup *, #cycling-polarization-mockup *::before { box-sizing: border-box; }
+  #cycling-polarization-mockup :is(h2, h3, p, dl, dd) { margin: 0; }
+  #cycling-polarization-mockup .preview-caption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; margin: 0 auto 8px; max-width: 740px; color: var(--end-muted); font-size: 12px; }
+  #cycling-polarization-mockup .endurance-card { margin: auto; max-width: 740px; padding: clamp(14px, 4vw, 24px); border: 1px solid var(--end-border); border-radius: 16px; background: var(--end-surface); }
+  #cycling-polarization-mockup header { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 8px 18px; }
+  #cycling-polarization-mockup h2 { color: var(--end-text); font-size: clamp(19px, 3.3vw, 24px); font-weight: 650; letter-spacing: -.025em; }
+  #cycling-polarization-mockup header p { color: var(--end-muted); font-size: 13px; }
+  #cycling-polarization-mockup .range { color: var(--end-muted); border: 1px solid var(--end-border); border-radius: 7px; padding: 3px 9px; font-size: 12px; white-space: nowrap; }
+  #cycling-polarization-mockup .chart-wrap { margin-top: 18px; }
+  #cycling-polarization-mockup .plot { display: block; width: 100%; height: 150px; overflow: visible; }
+  #cycling-polarization-mockup .plot text { fill: var(--end-muted); font: 11px system-ui, sans-serif; }
+  #cycling-polarization-mockup .plot .gridline { stroke: var(--end-border); }
+  #cycling-polarization-mockup .plot .reference { stroke: var(--end-muted); stroke-dasharray: 4 4; }
+  #cycling-polarization-mockup .plot .highlight { stroke: var(--end-border); stroke-width: 1; }
+  #cycling-polarization-mockup .plot .road-trace { stroke: var(--end-road); }
+  #cycling-polarization-mockup .plot .indoor-trace { stroke: var(--end-indoor); stroke-dasharray: 5 4; }
+  #cycling-polarization-mockup .plot .road-mark { fill: var(--end-road); }
+  #cycling-polarization-mockup .plot .indoor-mark { fill: var(--end-indoor); }
+  #cycling-polarization-mockup .week-buttons { position: relative; height: 34px; }
+  #cycling-polarization-mockup .week-buttons button { position: absolute; translate: -50% 0; padding: 4px 6px; border: 0; border-radius: 6px; background: transparent; color: var(--end-muted); font: inherit; font-size: 11px; white-space: nowrap; }
+  #cycling-polarization-mockup .week-buttons button[aria-pressed=true] { color: var(--end-text); background: var(--end-track); font-weight: 650; }
+  #cycling-polarization-mockup .week-details { border-top: 1px solid var(--end-border); padding-top: 13px; }
+  #cycling-polarization-mockup h3 { font-size: 14px; font-weight: 650; }
+  #cycling-polarization-mockup h3 span, #cycling-polarization-mockup summary span { color: var(--end-muted); font-weight: 400; }
+  #cycling-polarization-mockup .ride-grid { display: grid; grid-template-columns: minmax(75px, .85fr) 45px minmax(118px, 2fr); align-items: start; gap: 4px 10px; }
+  #cycling-polarization-mockup .grid-labels { color: var(--end-muted); font-size: 11px; margin: 9px 0 0; }
+  #cycling-polarization-mockup .ride-row { padding: 8px 0; }
+  #cycling-polarization-mockup .ride-row + .ride-row { border-top: 1px solid var(--end-border); }
+  #cycling-polarization-mockup .name { display: flex; align-items: baseline; gap: 5px; font-weight: 550; }
+  #cycling-polarization-mockup .key { flex: 0 0 8px; height: 8px; background: var(--end-road); border-radius: 50%; }
+  #cycling-polarization-mockup .key.indoor { background: var(--end-indoor); border-radius: 1px; }
+  #cycling-polarization-mockup .key.unknown { background: transparent; border: 1px solid var(--end-muted); }
+  #cycling-polarization-mockup .index { font-weight: 650; font-variant-numeric: tabular-nums; }
+  #cycling-polarization-mockup .missing { color: var(--end-muted); font-size: 12px; }
+  #cycling-polarization-mockup .zones { display: flex; gap: 2px; height: 7px; margin: 4px 0; border-radius: 5px; overflow: hidden; }
+  #cycling-polarization-mockup .zones span { flex-basis: 0; background: var(--end-easy); }
+  #cycling-polarization-mockup .zones span:nth-child(2) { background: var(--end-middle); }
+  #cycling-polarization-mockup .zones span:nth-child(3) { background: var(--end-high); }
+  #cycling-polarization-mockup .zone-labels { color: var(--end-muted); font-size: 11px; }
+  #cycling-polarization-mockup .method { border-top: 1px solid var(--end-border); padding-top: 10px; margin-top: 3px; }
+  #cycling-polarization-mockup summary { font-size: 13px; font-weight: 650; }
+  #cycling-polarization-mockup .method p, #cycling-polarization-mockup .method dl { margin: 7px 0; font-size: 12px; }
+  #cycling-polarization-mockup .method dl > div { display: grid; grid-template-columns: 55px 1fr; }
+  #cycling-polarization-mockup .method dt { font-weight: 650; }
+  #cycling-polarization-mockup .method a { color: var(--end-road); font-size: 12px; }
+  @media (pointer: coarse) { #cycling-polarization-mockup .week-buttons { height: 46px; } #cycling-polarization-mockup .week-buttons button { min-height: 44px; } }
+  @media (max-width: 380px) { #cycling-polarization-mockup { padding: 8px; } #cycling-polarization-mockup .ride-grid { grid-template-columns: minmax(83px,.85fr) 34px minmax(105px,2fr); gap: 4px 7px; } }
+</style>
+
+<script>
+  (() => {
+    const root = document.getElementById("cycling-polarization-mockup");
+    const plot = root.querySelector(".plot");
+    const rows = root.querySelector(".ride-rows");
+    const title = root.querySelector(".detail-title");
+    const buttons = [...root.querySelectorAll(".week-buttons button")];
+    const weeks = [
+      { date: "Oct 26", road: [76, 12, 12], indoor: [70, 20, 10] },
+      { date: "Nov 2", road: [79, 8, 13], indoor: [73, 16, 11] },
+      { date: "Nov 9", road: null, indoor: [72, 28, 0] },
+      { date: "Nov 16", road: [80, 5, 15], indoor: [65, 20, 15], partial: "Through Nov 21" },
+    ];
+    const modalities = ["road", "indoor"];
+    let active = weeks.length - 1;
+
+    function index(shares) {
+      if (shares === null) return null;
+      const [easy, middle, high] = shares;
+      return high === 0 ? 0 : Math.log10(easy / middle * high);
+    }
+
+    function drawChart() {
+      const width = plot.getBoundingClientRect().width;
+      if (width < 100) return;
+      const x = (i) => 29 + i * (width - 49) / (weeks.length - 1);
+      const y = (value) => 132 - value * 38;
+      plot.setAttribute("viewBox", `0 0 ${width} 150`);
+      const grid = [0, 1, 2, 3].map((value) => {
+        const lineClass = value === 2 ? "reference" : "gridline";
+        return `<line class="${lineClass}" x1="24" x2="${width - 8}" y1="${y(value)}" y2="${y(value)}"/><text x="0" y="${y(value) + 4}">${value === 2 ? "2.00" : value}</text>`;
+      });
+      const highlight = `<line class="highlight" x1="${x(active)}" x2="${x(active)}" y1="18" y2="132"/>`;
+      const traces = modalities.flatMap((modality) => weeks.flatMap((week, i) => {
+        const value = index(week[modality]);
+        if (value === null) return [];
+        const previous = i > 0 ? index(weeks[i - 1][modality]) : null;
+        const line = previous === null ? "" : `<line class="${modality}-trace" x1="${x(i - 1)}" x2="${x(i)}" y1="${y(previous)}" y2="${y(value)}" stroke-width="2"/>`;
+        const tip = `<title>${week.date} · ${modality} ${value.toFixed(2)}</title>`;
+        const point = modality === "road"
+          ? `<circle class="road-mark" cx="${x(i)}" cy="${y(value)}" r="4.5">${tip}</circle>`
+          : `<rect class="indoor-mark" x="${x(i) - 4}" y="${y(value) - 4}" width="8" height="8" rx="1">${tip}</rect>`;
+        return [line, point];
+      }));
+      plot.innerHTML = [...grid, highlight, ...traces].join("");
+      buttons.forEach((button, i) => { button.style.left = `${x(i)}px`; });
+    }
+
+    function rideRow(name, style, shares, missing) {
+      const value = index(shares);
+      const zones = shares === null ? `<span class="missing">${missing}</span>` : `
+        <div class="zones" aria-hidden="true">${shares.map((share) => `<span style="flex-grow:${share}"></span>`).join("")}</div>
+        <div class="zone-labels">${shares[0]}% easy · ${shares[1]}% middle · ${shares[2]}% high</div>`;
+      return `<div class="ride-grid ride-row" data-dc-id="modality-${style}"><span class="name"><i class="key ${style}" aria-hidden="true"></i>${name}</span><span class="index">${value === null ? '<span aria-label="Index unavailable">—</span>' : value.toFixed(2)}</span><div>${zones}</div></div>`;
+    }
+
+    function selectWeek(i) {
+      active = i;
+      const week = weeks[i];
+      buttons.forEach((button, buttonIndex) => button.setAttribute("aria-pressed", String(buttonIndex === i)));
+      title.innerHTML = `Week of ${week.date}${week.partial ? ` <span>· ${week.partial}</span>` : ""}`;
+      const knownRows = [rideRow("Road", "road", week.road, "Insufficient recorded HR"), rideRow("Indoor", "indoor", week.indoor)];
+      rows.innerHTML = i === weeks.length - 1
+        ? [...knownRows, rideRow("Unknown", "unknown", null, "Insufficient recorded HR")].join("")
+        : knownRows.join("");
+      drawChart();
+    }
+
+    buttons.forEach((button, i) => button.addEventListener("click", () => selectWeek(i)));
+    selectWeek(active);
+    new ResizeObserver(drawChart).observe(plot);
+  })();
+</script>
+</body>
+</html>
