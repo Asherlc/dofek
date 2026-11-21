@@ -39723,3 +39723,8 @@ Local qualification and CI are separate from production throughput acceptance. T
 - When local Redpanda logs report AIO exhaustion, record both counters and check
   the workspace service status before retrying. Keep the full integration suite
   as a GitHub CI gate. [Shared Docker VM resource pressure](testing.md#shared-docker-vm-resource-pressure)
+
+## 2026-11-21 — Late-workout PR coverage and spelling gates
+
+- The shared unit assertions passed on PR #3444. The changed-line coverage step reported `Failure. Coverage is below 80%.` Its test project did not exercise the new Sleep response schema, leaving seven of 22 applicable changed lines uncovered and the total at 68%. Seven colocated tests now exercise valid evidence, unavailable load, empty access, and invalid input. The focused shared run covered all seven schema lines. [Shared unit job](https://github.com/Asherlc/dofek/actions/runs/44957479605/job/137009557871).
+- The spell check rejected `massagetherapy`, the normalized activity key, and `Leota`, the study author's surname. Both terms belong in the existing dictionary. The coverage threshold and spell-check scope are unchanged. The failures delayed PR validation. Production was unaffected. [Spell check job](https://github.com/Asherlc/dofek/actions/runs/44957479605/job/137008857843).
