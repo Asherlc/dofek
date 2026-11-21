@@ -38,6 +38,7 @@ import {
   ActivityExportMenu,
   type ActivityExportOption,
 } from "../../components/activity/ActivityExportMenu";
+import { PlannedIntervalComparison } from "../../components/activity/PlannedIntervalComparison";
 import { RecomputeActivityButton } from "../../components/activity/RecomputeActivityButton";
 import { RunningFormStats } from "../../components/activity/RunningFormStats";
 import { exerciseStyles, statsStyles, styles } from "../../components/activity/styles";
@@ -310,6 +311,10 @@ function ActivityDetailScreen({ id }: { id: string }) {
     powerZones,
     heartRateContext,
   } = metrics;
+  const plannedIntervals = trpc.intervals.plannedByActivity.useQuery(
+    { activityId: id ?? "" },
+    { enabled: !!id && isCycling },
+  );
   const route = trpc.activity.route.useQuery(
     { id: id ?? "", maxPoints: 200 },
     {
@@ -649,6 +654,10 @@ function ActivityDetailScreen({ id }: { id: string }) {
           {isCycling && powerWork.error && (
             <QueryStatePanel variant="error" message={powerWork.error.message} />
           )}
+          {isCycling && plannedIntervals.error && !plannedIntervals.data && (
+            <QueryStatePanel variant="error" message={plannedIntervals.error.message} />
+          )}
+          {isCycling && <PlannedIntervalComparison rows={plannedIntervals.data ?? []} />}
           <ActivityPerceivedExertion value={activity.perceivedExertion} />
 
           {isHangboardingActivity && (
