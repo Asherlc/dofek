@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planned vs. recorded intervals · Dofek mockup</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --page: #111b15;
+    --surface: #19261e;
+    --surface-low: #16231b;
+    --text: #e8f0ea;
+    --muted: #b4c9b9;
+    --line: #354b3d;
+    --green: #a6e6bc;
+    --band: #3d684e;
+    --blue: #a6dce8;
+    --amber: #f0cb92;
+    font: 15px/1.5 Inter, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { display: flow-root; min-height: 100vh; margin: 0; color: var(--text); background: radial-gradient(ellipse at 28% 0, #1b2f23 0, var(--page) 64%); }
+  main { width: min(1020px, calc(100% - 56px)); margin: 38px auto 44px; }
+  .context { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: .83rem; margin-bottom: 24px; }
+  .context strong { color: var(--text); letter-spacing: .015em; }
+  .context span + span { padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; }
+  h1, h2, p { margin: 0; }
+  h1 { font-size: clamp(1.85rem, 5vw, 2.72rem); line-height: 1.1; font-weight: 660; letter-spacing: -.046em; }
+  .ride-meta { color: var(--muted); margin-top: 8px; }
+  .card { margin-top: 25px; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); box-shadow: 0 13px 36px #0b140e54; }
+  .intro { display: flex; justify-content: space-between; align-items: end; gap: 12px 22px; flex-wrap: wrap; padding: 21px 24px 17px; }
+  h2 { font-size: 1.34rem; letter-spacing: -.024em; font-weight: 650; }
+  .intro p, .legend, .details { font-size: .84rem; color: var(--muted); }
+  .intro p { margin-top: 4px; }
+  .legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { background: var(--band); border: 1px solid var(--green); width: 19px; height: 10px; border-radius: 2px; }
+  .swatch.dot { background: var(--blue); border: 0; width: 8px; height: 8px; border-radius: 50%; }
+  .grid { display: grid; grid-template-columns: minmax(115px, .72fr) minmax(255px, 2fr) minmax(108px, .75fr) minmax(116px, .7fr); align-items: center; gap: 15px; padding: 10px 24px; }
+  .table-head { background: var(--surface-low); border-top: 1px solid var(--line); color: var(--muted); font-size: .77rem; font-weight: 600; align-items: start; padding-top: 10px; padding-bottom: 8px; }
+  .row { border-top: 1px solid var(--line); min-height: 72px; }
+  .row-name, .number, .power-actual { font-weight: 650; }
+  .number, .power-actual, .axis { font-variant-numeric: tabular-nums; }
+  .sub, .power-plan, .axis { font-size: .77rem; color: var(--muted); }
+  .short { color: var(--amber); }
+  .power-actual { color: var(--blue); }
+  .power-values { display: flex; align-items: baseline; justify-content: space-between; gap: 5px 12px; margin-top: 5px; }
+  .scale { position: relative; height: 15px; margin: 0 3px; }
+  .scale::before { content: ""; position: absolute; left: 0; right: 0; top: 7px; border-top: 1px solid #53705e; }
+  .axis { display: flex; justify-content: space-between; margin-top: 3px; margin-inline: -1px; font-weight: 450; }
+  .target { position: absolute; top: 2px; left: var(--low, 40%); width: var(--width, 30%); height: 11px; background: var(--band); border: 1px solid #85c8a1; border-radius: 3px; }
+  .target.point { top: 0; height: 15px; width: 2px; border: 0; background: var(--green); transform: translateX(-50%); }
+  .actual { position: absolute; top: 2px; left: var(--at); width: 11px; height: 11px; background: var(--blue); border: 2px solid var(--surface); border-radius: 50%; outline: 1px solid var(--blue); transform: translateX(-50%); }
+  .missing { color: var(--muted); font-size: .8rem; }
+  .details { border-top: 1px solid var(--line); padding: 13px 24px 14px; background: var(--surface-low); }
+  .details summary { cursor: pointer; width: fit-content; }
+  .details p { margin-top: 8px; max-width: 72ch; }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 4px; }
+  @media (max-width: 760px) {
+    main { width: calc(100% - 32px); margin-top: 23px; }
+    .grid { padding-inline: 15px; gap: 9px; }
+    .intro, .details { padding-inline: 15px; }
+    .table-head { display: none; }
+    .row { grid-template-columns: 1fr 1fr; gap: 7px 13px; padding-block: 12px; }
+    .row-name { grid-column: 1 / -1; }
+    .power { grid-column: 1 / -1; padding-bottom: 2px; }
+    .mobile-label { display: block; font-size: .72rem; color: var(--muted); }
+  }
+  @media (min-width: 761px) { .mobile-label { display: none; } }
+</style>
+</head>
+<body>
+<main data-dc-id="activity-detail">
+  <div class="context" data-dc-id="activity-context"><span><strong>Dofek</strong> &nbsp;/&nbsp; Activity detail</span><span>Example data</span></div>
+  <header>
+    <h1 data-dc-id="ride-title">Indoor cycling</h1>
+    <p class="ride-meta" data-dc-id="ride-source">45 min · Garmin FIT activity</p>
+  </header>
+  <section class="card" data-dc-id="interval-comparison" aria-labelledby="intervals-heading">
+    <header class="intro">
+      <div><h2 id="intervals-heading" data-dc-id="interval-heading">Planned vs. recorded intervals</h2><p>5 matched intervals from the recorded workout</p></div>
+      <div class="legend" data-dc-id="power-legend" aria-hidden="true"><span><i class="swatch"></i> Planned power</span><span><i class="swatch dot"></i> Recorded average</span></div>
+    </header>
+    <div role="table" data-dc-id="interval-table" aria-label="Planned and recorded cycling intervals">
+      <div class="grid table-head" data-dc-id="table-heading" role="row">
+        <div role="columnheader">Interval</div>
+        <div role="columnheader">Power <div class="axis" aria-hidden="true"><span>230 W</span><span>255 W</span><span>280 W</span></div></div>
+        <div role="columnheader">Timer duration</div>
+        <div role="columnheader">Power coverage</div>
+      </div>
+      <div class="grid row" role="row" data-dc-id="work-1">
+        <div class="row-name" role="cell">Work 1</div>
+        <div class="power" role="cell" data-dc-id="work-1-power">
+          <div class="scale" aria-hidden="true"><i class="target"></i><i class="actual" style="--at:52%"></i></div>
+          <div class="power-values"><span class="power-actual">256 W recorded</span><span class="power-plan">250–265 W planned</span></div>
+        </div>
+        <div role="cell" data-dc-id="work-1-duration"><span class="mobile-label">Timer duration</span><div class="number">3:00</div><div class="sub">3:00 planned</div></div>
+        <div role="cell" data-dc-id="work-1-coverage"><span class="mobile-label">Power coverage</span><div class="sub">3:00 of 3:00</div></div>
+      </div>
+      <div class="grid row" role="row" data-dc-id="work-2">
+        <div class="row-name" role="cell">Work 2</div>
+        <div class="power" role="cell" data-dc-id="work-2-power">
+          <div class="scale" aria-hidden="true"><i class="target"></i><i class="actual" style="--at:24%"></i></div>
+          <div class="power-values"><span class="power-actual">242 W recorded</span><span class="power-plan">250–265 W planned</span></div>
+        </div>
+        <div role="cell" data-dc-id="work-2-duration"><span class="mobile-label">Timer duration</span><div class="number short">2:14</div><div class="sub">0:46 short of 3:00</div></div>
+        <div role="cell" data-dc-id="work-2-coverage"><span class="mobile-label">Power coverage</span><div class="sub">2:14 of 2:14</div></div>
+      </div>
+      <div class="grid row" role="row" data-dc-id="work-3">
+        <div class="row-name" role="cell">Work 3</div>
+        <div class="power" role="cell" data-dc-id="work-3-power">
+          <div class="scale" aria-hidden="true"><i class="target"></i><i class="actual" style="--at:76%"></i></div>
+          <div class="power-values"><span class="power-actual">268 W recorded</span><span class="power-plan">250–265 W planned</span></div>
+        </div>
+        <div role="cell" data-dc-id="work-3-duration"><span class="mobile-label">Timer duration</span><div class="number">3:00</div><div class="sub">3:00 planned</div></div>
+        <div role="cell" data-dc-id="work-3-coverage"><span class="mobile-label">Power coverage</span><div class="sub">2:41 of 3:00</div></div>
+      </div>
+      <div class="grid row" role="row" data-dc-id="work-4">
+        <div class="row-name" role="cell">Work 4</div>
+        <div class="power" role="cell" data-dc-id="work-4-power">
+          <div class="scale" aria-hidden="true"><i class="target point" style="--low:60%"></i><i class="actual" style="--at:60%"></i></div>
+          <div class="power-values"><span class="power-actual">260 W recorded</span><span class="power-plan">260 W planned</span></div>
+        </div>
+        <div role="cell" data-dc-id="work-4-duration"><span class="mobile-label">Timer duration</span><div class="number">3:00</div><div class="sub">3:00 planned</div></div>
+        <div role="cell" data-dc-id="work-4-coverage"><span class="mobile-label">Power coverage</span><div class="sub">3:00 of 3:00</div></div>
+      </div>
+      <div class="grid row" role="row" data-dc-id="work-5">
+        <div class="row-name" role="cell">Work 5</div>
+        <div class="power" role="cell" data-dc-id="work-5-power">
+          <div class="scale" aria-hidden="true"><i class="target"></i></div>
+          <div class="power-values"><span class="missing">Power unavailable</span><span class="power-plan">250–265 W planned</span></div>
+        </div>
+        <div role="cell" data-dc-id="work-5-duration"><span class="mobile-label">Timer duration</span><div class="number">3:00</div><div class="sub">3:00 planned</div></div>
+        <div role="cell" data-dc-id="work-5-coverage"><span class="mobile-label">Power coverage</span><div class="sub">0:00 of 3:00</div></div>
+      </div>
+    </div>
+    <details class="details" data-dc-id="matching-disclosure"><summary>How intervals were matched</summary><p>Each row pairs a lap with the workout step it references in the same FIT file. Power averages use recorded coverage. Timer duration excludes pauses.</p></details>
+  </section>
+</main>
+</body>
+</html>
