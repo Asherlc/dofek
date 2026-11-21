@@ -39675,7 +39675,14 @@ Local qualification and CI are separate from production throughput acceptance. T
   A read-only check in the workspace PostgreSQL container returned `65536` for
   both `aio-nr` and `aio-max-nr`, confirming that the shared Docker Desktop Linux
   VM could not allocate another AIO slot. [Linux kernel AIO settings](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
-- Requested authorization for the documented temporary VM limit increase to
-  `1048576`. The runtime limit remains unchanged and the canonical integration
-  check remains pending. After authorization or available capacity, verify the
-  value and rerun the same command. [Shared Docker VM resource checks](testing.md#shared-docker-vm-resource-pressure).
+- With user authorization, set the local VM runtime ceiling to `1048576` and
+  confirmed it from the workspace container. The unchanged command then
+  reported Redpanda healthy. The change used a disposable container and leaves
+  the repository and persistent Docker configuration untouched.
+- The unchanged command still stopped before test collection with `container
+  insights-cycling-durability-clickhouse-1 is unhealthy`. The health-check log
+  repeatedly reported `Health check exceeded timeout (5s)`. A manual `SELECT 1`
+  succeeded over both HTTP and the native client. At inspection, the ten-CPU VM
+  reported a one-minute load of 855.41 and 95.59 percent CPU waiting over the
+  last ten seconds. The ClickHouse health gate and rebuilt feature tests remain
+  pending. [Shared Docker VM resource checks](testing.md#shared-docker-vm-resource-pressure).
