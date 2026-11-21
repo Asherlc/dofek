@@ -30,7 +30,8 @@
     for (const button of get("markers").children) {
       button.setAttribute("aria-pressed", String(button.dataset.date === current));
     }
-    get("details").innerHTML = `
+    const details = get("details");
+    details.innerHTML = `
       <div class="ride-heading" data-dc-id="ride-heading">
         <div><h3>${workout} · ${dateLabel(point.time)}</h3>
         <p>60 min · Trainer + chest strap</p></div>
@@ -40,6 +41,7 @@
         <div data-dc-id="first-half"><dt>First half</dt><dd>${point.first[0]} W · ${point.first[1]} bpm<span class="coverage">${point.first[2]}% paired coverage</span></dd></div>
         <div data-dc-id="second-half"><dt>Second half</dt><dd>${point.second[0]} W · ${point.second[1]} bpm<span class="coverage">${point.second[2]}% paired coverage</span></dd></div>
       </dl>`;
+    details.hidden = false;
   }
 
   function render() {
