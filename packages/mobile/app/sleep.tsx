@@ -30,6 +30,7 @@ import { Hypnogram } from "../components/charts/Hypnogram";
 import { SleepBar } from "../components/charts/SleepBar";
 import { SparkLine } from "../components/charts/SparkLine";
 import { DaySelector } from "../components/DaySelector";
+import { LateWorkoutSleepCard } from "../components/LateWorkoutSleepCard";
 import { MetricCard } from "../components/MetricCard";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../components/QueryStatePanel";
@@ -138,6 +139,21 @@ export default function SleepScreen() {
   const consistencyQuery = trpc.recovery.sleepConsistency.useQuery({ days });
   const processingStatus = useProcessingStatus({ datasets: ["sleep"] });
   const today = formatDateYmd(new Date());
+  const lateWorkouts = trpc.sleep.lateWorkouts.useQuery(
+    { days, endDate: today },
+    {
+      meta: { persist: false },
+      staleTime: 0,
+      refetchOnMount: "always",
+      refetchOnWindowFocus: "always",
+      refetchOnReconnect: "always",
+    },
+  );
+  // Entitlement and history bounds can change between fetches for the same account.
+  const canShowLateWorkouts =
+    lateWorkouts.isFetchedAfterMount &&
+    lateWorkouts.isSuccess &&
+    lateWorkouts.fetchStatus === "idle";
   const displayDate = selectedDate ?? stagesByDateQuery.data?.date ?? today;
   const selectedStages =
     selectedDate === undefined || stagesByDateQuery.data?.date === selectedDate
@@ -154,11 +170,10 @@ export default function SleepScreen() {
     sharedConnectionFailure && isConnectionFailure(error);
   const sleepResult = sleepQuery.data;
   const nightly = sleepResult?.nightly ?? [];
-  // A grouped offline failure on the analytics query leaves no nightly rows to
-  // review. Drop that empty source area rather than rendering an orphaned
-  // "Sleep Sources" heading. A cached empty payload is still empty here;
-  // cached nights keep their source area.
-  const omitEmptySleepSources = isSharedConnectionFailure(sleepQuery.error) && nightly.length === 0;
+  const showSleepError =
+    sleepQuery.isError && !sleepQuery.data && !isSharedConnectionFailure(sleepQuery.error);
+  const showEmptySleep = nightly.length === 0 && !isSharedConnectionFailure(sleepQuery.error);
+  const omitEmptySleepSources = nightly.length === 0 && isSharedConnectionFailure(sleepQuery.error);
   const averageSleepMinutes = sleepResult?.averageSleepMinutes;
   const averageEfficiencyPercent = sleepResult?.averageEfficiencyPercent;
   const mostRecentNight = nightly[nightly.length - 1];
@@ -325,9 +340,9 @@ export default function SleepScreen() {
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading sleep data...</Text>
         </View>
-      ) : sleepQuery.isError && !sleepQuery.data && !isSharedConnectionFailure(sleepQuery.error) ? (
+      ) : showSleepError ? (
         <QueryStatePanel variant="error" message={userFacingErrorMessage(sleepQuery.error)} />
-      ) : nightly.length === 0 && !isSharedConnectionFailure(sleepQuery.error) ? (
+      ) : showEmptySleep ? (
         <QueryStatePanel
           variant="empty"
           title="No sleep records in this period"
@@ -472,17 +487,22 @@ export default function SleepScreen() {
               </View>
             </View>
           )}
-
-          {!omitEmptySleepSources && (
-            <View
-              onLayout={(event) => {
-                sleepSourcesYRef.current = event.nativeEvent.layout.y;
-              }}
-            >
-              <SleepSourceReview nights={[...nightly].slice(-7).reverse()} />
-            </View>
-          )}
         </>
+      )}
+      <LateWorkoutSleepCard
+        data={canShowLateWorkouts ? lateWorkouts.data : undefined}
+        error={lateWorkouts.error}
+        isLoading={lateWorkouts.isPending}
+        isFetching={!canShowLateWorkouts && lateWorkouts.data !== undefined}
+      />
+      {!isLoading && !showSleepError && !showEmptySleep && !omitEmptySleepSources && (
+        <View
+          onLayout={(event) => {
+            sleepSourcesYRef.current = event.nativeEvent.layout.y;
+          }}
+        >
+          <SleepSourceReview nights={[...nightly].slice(-7).reverse()} />
+        </View>
       )}
     </ScrollView>
   );

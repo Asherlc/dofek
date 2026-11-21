@@ -270,6 +270,7 @@ interface CachePolicy {
   maxAge: number;
   expiresAt?: CacheExpiry;
   keyVersion?: string;
+  scopeToAccessWindow?: boolean;
   outputSchema?: ZodType;
   shouldCache?: (data: unknown) => boolean;
 }
@@ -333,7 +334,13 @@ function cached(policy: CachePolicy) {
     const start = performance.now();
     const rawInput = await getRawInput();
     // Include userId in cache key to prevent cross-user data leaks
-    const key = requestCacheKey(ctx.userId, path, rawInput, ctx.timezone, policy.keyVersion);
+    const access = ctx.accessWindow;
+    const accessScope =
+      access?.kind === "limited" ? `${access.startDate}-${access.endDateExclusive}` : "full";
+    const version = policy.scopeToAccessWindow
+      ? `${policy.keyVersion === undefined ? "" : `${policy.keyVersion}-`}access-${accessScope}`
+      : policy.keyVersion;
+    const key = requestCacheKey(ctx.userId, path, rawInput, ctx.timezone, version);
 
     // Cache lookup
     const cacheLookupStart = performance.now();

@@ -29,6 +29,14 @@ recommendations have been retired as described in the
   solid start/end interval blocks and blank gaps. Hover, tap, or select an exact
   value in the data disclosure to inspect the stage, times, and server-computed
   duration. It uses ECharts' [custom interval rendering](https://github.com/apache/echarts-doc/blob/master/en/tutorial/custom-series.md).
+- **Late workouts & sleep**: Sleep Insights follows the selected trend range and
+  shows the effective dates, matched nights, and measured-load count. Open **View
+  nights** to compare workout finish and sleep onset with usual onset, and to
+  inspect why load may be unavailable. Source records and reference nights have
+  their own disclosure. The study suggestion appears below the observed evidence.
+  While the server rechecks the account’s history access, the card shows refresh
+  status and keeps the selected night ready for the new result.
+  [Leota et al., 2025](https://doi.org/10.1038/s41467-025-58271-x)
 - **Unit System**: A global `UnitProvider` handles conversion between metric and imperial units across the application.
 - **Charts**: Custom visualization components (e.g., `TimeSeriesChart`, `PmcChart`, `Hypnogram`) built on top of ECharts and `react-native-svg` (shared patterns).
 - **Route comparison**: The hiking page's [route picker](src/components/ActivityComparisonChart.tsx) shows one GPS-matched route at a time, with dated pace dots and faster pace higher on the axis. Route choices include distance, the server's attempt count, and dates to distinguish repeated generic names. The attempts disclosure includes start times, exact formatted metrics, unavailable values, and activity links. Route IDs, timestamps, counts, and nullable pace come from the [shared server-computed contract](../training/src/route-comparison.ts); the chart uses an ECharts [time axis](https://echarts.apache.org/handbook/en/concepts/axis/).

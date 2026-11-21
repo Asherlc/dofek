@@ -6,11 +6,13 @@ import type { CSSProperties } from "react";
 import { useWindowDimensions } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { matchedLateWorkoutSleep } from "../components/late-workout-sleep-fixtures";
+
 let mockSleepData: Record<string, unknown> | undefined;
 let mockSleepError: Error | null;
 let mockProcessingError: Error | null;
 let mockConsistencyData: Record<string, unknown>[] = [];
-const sleepMocks = vi.hoisted(() => ({ stagesByDate: vi.fn() }));
+const sleepMocks = vi.hoisted(() => ({ stagesByDate: vi.fn(), lateWorkouts: vi.fn() }));
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -30,6 +32,7 @@ vi.mock("../lib/trpc", () => ({
     },
     sleep: {
       stagesByDate: { useQuery: sleepMocks.stagesByDate },
+      lateWorkouts: { useQuery: sleepMocks.lateWorkouts },
     },
   },
 }));
@@ -117,6 +120,7 @@ describe("SleepScreen", () => {
       scale: 3,
       fontScale: 1,
     });
+    sleepMocks.lateWorkouts.mockReturnValue({});
     sleepMocks.stagesByDate.mockImplementation((input?: { date?: string }) => ({
       data: { date: input?.date ?? "2026-07-20", stages: [] },
       error: null,
@@ -124,6 +128,63 @@ describe("SleepScreen", () => {
       isLoading: false,
       isFetching: false,
     }));
+  });
+
+  it("shows late workouts with no Recent Nights", async () => {
+    mockSleepData = { nightly: [], averageSleepMinutes: null, averageEfficiencyPercent: null };
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+    expect(screen.getByText("Late workouts & sleep")).toBeTruthy();
+    expect(sleepMocks.lateWorkouts).toHaveBeenCalledWith(
+      { days: 30, endDate: expect.any(String) },
+      {
+        meta: { persist: false },
+        staleTime: 0,
+        refetchOnMount: "always",
+        refetchOnWindowFocus: "always",
+        refetchOnReconnect: "always",
+      },
+    );
+  });
+
+  it("requires fresh authorization before showing late-workout evidence from the cache", async () => {
+    const cached = {
+      data: matchedLateWorkoutSleep,
+      isFetchedAfterMount: false,
+      isSuccess: true,
+      fetchStatus: "idle",
+      error: null,
+    };
+    sleepMocks.lateWorkouts.mockReturnValue(cached);
+    const { default: SleepScreen } = await import("../app/sleep");
+    const { rerender } = render(<SleepScreen />);
+
+    expect(screen.queryByRole("button", { name: "View nights" })).toBeNull();
+
+    const fresh = { ...cached, isFetchedAfterMount: true };
+    sleepMocks.lateWorkouts.mockReturnValue(fresh);
+    rerender(<SleepScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "View nights" }));
+    fireEvent.click(screen.getByRole("button", { name: /Nov 10/ }));
+    expect(screen.getByText("Heart-rate samples are incomplete.")).toBeTruthy();
+
+    sleepMocks.lateWorkouts.mockReturnValue({ ...fresh, fetchStatus: "paused" });
+    rerender(<SleepScreen />);
+    expect(screen.queryByText("Heart-rate samples are incomplete.")).toBeNull();
+    expect(screen.getByText("Refreshing night evidence…")).toBeTruthy();
+
+    sleepMocks.lateWorkouts.mockReturnValue({
+      ...fresh,
+      isSuccess: false,
+      error: new Error("Could not recheck sleep access."),
+    });
+    rerender(<SleepScreen />);
+    expect(screen.getByText("Could not recheck sleep access.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /nights$/ })).toBeNull();
+
+    sleepMocks.lateWorkouts.mockReturnValue(fresh);
+    rerender(<SleepScreen />);
+    expect(screen.getByText("Heart-rate samples are incomplete.")).toBeTruthy();
   });
 
   it("shows the server error instead of the empty state when loading fails", async () => {

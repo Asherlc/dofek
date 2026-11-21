@@ -35,7 +35,7 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
     "recovery.workloadRatio",
     "recovery.sleepAnalytics",
   ],
-  sleep: ["sleep.list", "insights.compute"],
+  sleep: ["sleep.list", "sleep.lateWorkouts", "insights.compute"],
   strength: [
     "strength.volumeOverTime",
     "strength.estimatedOneRepMax",

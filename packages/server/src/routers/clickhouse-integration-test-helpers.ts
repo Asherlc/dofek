@@ -15,6 +15,7 @@ import {
   buildSensorScalarSampleBackfillSql,
 } from "../../../../src/db/clickhouse-deduped-sensor.ts";
 import { createMigration as createActivityLocationMemberChangeMigration } from "../../../../src/db/clickhouse-migrations/0086_activity_location_member_change.ts";
+import { buildPostgresFitnessRawTableStatements } from "../../../../src/db/clickhouse-raw-tables.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
 import { rebuildTestActivityPowerCurve } from "./activity-power-curve-test-helpers.ts";
@@ -529,6 +530,7 @@ async function acquireClickHouseTestSetupSlot(): Promise<() => Promise<void>> {
 async function createClickHouseTestStore(
   testContext: ClickHouseSyncTestContext,
   syncStore: ClickHouseTestStoreSync,
+  bootstrap = bootstrapClickHouseTestSchema,
 ): Promise<ActivitySensorStore> {
   const suffix = randomBytes(6).toString("hex");
   const databases = {
@@ -551,7 +553,7 @@ async function createClickHouseTestStore(
 
   const releaseSlot = await acquireClickHouseTestSetupSlot();
   try {
-    await bootstrapClickHouseTestSchema(setupClient, testContext.connectionString);
+    await bootstrap(setupClient, testContext.connectionString);
     await syncStore(setupClient, testContext.connectionString);
   } finally {
     await releaseSlot();
@@ -577,6 +579,31 @@ export async function createClickHouseTestRawSensorStore(
   testContext: ClickHouseSyncTestContext,
 ): Promise<ActivitySensorStore> {
   return createClickHouseTestStore(testContext, syncClickHouseRawTablesWithClient);
+}
+
+/** Mirrors the raw inputs used by episode reconciliation. The caller seeds its serving tables. */
+export async function createClickHouseTestSleepEpisodeStore(
+  testContext: ClickHouseSyncTestContext,
+): Promise<ActivitySensorStore> {
+  return createClickHouseTestStore(
+    testContext,
+    async () => {},
+    async (client, connectionString) => {
+      await client.command({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
+      await client.command({ query: "CREATE DATABASE IF NOT EXISTS postgres_fitness" });
+      const statements = buildPostgresFitnessRawTableStatements();
+      for (const tableName of ["sleep_session", "provider_priority", "device_priority"]) {
+        const statement = statements.find((query) =>
+          query.startsWith(`CREATE TABLE IF NOT EXISTS postgres_fitness.${tableName} (`),
+        );
+        const sync = rawTableSyncs.find((candidate) => candidate.tableName === tableName);
+        if (!statement || !sync)
+          throw new Error(`Missing ClickHouse raw fixture definition for ${tableName}`);
+        await client.command({ query: statement });
+        await client.command({ query: buildRawTableInsertStatement(connectionString, sync) });
+      }
+    },
+  );
 }
 
 export async function createClickHouseTestActivityPowerCurveStore(
