@@ -244,6 +244,58 @@ describe("StrengthProgressionRepository", () => {
     });
   });
 
+  it("reports a first PR with no change when only one qualifying day exists", async () => {
+    const tagged = {
+      ...baseRow,
+      set_provider: "strong-csv",
+      raw: {
+        ...baseRow.raw,
+        setTag: "Failure",
+        exerciseName: "Bench Press (Barbell)",
+        reportedWeightUnit: "kg",
+      },
+    };
+    const lighter = {
+      ...tagged,
+      set_id: "00000000-0000-4000-8000-000000000102",
+      set_index: 1,
+      weight_kg: 80,
+      raw: { ...tagged.raw, weight: 80 },
+    };
+    const priorUnknownEffort = { ...baseRow, session_date: "2026-06-30" };
+    const db = {
+      execute: vi.fn((query: unknown) => {
+        const text = queryText(query);
+        if (text.includes("first_observed_date"))
+          return Promise.resolve([{ first_observed_date: priorUnknownEffort.session_date }]);
+        if (text.includes("strength_progression_prior"))
+          return Promise.resolve([priorUnknownEffort]);
+        return Promise.resolve([lighter, tagged]);
+      }),
+    };
+    const result = await new StrengthProgressionRepository(
+      db,
+      "00000000-0000-4000-8000-000000000002",
+      "UTC",
+    ).listRange(input);
+    expect(result.exercises[0]).toMatchObject({
+      estimated_one_rep_max: {
+        first_kg: 116.65,
+        latest_kg: 116.65,
+        change_kg: null,
+        change_percent: null,
+      },
+      daily: [{ best_estimated_one_rep_max_kg: 116.65 }],
+      prs: [
+        {
+          set_id: tagged.set_id,
+          previous_best_kg: null,
+          previous_best_evidence: null,
+        },
+      ],
+    });
+  });
+
   it("keeps a tagged single in history without calculating an estimate", async () => {
     const single = {
       ...baseRow,

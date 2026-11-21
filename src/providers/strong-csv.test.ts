@@ -586,8 +586,10 @@ describe("importStrongCsv", () => {
       "Set 1: 100 kg × 2",
       "Set 2: 50 lb × 8 [Failure]",
       "Set 3: 100.5.9 kg × 5 [Failure]",
+      "Set 4: 100.5 kg × 5 [Failure]",
+      "Set 5: 100 kg × 5 [Other] [Failure]",
       "Push Up",
-      "Set 4: 3 reps [Failure]",
+      "Set 6: 3 reps [Failure]",
       "Set 5: 8 reps [Other] [Failure]",
       "Set 6: 7 reps",
     ].join("\n");
@@ -621,6 +623,14 @@ describe("importStrongCsv", () => {
         setType: "working",
         raw: expect.objectContaining({ setTag: "Failure", weightUnit: "kg" }),
       }),
+      expect.objectContaining({
+        setIndex: 3,
+        weightKg: 100.5,
+        reps: 5,
+        setType: "working",
+        raw: expect.objectContaining({ setTag: "Failure", reportedWeightUnit: "kg" }),
+      }),
+      expect.objectContaining({ setIndex: 4, weightKg: 100, reps: 5, setType: "working" }),
       expect.objectContaining({
         setIndex: 0,
         weightKg: null,
@@ -658,6 +668,7 @@ describe("importStrongCsv", () => {
     expect(persistedSet(1, 0)?.raw).not.toHaveProperty("reportedWeightUnit");
     for (const { exerciseIndex, setIndex } of [
       { exerciseIndex: 0, setIndex: 0 },
+      { exerciseIndex: 0, setIndex: 4 },
       { exerciseIndex: 1, setIndex: 1 },
       { exerciseIndex: 1, setIndex: 2 },
     ]) {

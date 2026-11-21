@@ -111,19 +111,6 @@ function volumeResult(set: ConsolidatedSet<Row>, flags: string[]) {
   };
 }
 
-function estimatedOneRepMaxResult(set: ConsolidatedSet<Row>, flags: string[]) {
-  const estimate = estimateConsolidatedStrengthSet(set, flags);
-  return {
-    source: estimate.source,
-    result: {
-      status: estimate.value === null ? ("unavailable" as const) : ("available" as const),
-      value_kg: estimate.value,
-      formula: "Epley" as const,
-      reason: estimate.reason,
-    },
-  };
-}
-
 function cursorShape(input: StrengthProgressionInput, timezone: string): string {
   return createHash("sha256")
     .update(
@@ -340,12 +327,11 @@ export class StrengthProgressionRepository {
     >();
     for (const set of consolidateSets(priorRows).sets) {
       const flags = consolidatedStrengthQualityFlags(set);
-      const { source, result } = estimatedOneRepMaxResult(set, flags);
-      const estimate = result.value_kg;
-      if (estimate === null || source === null) continue;
+      const { source, value } = estimateConsolidatedStrengthSet(set, flags);
+      if (value === null) continue;
       const evidence = {
         date: set.row.session_date,
-        value_kg: estimate,
+        value_kg: value,
         set_id: source.set_id,
         provider: source.set_provider,
         fatigue_marker: "Failure" as const,
@@ -355,19 +341,17 @@ export class StrengthProgressionRepository {
         reps: set.row.reps,
       };
       const priorBest = priorBestByExercise.get(set.row.exercise_id);
-      if (priorBest === undefined || estimate > priorBest.value_kg) {
+      if (priorBest === undefined || value > priorBest.value_kg) {
         priorBestByExercise.set(set.row.exercise_id, evidence);
       }
     }
     const evaluatedSets = sets.map((set) => {
       const flags = consolidatedStrengthQualityFlags(set);
-      const { source, result } = estimatedOneRepMaxResult(set, flags);
       return {
         set,
         flags,
-        estimateSource: source,
         volume: volumeResult(set, flags),
-        estimatedOneRepMax: result,
+        estimate: estimateConsolidatedStrengthSet(set, flags),
       };
     });
 
@@ -386,7 +370,7 @@ export class StrengthProgressionRepository {
     const pageActivityIds = new Set(pageRows.map((row) => row.activity_id));
 
     const setOutput = (evaluated: (typeof evaluatedSets)[number]) => {
-      const { set, flags, volume, estimatedOneRepMax } = evaluated;
+      const { set, flags, volume, estimate } = evaluated;
       const originalRecords = set.sourceRows.map((sourceRow) => ({
         provider: sourceRow.set_provider,
         activity_id: sourceRow.set_activity_id,
@@ -420,8 +404,10 @@ export class StrengthProgressionRepository {
         },
         volume,
         estimated_one_rep_max: {
-          ...estimatedOneRepMax,
-          value_kg: roundEstimate(estimatedOneRepMax.value_kg),
+          status: estimate.value === null ? ("unavailable" as const) : ("available" as const),
+          value_kg: roundEstimate(estimate.value),
+          formula: "Epley" as const,
+          reason: estimate.reason,
         },
         quality_flags: flags,
         excluded_from_aggregates: flags.length > 0,
@@ -510,16 +496,16 @@ export class StrengthProgressionRepository {
         );
         const validEstimates = exerciseSets
           .flatMap((set) =>
-            set.estimatedOneRepMax.value_kg === null || set.estimateSource === null
+            set.estimate.value === null
               ? []
               : [
                   {
                     date: set.set.row.session_date,
-                    value_kg: set.estimatedOneRepMax.value_kg,
-                    set_id: set.estimateSource.set_id,
-                    provider: set.estimateSource.set_provider,
+                    value_kg: set.estimate.value,
+                    set_id: set.estimate.source.set_id,
+                    provider: set.estimate.source.set_provider,
                     fatigue_marker: "Failure" as const,
-                    raw: set.estimateSource.raw,
+                    raw: set.estimate.source.raw,
                     activity_id: set.set.row.activity_id,
                     weight_kg: set.set.row.weight_kg,
                     reps: set.set.row.reps,
@@ -552,17 +538,25 @@ export class StrengthProgressionRepository {
           priorBest = observation;
           return [result];
         });
-        const firstEstimate = observations[0]?.value_kg ?? null;
-        const latestEstimate = observations.at(-1)?.value_kg ?? null;
+        const firstObservation = observations[0];
+        const latestObservation = observations.at(-1);
+        const changes =
+          firstObservation && latestObservation && firstObservation !== latestObservation
+            ? {
+                change_kg: round(latestObservation.value_kg - firstObservation.value_kg),
+                change_percent: round(
+                  ((latestObservation.value_kg - firstObservation.value_kg) /
+                    firstObservation.value_kg) *
+                    100,
+                ),
+              }
+            : { change_kg: null, change_percent: null };
         const dates = unique(exerciseSets.map((set) => set.set.row.session_date));
         const activities = unique(exerciseSets.map((set) => set.set.row.activity_id));
         const daily = dates.map((date) => {
           const dateSets = exerciseSets.filter((set) => set.set.row.session_date === date);
           const dateVolumes = dateSets.flatMap((set) =>
             set.volume.value_kg_reps === null ? [] : [set.volume.value_kg_reps],
-          );
-          const dateEstimates = dateSets.flatMap((set) =>
-            set.estimatedOneRepMax.value_kg === null ? [] : [set.estimatedOneRepMax.value_kg],
           );
           const dateWeights = dateSets.flatMap((set) =>
             set.flags.length === 0 &&
@@ -582,8 +576,9 @@ export class StrengthProgressionRepository {
               3,
             ),
             max_weight_kg: dateWeights.length === 0 ? null : Math.max(...dateWeights),
-            best_estimated_one_rep_max_kg:
-              dateEstimates.length === 0 ? null : round(Math.max(...dateEstimates)),
+            best_estimated_one_rep_max_kg: roundEstimate(
+              dailyBestEstimates.get(date)?.value_kg ?? null,
+            ),
           };
         });
         return {
@@ -605,23 +600,13 @@ export class StrengthProgressionRepository {
           ),
           estimated_one_rep_max: {
             formula: "Epley" as const,
-            first_kg: roundEstimate(firstEstimate),
-            latest_kg: roundEstimate(latestEstimate),
+            first_kg: roundEstimate(firstObservation?.value_kg ?? null),
+            latest_kg: roundEstimate(latestObservation?.value_kg ?? null),
             best_kg:
               observations.length === 0
                 ? null
                 : round(Math.max(...observations.map((observation) => observation.value_kg))),
-            change_kg:
-              observations.length < 2 || firstEstimate === null || latestEstimate === null
-                ? null
-                : round(latestEstimate - firstEstimate),
-            change_percent:
-              observations.length < 2 ||
-              firstEstimate === null ||
-              latestEstimate === null ||
-              firstEstimate === 0
-                ? null
-                : round(((latestEstimate - firstEstimate) / firstEstimate) * 100),
+            ...changes,
             observations: observations.map((observation) => ({
               ...observation,
               value_kg: round(observation.value_kg),
@@ -672,7 +657,7 @@ export class StrengthProgressionRepository {
           (set) => set.volume.status === "unavailable",
         ).length,
         sets_excluded_from_estimated_one_rep_max: evaluatedSets.filter(
-          (set) => set.estimatedOneRepMax.status === "unavailable",
+          (set) => set.estimate.value === null,
         ).length,
       },
       summary: {

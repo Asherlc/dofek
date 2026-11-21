@@ -142,6 +142,39 @@ describe("computeStrengthComparisonMetrics", () => {
     });
   });
 
+  it.each([{ distance_meters: 5 }, { duration_seconds: 5 }, { notes: "Different set note" }])(
+    "preserves volume but excludes estimate evidence for a nonidentical mirror (%o)",
+    (difference) => {
+      const raw = {
+        setTag: "Failure",
+        exerciseName: "Bench Press (Barbell)",
+        weight: 100,
+        reps: 5,
+        weightUnit: "kg",
+        reportedWeightUnit: "kg",
+      };
+      const tagged = strengthRow({ set_provider: "strong-csv", raw });
+      const mirror = strengthRow({
+        set_id: "00000000-0000-4000-8000-000000000032",
+        set_activity_id: SOURCE_ACTIVITY_B,
+        ...difference,
+      });
+      const clean = strengthRow({
+        set_id: "00000000-0000-4000-8000-000000000033",
+        set_index: 1,
+        set_provider: "strong-csv",
+        weight_kg: 80,
+        raw: { ...raw, weight: 80 },
+      });
+      expect(computeStrengthComparisonMetrics([tagged, mirror, clean], EXERCISE_ID)).toMatchObject({
+        valid_volume_kg_reps: 900,
+        volume_status: "complete",
+        estimated_one_rep_max_status: "partial",
+        best_estimated_one_rep_max_kg: 93.32,
+      });
+    },
+  );
+
   it("returns no metrics when no strength observations exist", () => {
     expect(computeStrengthComparisonMetrics([])).toBeNull();
   });

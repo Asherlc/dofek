@@ -388,8 +388,8 @@ describe("StrengthRepository", () => {
     });
 
     it("requires three qualifying workouts and retains the best evidence per workout", async () => {
-      const rows = [0, 1, 2, 2].map((workout, index) => {
-        const weight = index === 3 ? 100 : 80;
+      const rows = [0, 1, 2, 2, 2].map((workout, index) => {
+        const weight = index >= 3 ? 100 : 80;
         return {
           activity_id: `00000000-0000-4000-8000-00000000010${workout}`,
           set_id: `00000000-0000-4000-8000-00000000020${index}`,
@@ -420,17 +420,26 @@ describe("StrengthRepository", () => {
       });
       const { repo: twoWorkouts } = makeRepository(rows.slice(0, 2));
       expect(await twoWorkouts.getEstimatedOneRepMax(90)).toEqual([]);
-      const { repo } = makeRepository(rows);
-      const result = await repo.getEstimatedOneRepMax(90);
-      expect(result).toHaveLength(1);
-      expect(result[0]?.toDetail().history.at(-1)).toMatchObject({
-        estimatedMax: 106.7,
-        actualWeight: 100,
-        actualReps: 2,
-        sourceSetId: rows[3]?.set_id,
-        fatigueMarker: "Failure",
-        provider: "strong-csv",
-      });
+      for (const input of [rows.toReversed(), [...rows.slice(2), ...rows.slice(0, 2)]]) {
+        const { repo } = makeRepository(input);
+        const result = await repo.getEstimatedOneRepMax(90);
+        expect(result).toHaveLength(1);
+        const detail = result[0]?.toDetail();
+        expect(detail).toMatchObject({ exerciseName: "Squat", equipment: "Barbell" });
+        expect(detail?.history.map(({ date }) => date)).toEqual([
+          "2024-01-01",
+          "2024-01-02",
+          "2024-01-03",
+        ]);
+        expect(detail?.history.at(-1)).toMatchObject({
+          estimatedMax: 106.7,
+          actualWeight: 100,
+          actualReps: 2,
+          sourceSetId: rows[3]?.set_id,
+          fatigueMarker: "Failure",
+          provider: "strong-csv",
+        });
+      }
     });
 
     it("omits a workout with conflicting tagged mirrors", async () => {

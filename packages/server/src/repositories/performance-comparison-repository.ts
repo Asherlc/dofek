@@ -704,10 +704,8 @@ export class PerformanceComparisonRepository {
       climbingRows,
       strengthRows,
       estimateExerciseId:
-        input.equivalence?.kind === "strength_exercise_id" &&
-        equivalence.key.kind === "strength_exercise_id" &&
-        input.equivalence.exerciseId === equivalence.key.exerciseId
-          ? equivalence.key.exerciseId
+        input.equivalence?.kind === "strength_exercise_id"
+          ? input.equivalence.exerciseId
           : undefined,
       timezone: this.#timezone,
       evidenceFor,

@@ -314,8 +314,12 @@ export function parseStrongWallClockTimestamp(value: string): Date {
 }
 
 // Set lines may carry a Strong tag, for example "Set 1: 50 lb × 13 [Failure]".
-const WEIGHTED_SET_RE = /^Set\s+(\d+):\s+([\d.]+)\s+(lb|kg)\s+×\s+(\d+)(?:\s+\[(.*)\])?$/;
-const BODYWEIGHT_SET_RE = /^Set\s+(\d+):\s+(\d+)\s+reps(?:\s+\[(.*)\])?$/;
+const WEIGHTED_SET_RE = /^Set\s+(\d+):\s+([\d.]+)\s+(lb|kg)\s+×\s+(\d+)(?:\s+\[.*\])?$/;
+const BODYWEIGHT_SET_RE = /^Set\s+(\d+):\s+(\d+)\s+reps(?:\s+\[.*\])?$/;
+
+function hasFailureTag(line: string): boolean {
+  return line.slice(line.indexOf("[")) === "[Failure]";
+}
 
 export interface StrongTextParseResult {
   groups: StrongWorkoutGroup[];
@@ -358,8 +362,7 @@ export function parseStrongText(text: string): StrongTextParseResult {
     // Try to match a weighted set line
     const weightedMatch = line.match(WEIGHTED_SET_RE);
     if (weightedMatch) {
-      const [, setOrderStr = "0", weightStr = "0", unit = "lb", repsStr = "0", setTag] =
-        weightedMatch;
+      const [, setOrderStr = "0", weightStr = "0", unit = "lb", repsStr = "0"] = weightedMatch;
       if (unit === "lb" && detectedUnit === null) detectedUnit = "lbs";
       if (unit === "kg" && detectedUnit === null) detectedUnit = "kg";
 
@@ -376,9 +379,9 @@ export function parseStrongText(text: string): StrongTextParseResult {
         notes: null,
         workoutNotes: null,
         rpe: null,
-        ...(setTag === "Failure"
+        ...(hasFailureTag(line)
           ? {
-              setTag,
+              setTag: "Failure",
               ...(Number.isFinite(Number(weightStr))
                 ? { reportedWeightUnit: unit === "lb" ? "lbs" : "kg" }
                 : {}),
@@ -391,7 +394,7 @@ export function parseStrongText(text: string): StrongTextParseResult {
     // Try to match a bodyweight set line
     const bodyweightMatch = line.match(BODYWEIGHT_SET_RE);
     if (bodyweightMatch) {
-      const [, setOrderStr = "0", repsStr = "0", setTag] = bodyweightMatch;
+      const [, setOrderStr = "0", repsStr = "0"] = bodyweightMatch;
       sets.push({
         date: dateString,
         workoutName,
@@ -405,7 +408,7 @@ export function parseStrongText(text: string): StrongTextParseResult {
         notes: null,
         workoutNotes: null,
         rpe: null,
-        ...(setTag === "Failure" ? { setTag } : {}),
+        ...(hasFailureTag(line) ? { setTag: "Failure" } : {}),
       });
       continue;
     }
