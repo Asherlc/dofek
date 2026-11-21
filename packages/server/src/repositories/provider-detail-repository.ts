@@ -787,13 +787,21 @@ export class ProviderDetailRepository {
   async canDeleteProviderData(providerId: string): Promise<boolean> {
     if (await this.verifyOwnership(providerId)) return true;
 
-    const retainedRecordQueries = PROVIDER_DATA_TABLES.map(
-      (table) =>
-        sql`SELECT 1
+    const retainedRecordQueries = [
+      ...PROVIDER_DATA_TABLES.map(
+        (table) =>
+          sql`SELECT 1
             FROM ${sql.raw(table)}
             WHERE provider_id = ${providerId}
               AND user_id = ${this.#userId}`,
-    );
+      ),
+      // A retained source-account binding alone must keep deletion available.
+      sql`SELECT 1
+          FROM fitness.provider_data_generation
+          WHERE provider_id = ${providerId}
+            AND user_id = ${this.#userId}
+            AND source_account_digest IS NOT NULL`,
+    ];
     const rows = await executeWithSchema(
       this.#db,
       retainedPostgresDataSchema,

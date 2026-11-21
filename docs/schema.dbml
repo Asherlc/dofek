@@ -1723,10 +1723,13 @@ table fitness.provider_data_generation {
   user_id uuid [not null]
   provider_id text [not null]
   current_generation bigint [not null, default: 0]
+  source_account_digest text
+  source_account_generation bigint
   updated_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
     (user_id, provider_id) [pk]
+
 
   }
 }

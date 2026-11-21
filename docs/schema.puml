@@ -1074,6 +1074,8 @@ entity "provider_data_generation" {
   * provider_id : text <<PK>>
   --
   current_generation : bigint
+  source_account_digest : text
+  source_account_generation : bigint
   updated_at : timestamp
 }
 
