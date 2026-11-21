@@ -37,6 +37,49 @@ describe("matchLambertsWorkout", () => {
     expect(matchLambertsWorkout(messages)).toBeNull();
   });
 
+  it.each([
+    ["a noncycling workout", { sport: 1 }],
+    ["an incorrect declared step count", { num_valid_steps: 4 }],
+  ])("rejects %s even when all linked laps match", (_label, raw) => {
+    const messages = exactWorkout().map((message) =>
+      message.messageType === "workout" ? { ...message, raw: { ...message.raw, ...raw } } : message,
+    );
+    expect(matchLambertsWorkout(messages)).toBeNull();
+  });
+
+  it.each([
+    { label: "a distance duration", index: 0, raw: { duration_type: 1 } },
+    { label: "a shorter duration", index: 0, raw: { duration_value: 350_000 } },
+    { label: "a power target", index: 0, raw: { target_type: 4 } },
+    { label: "a predefined heart-rate zone", index: 0, raw: { target_value: 2 } },
+    { label: "a heart-rate target range", index: 0, raw: { custom_target_value_high: 62 } },
+    { label: "a target during calibration", index: 1, raw: { target_type: 1 } },
+    { label: "active recovery", index: 4, raw: { intensity: 0 } },
+  ])("rejects $label with otherwise matching execution", ({ index, raw }) => {
+    const messages = exactWorkout().map((message) =>
+      message.messageType === "workout_step" && message.raw.message_index === index
+        ? { ...message, raw: { ...message.raw, ...raw } }
+        : message,
+    );
+    expect(matchLambertsWorkout(messages)).toBeNull();
+  });
+
+  it("accepts a full workout name and a rest-marked calibration step", () => {
+    const messages = exactWorkout().map((message) => {
+      if (message.messageType === "workout") {
+        return {
+          ...message,
+          raw: { ...message.raw, wkt_name: "Lamberts-and Lambert  Submaximal Cycle Test" },
+        };
+      }
+      if (message.messageType === "workout_step" && message.raw.message_index === 1) {
+        return { ...message, raw: { ...message.raw, intensity: 1 } };
+      }
+      return message;
+    });
+    expect(matchLambertsWorkout(messages)?.intervals).toHaveLength(5);
+  });
+
   it("rejects ambiguous linked laps and a test with missing recorded recovery", () => {
     const messages = exactWorkout();
     const firstStage = messages.find(
@@ -66,5 +109,21 @@ describe("matchLambertsWorkout", () => {
     );
     expect(matchLambertsWorkout(paused)).toBeNull();
     expect(matchLambertsWorkout(absolute)).toBeNull();
+  });
+
+  it("rejects a gap between two otherwise exact recorded stages", () => {
+    const messages = exactWorkout().map((message) =>
+      message.messageType === "lap" && message.raw.wkt_step_index === 1
+        ? {
+            ...message,
+            raw: {
+              ...message.raw,
+              start_time: "2026-11-13T12:09:01.000Z",
+              timestamp: "2026-11-13T12:09:31.000Z",
+            },
+          }
+        : message,
+    );
+    expect(matchLambertsWorkout(messages)).toBeNull();
   });
 });

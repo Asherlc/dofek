@@ -301,6 +301,40 @@ describe("streamFitFile", () => {
     );
   });
 
+  it("rejects workout structure before file metadata", async () => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    queueMicrotask(() =>
+      decoder.send({ type: "workout-structure", messages: [{ messageType: "lap", raw: {} }] }),
+    );
+    await expect(streamFitFile("activity.fit", noopConsumer())).rejects.toThrow(
+      "Native FIT decoder returned workout structure before file metadata",
+    );
+  });
+
+  it.each([
+    { label: "empty", messages: [] },
+    {
+      label: "oversized",
+      messages: Array.from({ length: 251 }, () => ({ messageType: "lap", raw: {} })),
+    },
+    { label: "unsupported message type", messages: [{ messageType: "record", raw: {} }] },
+    { label: "invalid raw fields", messages: [{ messageType: "lap", raw: "invalid" }] },
+  ])("rejects an invalid workout structure batch ($label)", async ({ messages }) => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    const onWorkoutStructureBatch = vi.fn(async () => undefined);
+    queueMicrotask(async () => {
+      decoder.send(metadataMessage());
+      await decoder.waitForAcknowledgement(1);
+      decoder.send({ type: "workout-structure", messages });
+    });
+    await expect(
+      streamFitFile("activity.fit", noopConsumer({ onWorkoutStructureBatch })),
+    ).rejects.toThrow("Native FIT decoder returned an invalid protocol message");
+    expect(onWorkoutStructureBatch).not.toHaveBeenCalled();
+  });
+
   it("rejects device batches before metadata", async () => {
     const decoder = simulatedDecoder();
     mockSpawn.mockReturnValue(decoder.child);
