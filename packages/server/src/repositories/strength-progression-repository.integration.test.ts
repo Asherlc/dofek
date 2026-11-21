@@ -6,7 +6,7 @@ import { StrengthProgressionRepository } from "./strength-progression-repository
 
 describe("StrengthProgressionRepository database semantics", () => {
   const userId = randomUUID();
-  const primaryProvider = `strength-primary-${randomUUID()}`;
+  const primaryProvider = "strong-csv";
   const mirrorProvider = `strength-mirror-${randomUUID()}`;
   const firstActivity = randomUUID();
   const mirrorActivity = randomUUID();
@@ -26,6 +26,7 @@ describe("StrengthProgressionRepository database semantics", () => {
       VALUES
         (${primaryProvider}, 'Primary strength fixture', ${userId}::uuid),
         (${mirrorProvider}, 'Mirror strength fixture', ${userId}::uuid)
+      ON CONFLICT (id) DO NOTHING
     `);
     await context.db.execute(sql`
       INSERT INTO fitness.exercise (
@@ -64,15 +65,15 @@ describe("StrengthProgressionRepository database semantics", () => {
         weight_kg, reps, rpe, raw
       ) VALUES
         (${priorActivity}::uuid, ${benchExercise}::uuid, 0, 0, 'working',
-          90, 5, 8, '{"weight":90,"weightUnit":"kg","reps":5,"rpe":8}'::jsonb),
+          90, 5, 8, '{"weight":90,"setTag":"Failure","exerciseName":"Bench Press (Barbell)","reportedWeightUnit":"kg","weightUnit":"kg","reps":5,"rpe":8}'::jsonb),
         (${firstActivity}::uuid, ${benchExercise}::uuid, 0, 0, 'working',
-          100, 5, 8, '{"weight":100,"weightUnit":"kg","reps":5,"rpe":8}'::jsonb),
+          100, 5, 8, '{"weight":100,"setTag":"Failure","exerciseName":"Bench Press (Barbell)","reportedWeightUnit":"kg","weightUnit":"kg","reps":5,"rpe":8}'::jsonb),
         (${mirrorActivity}::uuid, ${benchExercise}::uuid, 0, 0, 'working',
           100, 5, 8, '{"weight_kg":100,"number_of_reps":5,"complete":true}'::jsonb),
         (${latestActivity}::uuid, ${benchExercise}::uuid, 0, 0, 'warmup',
           60, 5, NULL, '{"weight":60,"weightUnit":"kg","reps":5}'::jsonb),
         (${latestActivity}::uuid, ${benchExercise}::uuid, 0, 1, 'working',
-          110, 5, 9, '{"weight":110,"weightUnit":"kg","reps":5,"rpe":9}'::jsonb),
+          110, 5, 9, '{"weight":110,"setTag":"Failure","exerciseName":"Bench Press (Barbell)","reportedWeightUnit":"kg","weightUnit":"kg","reps":5,"rpe":9}'::jsonb),
         (${latestActivity}::uuid, ${benchExercise}::uuid, 0, 2, 'working',
           4.989512, 140, 7, '{"weight":11,"weightUnit":"lbs","reps":140,"rpe":7}'::jsonb)
     `);
@@ -121,10 +122,10 @@ describe("StrengthProgressionRepository database semantics", () => {
         total_volume_kg_reps: 1050,
         estimated_one_rep_max: expect.objectContaining({
           formula: "Epley",
-          first_kg: 116.67,
-          latest_kg: 128.33,
+          first_kg: 116.65,
+          latest_kg: 128.32,
           change_kg: 11.66,
-          best_kg: 128.33,
+          best_kg: 128.32,
         }),
         daily: [
           {
@@ -134,7 +135,7 @@ describe("StrengthProgressionRepository database semantics", () => {
             valid_working_sets: 1,
             total_volume_kg_reps: 500,
             max_weight_kg: 100,
-            best_estimated_one_rep_max_kg: 116.67,
+            best_estimated_one_rep_max_kg: 116.65,
           },
           {
             date: "2026-07-01",
@@ -143,26 +144,26 @@ describe("StrengthProgressionRepository database semantics", () => {
             valid_working_sets: 1,
             total_volume_kg_reps: 550,
             max_weight_kg: 110,
-            best_estimated_one_rep_max_kg: 128.33,
+            best_estimated_one_rep_max_kg: 128.32,
           },
         ],
         prs: [
           expect.objectContaining({
             date: "2026-05-01",
-            value_kg: 116.67,
-            previous_best_kg: 105,
+            value_kg: 116.65,
+            previous_best_kg: 104.99,
             previous_best_evidence: expect.objectContaining({
               activity_id: priorActivity,
               date: "2026-04-01",
               reps: 5,
-              value_kg: 105,
+              value_kg: 104.99,
               weight_kg: 90,
             }),
           }),
           expect.objectContaining({
             date: "2026-07-01",
-            value_kg: 128.33,
-            previous_best_kg: 116.67,
+            value_kg: 128.32,
+            previous_best_kg: 116.65,
           }),
         ],
       }),
@@ -185,6 +186,12 @@ describe("StrengthProgressionRepository database semantics", () => {
       date: "2026-07-01",
       quality_flags: expect.arrayContaining(["contains_suspicious_strength_records"]),
       timezone: expect.objectContaining({ assumed: true, analysis_timezone: "UTC" }),
+    });
+    expect(result.exercises[0]?.estimated_one_rep_max).toMatchObject({
+      first_kg: 128.32,
+      latest_kg: 128.32,
+      change_kg: null,
+      change_percent: null,
     });
     const suspicious = session?.exercises[0]?.sets.find((set) => set.normalized.reps === 140);
     expect(suspicious).toMatchObject({

@@ -57,7 +57,21 @@ export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps
 
   const option = {
     grid: dofekGrid("single", { top: 24, bottom: 48, left: 50 }),
-    tooltip: dofekTooltip(),
+    tooltip: dofekTooltip({
+      trigger: "item",
+      formatter: ({ dataIndex }: { dataIndex: number }) => {
+        const point = selectedExercise?.history[dataIndex];
+        if (!point) return "";
+        const estimate = formatMeasurementText(units.formatWeight(point.estimatedMax));
+        const load = formatMeasurementText(units.formatWeight(point.actualWeight));
+        return [
+          formatDateShort(point.date),
+          `Estimated single-rep strength · ${estimate}`,
+          `Recorded set · ${load} × ${point.actualReps}`,
+          `Strong set tag · ${point.fatigueMarker}`,
+        ].join("<br/>");
+      },
+    }),
     xAxis: dofekAxis.time({
       axisLabel: {
         hideOverlap: true,
@@ -123,7 +137,7 @@ export function EstimatedMaxChart({ exercises, loading }: EstimatedMaxChartProps
         option={option}
         loading={loading}
         empty={exercises.length === 0}
-        emptyMessage="No estimated max data"
+        emptyMessage="A trend needs three workouts with qualifying sets and recorded fatigue."
         height={280}
       />
       <MethodExplanation

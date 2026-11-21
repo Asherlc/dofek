@@ -67,8 +67,15 @@ const input = {
 
 describe("StrengthProgressionRepository", () => {
   it("computes exact progression, PR, filter, and pagination contracts for valid working sets", async () => {
+    const recordedFailure = {
+      ...baseRow.raw,
+      setTag: "Failure",
+      exerciseName: "Bench Press (Barbell)",
+      reportedWeightUnit: "kg",
+    };
+    const taggedRow = { ...baseRow, set_provider: "strong-csv", raw: recordedFailure };
     const laterRow = {
-      ...baseRow,
+      ...taggedRow,
       activity_id: "00000000-0000-4000-8000-000000000002",
       activity_started_at: "2026-07-02T18:00:00.000Z",
       activity_ended_at: "2026-07-02T19:00:00.000Z",
@@ -77,10 +84,10 @@ describe("StrengthProgressionRepository", () => {
       set_id: "00000000-0000-4000-8000-000000000102",
       set_activity_id: "00000000-0000-4000-8000-000000000012",
       weight_kg: 105,
-      raw: { weight: 105, weightUnit: "kg", reps: 5 },
+      raw: { ...recordedFailure, weight: 105 },
     };
     const priorRow = {
-      ...baseRow,
+      ...taggedRow,
       activity_id: "00000000-0000-4000-8000-000000000003",
       activity_started_at: "2026-06-01T18:00:00.000Z",
       activity_ended_at: "2026-06-01T19:00:00.000Z",
@@ -89,7 +96,7 @@ describe("StrengthProgressionRepository", () => {
       set_id: "00000000-0000-4000-8000-000000000103",
       set_activity_id: "00000000-0000-4000-8000-000000000013",
       weight_kg: 95,
-      raw: { weight: 95, weightUnit: "kg", reps: 5 },
+      raw: { ...recordedFailure, weight: 95 },
     };
     const db = {
       execute: vi.fn((query: unknown) => {
@@ -98,7 +105,7 @@ describe("StrengthProgressionRepository", () => {
           return Promise.resolve([{ first_observed_date: "2026-06-01" }]);
         }
         if (text.includes("strength_progression_prior")) return Promise.resolve([priorRow]);
-        return Promise.resolve([laterRow, baseRow]);
+        return Promise.resolve([laterRow, taggedRow]);
       }),
     };
     const repository = new StrengthProgressionRepository(
@@ -126,14 +133,144 @@ describe("StrengthProgressionRepository", () => {
     expect(queryText(db.execute.mock.calls[0]?.[0])).toContain("strong");
     expect(queryText(db.execute.mock.calls[0]?.[0])).toContain(baseRow.exercise_id);
     expect(firstPage.exercises[0]?.estimated_one_rep_max).toMatchObject({
-      first_kg: 116.67,
-      latest_kg: 122.5,
+      first_kg: 116.65,
+      latest_kg: 122.48,
       change_kg: 5.83,
       change_percent: 5,
     });
     expect(firstPage.exercises[0]?.prs).toHaveLength(2);
     expect(firstPage.pagination.next_cursor).not.toBeNull();
     expect(secondPage.pagination.next_cursor).toBeNull();
+  });
+
+  it("ranks sets and PRs and calculates changes before rounding", async () => {
+    const tagged = (weight: number, index: number) => ({
+      ...baseRow,
+      set_provider: "strong-csv",
+      set_index: index,
+      set_id: `00000000-0000-4000-8000-00000000010${index}`,
+      weight_kg: weight,
+      reps: 2,
+      raw: {
+        weight,
+        reps: 2,
+        setTag: "Failure",
+        exerciseName: "Bench Press (Barbell)",
+        weightUnit: "kg",
+        reportedWeightUnit: "kg",
+      },
+    });
+    const lighter = tagged(100.001, 1);
+    const heavier = tagged(100.002, 2);
+    const latest = {
+      ...tagged(100.006, 3),
+      session_date: "2026-07-02",
+      activity_id: "00000000-0000-4000-8000-000000000003",
+      activity_started_at: "2026-07-02T18:00:00.000Z",
+    };
+    const prior = {
+      ...tagged(100, 4),
+      session_date: "2026-06-30",
+      activity_id: "00000000-0000-4000-8000-000000000004",
+    };
+    for (const rows of [
+      [lighter, heavier, latest],
+      [heavier, lighter, latest],
+    ]) {
+      const db = {
+        execute: vi.fn((query: unknown) =>
+          Promise.resolve(
+            queryText(query).includes("first_observed_date")
+              ? [{ first_observed_date: prior.session_date }]
+              : queryText(query).includes("strength_progression_prior")
+                ? [prior]
+                : rows,
+          ),
+        ),
+      };
+      const result = await new StrengthProgressionRepository(
+        db,
+        "00000000-0000-4000-8000-000000000002",
+        "UTC",
+      ).listRange({ ...input, endDate: latest.session_date });
+      const exercise = result.exercises[0];
+      expect(exercise?.estimated_one_rep_max).toMatchObject({
+        first_kg: 106.66,
+        latest_kg: 106.67,
+        change_kg: 0,
+        observations: [
+          expect.objectContaining({ set_id: heavier.set_id, value_kg: 106.66 }),
+          expect.objectContaining({ set_id: latest.set_id, value_kg: 106.67 }),
+        ],
+      });
+      expect(exercise?.prs[0]).toMatchObject({
+        set_id: heavier.set_id,
+        value_kg: 106.66,
+        previous_best_kg: 106.66,
+        previous_best_evidence: { set_id: prior.set_id, value_kg: 106.66 },
+      });
+    }
+  });
+
+  it("keeps a consolidated set in volume when its explicit source evidence conflicts", async () => {
+    const clean = {
+      ...baseRow,
+      set_provider: "strong-csv",
+      raw: {
+        ...baseRow.raw,
+        setTag: "Failure",
+        exerciseName: "Bench Press (Barbell)",
+        reportedWeightUnit: "kg",
+      },
+    };
+    const conflict = {
+      ...clean,
+      set_id: "00000000-0000-4000-8000-000000000102",
+      set_activity_id: "00000000-0000-4000-8000-000000000012",
+      raw: { ...clean.raw, weight: 99 },
+    };
+    const result = await new StrengthProgressionRepository(
+      executeDb([clean, conflict]),
+      "00000000-0000-4000-8000-000000000002",
+      "UTC",
+    ).listRange(input);
+    expect(result.exercises[0]).toMatchObject({
+      total_volume_kg_reps: 500,
+      estimated_one_rep_max: { best_kg: null },
+    });
+    expect(result.sessions[0]?.exercises[0]?.sets[0]?.estimated_one_rep_max).toMatchObject({
+      reason: "conflicting_failure_evidence",
+      value_kg: null,
+    });
+  });
+
+  it("keeps a tagged single in history without calculating an estimate", async () => {
+    const single = {
+      ...baseRow,
+      set_provider: "strong-csv",
+      reps: 1,
+      raw: {
+        ...baseRow.raw,
+        reps: 1,
+        setTag: "Failure",
+        exerciseName: "Bench Press (Barbell)",
+        reportedWeightUnit: "kg",
+      },
+    };
+    const result = await new StrengthProgressionRepository(
+      executeDb([single]),
+      "00000000-0000-4000-8000-000000000002",
+      "UTC",
+    ).listRange(input);
+    expect(result.sessions[0]?.exercises[0]?.sets[0]).toMatchObject({
+      normalized: { weight_kg: 100, reps: 1 },
+      original: { values: { setTag: "Failure" } },
+      estimated_one_rep_max: { status: "unavailable", value_kg: null },
+    });
+    expect(result.exercises[0]?.estimated_one_rep_max).toMatchObject({
+      observations: [],
+      change_kg: null,
+    });
   });
 
   it("retains and flags a probable reversed-field import without using it in aggregates", async () => {

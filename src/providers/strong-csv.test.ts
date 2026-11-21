@@ -533,6 +533,138 @@ describe("importStrongCsv", () => {
     );
     expect(result).toMatchObject({ provider: STRONG_PROVIDER_ID, recordsSynced: 1, errors: [] });
   });
+
+  it("preserves explicit failure tags and tagged line weight units from text shares", async () => {
+    type PersistedSet = {
+      exerciseIndex: number;
+      setIndex: number;
+      raw: Record<string, unknown>;
+    };
+
+    const activityValues = vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
+      }),
+    });
+    const strengthSetValues = vi
+      .fn<(rows: PersistedSet[]) => Promise<void>>()
+      .mockResolvedValue(undefined);
+    const insert = vi
+      .fn()
+      .mockReturnValueOnce({ values: activityValues })
+      .mockReturnValueOnce({ values: strengthSetValues })
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        }),
+      });
+    const db = withTransaction(
+      makeTransactionalTestDatabase({
+        execute: vi.fn().mockResolvedValue([
+          {
+            alias_exercise_id: "00000000-0000-4000-8000-000000000001",
+            exercise_id: "00000000-0000-4000-8000-000000000001",
+            source_linked: true,
+          },
+        ]),
+        insert,
+        delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ id: "exercise-1" }]),
+            }),
+          }),
+        }),
+      }),
+    );
+    const text = [
+      "Home",
+      "Friday, April 10, 2026 at 16:39",
+      "",
+      "Bench Press (Barbell)",
+      "Set 1: 100 kg × 2",
+      "Set 2: 50 lb × 8 [Failure]",
+      "Set 3: 100.5.9 kg × 5 [Failure]",
+      "Push Up",
+      "Set 4: 3 reps [Failure]",
+      "Set 5: 8 reps [Other] [Failure]",
+      "Set 6: 7 reps",
+    ].join("\n");
+
+    const result = await importStrongCsv(db, text, "user-1");
+
+    expect(result).toMatchObject({ provider: STRONG_PROVIDER_ID, recordsSynced: 1, errors: [] });
+    expect(strengthSetValues).toHaveBeenCalledWith([
+      expect.objectContaining({
+        setIndex: 0,
+        weightKg: 100,
+        reps: 2,
+        setType: "working",
+        raw: expect.objectContaining({ weightUnit: "kg" }),
+      }),
+      expect.objectContaining({
+        setIndex: 1,
+        weightKg: 50,
+        reps: 8,
+        setType: "working",
+        raw: expect.objectContaining({
+          weightUnit: "kg",
+          setTag: "Failure",
+          reportedWeightUnit: "lbs",
+        }),
+      }),
+      expect.objectContaining({
+        setIndex: 2,
+        weightKg: 100.5,
+        reps: 5,
+        setType: "working",
+        raw: expect.objectContaining({ setTag: "Failure", weightUnit: "kg" }),
+      }),
+      expect.objectContaining({
+        setIndex: 0,
+        weightKg: null,
+        reps: 3,
+        setType: "working",
+        raw: expect.objectContaining({ setTag: "Failure" }),
+      }),
+      expect.objectContaining({
+        setIndex: 1,
+        weightKg: null,
+        reps: 8,
+        setType: "working",
+      }),
+      expect.objectContaining({
+        setIndex: 2,
+        weightKg: null,
+        reps: 7,
+        setType: "working",
+      }),
+    ]);
+
+    const persistedSets = strengthSetValues.mock.calls[0]?.[0] ?? [];
+    const persistedSet = (exerciseIndex: number, setIndex: number) => {
+      const row = persistedSets.find(
+        (candidate) => candidate.exerciseIndex === exerciseIndex && candidate.setIndex === setIndex,
+      );
+      expect(row).toBeDefined();
+      return row;
+    };
+
+    expect(persistedSet(0, 1)?.raw).toHaveProperty("setTag", "Failure");
+    expect(persistedSet(0, 1)?.raw).toHaveProperty("reportedWeightUnit", "lbs");
+    expect(persistedSet(0, 2)?.raw).not.toHaveProperty("reportedWeightUnit");
+    expect(persistedSet(1, 0)?.raw).toHaveProperty("setTag", "Failure");
+    expect(persistedSet(1, 0)?.raw).not.toHaveProperty("reportedWeightUnit");
+    for (const { exerciseIndex, setIndex } of [
+      { exerciseIndex: 0, setIndex: 0 },
+      { exerciseIndex: 1, setIndex: 1 },
+      { exerciseIndex: 1, setIndex: 2 },
+    ]) {
+      expect(persistedSet(exerciseIndex, setIndex)?.raw).not.toHaveProperty("setTag");
+      expect(persistedSet(exerciseIndex, setIndex)?.raw).not.toHaveProperty("reportedWeightUnit");
+    }
+  });
 });
 
 describe("parseStrongCsv", () => {

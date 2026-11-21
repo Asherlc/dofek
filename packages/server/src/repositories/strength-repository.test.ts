@@ -36,16 +36,48 @@ describe("VolumeWeek", () => {
 describe("EstimatedOneRepMax", () => {
   it("describes an increasing first-to-latest estimated max", () => {
     const entry = new EstimatedOneRepMax({ exerciseName: "Bench Press", equipment: "BARBELL" }, [
-      { date: "2024-01-01", estimatedMax: 100, actualWeight: 80, actualReps: 8 },
-      { date: "2024-01-15", estimatedMax: 105.2, actualWeight: 85, actualReps: 7 },
+      {
+        date: "2024-01-01",
+        estimatedMax: 100,
+        actualWeight: 80,
+        actualReps: 8,
+        sourceSetId: "00000000-0000-4000-8000-000000000001",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
+      {
+        date: "2024-01-15",
+        estimatedMax: 105.2,
+        actualWeight: 85,
+        actualReps: 7,
+        sourceSetId: "00000000-0000-4000-8000-000000000002",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
     ]);
     const detail = entry.toDetail();
     expect(detail).toEqual({
       exerciseName: "Bench Press",
       equipment: "BARBELL",
       history: [
-        { date: "2024-01-01", estimatedMax: 100, actualWeight: 80, actualReps: 8 },
-        { date: "2024-01-15", estimatedMax: 105.2, actualWeight: 85, actualReps: 7 },
+        {
+          date: "2024-01-01",
+          estimatedMax: 100,
+          actualWeight: 80,
+          actualReps: 8,
+          sourceSetId: "00000000-0000-4000-8000-000000000001",
+          provider: "strong-csv",
+          fatigueMarker: "Failure" as const,
+        },
+        {
+          date: "2024-01-15",
+          estimatedMax: 105.2,
+          actualWeight: 85,
+          actualReps: 7,
+          sourceSetId: "00000000-0000-4000-8000-000000000002",
+          provider: "strong-csv",
+          fatigueMarker: "Failure" as const,
+        },
       ],
       trend: {
         direction: "increasing",
@@ -59,8 +91,24 @@ describe("EstimatedOneRepMax", () => {
 
   it("describes a decreasing first-to-latest estimated max", () => {
     const entry = new EstimatedOneRepMax({ exerciseName: "Squat", equipment: null }, [
-      { date: "2024-01-01", estimatedMax: 150, actualWeight: 120, actualReps: 5 },
-      { date: "2024-02-01", estimatedMax: 142.4, actualWeight: 115, actualReps: 5 },
+      {
+        date: "2024-01-01",
+        estimatedMax: 150,
+        actualWeight: 120,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000005",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
+      {
+        date: "2024-02-01",
+        estimatedMax: 142.4,
+        actualWeight: 115,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000006",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
     ]);
 
     expect(entry.toDetail().trend).toEqual({
@@ -74,8 +122,24 @@ describe("EstimatedOneRepMax", () => {
 
   it("describes an unchanged first-to-latest estimated max", () => {
     const entry = new EstimatedOneRepMax({ exerciseName: "Row", equipment: null }, [
-      { date: "2024-01-01", estimatedMax: 80, actualWeight: 70, actualReps: 4 },
-      { date: "2024-02-01", estimatedMax: 80, actualWeight: 70, actualReps: 4 },
+      {
+        date: "2024-01-01",
+        estimatedMax: 80,
+        actualWeight: 70,
+        actualReps: 4,
+        sourceSetId: "00000000-0000-4000-8000-000000000007",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
+      {
+        date: "2024-02-01",
+        estimatedMax: 80,
+        actualWeight: 70,
+        actualReps: 4,
+        sourceSetId: "00000000-0000-4000-8000-000000000008",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
     ]);
 
     expect(entry.toDetail().trend).toEqual({
@@ -323,124 +387,92 @@ describe("StrengthRepository", () => {
       expect(result).toEqual([]);
     });
 
-    it("returns EstimatedOneRepMax instances grouped by exercise", async () => {
-      const { repo } = makeRepository([
-        {
+    it("requires three qualifying workouts and retains the best evidence per workout", async () => {
+      const rows = [0, 1, 2, 2].map((workout, index) => {
+        const weight = index === 3 ? 100 : 80;
+        return {
+          activity_id: `00000000-0000-4000-8000-00000000010${workout}`,
+          set_id: `00000000-0000-4000-8000-00000000020${index}`,
+          set_activity_id: `00000000-0000-4000-8000-00000000010${workout}`,
+          set_provider: "strong-csv",
+          exercise_id: "00000000-0000-4000-8000-000000000100",
           exercise_name: "Squat",
-          equipment: null,
-          workout_date: "2024-01-01",
-          estimated_max: 150,
-          actual_weight: 120,
-          actual_reps: 5,
-        },
-        {
-          exercise_name: "Bench Press",
-          equipment: null,
-          workout_date: "2024-01-01",
-          estimated_max: 100,
-          actual_weight: 80,
-          actual_reps: 8,
-        },
-        {
-          exercise_name: "Bench Press",
-          equipment: null,
-          workout_date: "2024-01-15",
-          estimated_max: 105,
-          actual_weight: 85,
-          actual_reps: 7,
-        },
-      ]);
-      const result = await repo.getEstimatedOneRepMax(90);
-      expect(result).toHaveLength(2);
-      expect(result[0]).toBeInstanceOf(EstimatedOneRepMax);
-      expect(result[0]?.toDetail().exerciseName).toBe("Bench Press");
-      expect(result[0]?.toDetail().history).toHaveLength(2);
-      expect(result[1]?.toDetail().exerciseName).toBe("Squat");
-      expect(result[1]?.toDetail().history).toHaveLength(1);
-    });
-
-    it("keeps same-name estimated max histories distinct by equipment", async () => {
-      const { repo } = makeRepository([
-        {
-          exercise_name: "Chest Press",
-          equipment: "BARBELL",
-          workout_date: "2024-01-01",
-          estimated_max: 100,
-          actual_weight: 80,
-          actual_reps: 8,
-        },
-        {
-          exercise_name: "Chest Press",
-          equipment: "BARBELL",
-          workout_date: "2024-01-08",
-          estimated_max: 105,
-          actual_weight: 85,
-          actual_reps: 7,
-        },
-        {
-          exercise_name: "Chest Press",
-          equipment: "DUMBBELL",
-          workout_date: "2024-01-01",
-          estimated_max: 60,
-          actual_weight: 48,
-          actual_reps: 8,
-        },
-        {
-          exercise_name: "Chest Press",
-          equipment: "DUMBBELL",
-          workout_date: "2024-01-08",
-          estimated_max: 64,
-          actual_weight: 52,
-          actual_reps: 7,
-        },
-      ]);
-
-      const result = (await repo.getEstimatedOneRepMax(90)).map((exercise) => exercise.toDetail());
-
-      expect(result).toEqual([
-        expect.objectContaining({
-          equipment: "BARBELL",
-          exerciseName: "Chest Press",
-          history: expect.arrayContaining([expect.objectContaining({ estimatedMax: 100 })]),
-        }),
-        expect.objectContaining({
-          equipment: "DUMBBELL",
-          exerciseName: "Chest Press",
-          history: expect.arrayContaining([expect.objectContaining({ estimatedMax: 60 })]),
-        }),
-      ]);
-      expect(result.map((exercise) => exercise.history)).toEqual([
-        [
-          expect.objectContaining({ estimatedMax: 100 }),
-          expect.objectContaining({ estimatedMax: 105 }),
-        ],
-        [
-          expect.objectContaining({ estimatedMax: 60 }),
-          expect.objectContaining({ estimatedMax: 64 }),
-        ],
-      ]);
-    });
-
-    it("orders estimated max histories by exercise name and then equipment", async () => {
-      const rows = [
-        { exercise_name: "Zulu", equipment: null, estimated_max: 3 },
-        { exercise_name: "Alpha", equipment: "DUMBBELL", estimated_max: 2 },
-        { exercise_name: "Alpha", equipment: "BARBELL", estimated_max: 1 },
-      ].map((row) => ({
-        ...row,
-        workout_date: "2024-01-01",
-        actual_weight: row.estimated_max,
-        actual_reps: 1,
-      }));
+          equipment: "Barbell",
+          exercise_index: 0,
+          set_index: index,
+          set_type: "working",
+          weight_kg: weight,
+          reps: 2,
+          distance_meters: null,
+          duration_seconds: null,
+          rpe: null,
+          notes: null,
+          workout_date: `2024-01-0${workout + 1}`,
+          raw: {
+            exerciseName: "Squat (Barbell)",
+            setTag: "Failure",
+            weightUnit: "kg",
+            reportedWeightUnit: "kg",
+            weight,
+            reps: 2,
+          },
+        };
+      });
+      const { repo: twoWorkouts } = makeRepository(rows.slice(0, 2));
+      expect(await twoWorkouts.getEstimatedOneRepMax(90)).toEqual([]);
       const { repo } = makeRepository(rows);
+      const result = await repo.getEstimatedOneRepMax(90);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.toDetail().history.at(-1)).toMatchObject({
+        estimatedMax: 106.7,
+        actualWeight: 100,
+        actualReps: 2,
+        sourceSetId: rows[3]?.set_id,
+        fatigueMarker: "Failure",
+        provider: "strong-csv",
+      });
+    });
 
-      const result = (await repo.getEstimatedOneRepMax(90)).map((entry) => entry.toDetail());
-
-      expect(result.map(({ exerciseName, equipment }) => [exerciseName, equipment])).toEqual([
-        ["Alpha", "BARBELL"],
-        ["Alpha", "DUMBBELL"],
-        ["Zulu", null],
+    it("omits a workout with conflicting tagged mirrors", async () => {
+      const workouts = [0, 1, 2].map((index) => ({
+        activity_id: `00000000-0000-4000-8000-00000000010${index}`,
+        set_id: `00000000-0000-4000-8000-00000000020${index}`,
+        set_activity_id: `00000000-0000-4000-8000-00000000010${index}`,
+        set_provider: "strong-csv",
+        exercise_id: "00000000-0000-4000-8000-000000000100",
+        exercise_name: "Squat",
+        equipment: "Barbell",
+        exercise_index: 0,
+        set_index: 0,
+        set_type: "working",
+        weight_kg: 100,
+        reps: 2,
+        distance_meters: null,
+        duration_seconds: null,
+        rpe: null,
+        notes: null,
+        workout_date: `2024-01-0${index + 1}`,
+        raw: {
+          exerciseName: "Squat (Barbell)",
+          setTag: "Failure",
+          weightUnit: "kg",
+          reportedWeightUnit: "kg",
+          weight: 100,
+          reps: 2,
+        },
+      }));
+      const first = workouts[0];
+      if (!first) throw new Error("Expected a strength fixture");
+      const { repo } = makeRepository([
+        ...workouts,
+        {
+          ...first,
+          set_id: "00000000-0000-4000-8000-000000000203",
+          set_activity_id: "00000000-0000-4000-8000-000000000103",
+          raw: { ...first.raw, reps: 3 },
+        },
       ]);
+      expect(await repo.getEstimatedOneRepMax(90)).toEqual([]);
     });
 
     it("applies finite selected-range lower-bound filters", async () => {

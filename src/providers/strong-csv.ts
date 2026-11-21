@@ -40,6 +40,8 @@ export interface StrongCsvRow {
   notes: string | null;
   workoutNotes: string | null;
   rpe: number | null;
+  setTag?: "Failure";
+  reportedWeightUnit?: "kg" | "lbs";
 }
 
 export interface StrongWorkoutGroup {
@@ -311,10 +313,9 @@ export function parseStrongWallClockTimestamp(value: string): Date {
     : new Date(Number.NaN);
 }
 
-// Set line with weight: "Set 1: 50 lb × 13" or "Set 1: 50 lb × 13 [Failure]"
-const WEIGHTED_SET_RE = /^Set\s+(\d+):\s+([\d.]+)\s+(lb|kg)\s+×\s+(\d+)(?:\s+\[.*\])?$/;
-// Bodyweight set: "Set 1: 8 reps" or "Set 1: 8 reps [Failure]"
-const BODYWEIGHT_SET_RE = /^Set\s+(\d+):\s+(\d+)\s+reps(?:\s+\[.*\])?$/;
+// Set lines may carry a Strong tag, for example "Set 1: 50 lb × 13 [Failure]".
+const WEIGHTED_SET_RE = /^Set\s+(\d+):\s+([\d.]+)\s+(lb|kg)\s+×\s+(\d+)(?:\s+\[(.*)\])?$/;
+const BODYWEIGHT_SET_RE = /^Set\s+(\d+):\s+(\d+)\s+reps(?:\s+\[(.*)\])?$/;
 
 export interface StrongTextParseResult {
   groups: StrongWorkoutGroup[];
@@ -357,7 +358,8 @@ export function parseStrongText(text: string): StrongTextParseResult {
     // Try to match a weighted set line
     const weightedMatch = line.match(WEIGHTED_SET_RE);
     if (weightedMatch) {
-      const [, setOrderStr = "0", weightStr = "0", unit = "lb", repsStr = "0"] = weightedMatch;
+      const [, setOrderStr = "0", weightStr = "0", unit = "lb", repsStr = "0", setTag] =
+        weightedMatch;
       if (unit === "lb" && detectedUnit === null) detectedUnit = "lbs";
       if (unit === "kg" && detectedUnit === null) detectedUnit = "kg";
 
@@ -374,6 +376,14 @@ export function parseStrongText(text: string): StrongTextParseResult {
         notes: null,
         workoutNotes: null,
         rpe: null,
+        ...(setTag === "Failure"
+          ? {
+              setTag,
+              ...(Number.isFinite(Number(weightStr))
+                ? { reportedWeightUnit: unit === "lb" ? "lbs" : "kg" }
+                : {}),
+            }
+          : {}),
       });
       continue;
     }
@@ -381,7 +391,7 @@ export function parseStrongText(text: string): StrongTextParseResult {
     // Try to match a bodyweight set line
     const bodyweightMatch = line.match(BODYWEIGHT_SET_RE);
     if (bodyweightMatch) {
-      const [, setOrderStr = "0", repsStr = "0"] = bodyweightMatch;
+      const [, setOrderStr = "0", repsStr = "0", setTag] = bodyweightMatch;
       sets.push({
         date: dateString,
         workoutName,
@@ -395,6 +405,7 @@ export function parseStrongText(text: string): StrongTextParseResult {
         notes: null,
         workoutNotes: null,
         rpe: null,
+        ...(setTag === "Failure" ? { setTag } : {}),
       });
       continue;
     }
@@ -608,8 +619,12 @@ export async function importStrongCsv(
               rpe: csvRow.rpe,
               seconds: csvRow.seconds,
               setOrder: csvRow.setOrder,
+              ...(csvRow.setTag === undefined ? {} : { setTag: csvRow.setTag }),
               weight: csvRow.weight,
               weightUnit: effectiveWeightUnit,
+              ...(csvRow.reportedWeightUnit === undefined
+                ? {}
+                : { reportedWeightUnit: csvRow.reportedWeightUnit }),
             },
           });
         }

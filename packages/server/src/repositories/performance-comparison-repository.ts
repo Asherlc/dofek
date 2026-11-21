@@ -626,9 +626,16 @@ export class PerformanceComparisonRepository {
           strength.set_type::text AS set_type,
           strength.weight_kg,
           strength.reps,
-          strength.rpe
+          strength.rpe,
+          exercise.name AS exercise_name,
+          exercise.equipment,
+          strength.raw,
+          strength.distance_meters,
+          strength.duration_seconds,
+          strength.notes
         FROM fitness.v_activity AS a
         JOIN fitness.strength_set AS strength ON strength.activity_id = ANY(a.member_activity_ids)
+        JOIN fitness.exercise AS exercise ON exercise.id = strength.exercise_id
         JOIN fitness.activity AS source_activity ON source_activity.id = strength.activity_id
         WHERE a.user_id = ${this.#userId}::uuid
           AND a.id IN (${sql.join(
@@ -696,6 +703,12 @@ export class PerformanceComparisonRepository {
       sensorRows,
       climbingRows,
       strengthRows,
+      estimateExerciseId:
+        input.equivalence?.kind === "strength_exercise_id" &&
+        equivalence.key.kind === "strength_exercise_id" &&
+        input.equivalence.exerciseId === equivalence.key.exerciseId
+          ? equivalence.key.exerciseId
+          : undefined,
       timezone: this.#timezone,
       evidenceFor,
     });
@@ -721,7 +734,7 @@ export class PerformanceComparisonRepository {
         deltas:
           "Every numeric delta is candidate minus baseline; null means one or both values are missing.",
         strength_estimated_one_rep_max:
-          "Epley: weight_kg × (1 + reps / 30), only for unflagged working sets with 1–12 repetitions.",
+          "Epley: weight_kg × (1 + 0.0333 × reps), for an exact exercise scope with qualifying Strong barbell sets of 2–10 repetitions and a recorded Failure tag.",
         causality:
           "These are descriptive within-equivalence comparisons and do not establish that training or recovery caused a change.",
       },
