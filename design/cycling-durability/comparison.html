@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cycling durability</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; background: light-dark(#f0f2f7, #111318); }
+    #cycling-durability-preview { max-width: 720px; margin: 0 auto; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+<div id="cycling-durability-preview" >
+  <section data-dc-id="comparison-panel" class="durability-panel" aria-labelledby="durability-title">
+    <header class="durability-header">
+      <div>
+        <h2 data-dc-id="title" id="durability-title">Cycling durability</h2>
+        <p>Outdoor rides · Oct 19–Nov 15, 2026</p>
+      </div>
+      <span>Sample data</span>
+    </header>
+
+    <div class="durability-controls">
+      <label>Effort duration
+        <select data-dc-id="effort-duration" data-duration>
+          <option>10 seconds</option>
+          <option>1 minute</option>
+          <option selected>5 minutes</option>
+          <option>20 minutes</option>
+        </select>
+      </label>
+      <label>Minimum work before effort
+        <select data-dc-id="work-threshold" data-work>
+          <option value="10">10 kJ/kg</option>
+          <option value="20">20 kJ/kg</option>
+          <option value="30" selected>30 kJ/kg</option>
+          <option value="40">40 kJ/kg</option>
+          <option value="50">50 kJ/kg</option>
+        </select>
+      </label>
+    </div>
+
+    <div data-comparison aria-live="polite" aria-atomic="true">
+      <div data-dc-id="result" class="durability-result">
+        <strong data-headline>7.5% lower</strong>
+        <span data-caption>5-minute power after 30 kJ/kg</span>
+      </div>
+      <div class="durability-bars" data-bars>
+        <div data-dc-id="unrestricted-best" class="durability-bar-row">
+          <span>Unrestricted best</span><b data-baseline>320 W · 4.44 W/kg</b>
+          <div class="durability-track" aria-hidden="true"><div class="durability-fill durability-baseline"></div></div>
+        </div>
+        <div data-dc-id="after-prior-work" class="durability-bar-row" data-late-row>
+          <span data-threshold>After at least 30 kJ/kg</span><b data-late>296 W · 4.11 W/kg</b>
+          <div class="durability-track" aria-hidden="true"><div class="durability-fill" data-fill style="width:92.5%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <details class="durability-evidence">
+      <summary data-dc-id="effort-evidence">Effort evidence</summary>
+      <div data-dc-id="effort-details" class="durability-evidence-grid">
+        <div>
+          <h3>Unrestricted best</h3>
+          <p data-reference-ride>Hill repeats · Nov 3 · 18:42 into ride</p>
+          <p data-reference-work>190 kJ before effort · 2.6 kJ/kg</p>
+        </div>
+        <div data-late-evidence>
+          <h3>After prior work</h3>
+          <p data-late-ride>Saturday endurance ride · Nov 7 · 3:22:16 into ride</p>
+          <p data-late-work>2,246 kJ before effort · 31.2 kJ/kg</p>
+        </div>
+      </div>
+      <p class="durability-source">Strava · Meter power · 1-second samples · Complete coverage through effort end</p>
+      <p class="durability-source">Weight source · 72.0 kg scale reading on each ride date</p>
+    </details>
+  </section>
+</div>
+
+<style>
+  #cycling-durability-preview {
+    color-scheme: light dark;
+    --panel: light-dark(#fcfcfe, #17191f);
+    --ink: light-dark(#1c2431, #edf0f6);
+    --subtle: light-dark(#505b6d, #abB5c5);
+    --divider: light-dark(#d9dee7, #3b424e);
+    --track: light-dark(#e8ecf3, #2d333e);
+    --best: light-dark(#8996aa, #8592a7);
+    --effort: light-dark(#4b56be, #a4aeff);
+    padding: 12px;
+    font: 400 14px/1.45 system-ui, sans-serif;
+    color: var(--ink);
+  }
+  #cycling-durability-preview .durability-panel {
+    background: var(--panel);
+    border: 1px solid var(--divider);
+    border-radius: 16px;
+    padding: clamp(15px, 4vw, 27px);
+  }
+  #cycling-durability-preview h2,
+  #cycling-durability-preview h3,
+  #cycling-durability-preview p { margin: 0; }
+  #cycling-durability-preview h2 { font-size: 22px; font-weight: 670; }
+  #cycling-durability-preview .durability-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 14px;
+    margin-bottom: 18px;
+  }
+  #cycling-durability-preview .durability-header p,
+  #cycling-durability-preview .durability-header span,
+  #cycling-durability-preview .durability-source { color: var(--subtle); font-size: 12px; }
+  #cycling-durability-preview .durability-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(185px, 100%), 1fr));
+    gap: 10px 14px;
+    margin-bottom: 17px;
+  }
+  #cycling-durability-preview label { display: grid; gap: 4px; font-size: 12px; }
+  #cycling-durability-preview select {
+    width: 100%;
+    min-height: 38px;
+    padding-inline: 8px;
+    border: 1px solid var(--divider);
+    border-radius: 7px;
+    background: var(--panel);
+    color: var(--ink);
+    font: inherit;
+    font-size: 16px;
+  }
+  #cycling-durability-preview .durability-result { display: grid; margin-bottom: 14px; }
+  #cycling-durability-preview .durability-result strong { font-size: clamp(23px, 6vw, 32px); font-weight: 680; }
+  #cycling-durability-preview .durability-result span { color: var(--subtle); }
+  #cycling-durability-preview .durability-bars { display: grid; gap: 12px; }
+  #cycling-durability-preview .durability-bar-row {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 3px 12px;
+  }
+  #cycling-durability-preview .durability-bar-row[hidden],
+  #cycling-durability-preview [data-late-evidence][hidden] { display: none; }
+  #cycling-durability-preview b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  #cycling-durability-preview .durability-track {
+    flex-basis: 100%;
+    background: var(--track);
+    height: 7px;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  #cycling-durability-preview .durability-fill { height: 100%; background: var(--effort); transition: width 180ms ease-out; }
+  #cycling-durability-preview .durability-baseline { background: var(--best); }
+  #cycling-durability-preview .durability-evidence { border-top: 1px solid var(--divider); margin-top: 18px; }
+  #cycling-durability-preview summary { min-height: 44px; align-content: center; }
+  #cycling-durability-preview .durability-evidence-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(205px, 100%), 1fr));
+    gap: 10px 16px;
+    margin-bottom: 12px;
+  }
+  #cycling-durability-preview h3 { font-size: 13px; font-weight: 650; }
+  #cycling-durability-preview .durability-evidence-grid p { font-size: 13px; }
+  @media (prefers-reduced-motion: reduce) {
+    #cycling-durability-preview .durability-fill { transition: none; }
+  }
+</style>
+
+<script>
+  (() => {
+    const root = document.getElementById('cycling-durability-preview');
+    const get = name => root.querySelector('[data-' + name + ']');
+    const weight = 72;
+    const example = {
+      '10 seconds': { label: '10-second', best: [815, '04:26', 42], late: [768, 722, 681, 627] },
+      '1 minute': { label: '1-minute', best: [472, '08:55', 89], late: [455, 432, 417, 390] },
+      '5 minutes': { label: '5-minute', best: [320, '18:42', 190], late: [314, 306, 296, 281] },
+      '20 minutes': { label: '20-minute', best: [267, '26:15', 269], late: [261, 254, 243, 231] }
+    };
+    const rides = [
+      ['Canal loop', 'Nov 10', '1:08:09', 752],
+      ['Windy ridge ride', 'Nov 14', '2:11:34', 1527],
+      ['Saturday endurance ride', 'Nov 7', '3:22:16', 2246],
+      ['Long valley loop', 'Nov 15', '4:19:42', 2932]
+    ];
+    const power = watts => `${watts.toLocaleString('en-US')} W · ${(watts / weight).toFixed(2)} W/kg`;
+    const work = kilojoules => `${kilojoules.toLocaleString('en-US')} kJ before effort · ${(kilojoules / weight).toFixed(1)} kJ/kg`;
+    const render = () => {
+      const selected = example[get('duration').value];
+      const threshold = Number(get('work').value);
+      const index = threshold / 10 - 1;
+      const late = selected.late[index];
+      const [best, bestTime, bestWork] = selected.best;
+      get('baseline').textContent = power(best);
+      get('reference-ride').textContent = `Hill repeats · Nov 3 · ${bestTime} into ride`;
+      get('reference-work').textContent = work(bestWork);
+      get('late-row').hidden = late === undefined;
+      get('late-evidence').hidden = late === undefined;
+      if (late === undefined) {
+        get('headline').textContent = 'Comparison unavailable';
+        get('caption').textContent = `No eligible ${selected.label} effort after ${threshold} kJ/kg`;
+        return;
+      }
+      const [ride, date, offset, priorWork] = rides[index];
+      get('headline').textContent = `${((1 - late / best) * 100).toFixed(1)}% lower`;
+      get('caption').textContent = `${selected.label} power after ${threshold} kJ/kg`;
+      get('threshold').textContent = `After at least ${threshold} kJ/kg`;
+      get('late').textContent = power(late);
+      get('fill').style.width = `${late / best * 100}%`;
+      get('late-ride').textContent = `${ride} · ${date} · ${offset} into ride`;
+      get('late-work').textContent = work(priorWork);
+    };
+    get('duration').addEventListener('change', render);
+    get('work').addEventListener('change', render);
+    render();
+  })();
+</script>
+</body>
+</html>

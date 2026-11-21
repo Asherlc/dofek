@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "title": "Cycling durability",
+  "kind": "prototype",
+  "description": "Compare an unrestricted best with the best recorded power at the same duration after a minimum amount of prior work.",
+  "artboards": [
+    {
+      "id": "comparison",
+      "title": "Power after prior work",
+      "file": "comparison.html",
+      "width": 720
+    }
+  ]
+}
