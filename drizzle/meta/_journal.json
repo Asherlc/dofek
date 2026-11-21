@@ -1338,6 +1338,20 @@
       "when": 1794876328821,
       "tag": "0190_provider_data_source_account_binding",
       "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1794962728821,
+      "tag": "0191_intervals_icu_daily_metric_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1795049128821,
+      "tag": "0192_exclude_catalog_only_daily_metrics_view",
+      "breakpoints": true
     }
   ]
 }
