@@ -32,6 +32,9 @@ export interface EstimatedOneRepMaxEntry {
   estimatedMax: number;
   actualWeight: number;
   actualReps: number;
+  sourceSetId: string;
+  provider: string;
+  fatigueMarker: "Failure";
 }
 
 export interface EstimatedOneRepMaxRow {
@@ -90,11 +93,11 @@ export const strengthRouter = router({
     "strength.estimatedOneRepMax",
     CacheTTL.LONG,
     async ({ ctx, range }): Promise<EstimatedOneRepMaxRow[]> => {
-      const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const exercises = await repo.getEstimatedOneRepMax(range.days);
       return exercises.map((exercise) => exercise.toDetail());
     },
-    { keyVersion: "estimated-max-trend-v2" },
+    { keyVersion: "estimated-max-trend-v3" },
   ),
 
   muscleGroupVolume: selectedChartRangeQuery(

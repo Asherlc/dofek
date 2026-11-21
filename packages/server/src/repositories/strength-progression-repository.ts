@@ -6,6 +6,14 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import {
+  type ConsolidatedSet,
+  consolidatedStrengthQualityFlags,
+  consolidateSets,
+  estimateConsolidatedStrengthSet,
+  isWorking,
+  strengthSetRowSchema,
+} from "./strength-set-estimate.ts";
 
 const sourceExternalIdSchema = z.object({
   providerId: z.string(),
@@ -14,8 +22,7 @@ const sourceExternalIdSchema = z.object({
   subsource: z.string().nullable().optional(),
 });
 
-const rowSchema = z.object({
-  activity_id: z.string().uuid(),
+const rowSchema = strengthSetRowSchema.extend({
   activity_name: z.string().nullable(),
   activity_started_at: timestampStringSchema,
   activity_ended_at: timestampStringSchema.nullable(),
@@ -27,25 +34,9 @@ const rowSchema = z.object({
   start_utc_offset_minutes: z.coerce.number().int().nullable(),
   end_utc_offset_minutes: z.coerce.number().int().nullable(),
   local_time_source: z.string(),
-  set_id: z.string().uuid(),
-  set_activity_id: z.string().uuid(),
-  set_provider: z.string(),
-  exercise_id: z.string().uuid(),
-  exercise_name: z.string(),
-  equipment: z.string().nullable(),
   muscle_groups: z.array(z.string()).nullable(),
   exercise_type: z.string().nullable(),
   movement: z.string().nullable(),
-  exercise_index: z.coerce.number().int(),
-  set_index: z.coerce.number().int(),
-  set_type: z.string().nullable(),
-  weight_kg: z.coerce.number().nullable(),
-  reps: z.coerce.number().int().nullable(),
-  distance_meters: z.coerce.number().nullable(),
-  duration_seconds: z.coerce.number().int().nullable(),
-  rpe: z.coerce.number().nullable(),
-  notes: z.string().nullable(),
-  raw: z.record(z.string(), z.unknown()),
 });
 
 const coverageRowSchema = z.object({ first_observed_date: dateStringSchema.nullable() });
@@ -70,14 +61,6 @@ export interface StrengthProgressionInput {
   limit: number;
 }
 
-interface ConsolidatedSet {
-  row: Row;
-  sourceRows: Row[];
-  conflicting: boolean;
-  duplicateSameSourceIdentity: boolean;
-  ambiguousCrossProviderExerciseOccurrence: boolean;
-}
-
 function unique(values: string[]): string[] {
   return [...new Set(values)].sort();
 }
@@ -85,6 +68,10 @@ function unique(values: string[]): string[] {
 function round(value: number, precision = 2): number {
   const factor = 10 ** precision;
   return Math.round(value * factor) / factor;
+}
+
+function roundEstimate(value: number | null): number | null {
+  return value === null ? null : round(value);
 }
 
 function sourceExerciseIdentity(raw: Record<string, unknown>) {
@@ -106,169 +93,11 @@ function sourceExerciseIdentity(raw: Record<string, unknown>) {
   };
 }
 
-function normalizedFingerprint(row: Row): string {
-  return JSON.stringify([
-    row.set_type,
-    row.weight_kg,
-    row.reps,
-    row.distance_meters,
-    row.duration_seconds,
-    row.rpe,
-    row.notes,
-  ]);
-}
-
-function activityExerciseFingerprint(row: Row): string {
-  return JSON.stringify([row.activity_id, row.exercise_id]);
-}
-
-function identityFingerprint(row: Row, sourceLocalOccurrenceGroups: Set<string>): string {
-  const activityExercise = activityExerciseFingerprint(row);
-  return sourceLocalOccurrenceGroups.has(activityExercise)
-    ? JSON.stringify([
-        row.activity_id,
-        row.exercise_id,
-        row.set_activity_id,
-        row.exercise_index,
-        row.set_index,
-      ])
-    : JSON.stringify([row.activity_id, row.exercise_id, row.set_index]);
-}
-
-function consolidateSets(rows: Row[]) {
-  const occurrencesByActivityExercise = new Map<string, Map<string, Set<number>>>();
-  const sourcesByActivityExercise = new Map<string, Set<string>>();
-  for (const row of rows) {
-    const activityExercise = activityExerciseFingerprint(row);
-    const occurrenceBySource = occurrencesByActivityExercise.get(activityExercise) ?? new Map();
-    const sourceOccurrences = occurrenceBySource.get(row.set_activity_id) ?? new Set();
-    sourceOccurrences.add(row.exercise_index);
-    occurrenceBySource.set(row.set_activity_id, sourceOccurrences);
-    occurrencesByActivityExercise.set(activityExercise, occurrenceBySource);
-    const sources = sourcesByActivityExercise.get(activityExercise) ?? new Set();
-    sources.add(`${row.set_activity_id}:${row.set_provider}`);
-    sourcesByActivityExercise.set(activityExercise, sources);
-  }
-  const sourceLocalOccurrenceGroups = new Set(
-    [...occurrencesByActivityExercise.entries()]
-      .filter(([, bySource]) => [...bySource.values()].some((occurrences) => occurrences.size > 1))
-      .map(([activityExercise]) => activityExercise),
-  );
-  const ambiguousCrossProviderOccurrenceGroups = new Set(
-    [...sourceLocalOccurrenceGroups].filter(
-      (activityExercise) => (sourcesByActivityExercise.get(activityExercise)?.size ?? 0) > 1,
-    ),
-  );
-  const groups = new Map<string, Row[]>();
-  for (const row of rows) {
-    const identity = identityFingerprint(row, sourceLocalOccurrenceGroups);
-    groups.set(identity, [...(groups.get(identity) ?? []), row]);
-  }
-
-  const sets: ConsolidatedSet[] = [];
-  let mergedExactDuplicateRecords = 0;
-  let possibleDuplicateGroups = ambiguousCrossProviderOccurrenceGroups.size;
-  for (const group of groups.values()) {
-    const identitySets: ConsolidatedSet[] = [];
-    for (const row of group) {
-      const fingerprint = normalizedFingerprint(row);
-      const duplicate = identitySets.find(
-        (candidate) =>
-          normalizedFingerprint(candidate.row) === fingerprint &&
-          candidate.sourceRows.every(
-            (sourceRow) => sourceRow.set_activity_id !== row.set_activity_id,
-          ),
-      );
-      if (duplicate) {
-        duplicate.sourceRows.push(row);
-        mergedExactDuplicateRecords += 1;
-      } else {
-        identitySets.push({
-          row,
-          sourceRows: [row],
-          conflicting: false,
-          duplicateSameSourceIdentity: false,
-          ambiguousCrossProviderExerciseOccurrence: ambiguousCrossProviderOccurrenceGroups.has(
-            activityExerciseFingerprint(row),
-          ),
-        });
-      }
-    }
-
-    let hasCrossProviderConflict = false;
-    for (const candidate of identitySets) {
-      candidate.duplicateSameSourceIdentity = identitySets.some(
-        (other) =>
-          other !== candidate &&
-          candidate.sourceRows.some((candidateSource) =>
-            other.sourceRows.some(
-              (otherSource) => candidateSource.set_activity_id === otherSource.set_activity_id,
-            ),
-          ),
-      );
-      candidate.conflicting = identitySets.some(
-        (other) =>
-          other !== candidate &&
-          normalizedFingerprint(other.row) !== normalizedFingerprint(candidate.row) &&
-          candidate.sourceRows.some((candidateSource) =>
-            other.sourceRows.some(
-              (otherSource) => candidateSource.set_activity_id !== otherSource.set_activity_id,
-            ),
-          ),
-      );
-      hasCrossProviderConflict ||= candidate.conflicting;
-    }
-    if (hasCrossProviderConflict) possibleDuplicateGroups += 1;
-    sets.push(...identitySets);
-  }
-  return { sets, mergedExactDuplicateRecords, possibleDuplicateGroups };
-}
-
 function isWarmup(row: Row): boolean {
   return row.set_type === "warmup";
 }
 
-function isWorking(row: Row): boolean {
-  return row.set_type === "working" || row.set_type === "dropset" || row.set_type === "failure";
-}
-
-function qualityFlags(row: Row): string[] {
-  const flags: string[] = [];
-  const loadBearingCandidate = row.set_type !== "warmup" && row.set_type !== "rest";
-  if (row.set_type === null) flags.push("missing_set_type");
-  if (loadBearingCandidate && row.reps !== null && row.reps <= 0) {
-    flags.push("non_positive_repetitions");
-  }
-  if (row.reps !== null && row.reps > 100) flags.push("implausible_repetitions");
-  if (loadBearingCandidate && row.weight_kg !== null && row.weight_kg <= 0) {
-    flags.push("non_positive_weight");
-  }
-  if (row.weight_kg !== null && row.weight_kg > 500) flags.push("implausible_weight");
-  if (row.rpe !== null && (row.rpe < 0 || row.rpe > 10)) flags.push("rpe_out_of_range");
-  if (
-    row.reps !== null &&
-    row.reps > 100 &&
-    row.weight_kg !== null &&
-    row.weight_kg >= 1 &&
-    row.weight_kg <= 100
-  ) {
-    flags.push("possible_reversed_fields_or_import_corruption");
-  }
-  return flags;
-}
-
-function setQualityFlags(set: ConsolidatedSet): string[] {
-  return [
-    ...qualityFlags(set.row),
-    ...(set.duplicateSameSourceIdentity ? ["duplicate_same_source_set_identity"] : []),
-    ...(set.ambiguousCrossProviderExerciseOccurrence
-      ? ["ambiguous_cross_provider_exercise_occurrence"]
-      : []),
-    ...(set.conflicting ? ["possible_overlapping_conflicting_set"] : []),
-  ];
-}
-
-function volumeResult(set: ConsolidatedSet, flags: string[]) {
+function volumeResult(set: ConsolidatedSet<Row>, flags: string[]) {
   if (set.conflicting || flags.length > 0) {
     return { status: "unavailable" as const, value_kg_reps: null, reason: "quality_flags" };
   }
@@ -281,47 +110,6 @@ function volumeResult(set: ConsolidatedSet, flags: string[]) {
   return {
     status: "available" as const,
     value_kg_reps: round(set.row.weight_kg * set.row.reps, 3),
-    reason: null,
-  };
-}
-
-function estimatedOneRepMaxResult(set: ConsolidatedSet, flags: string[]) {
-  if (set.conflicting || flags.length > 0) {
-    return {
-      status: "unavailable" as const,
-      value_kg: null,
-      formula: "Epley" as const,
-      reason: "quality_flags",
-    };
-  }
-  if (!isWorking(set.row)) {
-    return {
-      status: "unavailable" as const,
-      value_kg: null,
-      formula: "Epley" as const,
-      reason: "non_working_set",
-    };
-  }
-  if (set.row.weight_kg === null || set.row.reps === null) {
-    return {
-      status: "unavailable" as const,
-      value_kg: null,
-      formula: "Epley" as const,
-      reason: "missing_load_or_reps",
-    };
-  }
-  if (set.row.reps < 1 || set.row.reps > 12 || set.row.weight_kg <= 0) {
-    return {
-      status: "unavailable" as const,
-      value_kg: null,
-      formula: "Epley" as const,
-      reason: "outside_formula_range_1_to_12_reps",
-    };
-  }
-  return {
-    status: "available" as const,
-    value_kg: round(set.row.weight_kg * (1 + set.row.reps / 30)),
-    formula: "Epley" as const,
     reason: null,
   };
 }
@@ -440,7 +228,7 @@ export class StrengthProgressionRepository extends BaseRepository {
     const exercises = new Map<string, LoggedSetExercise>();
     const sessions = new Map<string, LoggedSetExercise["sessions"][number]>();
     for (const set of consolidateSets(rows).sets) {
-      if (volumeResult(set, setQualityFlags(set)).status !== "available") continue;
+      if (volumeResult(set, consolidatedStrengthQualityFlags(set)).status !== "available") continue;
       const row = set.row;
       if (row.reps === null || row.weight_kg === null) continue;
       const key = JSON.stringify([row.exercise_id, row.equipment]);
@@ -587,35 +375,41 @@ export class StrengthProgressionRepository extends BaseRepository {
         date: string;
         value_kg: number;
         set_id: string;
+        provider: string;
+        fatigue_marker: "Failure";
+        raw: Record<string, unknown>;
         activity_id: string;
         weight_kg: number | null;
         reps: number | null;
       }
     >();
     for (const set of consolidateSets(priorRows).sets) {
-      const flags = setQualityFlags(set);
-      const estimate = estimatedOneRepMaxResult(set, flags).value_kg;
-      if (estimate === null) continue;
+      const flags = consolidatedStrengthQualityFlags(set);
+      const { source, value } = estimateConsolidatedStrengthSet(set, flags);
+      if (value === null) continue;
       const evidence = {
         date: set.row.session_date,
-        value_kg: estimate,
-        set_id: set.row.set_id,
+        value_kg: value,
+        set_id: source.set_id,
+        provider: source.set_provider,
+        fatigue_marker: "Failure" as const,
+        raw: source.raw,
         activity_id: set.row.activity_id,
         weight_kg: set.row.weight_kg,
         reps: set.row.reps,
       };
       const priorBest = priorBestByExercise.get(set.row.exercise_id);
-      if (priorBest === undefined || estimate > priorBest.value_kg) {
+      if (priorBest === undefined || value > priorBest.value_kg) {
         priorBestByExercise.set(set.row.exercise_id, evidence);
       }
     }
     const evaluatedSets = sets.map((set) => {
-      const flags = setQualityFlags(set);
+      const flags = consolidatedStrengthQualityFlags(set);
       return {
         set,
         flags,
         volume: volumeResult(set, flags),
-        estimatedOneRepMax: estimatedOneRepMaxResult(set, flags),
+        estimate: estimateConsolidatedStrengthSet(set, flags),
       };
     });
 
@@ -634,7 +428,7 @@ export class StrengthProgressionRepository extends BaseRepository {
     const pageActivityIds = new Set(pageRows.map((row) => row.activity_id));
 
     const setOutput = (evaluated: (typeof evaluatedSets)[number]) => {
-      const { set, flags, volume, estimatedOneRepMax } = evaluated;
+      const { set, flags, volume, estimate } = evaluated;
       const originalRecords = set.sourceRows.map((sourceRow) => ({
         provider: sourceRow.set_provider,
         activity_id: sourceRow.set_activity_id,
@@ -667,7 +461,12 @@ export class StrengthProgressionRepository extends BaseRepository {
           records: originalRecords,
         },
         volume,
-        estimated_one_rep_max: estimatedOneRepMax,
+        estimated_one_rep_max: {
+          status: estimate.value === null ? ("unavailable" as const) : ("available" as const),
+          value_kg: roundEstimate(estimate.value),
+          formula: "Epley" as const,
+          reason: estimate.reason,
+        },
         quality_flags: flags,
         excluded_from_aggregates: flags.length > 0,
         provenance: {
@@ -755,13 +554,16 @@ export class StrengthProgressionRepository extends BaseRepository {
         );
         const validEstimates = exerciseSets
           .flatMap((set) =>
-            set.estimatedOneRepMax.value_kg === null
+            set.estimate.value === null
               ? []
               : [
                   {
                     date: set.set.row.session_date,
-                    value_kg: set.estimatedOneRepMax.value_kg,
-                    set_id: set.set.row.set_id,
+                    value_kg: set.estimate.value,
+                    set_id: set.estimate.source.set_id,
+                    provider: set.estimate.source.set_provider,
+                    fatigue_marker: "Failure" as const,
+                    raw: set.estimate.source.raw,
                     activity_id: set.set.row.activity_id,
                     weight_kg: set.set.row.weight_kg,
                     reps: set.set.row.reps,
@@ -784,23 +586,35 @@ export class StrengthProgressionRepository extends BaseRepository {
           if (priorBest !== null && observation.value_kg <= priorBest.value_kg) return [];
           const result = {
             ...observation,
-            previous_best_kg: priorBest?.value_kg ?? null,
-            previous_best_evidence: priorBest,
+            value_kg: round(observation.value_kg),
+            previous_best_kg: roundEstimate(priorBest?.value_kg ?? null),
+            previous_best_evidence: priorBest && {
+              ...priorBest,
+              value_kg: round(priorBest.value_kg),
+            },
           };
           priorBest = observation;
           return [result];
         });
-        const firstEstimate = observations[0]?.value_kg ?? null;
-        const latestEstimate = observations.at(-1)?.value_kg ?? null;
+        const firstObservation = observations[0];
+        const latestObservation = observations.at(-1);
+        const changes =
+          firstObservation && latestObservation && firstObservation !== latestObservation
+            ? {
+                change_kg: round(latestObservation.value_kg - firstObservation.value_kg),
+                change_percent: round(
+                  ((latestObservation.value_kg - firstObservation.value_kg) /
+                    firstObservation.value_kg) *
+                    100,
+                ),
+              }
+            : { change_kg: null, change_percent: null };
         const dates = unique(exerciseSets.map((set) => set.set.row.session_date));
         const activities = unique(exerciseSets.map((set) => set.set.row.activity_id));
         const daily = dates.map((date) => {
           const dateSets = exerciseSets.filter((set) => set.set.row.session_date === date);
           const dateVolumes = dateSets.flatMap((set) =>
             set.volume.value_kg_reps === null ? [] : [set.volume.value_kg_reps],
-          );
-          const dateEstimates = dateSets.flatMap((set) =>
-            set.estimatedOneRepMax.value_kg === null ? [] : [set.estimatedOneRepMax.value_kg],
           );
           const dateWeights = dateSets.flatMap((set) =>
             set.flags.length === 0 &&
@@ -820,8 +634,9 @@ export class StrengthProgressionRepository extends BaseRepository {
               3,
             ),
             max_weight_kg: dateWeights.length === 0 ? null : Math.max(...dateWeights),
-            best_estimated_one_rep_max_kg:
-              dateEstimates.length === 0 ? null : Math.max(...dateEstimates),
+            best_estimated_one_rep_max_kg: roundEstimate(
+              dailyBestEstimates.get(date)?.value_kg ?? null,
+            ),
           };
         });
         return {
@@ -843,21 +658,17 @@ export class StrengthProgressionRepository extends BaseRepository {
           ),
           estimated_one_rep_max: {
             formula: "Epley" as const,
-            first_kg: firstEstimate,
-            latest_kg: latestEstimate,
+            first_kg: roundEstimate(firstObservation?.value_kg ?? null),
+            latest_kg: roundEstimate(latestObservation?.value_kg ?? null),
             best_kg:
               observations.length === 0
                 ? null
-                : Math.max(...observations.map((observation) => observation.value_kg)),
-            change_kg:
-              firstEstimate === null || latestEstimate === null
-                ? null
-                : round(latestEstimate - firstEstimate),
-            change_percent:
-              firstEstimate === null || latestEstimate === null || firstEstimate === 0
-                ? null
-                : round(((latestEstimate - firstEstimate) / firstEstimate) * 100),
-            observations,
+                : round(Math.max(...observations.map((observation) => observation.value_kg))),
+            ...changes,
+            observations: observations.map((observation) => ({
+              ...observation,
+              value_kg: round(observation.value_kg),
+            })),
           },
           daily,
           prs,
@@ -878,7 +689,7 @@ export class StrengthProgressionRepository extends BaseRepository {
       },
       definitions: {
         estimated_one_rep_max:
-          "Epley estimate = weight_kg × (1 + repetitions / 30), calculated only for unflagged working sets of 1–12 repetitions.",
+          "Epley estimate = weight_kg × (1 + 0.0333 × repetitions), using unflagged Strong sets of 2–10 repetitions with a recorded Failure tag, verified units, and supported barbell exercise identity.",
         volume:
           "Set volume = normalized weight_kg × repetitions; warm-ups, rests, missing values, and quality-flagged records are excluded.",
         working_set:
@@ -904,7 +715,7 @@ export class StrengthProgressionRepository extends BaseRepository {
           (set) => set.volume.status === "unavailable",
         ).length,
         sets_excluded_from_estimated_one_rep_max: evaluatedSets.filter(
-          (set) => set.estimatedOneRepMax.status === "unavailable",
+          (set) => set.estimate.value === null,
         ).length,
       },
       summary: {

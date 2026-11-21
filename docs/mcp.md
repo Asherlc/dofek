@@ -623,7 +623,15 @@ workouts from being counted twice. Cycling power, heart rate, cadence, distance,
 sample coverage come from deduplicated `analytics.activity_summary_rows FINAL`; average activity
 temperature is calculated from `analytics.activity_sensor_sample FINAL`. Numeric deltas are
 candidate minus the requested reference or earliest in-range match. Missing values stay null.
-Strength volume and Epley estimates exclude suspicious or conflicting sets. Exact cross-provider climbing
+Strength volume and Epley estimates exclude suspicious or conflicting sets. The estimate uses
+`weight_kg × (1 + 0.0333 × reps)` for 2–10 completed reps of barbell bench press,
+squat, back squat, or deadlift with verified source units and a Strong text-share
+Failure tag. A single rep stays in workout history. RPE supplies no fatigue evidence.
+Comparison estimates require the caller to specify the exact exercise ID. The chart needs three qualifying workouts.
+Logged sets cannot establish form, setup, or rest protocols.
+[LeSuer et al.](https://doi.org/10.1519/00124278-199711000-00001)
+
+Exact cross-provider climbing
 observations and strength sets are consolidated, while conflicting observations are excluded and
 reported; climbing attempts and outcomes preserve partial/unavailable state and never produce exact
 deltas unless both performances have complete coverage. Strength volume and estimated-1RM values

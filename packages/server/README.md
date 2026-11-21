@@ -676,10 +676,12 @@ source set/activity/provider records remain listed. Conflicting overlapping sets
 are flagged, and are excluded from aggregates rather than silently reconciled.
 
 Set volume is `weight_kg × repetitions`. Estimated 1RM uses the named Epley formula
-`weight_kg × (1 + repetitions / 30)`, one of the prediction equations evaluated by
-[LeSuer et al. (1997)](https://doi.org/10.1519/00124278-199711000-00001). Dofek applies it only to
-unflagged working sets of 1–12 repetitions. Warm-ups,
-rests, missing load/repetitions, and suspicious records do not contribute to volume/e1RM/PRs.
+`weight_kg × (1 + 0.0333 × repetitions)`, one of the prediction equations evaluated by
+[LeSuer et al. (1997)](https://doi.org/10.1519/00124278-199711000-00001). Eligible sets have
+2–10 completed reps of barbell bench press, squat, back squat, or deadlift, verified units,
+and a Strong text-share Failure tag. RPE does not establish fatigue. Recorded singles
+remain in workout history. Warm-ups, rests, missing load/repetitions, and suspicious
+records do not contribute to volume, estimates, or PRs.
 Records with negative values, more than 100 repetitions, load above 500 kg, RPE outside 0–10, or a
 high-repetition/low-load pattern consistent with reversed fields or import corruption remain
 unchanged in detail with quality flags. These bounds are validation policy, not silent corrections
