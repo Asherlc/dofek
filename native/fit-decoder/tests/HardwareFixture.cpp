@@ -9,7 +9,11 @@
 #include "fit_encode.hpp"
 #include "fit_crc.hpp"
 #include "fit_file_id_mesg.hpp"
+#include "fit_lap_mesg.hpp"
 #include "fit_record_mesg.hpp"
+#include "fit_session_mesg.hpp"
+#include "fit_workout_mesg.hpp"
+#include "fit_workout_step_mesg.hpp"
 #include "fit_weight_scale_mesg.hpp"
 
 int main(int argc, char* argv[]) {
@@ -128,6 +132,63 @@ int main(int argc, char* argv[]) {
       corrupt.write(&byte, 1);
     }
     return 0;
+  }
+  if (fixture_mode == "workout" || fixture_mode == "plain-laps") {
+    const bool embeds_workout = fixture_mode == "workout";
+    fit::FileIdMesg file_id;
+    file_id.SetType(FIT_FILE_ACTIVITY);
+    file_id.SetManufacturer(FIT_MANUFACTURER_GARMIN);
+    encoder.Write(file_id);
+    if (embeds_workout) {
+      fit::WorkoutMesg workout;
+      workout.SetSport(FIT_SPORT_CYCLING);
+      workout.SetNumValidSteps(2);
+      encoder.Write(workout);
+    }
+    const FIT_UINT32 target_low[] = {1250, 1260};
+    const FIT_UINT32 target_high[] = {1265, 1260};
+    for (FIT_MESSAGE_INDEX step_index = 0; step_index < 2; ++step_index) {
+      if (!embeds_workout) {
+        break;
+      }
+      fit::WorkoutStepMesg step;
+      step.SetMessageIndex(step_index);
+      step.SetDurationType(FIT_WKT_STEP_DURATION_TIME);
+      step.SetDurationValue(180000);
+      step.SetTargetType(FIT_WKT_STEP_TARGET_POWER);
+      step.SetTargetValue(0);
+      step.SetCustomTargetValueLow(target_low[step_index]);
+      step.SetCustomTargetValueHigh(target_high[step_index]);
+      encoder.Write(step);
+    }
+    for (int second = 0; second < 5; ++second) {
+      fit::RecordMesg record;
+      record.SetTimestamp(1000000000 + second * 120);
+      record.SetPower(250);
+      encoder.Write(record);
+    }
+    const FIT_UINT8 lap_step_index[] = {0, 0, 1};
+    const FIT_UINT32 lap_start_offset[] = {0, 180, 325};
+    const FIT_UINT32 lap_end_offset[] = {180, 325, 505};
+    const float lap_timer[] = {180.0F, 134.0F, 180.0F};
+    const float lap_elapsed[] = {180.0F, 145.0F, 180.0F};
+    for (FIT_MESSAGE_INDEX lap_index = 0; lap_index < 3; ++lap_index) {
+      fit::LapMesg lap;
+      lap.SetMessageIndex(lap_index);
+      lap.SetStartTime(1000000000 + lap_start_offset[lap_index]);
+      lap.SetTimestamp(1000000000 + lap_end_offset[lap_index]);
+      lap.SetWktStepIndex(lap_step_index[lap_index]);
+      lap.SetTotalTimerTime(lap_timer[lap_index]);
+      lap.SetTotalElapsedTime(lap_elapsed[lap_index]);
+      encoder.Write(lap);
+    }
+    fit::SessionMesg session;
+    session.SetStartTime(1000000000);
+    session.SetTimestamp(1000000505);
+    session.SetTotalElapsedTime(505.0F);
+    session.SetSport(FIT_SPORT_CYCLING);
+    encoder.Write(session);
+    return encoder.Close() ? 0 : 1;
   }
   if (std::string(argv[2]) != "no-file-id") {
     fit::FileIdMesg file_id;

@@ -79,6 +79,8 @@ function metadataMessage(overrides: Record<string, unknown> = {}): Record<string
     session: null,
     sportName: null,
     subSportName: null,
+    sessionMessageCount: 1,
+    workoutMessageCount: 0,
     fieldOccurrences: [],
     ...overrides,
   };
@@ -90,6 +92,8 @@ function noopConsumer(overrides: Partial<FitStreamConsumer> = {}): FitStreamCons
     onRecordBatch: async () => undefined,
     onWeightBatch: async () => undefined,
     onDeviceInfoBatch: async () => undefined,
+    onLapBatch: async () => undefined,
+    onWorkoutStepBatch: async () => undefined,
     ...overrides,
   };
 }
@@ -210,6 +214,124 @@ describe("streamFitFile", () => {
     expect(decoder.acknowledgements).toHaveLength(3);
   });
 
+  it("exposes exact session and workout counts in metadata", async () => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    const onMetadata = vi.fn(async () => undefined);
+    queueMicrotask(async () => {
+      decoder.send(metadataMessage({ sessionMessageCount: 2, workoutMessageCount: 1 }));
+      await decoder.waitForAcknowledgement(1);
+      decoder.send({ type: "end", messageCount: 0 });
+      decoder.finish();
+    });
+
+    await streamFitFile("activity.fit", noopConsumer({ onMetadata }));
+
+    expect(onMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionMessageCount: 2, workoutMessageCount: 1 }),
+    );
+  });
+
+  it("rejects metadata without session and workout counts", async () => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    const { sessionMessageCount: _session, ...withoutCounts } = metadataMessage();
+    queueMicrotask(() => {
+      decoder.send(withoutCounts);
+      decoder.finish();
+    });
+
+    await expect(streamFitFile("activity.fit", noopConsumer())).rejects.toThrow(
+      "invalid protocol message",
+    );
+  });
+
+  it("delivers raw workout step and lap batches in order and acknowledges after each", async () => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    const steps = [
+      {
+        message_index: 0,
+        duration_type: 0,
+        duration_value: 180000,
+        custom_target_value_low: 1250,
+        custom_target_value_high: 1265,
+      },
+      {
+        message_index: 1,
+        duration_type: 0,
+        duration_value: 180000,
+        custom_target_value_low: 1260,
+        custom_target_value_high: 1260,
+      },
+    ];
+    const laps = [
+      { message_index: 0, wkt_step_index: 0, total_timer_time: 180, total_elapsed_time: 180 },
+      { message_index: 1, wkt_step_index: 0, total_timer_time: 134, total_elapsed_time: 145 },
+      { message_index: 2, wkt_step_index: 1, total_timer_time: 180, total_elapsed_time: 180 },
+    ];
+    const events: string[] = [];
+    queueMicrotask(async () => {
+      decoder.send(metadataMessage({ workoutMessageCount: 1 }));
+      await decoder.waitForAcknowledgement(1);
+      decoder.send({ type: "workoutSteps", messages: steps });
+      await decoder.waitForAcknowledgement(2);
+      decoder.send({ type: "records", messages: [{ timestamp: "2026-07-01T12:00:01Z" }] });
+      await decoder.waitForAcknowledgement(3);
+      decoder.send({ type: "laps", messages: laps });
+      await decoder.waitForAcknowledgement(4);
+      decoder.send({ type: "end", messageCount: 6 });
+      decoder.finish();
+    });
+
+    const result = await streamFitFile(
+      "activity.fit",
+      noopConsumer({
+        onWorkoutStepBatch: async (messages) => {
+          events.push(`steps:${messages.length}`);
+          expect(messages).toEqual(steps);
+        },
+        onRecordBatch: async () => {
+          events.push("records");
+        },
+        onLapBatch: async (messages) => {
+          events.push(`laps:${messages.length}`);
+          expect(messages).toEqual(laps);
+        },
+      }),
+    );
+
+    expect(events).toEqual(["steps:2", "records", "laps:3"]);
+    expect(result).toEqual({ messageCount: 6 });
+    expect(decoder.acknowledgements).toHaveLength(4);
+  });
+
+  it("rejects lap and workout step batches before metadata or over the message bound", async () => {
+    for (const type of ["laps", "workoutSteps"] as const) {
+      const early = simulatedDecoder();
+      mockSpawn.mockReturnValue(early.child);
+      queueMicrotask(() => {
+        early.send({ type, messages: [{}] });
+        early.finish();
+      });
+      await expect(streamFitFile("activity.fit", noopConsumer())).rejects.toThrow(
+        "before file metadata",
+      );
+
+      const oversized = simulatedDecoder();
+      mockSpawn.mockReturnValue(oversized.child);
+      queueMicrotask(async () => {
+        oversized.send(metadataMessage());
+        await oversized.waitForAcknowledgement(1);
+        oversized.send({ type, messages: Array.from({ length: 251 }, () => ({})) });
+        oversized.finish();
+      });
+      await expect(streamFitFile("activity.fit", noopConsumer())).rejects.toThrow(
+        "invalid protocol message",
+      );
+    }
+  });
+
   it("accepts device observations for weight files", async () => {
     const decoder = simulatedDecoder();
     mockSpawn.mockReturnValue(decoder.child);
@@ -276,6 +398,8 @@ describe("streamFitFile", () => {
           },
           sportName: "cycling",
           subSportName: "mountain",
+          sessionMessageCount: 1,
+          workoutMessageCount: 0,
           fieldOccurrences: [{ messageType: "file_id", field: "time_created", occurrences: 1 }],
         });
         await decoder.waitForAcknowledgement(1);
@@ -466,6 +590,8 @@ describe("streamFitFile", () => {
         session: null,
         sportName: null,
         subSportName: null,
+        sessionMessageCount: 1,
+        workoutMessageCount: 0,
         fieldOccurrences: [],
       });
       await decoder.waitForAcknowledgement(1);
@@ -670,6 +796,8 @@ describe("streamFitFile", () => {
         session: null,
         sportName: null,
         subSportName: null,
+        sessionMessageCount: 1,
+        workoutMessageCount: 0,
         fieldOccurrences: [],
       });
       await decoder.waitForAcknowledgement(1);
@@ -799,6 +927,8 @@ describe("streamFitFile", () => {
         session: null,
         sportName: null,
         subSportName: null,
+        sessionMessageCount: 1,
+        workoutMessageCount: 0,
         fieldOccurrences: [],
       });
       await decoder.waitForAcknowledgement(1);
@@ -878,6 +1008,8 @@ describe("streamFitFile", () => {
       session: null,
       sportName: null,
       subSportName: null,
+      sessionMessageCount: 1,
+      workoutMessageCount: 0,
       fieldOccurrences: [],
     });
     await decoder.waitForAcknowledgement(1);

@@ -139,7 +139,8 @@ summary; recovery does not invent a missing session.
    corresponding database writes.
 3. The decoder makes a second pass and emits newline-delimited JSON batches bounded to 250
    messages and 512 KiB. Raw `device_info` messages stream as `devices` batches, preserving repeated
-   observations and their order alongside record/weight batches.
+   observations and their order alongside record/weight batches. Raw `lap` and `workout_step`
+   messages stream as `laps` and `workoutSteps` batches.
 4. Node validates and persists one batch, then writes `continue` to the child process. The decoder
    does not resume until it receives that acknowledgement.
 
@@ -149,7 +150,10 @@ see the official [`child_process.spawn()` documentation](https://nodejs.org/api/
 
 Consumers receive the raw `file_id` through `FitStreamMetadata.fileId` and raw device observations
 through the required asynchronous `onDeviceInfoBatch(messages)` callback. These raw fields retain
-the SDK's snake-case names and numeric enums. The final `messageCount` includes devices plus
+the SDK's snake-case names and numeric enums. The optional `onLapBatch` and `onWorkoutStepBatch`
+callbacks receive raw laps and workout steps (see the native protocol for unit scaling), and
+`FitStreamMetadata.sessionMessageCount`/`workoutMessageCount` give exact Session and Workout
+message counts. The final `messageCount` includes devices, laps, workout steps and
 records/weights. The adapter waits for every callback before acknowledging its batch; see the
 [adapter implementation](stream-decoder.ts) and [native protocol](../../native/fit-decoder/README.md#protocol).
 Garmin distinguishes the file creator from device observations in its

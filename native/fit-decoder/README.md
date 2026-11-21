@@ -4,7 +4,8 @@ This directory is a self-contained C++ project that streams Garmin FIT messages 
 application over newline-delimited JSON. Its
 [decoder implementation](src/fit-decoder.cpp) performs two constant-memory passes: the first emits
 file metadata and a field-occurrence table capped at 4,096 unique message/field pairs, and the
-second emits record or weight messages and raw `device_info` observations in batches of at most
+second emits record or weight messages, raw `device_info` observations and, for an activity file with
+exactly one `workout` message, raw `lap` and `workout_step` messages in batches of at most
 250 messages and 512 KiB. Every
 protocol message is capped at 512 KiB, as enforced by the
 [native protocol test](tests/VerifyProtocol.cmake). The decoder waits for a `continue`
@@ -38,11 +39,23 @@ baseline.
 ## Protocol
 
 The executable accepts one FIT file path. It emits a `metadata` message, zero or more `records`,
-`weights`, or `devices` batches, and one `end` message. Metadata includes `fileId`, the first raw
+`weights`, `devices`, `laps`, or `workoutSteps` batches, and one `end` message. Metadata includes `fileId`, the first raw
 `file_id` message or `null` when absent. `devices` batches contain unmodified decoded
 `device_info` fields, including repeated and partial observations. Fields retain SDK names such
 as `device_index` and `serial_number` and numeric enum values. FIT describes file creation and
 device observations separately; see Garmin's [activity file documentation](https://developer.garmin.com/fit/articles/file-types/activity.html).
+
+Metadata includes `sessionMessageCount` and `workoutMessageCount`, the exact counts of FIT Session and
+Workout messages (`session` itself is only the first Session), so a caller can require a single
+session and a single workout without accumulating messages. `workoutSteps` and `laps` batches are
+emitted only for an activity file whose `workoutMessageCount` is 1 (standalone workout files and
+activities without an embedded workout stream neither) and carry unmodified SDK fields. Observed raw values: `duration_value` is milliseconds for time steps (180000
+is 180 s); absolute power targets arrive in `custom_target_value_low`/`high` with the FIT 1000 W
+offset still applied (1250 is 250 W) beside `target_type` 4 and `target_value` 0; Lap
+`total_timer_time` and `total_elapsed_time` are already seconds, and `wkt_step_index` links a Lap to a
+Workout Step `message_index`. See Garmin's
+[FIT workout file documentation](https://developer.garmin.com/fit/file-types/workout/) and the
+[workout test](tests/VerifyWorkout.cmake).
 
 Metadata always includes `recoveryError`, which is `null` for a clean decode. A Garmin SDK decode
 failure is recoverable only when the file declares activity type, contains no weight messages, the
@@ -55,12 +68,12 @@ and resource-bound failures remain fatal. The metadata and streaming passes must
 result and complete timestamped record count.
 
 The second pass preserves the relative order of device and record/weight messages, flushing the
-current batch when its message type changes. `end.messageCount` includes every streamed device
-and record/weight message; it excludes metadata's file ID. The caller must write `continue`
+current batch when its message type changes. `end.messageCount` includes every streamed device,
+lap, workout step and record/weight message; it excludes metadata's file ID. The caller must write `continue`
 followed by a newline to
 standard input after metadata and each batch. Any unrecovered malformed file, oversized individual
 message, missing acknowledgement, or write failure terminates the process with a nonzero exit status.
 The [decoder source](src/fit-decoder.cpp), [protocol test](tests/VerifyProtocol.cmake),
-[recovery test](tests/VerifyRecovery.cmake), [hardware protocol test](tests/VerifyHardware.cmake), and
+[recovery test](tests/VerifyRecovery.cmake), [workout test](tests/VerifyWorkout.cmake), [hardware protocol test](tests/VerifyHardware.cmake), and
 [integer-fidelity test](tests/FieldJsonTest.cpp) are the authoritative contract and validation
 sources.

@@ -36,6 +36,8 @@ const metadataMessageSchema = z.object({
   session: rawMessageSchema.nullable(),
   sportName: z.string().nullable(),
   subSportName: z.string().nullable(),
+  sessionMessageCount: z.number().int().nonnegative(),
+  workoutMessageCount: z.number().int().nonnegative(),
   fieldOccurrences: z.array(fieldOccurrenceSchema).max(4096),
 });
 
@@ -54,6 +56,16 @@ const deviceBatchMessageSchema = z.object({
   messages: z.array(rawMessageSchema).max(250),
 });
 
+const lapBatchMessageSchema = z.object({
+  type: z.literal("laps"),
+  messages: z.array(rawMessageSchema).max(250),
+});
+
+const workoutStepBatchMessageSchema = z.object({
+  type: z.literal("workoutSteps"),
+  messages: z.array(rawMessageSchema).max(250),
+});
+
 const endMessageSchema = z.object({
   type: z.literal("end"),
   messageCount: z.number().int().nonnegative(),
@@ -64,6 +76,8 @@ const decoderMessageSchema = z.discriminatedUnion("type", [
   recordBatchMessageSchema,
   weightBatchMessageSchema,
   deviceBatchMessageSchema,
+  lapBatchMessageSchema,
+  workoutStepBatchMessageSchema,
   endMessageSchema,
 ]);
 
@@ -86,6 +100,10 @@ export interface FitStreamMetadata {
   isWeightFile: boolean;
   recoveryError: string | null;
   session: ParsedFitSession | null;
+  /** Exact number of FIT Session messages in the file (the parsed `session` is only the first). */
+  sessionMessageCount: number;
+  /** Exact number of FIT Workout messages in the file. */
+  workoutMessageCount: number;
 }
 
 export interface FitStreamConsumer {
@@ -93,6 +111,17 @@ export interface FitStreamConsumer {
   onRecordBatch: (records: ParsedFitRecord[]) => Promise<void>;
   onWeightBatch: (weights: ParsedFitWeight[]) => Promise<void>;
   onDeviceInfoBatch: (messages: Record<string, unknown>[]) => Promise<void>;
+  /**
+   * Raw Lap messages. Native SDK values: `total_timer_time` and `total_elapsed_time` are seconds.
+   * Omit to ignore laps; batches are still acknowledged.
+   */
+  onLapBatch?: (messages: Record<string, unknown>[]) => Promise<void>;
+  /**
+   * Raw Workout Step messages. Native SDK values are unscaled: `duration_value` is milliseconds
+   * for time steps, and absolute power targets in `custom_target_value_low`/`high` carry the FIT
+   * +1000 watt offset (1250 is 250 W). Omit to ignore steps; batches are still acknowledged.
+   */
+  onWorkoutStepBatch?: (messages: Record<string, unknown>[]) => Promise<void>;
 }
 
 export interface FitStreamResult {
@@ -267,6 +296,8 @@ export async function streamFitFile(
             session: message.session
               ? parsedSession(message.session, message.sportName, message.subSportName)
               : null,
+            sessionMessageCount: message.sessionMessageCount,
+            workoutMessageCount: message.workoutMessageCount,
           });
           await writeContinue(child.stdin);
           armIdleTimeout();
@@ -280,6 +311,28 @@ export async function streamFitFile(
           await writeContinue(child.stdin);
           armIdleTimeout();
           break;
+        case "laps":
+        case "workoutSteps": {
+          if (!metadataReceived) {
+            throw new FitDecoderError(
+              `Native FIT decoder returned ${message.type} before file metadata`,
+            );
+          }
+          if (metadataIsWeightFile) {
+            throw new FitDecoderError(
+              `Native FIT decoder returned ${message.type} for a weight file`,
+            );
+          }
+          consumedMessageCount += message.messages.length;
+          if (message.type === "laps") {
+            await consumer.onLapBatch?.(message.messages);
+          } else {
+            await consumer.onWorkoutStepBatch?.(message.messages);
+          }
+          await writeContinue(child.stdin);
+          armIdleTimeout();
+          break;
+        }
         case "records": {
           if (!metadataReceived) {
             throw new FitDecoderError(
