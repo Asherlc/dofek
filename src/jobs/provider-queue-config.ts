@@ -98,6 +98,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["thecrag", { concurrency: 1, syncTier: "daily" }],
 
   // ── On-demand tier ──
+  ["runalyze", { concurrency: 1, syncTier: "on-demand" }],
   ["garmin", { concurrency: 3, syncTier: "on-demand" }],
   ["bodyspec", { concurrency: 1, syncTier: "on-demand" }],
 ]);

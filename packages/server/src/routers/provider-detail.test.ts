@@ -350,8 +350,8 @@ describe("providerDetailRouter", () => {
   // ── PROVIDER_ACCOUNT_TABLES ──
 
   describe("PROVIDER_ACCOUNT_TABLES", () => {
-    it("contains 15 child tables", () => {
-      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(15);
+    it("contains 16 child tables", () => {
+      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(16);
     });
 
     it("includes all required child tables", () => {
@@ -360,6 +360,7 @@ describe("providerDetailRouter", () => {
       expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.body_measurement");
       expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.nutrition_daily");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.daily_metrics");
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.running_race_result");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.sleep_session");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.food_entry");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.clinical_record");
