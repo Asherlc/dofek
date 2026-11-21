@@ -24,4 +24,13 @@ For each behavior change, write the regression test first and record the failing
 
 ## Direction needed
 
-The normalized inputs checked so far establish timed power but lack one documented test protocol. A focused FIT investigation could examine a real retained file for explicit protocol and completed-lap evidence before changing ingestion. Ordinary outdoor ride bests are another possible input, subject to explicit approval as an exploratory estimate. Karsten's five-week road study used 3-, 7-, and 12-minute best powers and included planned maximal trials. It reported stronger agreement for critical power than for W′. [Karsten et al., field validation](https://doi.org/10.1007/s00421-014-3001-z)
+The user approved investigating original FIT data while keeping the documented-test requirement. A local audit using Garmin's official FIT JavaScript SDK decoded both repository cycling fixtures successfully. Neither fixture includes workout instructions or laps linked to workout steps. [Garmin FIT JavaScript SDK](https://github.com/garmin/fit-javascript-sdk)
+
+| Source | Recorded modality | Timed power records | Completed laps | Workout steps |
+| --- | --- | ---: | ---: | ---: |
+| [Road ride fixture](../../../src/fit/fixtures/road-with-power.fit) | Road cycling | 4,740 | 1 | 0 |
+| [Generic ride fixture](../../../src/fit/fixtures/test.fit) | Cycling with generic subsport | 3,226 | 1 | 0 |
+
+The road file also contains an ANT+ bike-power observation, which documents a power device but supplies no test identity. Garmin documents files that carry both workout instructions and completed laps. Qualifying that input still requires one original cycling activity with an explicit maximal test protocol and completed effort boundaries. This audit inspected repository examples and public SDK samples. It did not inspect the production archive. [Garmin FIT activity file examples](https://developer.garmin.com/fit/articles/cookbook/decoding_activity_files.html)
+
+Ordinary outdoor ride bests would need separate approval as an exploratory input. Karsten's five-week road study used 3-, 7-, and 12-minute best powers and included planned maximal trials. It reported stronger agreement for critical power than for W′. [Karsten et al., field validation](https://doi.org/10.1007/s00421-014-3001-z)
