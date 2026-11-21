@@ -77,6 +77,7 @@ it("replaces only a fully resolved owner snapshot", async () => {
   ];
   let secondPage = [{ ...race, activity_id: 46 }];
   let activityStatus = 200;
+  let omitLinkedActivity = false;
   let secondPageStatus = 200;
   server.use(
     http.get(`${base}/raceresult`, ({ request }) => {
@@ -99,6 +100,7 @@ it("replaces only a fully resolved owner snapshot", async () => {
             { id: 42, sport: { name: "RUNNING" }, is_virtual: false },
             { id: 43, sport: { name: "Cycling" }, is_virtual: false },
             { id: 44, sport: { name: "Running" }, is_virtual: true },
+            ...(omitLinkedActivity ? [] : [{ id: 46, is_virtual: false }]),
           ])
         : new HttpResponse(null, { status: activityStatus });
     }),
@@ -137,6 +139,14 @@ it("replaces only a fully resolved owner snapshot", async () => {
   expect((await sync()).errors).toHaveLength(1);
   expect(await rows()).toMatchObject([{ finishSeconds: 1510.25 }]);
   secondPageStatus = 200;
+  inventory[0] = { ...race, official_time: 1520.25 };
+  omitLinkedActivity = true;
+  await expect(sync()).resolves.toMatchObject({
+    recordsSynced: 0,
+    errors: [{ message: "Runalyze omitted requested linked activities." }],
+  });
+  expect(await rows()).toMatchObject([{ finishSeconds: 1510.25 }]);
+  omitLinkedActivity = false;
   activityStatus = 403;
   const syncFailure = await sync();
   expect(authFailureReasonFromError(syncFailure.errors[0]?.cause)).toBe("authentication_failed");

@@ -191,6 +191,9 @@ export class RunalyzeProvider implements SyncProvider {
                 resolved.push({ ...race, sourceSport: sport });
               }
             }
+            if (unresolved.size > 0) {
+              throw new Error("Runalyze omitted requested linked activities.");
+            }
           }
           signal?.throwIfAborted();
           await db.transaction(async (transaction) => {

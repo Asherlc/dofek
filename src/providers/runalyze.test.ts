@@ -104,6 +104,7 @@ it("replaces the owner snapshot from both pages using only attributable running 
         { ...runningActivity, id: 8, is_virtual: true },
         { id: 9, sport: { name: "Running" } },
         { ...runningActivity, id: 10, sport: { name: "Running" } },
+        { id: 11, is_virtual: false },
       ]);
     }),
   );
@@ -149,6 +150,23 @@ it.each([
   await expect(sync()).resolves.toMatchObject({
     recordsSynced: 0,
     errors: [{ message: expect.stringContaining(message) }],
+  });
+  expect(transaction).not.toHaveBeenCalled();
+  expect(spies.deleteFn).not.toHaveBeenCalled();
+});
+
+it("preserves the snapshot when a successful linked lookup omits a requested activity", async () => {
+  const { sync, spies, transaction } = syncFixture();
+  server.use(
+    http.get(endpoint, () => HttpResponse.json([race, { ...race, activity_id: 2 }])),
+    http.get(activities, ({ request }) => {
+      expect(new URL(request.url).searchParams.get("id")).toBe("1,2");
+      return HttpResponse.json([runningActivity]);
+    }),
+  );
+  await expect(sync()).resolves.toMatchObject({
+    recordsSynced: 0,
+    errors: [{ message: "Runalyze omitted requested linked activities." }],
   });
   expect(transaction).not.toHaveBeenCalled();
   expect(spies.deleteFn).not.toHaveBeenCalled();
