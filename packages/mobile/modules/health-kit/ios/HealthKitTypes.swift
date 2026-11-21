@@ -106,6 +106,12 @@ let readTypes: Set<HKObjectType> = {
             types.insert(type)
         }
     }
+    // Apple's reported workout effort score (iOS 18+) is a separate read type from the
+    // estimated score; only the explicitly reported sample is a session rating.
+    if #available(iOS 18.0, macOS 15.0, *),
+       let effortType = HKQuantityType.quantityType(forIdentifier: .workoutEffortScore) {
+        types.insert(effortType)
+    }
     // Category types
     let categoryTypes: [HKCategoryTypeIdentifier] = [
         .sleepAnalysis,

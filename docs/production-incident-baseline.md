@@ -39690,3 +39690,9 @@ Local qualification and CI are separate from production throughput acceptance. T
   all ten model fixtures with its standard test timeout. The earlier direct
   run isolated inefficient array processing in the draft SQL, which was
   corrected before this run. The temporary AIO ceiling is the only VM change.
+
+## 2026-11-21 — Integration diagnostics reporter fixture deadline
+
+- **Impact.** The required CI gate on [PR #3437](https://github.com/Asherlc/dofek/pull/3437) failed during `pnpm exec vitest run --project unit --coverage`. Production was unaffected. The failing test reported `Runner pipes did not close; hook observed: false; stderr empty: true`. The same test required a retry on another branch that morning. [Failed unit job](https://github.com/Asherlc/dofek/actions/runs/44930189502/job/136925408470) · [Unit job with a retry](https://github.com/Asherlc/dofek/actions/runs/44927966697/job/136918401004).
+- **Cause and repair.** The fixture started a separate 10-second watchdog before the nested Vitest runner loaded its config and executed the tests. Under local load the real hook arrived after 10.8 seconds, within the fixture's 15-second Vitest deadline. A controlled late hook reproduced the hosted error. The fixture now uses Vitest's test cancellation signal to stop the detached process group. It still requires the real checkpoint and a hard stop before inspecting output. The hosted failure log lacks child startup timings. [Reporter tests](../scripts/integration-diagnostics-reporter.test.ts) · [Vitest cancellation](https://main.vitest.dev/guide/test-context#signal).
+- **Validation and follow-up.** A controlled replay delayed the real hook by 10.75 seconds from fixture setup. The old fixture failed and the repaired fixture passed with retries disabled. Suppressing the hook entirely still failed at 15 seconds and stopped both the runner and its descendant. Monitor the new PR head for recurring startup delays.

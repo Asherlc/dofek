@@ -12,12 +12,12 @@ export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
 // Recovery router types
 
 export type { ActivityLocation } from "./contracts/activity-location.ts";
-// Cycling advanced router types
 export type {
   CyclingDurabilityEffort,
   CyclingDurabilityResult,
   CyclingDurabilitySelection,
 } from "./contracts/cycling-durability.ts";
+export type { LoggedSetComparison, LoggedSetExercise } from "./contracts/logged-set-comparison.ts";
 // Climbing router types
 export type {
   ClimbingGradeProgressionRow,

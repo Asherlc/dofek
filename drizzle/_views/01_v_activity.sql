@@ -342,12 +342,7 @@ merged AS (
     bounds.started_at,
     bounds.ended_at,
     b.source_name,
-    (
-      SELECT r.perceived_exertion
-      FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
-      WHERE fg2.group_id = b.group_id AND r.perceived_exertion IS NOT null
-      ORDER BY r.effort_prio ASC, r.id ASC LIMIT 1
-    ) AS perceived_exertion,
+    effort.perceived_exertion,
     (
       SELECT r.name FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
       WHERE
@@ -377,7 +372,10 @@ merged AS (
         FROM final_groups AS fg2
         INNER JOIN ranked AS r ON fg2.activity_id = r.id,
           LATERAL JSONB_EACH(COALESCE(r.raw, '{}'::jsonb)) AS raw_entry (key, value)
-        WHERE fg2.group_id = b.group_id
+        WHERE
+          fg2.group_id = b.group_id
+          -- Effort evidence belongs to the source of the selected rating.
+          AND (raw_entry.key <> 'workoutEffort' OR r.id = effort.activity_id)
       ) AS sub
       WHERE sub.rn = 1
     ) AS raw,
@@ -416,6 +414,14 @@ merged AS (
   FROM best_per_group AS b
   INNER JOIN group_bounds AS bounds ON b.group_id = bounds.group_id
   INNER JOIN best_context_per_group AS context ON b.group_id = context.group_id
+  LEFT JOIN LATERAL (
+    SELECT
+      r.id AS activity_id,
+      r.perceived_exertion
+    FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
+    WHERE fg2.group_id = b.group_id AND r.perceived_exertion IS NOT null
+    ORDER BY r.effort_prio ASC, r.id ASC LIMIT 1
+  ) AS effort ON true
   LEFT JOIN absent_source_links ON b.group_id = absent_source_links.group_id
 )
 

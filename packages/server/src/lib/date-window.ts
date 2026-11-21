@@ -108,6 +108,7 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "sleep.list": { defaultDays: 30, routerFile: "sleep.ts", input: "dateRange" },
   "strength.estimatedOneRepMax": { defaultDays: 90, routerFile: "strength.ts", input: "days" },
   "strength.muscleGroupVolume": { defaultDays: 90, routerFile: "strength.ts", input: "days" },
+  "strength.loggedSetComparison": { defaultDays: 90, routerFile: "strength.ts", input: "days" },
   "strength.progressiveOverload": { defaultDays: 90, routerFile: "strength.ts", input: "days" },
   "strength.volumeOverTime": { defaultDays: 90, routerFile: "strength.ts", input: "days" },
   "stress.scores": { defaultDays: 90, routerFile: "stress.ts", input: "dateRange" },
