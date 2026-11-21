@@ -10,20 +10,20 @@
   <main id="dofek-w-prime-preview">
     <article data-dc-id="ride-answer" class="ride-answer" aria-labelledby="ride-answer-heading">
       <header data-dc-id="ride-heading" class="answer-header">
-        <p class="eyebrow">Dofek · Example chat answer</p>
-        <h2 id="ride-answer-heading">How much did I recover between efforts?</h2>
-        <p class="muted">Indoor cycling · Synthetic ride</p>
+        <p class="eyebrow">Indoor cycling</p>
+        <h2 id="ride-answer-heading">Effort and recovery</h2>
       </header>
 
-      <p data-dc-id="ride-takeaway" class="takeaway">The same 30-second recoveries restored 2.4, 4.1, and 5.3 kJ in the model. You started each successive effort with less capacity and finished the fourth with <strong>0.6 kJ</strong> remaining.</p>
+      <p data-dc-id="ride-takeaway" class="takeaway">You recovered some capacity during each 30-second easy interval. After the fourth hard effort, the estimate was <strong>0.6 kJ</strong> left out of 20.0 kJ at the start.</p>
 
       <figure data-dc-id="balance-chart" class="balance">
-        <figcaption>Estimated work capacity remaining (W′ balance)</figcaption>
+        <figcaption>Estimated work capacity left</figcaption>
+        <p class="chart-definition muted">W′ (W prime) is how much work you can do above critical power, the threshold where fatigue starts to build quickly.</p>
         <div class="chart">
           <div class="y-axis" aria-hidden="true"><span>20 kJ</span><span>10</span><span>0</span></div>
           <div class="plot">
             <svg viewBox="0 -5 1000 210" preserveAspectRatio="none" role="img" aria-labelledby="preview-balance-title preview-balance-desc" xmlns="http://www.w3.org/2000/svg">
-              <title id="preview-balance-title">Estimated W′ balance during 5 minutes and 30 seconds of repeated efforts</title>
+              <title id="preview-balance-title">Estimated work capacity left during 5 minutes and 30 seconds of repeated efforts</title>
               <desc id="preview-balance-desc">Balance starts at 20 kilojoules. It falls to 12.2, 6.8, 3.2, and 0.6 kilojoules at the end of the four efforts, rising during each recovery.</desc>
               <g class="recoveries">
                 <rect x="181.82" y="0" width="90.91" height="200" />
@@ -41,9 +41,9 @@
         <p class="chart-caption muted"><span class="recovery-key" aria-hidden="true"></span> Shaded bands show 30-second recoveries</p>
       </figure>
 
-      <table data-dc-id="effort-balances" class="efforts" aria-label="Estimated balance at the end of each hard effort">
+      <table data-dc-id="effort-balances" class="efforts" aria-label="Estimated work capacity left at the end of each hard effort">
         <thead><tr><th scope="col">Effort end</th><th scope="col">1:00</th><th scope="col">2:30</th><th scope="col">4:00</th><th scope="col">5:30</th></tr></thead>
-        <tbody><tr><th scope="row">W′ balance (kJ)</th><td>12.2</td><td>6.8</td><td>3.2</td><td>0.6</td></tr></tbody>
+        <tbody><tr><th scope="row">Capacity left (kJ)</th><td>12.2</td><td>6.8</td><td>3.2</td><td>0.6</td></tr></tbody>
       </table>
 
       <details data-dc-id="model-evidence" class="evidence">

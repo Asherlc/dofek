@@ -2,21 +2,21 @@
   "version": 1,
   "title": "Cycling W′ balance",
   "kind": "wireframe",
-  "description": "Post-ride chat answer with a synthetic interval ride and an example of missing calibration evidence.",
+  "description": "Indoor cycling ride analysis using example data, with a second artboard for missing test evidence.",
   "artboards": [
     {
       "id": "ride-analysis",
-      "title": "Ride analysis",
+      "title": "Ride analysis · Example data",
       "file": "ride-analysis.html",
       "width": 740,
-      "group": "Post-ride chat answer"
+      "group": "Ride analysis"
     },
     {
       "id": "insufficient-evidence",
       "title": "Insufficient evidence",
       "file": "insufficient-evidence.html",
       "width": 740,
-      "group": "Post-ride chat answer"
+      "group": "Ride analysis"
     }
   ]
 }
