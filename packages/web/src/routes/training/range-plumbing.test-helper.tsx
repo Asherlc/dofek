@@ -157,6 +157,7 @@ vi.mock("../../lib/trpc.ts", () => ({
     },
     strength: {
       estimatedOneRepMax: { useQuery: recordQuery("strength.estimatedOneRepMax") },
+      exerciseHistory: { useQuery: recordQuery("strength.exerciseHistory") },
       muscleGroupVolume: { useQuery: recordQuery("strength.muscleGroupVolume") },
       progressiveOverload: { useQuery: recordQuery("strength.progressiveOverload") },
       volumeOverTime: { useQuery: recordQuery("strength.volumeOverTime") },

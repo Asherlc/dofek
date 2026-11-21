@@ -1,10 +1,19 @@
+import { strengthExerciseIdentityKey } from "@dofek/training/training";
 import { z } from "zod";
 import {
   type ProgressiveOverloadRow,
   progressiveOverloadRowSchema,
 } from "../contracts/progressive-overload.ts";
+import {
+  type StrengthExerciseHistoryRow,
+  strengthExerciseHistoryRowSchema,
+} from "../contracts/strength-exercise-history.ts";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { rangeDaysSchema } from "../lib/date-window.ts";
+import {
+  type ExerciseOrderResult,
+  StrengthExerciseOrderRepository,
+} from "../repositories/strength-exercise-order-repository.ts";
 import {
   type EstimatedMaxTrendEvidence,
   StrengthRepository,
@@ -49,7 +58,7 @@ export interface MuscleGroupVolumeRow {
   weeklyData: MuscleGroupWeek[];
 }
 
-export type { ProgressiveOverloadRow };
+export type { ProgressiveOverloadRow, StrengthExerciseHistoryRow };
 
 export interface WorkoutSummaryRow {
   date: string;
@@ -81,6 +90,78 @@ export const strengthRouter = router({
       return exercises.map((exercise) => exercise.toDetail());
     },
     { keyVersion: "estimated-max-trend-v2" },
+  ),
+
+  exerciseHistory: selectedChartRangeQuery(
+    "strength.exerciseHistory",
+    CacheTTL.LONG,
+    async ({ ctx, range }): Promise<StrengthExerciseHistoryRow[]> => {
+      const strengthRepo = new StrengthRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      );
+      const orderRepo = new StrengthExerciseOrderRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      );
+
+      const [estimatedMaxes, orderMap] = await Promise.all([
+        strengthRepo.getEstimatedOneRepMax(range.days),
+        orderRepo.getExerciseOrders(range.days),
+      ]);
+
+      const seenKeys = new Set<string>();
+      const result: StrengthExerciseHistoryRow[] = [];
+
+      for (const exercise of estimatedMaxes) {
+        const detail = exercise.toDetail();
+        const key = strengthExerciseIdentityKey({
+          exerciseName: detail.exerciseName,
+          equipment: detail.equipment,
+        });
+        seenKeys.add(key);
+        const order = orderMap.get(key);
+        result.push({
+          exerciseName: detail.exerciseName,
+          equipment: detail.equipment,
+          estimatedStrength: detail,
+          exerciseOrder: order ? order.evidence : null,
+        });
+      }
+
+      const orderOnlyLifts: ExerciseOrderResult[] = [];
+      for (const [key, order] of orderMap.entries()) {
+        if (!seenKeys.has(key)) {
+          orderOnlyLifts.push(order);
+        }
+      }
+
+      orderOnlyLifts.sort((a, b) => {
+        return (
+          a.exerciseName.localeCompare(b.exerciseName) ||
+          (a.equipment ?? "").localeCompare(b.equipment ?? "")
+        );
+      });
+
+      for (const order of orderOnlyLifts) {
+        result.push({
+          exerciseName: order.exerciseName,
+          equipment: order.equipment,
+          estimatedStrength: null,
+          exerciseOrder: order.evidence,
+        });
+      }
+
+      return result;
+    },
+    {
+      outputSchema: z.array(strengthExerciseHistoryRowSchema),
+      keyVersion: "strength-exercise-history-v1",
+    },
   ),
 
   muscleGroupVolume: selectedChartRangeQuery(

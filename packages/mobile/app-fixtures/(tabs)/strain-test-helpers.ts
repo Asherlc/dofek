@@ -30,7 +30,10 @@ export const sectionExpectations = {
     cards: ["Weekly Volume", "Vertical Ascent Rate"],
   },
   running: { queries: ["running", "sportVolume"], cards: ["Running", "Weekly Volume"] },
-  strength: { queries: ["training", "strengthVolume"], cards: ["Strength Volume"] },
+  strength: {
+    queries: ["training", "strengthVolume", "strengthHistory"],
+    cards: ["Strength Volume", "Estimated single-rep strength"],
+  },
   hiking: { queries: ["sportVolume"], cards: ["Route comparison", "Weekly Volume"] },
   climbing: {
     queries: ["training", "strengths", "locationMap", "climbingVolume"],

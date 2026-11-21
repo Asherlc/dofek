@@ -19,7 +19,7 @@ function StrengthTab() {
     selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
-  const estimatedMax = trpc.strength.estimatedOneRepMax.useQuery(
+  const exerciseHistory = trpc.strength.exerciseHistory.useQuery(
     selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
@@ -47,13 +47,20 @@ function StrengthTab() {
         </Section>
 
         <Section title="Estimated single-rep strength">
-          {estimatedMax.error && !estimatedMax.data ? (
-            <QueryStatePanel error={estimatedMax.error} />
+          {exerciseHistory.error && !exerciseHistory.data ? (
+            <QueryStatePanel error={exerciseHistory.error} />
           ) : (
-            <EstimatedMaxChart
-              exercises={estimatedMax.data ?? []}
-              loading={estimatedMax.isLoading}
-            />
+            <>
+              {exerciseHistory.error ? (
+                <p role="alert" className="mb-3 text-xs text-warning">
+                  Showing last loaded data. Refresh failed: {exerciseHistory.error.message}
+                </p>
+              ) : null}
+              <EstimatedMaxChart
+                exercises={exerciseHistory.data ?? []}
+                loading={exerciseHistory.isLoading}
+              />
+            </>
           )}
         </Section>
       </div>

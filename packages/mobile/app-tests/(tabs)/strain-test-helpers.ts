@@ -40,6 +40,7 @@ type MockRangeQueryName =
   | "strengths"
   | "climbingVolume"
   | "strengthVolume"
+  | "strengthHistory"
   | "sportVolume";
 
 type MockRangeQueryCalls = Record<
@@ -57,6 +58,7 @@ function emptyRangeQueryCalls(): MockRangeQueryCalls {
     polarization: [],
     climbingVolume: [],
     strengthVolume: [],
+    strengthHistory: [],
     sportVolume: [],
   };
 }
@@ -206,6 +208,12 @@ vi.mock("../../lib/trpc", () => ({
           return { data: [], isLoading: false, isFetching: false, isError: false, error: null };
         },
       },
+      exerciseHistory: {
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockQueryState.rangeQueryCalls.strengthHistory.push({ input, options });
+          return { data: [], isLoading: false, isFetching: false, isError: false, error: null };
+        },
+      },
     },
     mobileDashboard: {
       trainingV2: {
@@ -264,7 +272,10 @@ vi.mock("../../lib/trpc", () => ({
         locationMap: { invalidate: mockLocationMapInvalidate },
         strengths: { invalidate: vi.fn().mockResolvedValue(undefined) },
       },
-      strength: { volumeOverTime: { invalidate: vi.fn() } },
+      strength: {
+        volumeOverTime: { invalidate: vi.fn() },
+        exerciseHistory: { invalidate: vi.fn() },
+      },
       mobileDashboard: {
         trainingV2: { invalidate: mockTrainingInvalidate },
       },
