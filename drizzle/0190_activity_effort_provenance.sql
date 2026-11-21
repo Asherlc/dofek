@@ -415,7 +415,9 @@ merged AS (
   INNER JOIN group_bounds AS bounds ON b.group_id = bounds.group_id
   INNER JOIN best_context_per_group AS context ON b.group_id = context.group_id
   LEFT JOIN LATERAL (
-    SELECT r.id AS activity_id, r.perceived_exertion
+    SELECT
+      r.id AS activity_id,
+      r.perceived_exertion
     FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
     WHERE fg2.group_id = b.group_id AND r.perceived_exertion IS NOT null
     ORDER BY r.effort_prio ASC, r.id ASC LIMIT 1
