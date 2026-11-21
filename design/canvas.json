@@ -1,6 +1,7 @@
 {
   "version": 1,
   "agents": {
-    "whoop-battery-status": "7882f4e8-4c8c-4046-bde8-fe969e33e90a"
+    "whoop-battery-status": "7882f4e8-4c8c-4046-bde8-fe969e33e90a",
+    "climbing-demonstrated-grade": "285f158a-16f1-4fd7-aac3-b25cc5ddb77f"
   }
 }

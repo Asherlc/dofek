@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Climbing demonstrated grade · iOS</title>
+  <link rel="stylesheet" href="artboard.css">
+  <script src="artboard.js" defer></script>
+</head>
+<body>
+<div id="dofek-grade-preview" data-platform="ios">
+  <section class="training" data-dc-id="climbing" aria-label="Climbing grade progression">
+    <header class="training-header" data-dc-id="grade-progression">
+      <span class="section-path">Training <span aria-hidden="true">/</span> Climbing</span>
+      <p>Grade Progression</p>
+    </header>
+
+    <section class="progression" data-dc-id="demonstrated-grade" aria-labelledby="demonstrated-grade-heading">
+      <div class="heading">
+        <h2 id="demonstrated-grade-heading" data-dc-id="heading">Demonstrated grade</h2>
+        <p class="window" data-dc-id="window">Aug 22 – Nov 21, 2026</p>
+      </div>
+      <p class="explanation" data-dc-id="qualification-rule">Highest published grade sent on three different climbs in the past three months.</p>
+
+      <table data-dc-id="grade-matrix" aria-describedby="demonstrated-grade-key">
+        <thead>
+          <tr><th scope="col">Climbing type</th><th scope="col">Indoor</th><th scope="col">Outdoor</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Bouldering</th>
+            <td><button type="button" class="grade" data-evidence="gym" data-dc-id="gym-grade" aria-label="Indoor bouldering, V5, 3 climbs" aria-expanded="true" aria-controls="gym-evidence">V5<span class="chevron" aria-hidden="true">⌄</span></button></td>
+            <td><button type="button" class="grade" data-evidence="boulder" data-dc-id="boulder-grade" aria-label="Outdoor bouldering, V4, 3 climbs" aria-expanded="false" aria-controls="boulder-evidence">V4<span class="chevron" aria-hidden="true">⌄</span></button></td>
+          </tr>
+          <tr>
+            <th scope="row">Lead</th>
+            <td class="unavailable">—</td>
+            <td><button type="button" class="grade" data-evidence="lead" data-dc-id="lead-grade" aria-label="Outdoor lead, 5.11a, 3 climbs" aria-expanded="false" aria-controls="lead-evidence">5.11a<span class="chevron" aria-hidden="true">⌄</span></button></td>
+          </tr>
+          <tr><th scope="row">Top rope</th><td class="unavailable">—</td><td class="unavailable">—</td></tr>
+          <tr><th scope="row">Follow</th><td class="unavailable">—</td><td class="unavailable">—</td></tr>
+          <tr><th scope="row">Unroped</th><td class="unavailable">—</td><td class="unavailable">—</td></tr>
+        </tbody>
+      </table>
+      <p id="demonstrated-grade-key" data-dc-id="unavailable-grade-key" class="key">— Insufficient evidence for a demonstrated grade</p>
+
+      <section class="evidence" data-panel="gym" data-dc-id="gym-evidence" id="gym-evidence" aria-labelledby="gym-evidence-heading">
+        <h3 id="gym-evidence-heading" data-dc-id="gym-evidence-heading">Indoor bouldering · V5</h3>
+        <ul class="climbs">
+          <li data-dc-id="gym-send-1"><span><strong>Green Overhang</strong><small>Flash · KAYA</small></span><time datetime="2026-11-12">Nov 12</time></li>
+          <li data-dc-id="gym-send-2"><span><strong>Corner Traverse</strong><small>Redpoint · KAYA</small></span><time datetime="2026-10-24">Oct 24</time></li>
+          <li data-dc-id="gym-send-3"><span><strong>Blue Arete</strong><small>Send · KAYA</small></span><time datetime="2026-09-18">Sep 18</time></li>
+        </ul>
+      </section>
+
+      <section class="evidence" data-panel="boulder" data-dc-id="boulder-evidence" id="boulder-evidence" aria-labelledby="boulder-evidence-heading" hidden>
+        <h3 id="boulder-evidence-heading" data-dc-id="boulder-evidence-heading">Outdoor bouldering · V4</h3>
+        <ul class="climbs">
+          <li data-dc-id="boulder-send-1"><span><strong>Cedar Slab</strong><small>Flash · Mountain Project</small></span><time datetime="2026-11-09">Nov 9</time></li>
+          <li data-dc-id="boulder-send-2"><span><strong>The Pocket Problem</strong><small>Send · Mountain Project</small></span><time datetime="2026-10-18">Oct 18</time></li>
+          <li data-dc-id="boulder-send-3"><span><strong>Granite Rail</strong><small>Send · Mountain Project</small></span><time datetime="2026-09-27">Sep 27</time></li>
+        </ul>
+      </section>
+
+      <section class="evidence" data-panel="lead" data-dc-id="lead-evidence" id="lead-evidence" aria-labelledby="lead-evidence-heading" hidden>
+        <h3 id="lead-evidence-heading" data-dc-id="lead-evidence-heading">Outdoor lead · 5.11a</h3>
+        <ul class="climbs">
+          <li data-dc-id="lead-send-1"><span><strong>Pine Needle</strong><small>Redpoint · Mountain Project</small></span><time datetime="2026-11-08">Nov 8</time></li>
+          <li data-dc-id="lead-send-2"><span><strong>The Left Edge</strong><small>Onsight · Mountain Project</small></span><time datetime="2026-10-17">Oct 17</time></li>
+          <li data-dc-id="lead-send-3"><span><strong>Sunlit Corner</strong><small>Flash · Mountain Project</small></span><time datetime="2026-09-06">Sep 6</time></li>
+        </ul>
+      </section>
+
+      <details class="method" data-dc-id="method">
+        <summary>How 3:3:3 works</summary>
+        <p>Dofek’s adaptation of IRCRA 3:3:3 counts any confirmed free send, including an onsight, flash, redpoint, or send with an unspecified ascent style. Each climb counts once.</p>
+      </details>
+    </section>
+  </section>
+</div>
+</body>
+</html>
