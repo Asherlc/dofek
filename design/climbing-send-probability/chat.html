@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Climbing send probability</title>
+  <style>
+  :root {
+    color-scheme: light dark;
+    --background: light-dark(#edf5ee, #111c15);
+    --surface: light-dark(#f5f9f5, #19261e);
+    --foreground: light-dark(#1a2e1a, #e8f0ea);
+    --muted: light-dark(#4a6a4a, #b4c9b9);
+    --border: light-dark(rgba(74, 158, 122, 0.18), rgba(130, 190, 151, 0.24));
+    --accent: light-dark(#2d7a56, #74c69d);
+    --card-radius: 12px;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font: 14px/1.5 system-ui, sans-serif;
+  }
+
+  #dofek-send-preview {
+    max-inline-size: 760px;
+    margin-inline: auto;
+    padding: clamp(16px, 4vw, 32px);
+  }
+
+  h1, h2, h3, p { margin: 0; }
+  h1 { font-size: 24px; }
+  .training-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 16px;
+    padding: 0;
+    margin: 12px 0 24px;
+    list-style: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+  }
+
+  .training-tabs li { padding: 5px 0 8px; }
+  .training-tabs [aria-current="page"] {
+    border-bottom: 2px solid var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .section-title {
+    margin-bottom: 5px;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .strengths-card {
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--card-radius);
+    background: var(--surface);
+  }
+
+  .meta, .context { color: var(--muted); font-size: 13px; }
+  h3 { font-size: 17px; }
+  .heading-row { margin-bottom: 4px; }
+  .heading-row, .estimate-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 10px;
+    flex-wrap: wrap;
+  }
+
+  .search { margin-top: 16px; }
+  .search label { display: block; margin-bottom: 4px; font-weight: 600; }
+  .search input, .matches button {
+    min-block-size: 44px;
+    inline-size: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--foreground);
+    font: inherit;
+  }
+
+  .search input { padding: 8px 12px; }
+  .matches-status { margin-top: 12px; }
+  .matches { display: grid; gap: 6px; margin: 6px 0 0; padding: 0; list-style: none; }
+  .matches button { padding: 8px 12px; text-align: start; cursor: pointer; }
+  .matches button:hover, .matches button[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  }
+  .match-name { display: block; font-weight: 600; }
+  .estimate { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .estimate-caption { margin-top: 4px; }
+
+  .chance {
+    font-size: 20px;
+    line-height: 1.2;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+
+  details { margin-top: 10px; }
+  summary { inline-size: fit-content; font-weight: 550; }
+  details p { margin-top: 6px; }
+</style>
+</head>
+<body>
+<main id="dofek-send-preview">
+  <header>
+    <h1>Training</h1>
+    <ul class="training-tabs" aria-label="Training sections">
+      <li>Overview</li>
+      <li>Endurance</li>
+      <li>Cycling</li>
+      <li>Running</li>
+      <li>Strength</li>
+      <li>Hiking</li>
+      <li aria-current="page">Climbing</li>
+      <li>Recovery</li>
+    </ul>
+  </header>
+  <section aria-labelledby="climbing-strengths-title">
+    <h2 id="climbing-strengths-title" data-dc-id="prompt" class="section-title">Climbing Strengths</h2>
+    <article data-dc-id="conversation" class="strengths-card" aria-labelledby="send-probability-title">
+      <div class="heading-row">
+        <h3 id="send-probability-title" data-dc-id="forecast-heading">Send probability</h3>
+        <p data-dc-id="example-label" class="meta">Example data</p>
+      </div>
+      <p data-dc-id="forecast-summary" class="context">Choose an imported climb to see your chance of a clean send on the next day you try it.</p>
+      <div class="search" role="search" aria-label="Imported climbs">
+        <label for="climb-search">Search by climb name or location</label>
+        <input id="climb-search" type="search" value="Juniper" placeholder="e.g. Copper or Granite Works" autocomplete="off">
+      </div>
+      <p id="matches-status" class="matches-status context" role="status"></p>
+      <ul id="climb-matches" class="matches" aria-label="Matching climbs">
+        <li data-dc-id="familiar-climb">
+          <button type="button" aria-pressed="false" data-estimate="65%" data-explanation="52–78% estimated range">
+            <span class="match-name">Juniper Wall · 6b</span>
+            <span class="context">Raven Crag · Outdoor sport lead</span>
+          </button>
+        </li>
+        <li data-dc-id="new-climb">
+          <button type="button" aria-pressed="false" data-estimate="35%" data-explanation="23–47% estimated range">
+            <span class="match-name">Juniper Wall · 6c</span>
+            <span class="context">Cedar Bluff · Outdoor sport lead</span>
+          </button>
+        </li>
+        <li data-dc-id="unavailable-estimate">
+          <button type="button" aria-pressed="false" data-explanation="Your imported gym history contains sends only.">
+            <span class="match-name">Copper Arete · V5</span>
+            <span class="context">Granite Works · Indoor bouldering</span>
+          </button>
+        </li>
+      </ul>
+      <div aria-live="polite">
+        <section id="forecast" class="estimate" aria-labelledby="forecast-title" hidden>
+          <div class="estimate-heading">
+            <h3 id="forecast-title"></h3>
+            <p id="forecast-value"></p>
+          </div>
+          <p id="forecast-context" class="context"></p>
+          <p id="forecast-explanation" class="estimate-caption"></p>
+          <details data-dc-id="estimate-details">
+            <summary>How the estimate is calculated</summary>
+            <p class="context">The estimate uses earlier logs with known results from the same setting, climbing style, and grade system. Each climb counts once per day. The range shows the model’s 90% credible interval.</p>
+          </details>
+        </section>
+      </div>
+    </article>
+  </section>
+</main>
+<script>
+  const search = document.getElementById("climb-search");
+  const results = document.getElementById("climb-matches");
+  const matchesStatus = document.getElementById("matches-status");
+  const forecast = document.getElementById("forecast");
+  const forecastTitle = document.getElementById("forecast-title");
+  const forecastValue = document.getElementById("forecast-value");
+  const forecastContext = document.getElementById("forecast-context");
+  const forecastExplanation = document.getElementById("forecast-explanation");
+  const estimateDetails = forecast.querySelector("details");
+  const climbs = [...results.querySelectorAll("button")];
+
+  function showMatches() {
+    const query = search.value.trim().toLowerCase();
+    let count = 0;
+    for (const climb of climbs) {
+      const matches = query !== "" && climb.textContent.toLowerCase().includes(query);
+      climb.closest("li").hidden = !matches;
+      climb.setAttribute("aria-pressed", "false");
+      count += Number(matches);
+    }
+    forecast.hidden = true;
+    matchesStatus.textContent = query === "" ? "Enter a climb name or location."
+      : count === 0 ? "No matches in your imported climbs."
+      : count === 1 ? "1 match" : `${count} matches`;
+  }
+
+  results.addEventListener("click", (event) => {
+    const selected = event.target.closest("button");
+    if (!selected) return;
+    for (const climb of climbs) climb.setAttribute("aria-pressed", String(climb === selected));
+    const estimate = selected.dataset.estimate;
+    forecastTitle.textContent = selected.querySelector(".match-name").textContent;
+    forecastContext.textContent = selected.querySelector(".context").textContent;
+    forecastValue.textContent = estimate ?? "Estimate unavailable";
+    forecastValue.classList.toggle("chance", estimate !== undefined);
+    forecastExplanation.textContent = selected.dataset.explanation;
+    estimateDetails.open = false;
+    estimateDetails.hidden = estimate === undefined;
+    forecast.hidden = false;
+  });
+
+  search.addEventListener("input", showMatches);
+  showMatches();
+</script>
+</body>
+</html>

@@ -39664,3 +39664,32 @@ Local qualification and CI are separate from production throughput acceptance. T
   received sample in Instruments before closing the Sentry issue.
   [Native WAL replay](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleStore%2BInboxWriteTests.swift)
   · [Apple disk-write profiling](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
+
+## 2026-11-21 — Local Docker pressure delayed climbing forecast verification
+
+- `pnpm compose:up` first stopped at an unhealthy Redpanda container. The
+  focused `pnpm test:integration` run stopped at an unhealthy ClickHouse
+  container. Several other worktrees showed the same ClickHouse probe
+  timeouts. No production impact was observed.
+- The user authorized a focused run against this worktree’s PostgreSQL.
+  Its standard fixture still timed out during template migration before the
+  regression assertion. `pg_stat_activity` showed `CREATE EXTENSION IF NOT
+  EXISTS postgis` waiting on `DataFileExtend`. A Docker stats snapshot showed
+  about 670 threads per running ClickHouse instance across multiple worktrees.
+  The source of the shared storage delay remains unresolved.
+  [Test database setup](../src/db/test-helpers.ts) ·
+  [Shared Docker resource runbook](testing.md#shared-docker-vm-resource-pressure)
+- Stopped the unused services in the forecast worktree and kept its PostgreSQL
+  and volumes. The standard fixture still exceeded its setup budget. A
+  one-time PostgreSQL diagnostic using the same fixture setup completed that
+  setup in 326 seconds and passed the regression assertions and read-only
+  export check.
+- After ClickHouse recovered, the standard wrapper failed again at Redpanda.
+  Its startup log identified `advertised_kafka_api` validation and the
+  command showed `external://127.0.0.1:0`. Redpanda became healthy after
+  supplying a free `REDPANDA_PORT` through the Compose wrapper’s existing
+  environment input. The regular integration runner then started and again
+  hit its 120-second `beforeAll` timeout in test database setup, before any
+  assertions. The focused PostgreSQL diagnostic is the successful local
+  evidence for the query behavior.
+  [Local test wrapper](testing.md#integration-dependencies)

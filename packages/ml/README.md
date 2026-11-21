@@ -26,6 +26,42 @@ The retired CLI entrypoint still reports the migration path clearly:
 dofek-export --output-dir /tmp/unused
 ```
 
+## Offline climbing send forecasts
+
+From the repository root, with a read-only `DATABASE_URL` for the authorized
+database, export one owner's climb-days with the existing TypeScript runtime.
+
+```bash
+rtk proxy pnpm tsx scripts/export-climbing-forecast-observations.ts \
+  "$climbing_owner_id" America/Los_Angeles 2025-01-01 2025-12-31 > climb-days.json
+```
+
+The export keeps provider-scoped climb identity, source log IDs, local date,
+setting, style, assigned grade, and a known whole-climb outcome. A day with a
+known clean send counts once. A day with exclusively known unsuccessful
+outcomes counts once as unsuccessful. Shared grades are current catalogue
+values, with the snapshot date recorded as `capturedOn`.
+
+Evaluate one owner, setting, style, and native grade system at a time.
+Encode grades using the corresponding [author-supplied grade encoding](https://github.com/alexeid/climbing-grades/blob/f4ffdc1efd69882aa55489475202a0b2845d1c4a/R/grades.R)
+and [configuration](https://github.com/alexeid/climbing-grades/blob/f4ffdc1efd69882aa55489475202a0b2845d1c4a/R/config.csv).
+`ClimbDay.grade_known_on` identifies when the assigned grade was available.
+`split_holdout` withholds records without pre-cutoff grade evidence by default.
+Use `retrospective=True` only for a retrospective analysis of frozen grades and
+label the resulting evidence accordingly.
+
+`build_model_data` prepares input for `climbing_forecast.stan`. Sample with
+[CmdStan](https://mc-stan.org/cmdstanpy/), then pass the posterior `slope` and
+`ability` draws to `score_holdout`. This reports Brier score, log loss, observed
+send rate, mean predicted probability, and a 90% posterior interval for the
+mean prediction. It compares the same held-out days with the earlier observed
+send rate and returns separate scores for climbs familiar and unfamiliar at
+the cutoff. Repeat across chronological cutoffs to assess calibration stability.
+
+The likelihood and monthly ability process follow
+[Drummond and Popinga](https://doi.org/10.1515/jqas-2026-0040). Continuing the
+monthly random walk into future months is Dofek's prospective adaptation.
+
 ## Offline cross-source matching
 
 `dofek-match` implements four independent research approaches: Splink probabilistic
