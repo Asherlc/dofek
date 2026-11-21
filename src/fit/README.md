@@ -130,6 +130,17 @@ that warning on activity details. A later intact import clears the marker.
 Imports still require a valid start time from a decoded session or provider
 summary; recovery does not invent a missing session.
 
+## Structured cycling intervals
+
+During a clean FIT Activity import, Dofek can match laps to timed workout steps when the file
+contains one cycling Session, one Workout, and an unambiguous link from the Lap's
+`wkt_step_index` to a Workout Step's `message_index`. A custom absolute target can be a
+point or range in watts. Relative targets require the FTP or zone settings used for the recorded
+plan. Dofek stores the matched intervals with their provider attribution,
+planned time, and any recorded lap timer time. Elapsed time sets the boundaries for reading
+power samples. See Garmin's [Activity file](https://developer.garmin.com/fit/file-types/activity)
+and [Workout file](https://developer.garmin.com/fit/file-types/workout) references.
+
 ## Data flow
 
 1. The native decoder reads the file in a metadata-only first pass. It reports the

@@ -69,6 +69,22 @@ const intervalSchema = z
     completion_pct: nullableNumber,
     source_member_activity_ids: z.array(z.uuid()),
     raw: z.unknown().nullable(),
+    /** Present only for a matched FIT Workout Step / Lap; never a score or grade. */
+    planned_comparison: z
+      .object({
+        target: z.discriminatedUnion("kind", [
+          z.object({ kind: z.literal("point"), watts: z.number() }).strict(),
+          z
+            .object({ kind: z.literal("range"), min_watts: z.number(), max_watts: z.number() })
+            .strict(),
+        ]),
+        planned_duration_seconds: z.number().positive(),
+        recorded_timer_duration_seconds: z.number().nonnegative().nullable(),
+        timer_difference_seconds: nullableNumber,
+        average_power_watts: nullableNumber,
+      })
+      .strict()
+      .optional(),
     conflicts: z.array(z.string()).optional(),
     source_evidence: z.array(z.record(z.string(), z.unknown())).optional(),
   })

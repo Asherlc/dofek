@@ -297,6 +297,32 @@ function pairedEfficiency(
   };
 }
 
+/**
+ * Gap-aware mean over the half-open `[floor(start), ceil(end))` window of a resampled power
+ * stream. Missing seconds are skipped, a measured zero stays zero, and no samples is null.
+ */
+export function summarizeIntervalPower(
+  powerValues: ReadonlyArray<number | null>,
+  interval: Pick<CyclingWorkoutIntervalInput, "startOffsetSeconds" | "endOffsetSeconds">,
+) {
+  // Clamp both ends into the stream so a lap outside it is empty, never sliced from the end.
+  const startOffsetSeconds = Math.min(
+    powerValues.length,
+    Math.max(0, Math.floor(interval.startOffsetSeconds)),
+  );
+  const endOffsetSeconds = Math.max(
+    startOffsetSeconds,
+    Math.min(powerValues.length, Math.ceil(interval.endOffsetSeconds)),
+  );
+  const mean = average(powerValues.slice(startOffsetSeconds, endOffsetSeconds));
+  return {
+    startOffsetSeconds,
+    endOffsetSeconds,
+    meanPowerWatts: mean,
+    averagePowerWatts: mean == null ? null : round(mean),
+  };
+}
+
 function intervalMetrics(
   interval: CyclingWorkoutIntervalInput,
   source: "recorded" | "inferred",
@@ -305,10 +331,12 @@ function intervalMetrics(
   cadence: Array<number | null>,
   computedPower: CyclingWorkoutPowerMetrics,
 ) {
-  const start = Math.max(0, Math.floor(interval.startOffsetSeconds));
-  const end = Math.min(power.length, Math.ceil(interval.endOffsetSeconds));
-  const powerSlice = power.slice(start, end);
-  const averagePower = average(powerSlice);
+  const {
+    startOffsetSeconds: start,
+    endOffsetSeconds: end,
+    meanPowerWatts: averagePower,
+    averagePowerWatts,
+  } = summarizeIntervalPower(power, interval);
   const targetPower = interval.targetPowerWatts ?? null;
   return {
     index: interval.index,
@@ -318,7 +346,7 @@ function intervalMetrics(
     startOffsetSeconds: start,
     endOffsetSeconds: end,
     durationSeconds: Math.max(0, end - start),
-    averagePowerWatts: averagePower == null ? null : round(averagePower),
+    averagePowerWatts,
     normalizedPowerWatts: computedPower.normalizedPowerWatts,
     averageHeartRateBpm: (() => {
       const value = average(heartRate.slice(start, end));

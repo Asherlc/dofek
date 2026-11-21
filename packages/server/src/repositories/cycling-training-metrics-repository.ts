@@ -15,6 +15,7 @@ import {
   recordedIntervalsForActivity,
 } from "./cycling-effort-metrics.ts";
 import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
+import { toPlannedIntervalComparison } from "./planned-interval-comparison.ts";
 import type { SportSettingsRow } from "./sport-settings-repository.ts";
 
 const activityRowSchema = z.object({
@@ -173,6 +174,7 @@ function snakeMetrics(
       const evidence = normalized?.evidence;
       const sourceKind = normalized?.source ?? "unknown";
       const inferred = sourceKind === "inferred";
+      const plan = inferred ? null : toPlannedIntervalComparison(interval, evidence);
       return {
         index: interval.index,
         type: interval.type,
@@ -198,6 +200,24 @@ function snakeMetrics(
         completion_pct: inferred ? null : interval.completionPct,
         source_member_activity_ids: evidence?.sourceMemberActivityIds ?? [],
         raw: evidence?.raw ?? null,
+        ...(plan
+          ? {
+              planned_comparison: {
+                target:
+                  plan.target.kind === "point"
+                    ? { kind: "point" as const, watts: plan.target.watts }
+                    : {
+                        kind: "range" as const,
+                        min_watts: plan.target.minWatts,
+                        max_watts: plan.target.maxWatts,
+                      },
+                planned_duration_seconds: plan.plannedDurationSeconds,
+                recorded_timer_duration_seconds: plan.recordedTimerDurationSeconds,
+                timer_difference_seconds: plan.timerDifferenceSeconds,
+                average_power_watts: plan.averagePowerWatts,
+              },
+            }
+          : {}),
         ...(evidence?.conflicts
           ? { conflicts: evidence.conflicts, source_evidence: evidence.sourceEvidence }
           : {}),

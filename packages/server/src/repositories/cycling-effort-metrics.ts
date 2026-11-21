@@ -14,6 +14,7 @@ import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { evaluateCyclingPowerWindows } from "./cycling-power-window-metrics.ts";
+import { loadCyclingSampleRows } from "./cycling-sample-rows.ts";
 import {
   type CyclingActivityPowerMetrics,
   CyclingThresholdRepository,
@@ -22,6 +23,7 @@ import {
   type ComparableInterval,
   inferIntervalResult,
   mergeComparableIntervals,
+  type PlannedIntervalFacts,
 } from "./intervals-repository.ts";
 import { type DirectWeightObservation, selectNearbyWeight } from "./nearby-weight.ts";
 import { loadDirectWeightObservations } from "./nearby-weight-repository.ts";
@@ -156,6 +158,20 @@ function cyclingActivityPowerMetrics(
     intensityFactor: row?.intensity_factor ?? null,
     trainingStressScore: row?.power_tss ?? null,
   };
+}
+
+/** The same cleaned, gap-aware per-second power stream used by every cycling interval average. */
+export function resampleCleanPower(samples: CyclingEffortSample[], durationSeconds: number) {
+  const duration = Math.max(0, Math.floor(durationSeconds));
+  const clean = cleanSamples(samples, duration);
+  return resampleCyclingStream(
+    clean.samples,
+    duration,
+    (sample) => sample.powerWatts,
+    cyclingPowerCoveragePolicy,
+    0,
+    clean.counts.power?.barriers,
+  );
 }
 
 /** Prepare interval boundaries and cleaned power windows before evaluating power metrics. */
@@ -471,7 +487,12 @@ export function calculateCyclingEffortMetrics(
         source,
         evidence: evidence?.interval ?? null,
         targetPowerWatts: source === "inferred" ? null : interval.targetPowerWatts,
-        completionPct: source === "inferred" ? null : interval.completionPct,
+        completionPct:
+          source === "inferred" ||
+          evidence?.interval.plan ||
+          evidence?.interval.conflicts?.includes("plan")
+            ? null
+            : interval.completionPct,
       };
     }),
     bestPowerInterpretation: {
@@ -677,25 +698,6 @@ export interface CyclingEffortActivity {
   started_at: string;
 }
 
-const sampleRowSchema = z.object({
-  activity_id: z.string().uuid(),
-  elapsed_seconds: z.coerce.number().nonnegative(),
-  power: z.coerce.number().nullable(),
-  heart_rate: z.coerce.number().nullable(),
-  cadence: z.coerce.number().nullable(),
-  source_providers: z.array(z.string()),
-  source_devices: z.array(z.string()),
-  power_measurement_kinds: z.array(z.enum(["direct", "estimated", "unknown"])),
-  stream_evidence: z.array(
-    z.tuple([
-      z.enum(["power", "heart_rate", "cadence"]),
-      z.string().nullable(),
-      z.string().nullable(),
-      z.enum(["direct", "estimated", "unknown"]),
-    ]),
-  ),
-});
-
 const bestPowerRowSchema = z.object({
   activity_id: z.string().uuid(),
   duration_seconds: z.coerce.number().int().positive(),
@@ -726,6 +728,11 @@ const intervalRowSchema = z.object({
   target_resistance: z.coerce.number().nullable(),
   work_recovery_kind: z.enum(["work", "recovery"]).nullable(),
   raw: z.unknown().nullable(),
+  fit_source: z.enum(["workout_step_lap"]).nullable(),
+  planned_duration_seconds: z.coerce.number().nullable(),
+  recorded_timer_duration_seconds: z.coerce.number().nullable(),
+  target_power_min_watts: z.coerce.number().nullable(),
+  target_power_max_watts: z.coerce.number().nullable(),
 });
 
 const zonePctsSchema = z
@@ -774,6 +781,35 @@ function normalizeIntervalType(value: string | null): CyclingWorkoutIntervalInpu
   return "other";
 }
 
+/** Reads the stored Workout Step / Lap evidence as one plan; absent or partial rows supply none. */
+function plannedFacts(row: z.infer<typeof intervalRowSchema>): PlannedIntervalFacts | null {
+  if (
+    row.fit_source !== "workout_step_lap" ||
+    row.source_kind !== "provider_recorded" ||
+    row.planned_duration_seconds == null
+  ) {
+    return null;
+  }
+  const target =
+    row.target_power_min_watts != null && row.target_power_max_watts != null
+      ? {
+          kind: "range" as const,
+          minWatts: row.target_power_min_watts,
+          maxWatts: row.target_power_max_watts,
+        }
+      : row.target_power_watts != null
+        ? { kind: "point" as const, watts: row.target_power_watts }
+        : null;
+  return target == null
+    ? null
+    : {
+        fitSource: row.fit_source,
+        target,
+        plannedDurationSeconds: row.planned_duration_seconds,
+        recordedTimerDurationSeconds: row.recorded_timer_duration_seconds,
+      };
+}
+
 export function recordedIntervalsForActivity(
   activity: CyclingEffortActivity,
   rows: z.infer<typeof intervalRowSchema>[],
@@ -804,6 +840,8 @@ export function recordedIntervalsForActivity(
       targetResistance: row.target_resistance,
       raw: row.raw,
     };
+    const plan = plannedFacts(row);
+    if (plan) interval.plan = plan;
     return [interval.source === "inferred" ? inferIntervalResult(interval) : interval];
   });
 
@@ -823,6 +861,50 @@ export function recordedIntervalsForActivity(
   }));
 }
 
+/** Stored interval rows for every merged member of the already authorized activities. */
+export async function loadRecordedIntervalRows(
+  db: Pick<Database, "execute">,
+  memberActivityIds: string[],
+) {
+  if (memberActivityIds.length === 0) return [];
+  const memberActivityIdList = sql.join(
+    memberActivityIds.map((memberActivityId) => sql`${memberActivityId}::uuid`),
+    sql`, `,
+  );
+  return executeWithSchema(
+    db,
+    intervalRowSchema,
+    sql`
+              SELECT
+                activity_id::text AS member_activity_id,
+                interval_index,
+                label,
+                interval_type,
+                started_at,
+                ended_at,
+                source_kind,
+                source_provider,
+                source_activity_id,
+                segment_type,
+                target_intensity,
+                target_zone,
+                target_cadence_rpm,
+                target_power_watts,
+                target_resistance,
+                work_recovery_kind,
+                raw,
+                fit_source,
+                planned_duration_seconds,
+                recorded_timer_duration_seconds,
+                target_power_min_watts,
+                target_power_max_watts
+              FROM fitness.activity_interval
+              WHERE activity_id IN (${memberActivityIdList})
+              ORDER BY activity_id, interval_index
+            `,
+  );
+}
+
 export async function loadCyclingEffortData(
   db: Pick<Database, "execute">,
   store: Pick<ActivitySensorStore, "query">,
@@ -832,43 +914,9 @@ export async function loadCyclingEffortData(
 ) {
   const activityIds = pageRows.map((row) => row.activity_id);
   const memberActivityIds = [...new Set(pageRows.flatMap((row) => row.member_activity_ids))];
-  const memberActivityIdList = sql.join(
-    memberActivityIds.map((memberActivityId) => sql`${memberActivityId}::uuid`),
-    sql`, `,
-  );
 
   const [sampleRows, bestPowerRows, settingsHistory, intervalRows] = await Promise.all([
-    activityIds.length === 0
-      ? []
-      : store.query(
-          sampleRowSchema,
-          `/* cycling-training-metrics:samples */
-            SELECT
-              toString(sensor.activity_id) AS activity_id,
-              dateDiff('millisecond', activity.started_at, sensor.recorded_at) / 1000 AS elapsed_seconds,
-              if(countIf(sensor.channel = 'power') = 0, NULL,
-                maxIf(sensor.scalar, sensor.channel = 'power')) AS power,
-              if(countIf(sensor.channel = 'heart_rate') = 0, NULL,
-                maxIf(sensor.scalar, sensor.channel = 'heart_rate')) AS heart_rate,
-              if(countIf(sensor.channel = 'cadence') = 0, NULL,
-                maxIf(sensor.scalar, sensor.channel = 'cadence')) AS cadence,
-              arraySort(groupUniqArrayIf(sensor.provider_id, sensor.provider_id != '')) AS source_providers,
-              arraySort(groupUniqArrayIf(sensor.device_id, sensor.device_id != '')) AS source_devices,
-              arraySort(groupUniqArrayIf(sensor.measurement_kind,
-                sensor.channel = 'power' AND sensor.measurement_kind != '')) AS power_measurement_kinds,
-              arraySort(groupUniqArray(tuple(sensor.channel, sensor.provider_id,
-                sensor.device_id, sensor.measurement_kind))) AS stream_evidence
-            FROM analytics.activity_sensor_sample AS sensor FINAL
-            INNER JOIN analytics.deduped_activities AS activity FINAL
-              ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id
-            WHERE sensor.user_id = {userId:UUID}
-              AND sensor.activity_id IN ({activityIds:Array(UUID)})
-              AND sensor.channel IN ('power', 'heart_rate', 'cadence')
-              AND sensor.is_deleted = 0
-            GROUP BY sensor.activity_id, activity.started_at, sensor.recorded_at
-            ORDER BY sensor.activity_id, sensor.recorded_at`,
-          { userId: userId, activityIds },
-        ),
+    loadCyclingSampleRows(store, userId, activityIds, ["power", "heart_rate", "cadence"]),
     activityIds.length === 0 || durationsSeconds.length === 0
       ? []
       : store.query(
@@ -893,35 +941,7 @@ export async function loadCyclingEffortData(
           { userId: userId, activityIds, durations: durationsSeconds },
         ),
     new SportSettingsRepository(db, userId).history("cycling"),
-    memberActivityIds.length === 0
-      ? []
-      : executeWithSchema(
-          db,
-          intervalRowSchema,
-          sql`
-              SELECT
-                activity_id::text AS member_activity_id,
-                interval_index,
-                label,
-                interval_type,
-                started_at,
-                ended_at,
-                source_kind,
-                source_provider,
-                source_activity_id,
-                segment_type,
-                target_intensity,
-                target_zone,
-                target_cadence_rpm,
-                target_power_watts,
-                target_resistance,
-                work_recovery_kind,
-                raw
-              FROM fitness.activity_interval
-              WHERE activity_id IN (${memberActivityIdList})
-              ORDER BY activity_id, interval_index
-            `,
-        ),
+    loadRecordedIntervalRows(db, memberActivityIds),
   ]);
 
   return { sampleRows, bestPowerRows, settingsHistory, intervalRows };

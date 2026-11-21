@@ -191,6 +191,108 @@ describe("mergeComparableIntervals", () => {
     expect(result).toEqual([expect.objectContaining({ source: "unknown", targetPowerWatts: 220 })]);
   });
 
+  const planOf = (
+    target: NonNullable<ComparableInterval["plan"]>["target"],
+    timer: number | null,
+  ) =>
+    ({
+      fitSource: "workout_step_lap" as const,
+      target,
+      plannedDurationSeconds: 180,
+      recordedTimerDurationSeconds: timer,
+    }) satisfies ComparableInterval["plan"];
+
+  it("keeps one plan when duplicate members agree and unions provenance", () => {
+    const plan = planOf({ kind: "range", minWatts: 250, maxWatts: 265 }, 134);
+    const result = mergeComparableIntervals([
+      interval({ plan, sourceMemberActivityIds: ["b"] }),
+      interval({ plan: { ...plan }, sourceMemberActivityIds: ["a"] }),
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.plan).toEqual(plan);
+    expect(result[0]?.sourceMemberActivityIds).toEqual(["a", "b"]);
+    expect(result[0]?.conflicts).toBeUndefined();
+  });
+
+  it.each([
+    ["range minimum", planOf({ kind: "range", minWatts: 240, maxWatts: 265 }, 134)],
+    ["range maximum", planOf({ kind: "range", minWatts: 250, maxWatts: 270 }, 134)],
+    ["point watts", planOf({ kind: "point", watts: 250 }, 134)],
+    [
+      "planned time",
+      {
+        ...planOf({ kind: "range", minWatts: 250, maxWatts: 265 }, 134),
+        plannedDurationSeconds: 120,
+      },
+    ],
+    ["recorded timer", planOf({ kind: "range", minWatts: 250, maxWatts: 265 }, 140)],
+  ])("serves no plan and keeps both source plans when %s conflicts", (_name, other) => {
+    const base = planOf({ kind: "range", minWatts: 250, maxWatts: 265 }, 134);
+    const result = mergeComparableIntervals([
+      interval({ plan: base, sourceMemberActivityIds: ["a"] }),
+      interval({ plan: other, sourceMemberActivityIds: ["b"] }),
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.plan).toBeNull();
+    expect(result[0]?.completionPct).toBeNull();
+    expect(result[0]?.conflicts).toContain("plan");
+    expect(result[0]?.sourceEvidence?.map((item) => item.plan)).toEqual(
+      expect.arrayContaining([base, other]),
+    );
+  });
+
+  it("attributes a FIT plan to its owning peer, not a legacy peer in the same group", () => {
+    const plan = planOf({ kind: "point", watts: 250 }, 180);
+    const result = mergeComparableIntervals([
+      interval({
+        sourceProvider: "legacy",
+        sourceActivityId: "legacy-id",
+        sourceMemberActivityIds: ["a"],
+      }),
+      interval({
+        plan,
+        sourceProvider: "garmin",
+        sourceActivityId: "fit-id",
+        sourceMemberActivityIds: ["b"],
+      }),
+    ]);
+
+    expect(result[0]).toEqual(
+      expect.objectContaining({ plan, sourceProvider: "garmin", sourceActivityId: "fit-id" }),
+    );
+    expect(result[0]?.sourceMemberActivityIds).toEqual(["a", "b"]);
+  });
+
+  it("suppresses completion when only planned time conflicts and point watts agree", () => {
+    const point = { kind: "point", watts: 250 } as const;
+    const result = mergeComparableIntervals([
+      interval({ plan: planOf(point, 180), targetPowerWatts: 250, completionPct: 98 }),
+      interval({
+        plan: { ...planOf(point, 180), plannedDurationSeconds: 120 },
+        targetPowerWatts: 250,
+        completionPct: 98,
+      }),
+    ]);
+
+    expect(result[0]?.conflicts).toEqual(["plan", "completionPct"]);
+    expect(result[0]?.completionPct).toBeNull();
+  });
+
+  it("keeps repeated physical laps with different boundaries separate", () => {
+    const plan = planOf({ kind: "point", watts: 250 }, 180);
+    const result = mergeComparableIntervals([
+      interval({ plan, intervalIndex: 0, startOffsetSeconds: 0, endOffsetSeconds: 180 }),
+      interval({ plan, intervalIndex: 1, startOffsetSeconds: 180, endOffsetSeconds: 314 }),
+    ]);
+
+    expect(result.map((item) => [item.startOffsetSeconds, item.endOffsetSeconds])).toEqual([
+      [0, 180],
+      [180, 314],
+    ]);
+  });
+
   it("rejects an interval whose flattened source evidence is empty", () => {
     expect(() => mergeComparableIntervals([interval({ sourceEvidence: [] })])).toThrow(
       "Interval evidence group is empty",

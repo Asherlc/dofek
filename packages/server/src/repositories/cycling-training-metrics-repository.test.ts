@@ -49,6 +49,11 @@ const unknownIntervalSource = {
   target_power_watts: null,
   target_resistance: null,
   work_recovery_kind: null,
+  fit_source: null,
+  planned_duration_seconds: null,
+  recorded_timer_duration_seconds: null,
+  target_power_min_watts: null,
+  target_power_max_watts: null,
   raw: null,
 };
 
@@ -590,6 +595,11 @@ describe("CyclingTrainingMetricsRepository", () => {
           target_resistance: 38,
           work_recovery_kind: "work",
           raw: { source: "fixture" },
+          fit_source: null,
+          planned_duration_seconds: null,
+          recorded_timer_duration_seconds: null,
+          target_power_min_watts: null,
+          target_power_max_watts: null,
         },
         {
           member_activity_id: activityId,
@@ -609,6 +619,11 @@ describe("CyclingTrainingMetricsRepository", () => {
           target_resistance: null,
           work_recovery_kind: null,
           raw: null,
+          fit_source: null,
+          planned_duration_seconds: null,
+          recorded_timer_duration_seconds: null,
+          target_power_min_watts: null,
+          target_power_max_watts: null,
         },
       ]);
     const query = vi.fn(async (_schema, queryText: string) => {

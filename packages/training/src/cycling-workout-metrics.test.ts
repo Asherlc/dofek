@@ -8,6 +8,7 @@ import {
   computeCyclingWorkoutMetrics,
   prepareCyclingWorkoutMetrics,
   resampleCyclingStream,
+  summarizeIntervalPower,
 } from "./cycling-workout-metrics.ts";
 
 const fixtureCoveragePolicy = {
@@ -926,5 +927,52 @@ describe("computeCyclingWorkoutMetrics", () => {
     expect(result.intervalSource).toBe("none");
     expect(result.intervals).toEqual([]);
     expect(result.intervalDetection).toBeNull();
+  });
+});
+
+describe("summarizeIntervalPower", () => {
+  it("excludes the sample at the exclusive end boundary", () => {
+    expect(
+      summarizeIntervalPower([100, 100, 300], { startOffsetSeconds: 0, endOffsetSeconds: 2 }),
+    ).toMatchObject({ averagePowerWatts: 100, startOffsetSeconds: 0, endOffsetSeconds: 2 });
+  });
+
+  it("includes the sample at the inclusive start boundary", () => {
+    expect(
+      summarizeIntervalPower([100, 300, 300], { startOffsetSeconds: 1, endOffsetSeconds: 3 })
+        .averagePowerWatts,
+    ).toBe(300);
+  });
+
+  it("keeps a measured zero and skips missing seconds", () => {
+    expect(
+      summarizeIntervalPower([0, 0, 0], { startOffsetSeconds: 0, endOffsetSeconds: 3 })
+        .averagePowerWatts,
+    ).toBe(0);
+    expect(
+      summarizeIntervalPower([200, null, null, 100], { startOffsetSeconds: 0, endOffsetSeconds: 4 })
+        .averagePowerWatts,
+    ).toBe(150);
+  });
+
+  it("treats a lap ending before the stream as empty, not as a slice from the end", () => {
+    expect(
+      summarizeIntervalPower([100, 200, 300], { startOffsetSeconds: -40, endOffsetSeconds: -10 }),
+    ).toEqual({
+      startOffsetSeconds: 0,
+      endOffsetSeconds: 0,
+      meanPowerWatts: null,
+      averagePowerWatts: null,
+    });
+  });
+
+  it("returns null without measured samples and clips to the stream", () => {
+    expect(
+      summarizeIntervalPower([null, null], { startOffsetSeconds: 0, endOffsetSeconds: 2 })
+        .averagePowerWatts,
+    ).toBeNull();
+    expect(
+      summarizeIntervalPower([100], { startOffsetSeconds: -5, endOffsetSeconds: 50 }),
+    ).toMatchObject({ startOffsetSeconds: 0, endOffsetSeconds: 1, averagePowerWatts: 100 });
   });
 });
