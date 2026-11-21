@@ -6,6 +6,7 @@ import type { ActivitySensorWindow } from "./activity-sensor-types.ts";
 import {
   type CyclingEffortSample,
   loadRecordedIntervalRows,
+  type RecordedIntervalEvidence,
   recordedIntervalsForActivity,
   resampleCleanPower,
 } from "./cycling-effort-metrics.ts";
@@ -19,8 +20,9 @@ import type { ComparableInterval } from "./intervals-repository.ts";
 export const plannedIntervalComparisonSchema = z.object({
   intervalIndex: z.number().int(),
   label: z.string().nullable(),
-  startOffsetSeconds: z.number().int().nonnegative(),
-  endOffsetSeconds: z.number().int().nonnegative(),
+  /** Signed exact elapsed bounds of the recorded lap, relative to the canonical activity start. */
+  startOffsetSeconds: z.number(),
+  endOffsetSeconds: z.number().positive(),
   sourceProvider: z.string().nullable(),
   sourceActivityId: z.string().uuid().nullable(),
   sourceMemberActivityIds: z.array(z.string().uuid()),
@@ -38,26 +40,28 @@ export const plannedIntervalComparisonSchema = z.object({
 
 export type PlannedIntervalComparison = z.infer<typeof plannedIntervalComparisonSchema>;
 
-interface MeasuredInterval {
-  index: number;
-  label: string | null;
-  startOffsetSeconds: number;
-  endOffsetSeconds: number;
-  averagePowerWatts: number | null;
-}
-
 export function toPlannedIntervalComparison(
-  measured: MeasuredInterval,
+  averagePowerWatts: number | null,
   evidence: ComparableInterval | null | undefined,
+  windowSeconds: number,
 ): PlannedIntervalComparison | null {
   const plan = evidence?.plan;
   if (!evidence || !plan) return null;
+  // Semantic overlap with the visible window uses the exact bounds, independent of which 1 Hz
+  // timestamps were selected: a lap wholly outside it has nothing to compare.
+  if (
+    windowSeconds <= 0 ||
+    evidence.endOffsetSeconds <= 0 ||
+    evidence.startOffsetSeconds >= windowSeconds
+  ) {
+    return null;
+  }
   const timer = plan.recordedTimerDurationSeconds;
   return {
-    intervalIndex: measured.index,
-    label: measured.label,
-    startOffsetSeconds: measured.startOffsetSeconds,
-    endOffsetSeconds: measured.endOffsetSeconds,
+    intervalIndex: evidence.intervalIndex,
+    label: evidence.label,
+    startOffsetSeconds: evidence.startOffsetSeconds,
+    endOffsetSeconds: evidence.endOffsetSeconds,
     sourceProvider: evidence.sourceProvider,
     sourceActivityId: evidence.sourceActivityId,
     sourceMemberActivityIds: evidence.sourceMemberActivityIds,
@@ -66,8 +70,41 @@ export function toPlannedIntervalComparison(
     recordedTimerDurationSeconds: timer,
     timerDifferenceSeconds:
       timer == null ? null : Math.round((timer - plan.plannedDurationSeconds) * 1000) / 1000,
-    averagePowerWatts: measured.averagePowerWatts,
+    averagePowerWatts,
   };
+}
+
+/** Exact continuous length of the canonical window; an open window ends at its last plan lap. */
+export function canonicalWindowSeconds(
+  startedAt: string,
+  endedAt: string | null,
+  intervals: readonly RecordedIntervalEvidence[],
+): number {
+  if (endedAt != null) return (Date.parse(endedAt) - Date.parse(startedAt)) / 1_000;
+  return Math.max(
+    0,
+    ...intervals.filter(({ interval }) => interval.plan).map(({ input }) => input.endOffsetSeconds),
+  );
+}
+
+/**
+ * The one comparison calculation shared by the route and the MCP tool: gap-aware power from
+ * already loaded samples over the exact canonical window, aligned by position with `intervals`.
+ * No work is done without an eligible plan; rows without one are null.
+ */
+export function comparePlannedIntervals(
+  samples: CyclingEffortSample[],
+  intervals: readonly RecordedIntervalEvidence[],
+  windowSeconds: number,
+): Array<PlannedIntervalComparison | null> {
+  if (!intervals.some(({ interval }) => interval.plan)) return intervals.map(() => null);
+  // The exact window selects eligibility; its ceil is the 1 Hz array length.
+  const power = resampleCleanPower(samples, Math.max(0, Math.ceil(windowSeconds)));
+  return intervals.map(({ input, interval }) => {
+    if (!interval.plan) return null;
+    const { averagePowerWatts } = summarizeIntervalPower(power.values, input);
+    return toPlannedIntervalComparison(averagePowerWatts, interval, windowSeconds);
+  });
 }
 
 /**
@@ -80,23 +117,16 @@ export async function getPlannedIntervalComparisons(
   userId: string,
   window: ActivitySensorWindow,
 ): Promise<PlannedIntervalComparison[]> {
-  const startedAt = Date.parse(window.startedAt);
-  const activity = {
-    activity_id: window.activityId,
-    member_activity_ids: window.memberActivityIds,
-    started_at: window.startedAt,
-  };
   const eligible = recordedIntervalsForActivity(
-    activity,
+    {
+      activity_id: window.activityId,
+      member_activity_ids: window.memberActivityIds,
+      started_at: window.startedAt,
+    },
     await loadRecordedIntervalRows(db, window.memberActivityIds),
   ).filter(({ interval }) => interval.plan != null);
   if (eligible.length === 0) return [];
 
-  const lastLapEnd = Math.max(...eligible.map(({ input }) => input.endOffsetSeconds));
-  const durationSeconds =
-    window.endedAt == null
-      ? lastLapEnd
-      : Math.max(0, Math.floor((Date.parse(window.endedAt) - startedAt) / 1_000));
   const rows = await loadCyclingSampleRows(store, userId, [window.activityId], ["power"]);
   const samples: CyclingEffortSample[] = rows.map((row) => ({
     elapsedSeconds: row.elapsed_seconds,
@@ -104,15 +134,9 @@ export async function getPlannedIntervalComparisons(
       ? row.power
       : undefined,
   }));
-  const power = resampleCleanPower(samples, durationSeconds);
-  return eligible.flatMap(({ input, interval }) => {
-    const measured = summarizeIntervalPower(power.values, input);
-    // A merged lap with no overlap with the visible canonical window has nothing to compare.
-    if (measured.endOffsetSeconds <= measured.startOffsetSeconds) return [];
-    const comparison = toPlannedIntervalComparison(
-      { index: input.index, label: input.label ?? null, ...measured },
-      interval,
-    );
-    return comparison ? [comparison] : [];
-  });
+  return comparePlannedIntervals(
+    samples,
+    eligible,
+    canonicalWindowSeconds(window.startedAt, window.endedAt, eligible),
+  ).flatMap((comparison) => (comparison ? [comparison] : []));
 }

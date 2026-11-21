@@ -15,7 +15,11 @@ import {
   recordedIntervalsForActivity,
 } from "./cycling-effort-metrics.ts";
 import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
-import { toPlannedIntervalComparison } from "./planned-interval-comparison.ts";
+import {
+  canonicalWindowSeconds,
+  comparePlannedIntervals,
+  type PlannedIntervalComparison,
+} from "./planned-interval-comparison.ts";
 import type { SportSettingsRow } from "./sport-settings-repository.ts";
 
 const activityRowSchema = z.object({
@@ -121,6 +125,7 @@ function snakeZones(zones: CyclingWorkoutMetrics["powerZones"]) {
 function snakeMetrics(
   metrics: CyclingWorkoutMetrics,
   normalizedIntervals: ReturnType<typeof calculateCyclingEffortMetrics>["intervals"],
+  plannedComparisons: ReadonlyArray<PlannedIntervalComparison | null>,
 ) {
   return {
     value_kind: "calculated_from_samples" as const,
@@ -164,17 +169,12 @@ function snakeMetrics(
             threshold_watts: metrics.intervalDetection.thresholdWatts,
             minimum_work_seconds: metrics.intervalDetection.minimumWorkSeconds,
           },
-    intervals: metrics.intervals.map((interval) => {
-      const normalized = normalizedIntervals.find(
-        (candidate) =>
-          candidate.index === interval.index &&
-          candidate.startOffsetSeconds === interval.startOffsetSeconds &&
-          candidate.endOffsetSeconds === interval.endOffsetSeconds,
-      );
+    intervals: metrics.intervals.map((interval, position) => {
+      const normalized = normalizedIntervals[position];
       const evidence = normalized?.evidence;
       const sourceKind = normalized?.source ?? "unknown";
       const inferred = sourceKind === "inferred";
-      const plan = inferred ? null : toPlannedIntervalComparison(interval, evidence);
+      const plan = inferred ? null : (plannedComparisons[position] ?? null);
       return {
         index: interval.index,
         type: interval.type,
@@ -203,6 +203,8 @@ function snakeMetrics(
         ...(plan
           ? {
               planned_comparison: {
+                start_offset_seconds: plan.startOffsetSeconds,
+                end_offset_seconds: plan.endOffsetSeconds,
                 target:
                   plan.target.kind === "point"
                     ? { kind: "point" as const, watts: plan.target.watts }
@@ -417,12 +419,20 @@ export class CyclingTrainingMetricsRepository {
         sourceProviders: activity.source_providers,
         sourceDevices: activitySamples.flatMap((row) => row.source_devices),
       });
-      return { activity, activitySamples, settings, prepared };
+      // Exact canonical window and already loaded samples; the aggregate interval metrics keep
+      // the whole-second elapsed window.
+      const plannedComparisons = comparePlannedIntervals(
+        samples,
+        recordedIntervals,
+        canonicalWindowSeconds(activity.started_at, activity.ended_at, recordedIntervals),
+      );
+      return { activity, activitySamples, settings, prepared, plannedComparisons };
     });
     const calculated = await evaluateCyclingEffortMetrics(
       preparedActivities.map(({ prepared }) => prepared),
     );
-    const activities = preparedActivities.map(({ activity, activitySamples, settings }, index) => {
+    const activities = preparedActivities.map((preparedActivity, index) => {
+      const { activity, activitySamples, settings, plannedComparisons } = preparedActivity;
       const effort = calculated[index];
       if (!effort) throw new Error("Every cycling activity requires assembled effort metrics");
       const { workout: metrics, intervals: normalizedIntervals } = effort;
@@ -462,7 +472,7 @@ export class CyclingTrainingMetricsRepository {
         source_devices: sourceDevices,
         member_activity_ids: activity.member_activity_ids,
         thresholds: thresholdEvidence(effort.thresholds.ftp, settings),
-        metrics: snakeMetrics(metrics, normalizedIntervals),
+        metrics: snakeMetrics(metrics, normalizedIntervals, plannedComparisons),
         best_powers: bestPowerRows
           .filter((row) => row.activity_id === activity.activity_id)
           .map((row) => ({

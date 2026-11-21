@@ -72,6 +72,8 @@ const intervalSchema = z
     /** Present only for a matched FIT Workout Step / Lap; never a score or grade. */
     planned_comparison: z
       .object({
+        start_offset_seconds: z.number(),
+        end_offset_seconds: z.number().positive(),
         target: z.discriminatedUnion("kind", [
           z.object({ kind: z.literal("point"), watts: z.number() }).strict(),
           z

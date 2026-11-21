@@ -9,7 +9,7 @@ import {
   getPlannedIntervalComparisons,
   plannedIntervalComparisonSchema,
 } from "../repositories/planned-interval-comparison.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -39,9 +39,10 @@ export const intervalsRouter = router({
 
   /**
    * Eligible FIT planned-versus-recorded laps for one visible activity (any merged member ID).
-   * Empty when the activity is not visible or has no eligible plan.
+   * Empty when the activity is not visible or has no eligible plan. Uncached: visibility depends
+   * on the caller's current access window and on deletes or merges that a cache key cannot see.
    */
-  plannedByActivity: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+  plannedByActivity: protectedProcedure
     .input(z.object({ activityId: z.guid() }))
     .output(z.array(plannedIntervalComparisonSchema))
     .query(async ({ ctx, input }) => {

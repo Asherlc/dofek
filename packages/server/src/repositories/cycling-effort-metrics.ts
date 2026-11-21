@@ -208,16 +208,13 @@ export function calculateCyclingEffortMetrics(
 ) {
   const { context, duration, clean, settings } = prepared;
   const workout = computeCyclingWorkoutMetrics(prepared.workout, computed);
-  const intervalEvidence = (interval: CyclingWorkoutIntervalInput) =>
-    context.intervalEvidence?.find(
-      (item) =>
-        item.input.index === interval.index &&
-        Math.max(0, Math.floor(item.input.startOffsetSeconds)) === interval.startOffsetSeconds &&
-        Math.min(duration, Math.ceil(item.input.endOffsetSeconds)) === interval.endOffsetSeconds,
-    );
+  // Recorded intervals keep the input order, so evidence is linked by position: two laps may
+  // share an index and selected 1 Hz buckets while having distinct exact windows and plans.
+  const intervalEvidence = (position: number) =>
+    context.intervals.length > 0 ? context.intervalEvidence?.[position] : undefined;
   // Stored detector output is still inferred, even though it supplies boundaries.
-  const intervals = workout.intervals.map((interval) => {
-    const evidence = intervalEvidence(interval);
+  const intervals = workout.intervals.map((interval, position) => {
+    const evidence = intervalEvidence(position);
     return evidence?.interval.source === "inferred"
       ? { ...interval, source: "inferred" as const, targetPowerWatts: null, completionPct: null }
       : interval;
@@ -478,8 +475,8 @@ export function calculateCyclingEffortMetrics(
       largestGapSeconds: row.largest_gap_seconds,
       medianSampleIntervalSeconds: row.median_sample_interval_seconds,
     })),
-    intervals: adjustedWorkout.intervals.map((interval) => {
-      const evidence = intervalEvidence(interval);
+    intervals: adjustedWorkout.intervals.map((interval, position) => {
+      const evidence = intervalEvidence(position);
       const source =
         evidence?.interval.source ?? (interval.source === "inferred" ? "inferred" : "unknown");
       return {
@@ -818,8 +815,14 @@ export function recordedIntervalsForActivity(
   const startedAt = Date.parse(activity.started_at);
   const comparable = rows.flatMap((row): ComparableInterval[] => {
     if (!members.has(row.member_activity_id) || row.ended_at == null) return [];
-    const startOffsetSeconds = Math.round((Date.parse(row.started_at) - startedAt) / 1_000);
-    const endOffsetSeconds = Math.round((Date.parse(row.ended_at) - startedAt) / 1_000);
+    const plan = plannedFacts(row);
+    // A matched FIT lap keeps its exact elapsed bounds; every other row keeps whole-second rounding.
+    const offset = (value: string) =>
+      plan
+        ? (Date.parse(value) - startedAt) / 1_000
+        : Math.round((Date.parse(value) - startedAt) / 1_000);
+    const startOffsetSeconds = offset(row.started_at);
+    const endOffsetSeconds = offset(row.ended_at);
     if (endOffsetSeconds <= startOffsetSeconds) return [];
     const interval: ComparableInterval = {
       intervalIndex: row.interval_index,
@@ -840,7 +843,6 @@ export function recordedIntervalsForActivity(
       targetResistance: row.target_resistance,
       raw: row.raw,
     };
-    const plan = plannedFacts(row);
     if (plan) interval.plan = plan;
     return [interval.source === "inferred" ? inferIntervalResult(interval) : interval];
   });

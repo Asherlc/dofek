@@ -8,6 +8,7 @@ import {
   computeCyclingWorkoutMetrics,
   prepareCyclingWorkoutMetrics,
   resampleCyclingStream,
+  selectIntervalSamples,
   summarizeIntervalPower,
 } from "./cycling-workout-metrics.ts";
 
@@ -974,5 +975,47 @@ describe("summarizeIntervalPower", () => {
     expect(
       summarizeIntervalPower([100], { startOffsetSeconds: -5, endOffsetSeconds: 50 }),
     ).toMatchObject({ startOffsetSeconds: 0, endOffsetSeconds: 1, averagePowerWatts: 100 });
+  });
+});
+
+describe("exact lap bounds select 1 Hz timestamps in [start, end)", () => {
+  const power = [10, 20, 30, 40, 50];
+
+  it("includes the last eligible sample at t=2 for an end of 2.4", () => {
+    expect(
+      summarizeIntervalPower(power, { startOffsetSeconds: 0, endOffsetSeconds: 2.4 }),
+    ).toMatchObject({ startOffsetSeconds: 0, endOffsetSeconds: 3, averagePowerWatts: 20 });
+  });
+
+  it("starts at the first timestamp at or after a fractional start", () => {
+    expect(
+      summarizeIntervalPower(power, { startOffsetSeconds: 0.5, endOffsetSeconds: 3 }),
+    ).toMatchObject({ startOffsetSeconds: 1, endOffsetSeconds: 3, averagePowerWatts: 25 });
+  });
+
+  it("partitions touching fractional laps without overlap or loss", () => {
+    const first = selectIntervalSamples(5, { startOffsetSeconds: 0, endOffsetSeconds: 2.4 });
+    const second = selectIntervalSamples(5, { startOffsetSeconds: 2.4, endOffsetSeconds: 4 });
+
+    expect(first).toEqual({ startOffsetSeconds: 0, endOffsetSeconds: 3 });
+    expect(second).toEqual({ startOffsetSeconds: 3, endOffsetSeconds: 4 });
+  });
+
+  it.each([
+    [2, 2, 2],
+    [2, 2.000001, 2],
+    [2.000001, 4, 3],
+  ])("handles near-exact bounds [%s, %s) for the sample at t=2", (start, end, expectedStart) => {
+    const selected = selectIntervalSamples(5, { startOffsetSeconds: start, endOffsetSeconds: end });
+    expect(selected.startOffsetSeconds).toBe(expectedStart);
+    expect(selected.startOffsetSeconds <= 2 && 2 < selected.endOffsetSeconds).toBe(
+      start <= 2 && 2 < end,
+    );
+  });
+
+  it("returns null power for a valid window that contains no 1 Hz timestamp", () => {
+    expect(
+      summarizeIntervalPower(power, { startOffsetSeconds: 2.1, endOffsetSeconds: 2.4 }),
+    ).toMatchObject({ averagePowerWatts: null, meanPowerWatts: null });
   });
 });

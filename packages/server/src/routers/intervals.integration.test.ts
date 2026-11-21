@@ -6,6 +6,7 @@ import { activity, activityInterval } from "../../../../src/db/schema/activity.t
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { makeMockSensorStore } from "../lib/test-helpers.ts";
 import { intervalsRouter } from "./intervals.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
@@ -23,6 +24,7 @@ describe("intervals.plannedByActivity with real Postgres and ClickHouse", () => 
   const conflictId = randomUUID();
   const conflictMemberId = randomUUID();
   const legacyId = randomUUID();
+  const fractionalId = randomUUID();
   let postgres: TestContext;
   let queryCount = 0;
 
@@ -45,8 +47,14 @@ describe("intervals.plannedByActivity with real Postgres and ClickHouse", () => 
     ),
   };
 
-  function caller(userId = TEST_USER_ID) {
-    return createCaller({ db: postgres.db, userId, timezone: "UTC", sensorStore: store });
+  function caller(userId = TEST_USER_ID, accessWindow?: AccessWindow) {
+    return createCaller({
+      db: postgres.db,
+      userId,
+      timezone: "UTC",
+      sensorStore: store,
+      ...(accessWindow ? { accessWindow } : {}),
+    });
   }
 
   async function insertActivity(id: string, groupId: string) {
@@ -93,6 +101,7 @@ describe("intervals.plannedByActivity with real Postgres and ClickHouse", () => 
     await insertActivity(conflictId, conflictId);
     await insertActivity(conflictMemberId, conflictId);
     await insertActivity(legacyId, legacyId);
+    await insertActivity(fractionalId, fractionalId);
     await postgres.db.insert(activityInterval).values([
       // Two laps of one planned step on a merged member; the second is a shortened lap.
       lap(mergedMemberId, 0, 0, 180, { targetPowerMinWatts: 250, targetPowerMaxWatts: 265 }),
@@ -103,6 +112,10 @@ describe("intervals.plannedByActivity with real Postgres and ClickHouse", () => 
       }),
       lap(conflictId, 0, 0, 180, { targetPowerWatts: 250 }),
       lap(conflictMemberId, 0, 0, 180, { targetPowerWatts: 250, plannedDurationSeconds: 120 }),
+      // Exact fractional laps: 0-2.4 s, touching 2.4-3.5 s, and 3.5-3.9 s with no 1 Hz timestamp.
+      lap(fractionalId, 0, 0, 2.4, { targetPowerWatts: 250 }),
+      lap(fractionalId, 1, 2.4, 3.5, { targetPowerWatts: 250 }),
+      lap(fractionalId, 2, 3.5, 3.9, { targetPowerWatts: 250 }),
       {
         activityId: legacyId,
         intervalIndex: 0,
@@ -148,6 +161,17 @@ describe("intervals.plannedByActivity with real Postgres and ClickHouse", () => 
           refresh_version: 1,
           is_deleted: 0,
         },
+        {
+          activity_id: fractionalId,
+          user_id: TEST_USER_ID,
+          started_at: "2026-06-15 15:00:00.000000",
+          source_providers: [providerId],
+          member_activity_ids: [fractionalId],
+          timezone: null,
+          local_time_source: "unknown",
+          refresh_version: 1,
+          is_deleted: 0,
+        },
       ],
     });
     // Lap 0 is 250 W. The sample at second 180 (the shared boundary) belongs to lap 1, which
@@ -156,18 +180,32 @@ describe("intervals.plannedByActivity with real Postgres and ClickHouse", () => 
     await clickhouse.insert({
       table: `${analyticsDatabase}.activity_sensor_sample`,
       format: "JSONEachRow",
-      values: Array.from({ length: 314 }, (_, second) => ({
-        activity_id: canonicalId,
-        user_id: TEST_USER_ID,
-        recorded_at: `2026-06-15 15:${String(Math.floor(second / 60)).padStart(2, "0")}:${String(second % 60).padStart(2, "0")}.000000`,
-        channel: "power",
-        scalar: power(second),
-        provider_id: providerId,
-        device_id: "head-unit",
-        measurement_kind: "direct",
-        refresh_version: 1,
-        is_deleted: 0,
-      })),
+      values: [
+        ...Array.from({ length: 5 }, (_, second) => ({
+          activity_id: fractionalId,
+          user_id: TEST_USER_ID,
+          recorded_at: `2026-06-15 15:00:0${second}.000000`,
+          channel: "power",
+          scalar: 10 + 10 * second,
+          provider_id: providerId,
+          device_id: "head-unit",
+          measurement_kind: "direct",
+          refresh_version: 1,
+          is_deleted: 0,
+        })),
+        ...Array.from({ length: 314 }, (_, second) => ({
+          activity_id: canonicalId,
+          user_id: TEST_USER_ID,
+          recorded_at: `2026-06-15 15:${String(Math.floor(second / 60)).padStart(2, "0")}:${String(second % 60).padStart(2, "0")}.000000`,
+          channel: "power",
+          scalar: power(second),
+          provider_id: providerId,
+          device_id: "head-unit",
+          measurement_kind: "direct",
+          refresh_version: 1,
+          is_deleted: 0,
+        })),
+      ],
     });
   });
 
@@ -203,6 +241,33 @@ describe("intervals.plannedByActivity with real Postgres and ClickHouse", () => 
       timerDifferenceSeconds: -46,
       averagePowerWatts: 0.7,
     });
+  });
+
+  it("does not serve a warmed plan after the caller's access window stops including it", async () => {
+    expect(await caller().plannedByActivity({ activityId: mergedMemberId })).toHaveLength(2);
+
+    const limited: AccessWindow = {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2030-01-01",
+      endDateExclusive: "2030-01-08",
+    };
+    expect(
+      await caller(TEST_USER_ID, limited).plannedByActivity({ activityId: mergedMemberId }),
+    ).toEqual([]);
+  });
+
+  it("selects exact half-open 1 Hz windows and keeps an empty valid window as null power", async () => {
+    const rows = await caller().plannedByActivity({ activityId: fractionalId });
+
+    expect(
+      rows.map((row) => [row.startOffsetSeconds, row.endOffsetSeconds, row.averagePowerWatts]),
+    ).toEqual([
+      [0, 2.4, 20],
+      [2.4, 3.5, 40],
+      [3.5, 3.9, null],
+    ]);
   });
 
   it("returns nothing for a user who cannot see the activity", async () => {

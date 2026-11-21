@@ -260,7 +260,7 @@ describe("CyclingTrainingMetricsRepository", () => {
     });
   });
 
-  it("matches interval evidence by index and both clipped boundaries", async () => {
+  it("links interval evidence by input position when indexes and bounds repeat", async () => {
     const intervalInputs = [
       {
         index: 1,
@@ -336,17 +336,7 @@ describe("CyclingTrainingMetricsRepository", () => {
       {
         ...calculated,
         workout: calculated.workout,
-        intervals: [
-          {
-            ...first,
-            index: 2,
-            evidence: first.evidence
-              ? { ...first.evidence, sourceProvider: "wrong-index-provider" }
-              : null,
-          },
-          ...calculated.intervals.slice(0, 2),
-          { ...third, source: "inferred" },
-        ],
+        intervals: [...calculated.intervals.slice(0, 2), { ...third, source: "inferred" }],
       },
     ]);
     const execute = vi.fn().mockResolvedValue([]);
@@ -572,6 +562,126 @@ describe("CyclingTrainingMetricsRepository", () => {
       });
     },
   );
+  it("keeps each planned comparison with its own exact lap when selected buckets match", async () => {
+    const fitLap = (member: string, endedAt: string, watts: number) => ({
+      ...unknownIntervalSource,
+      member_activity_id: member,
+      interval_index: 0,
+      label: "Step 1",
+      interval_type: "lap",
+      started_at: "2026-06-15T15:00:00.000Z",
+      ended_at: endedAt,
+      source_kind: "provider_recorded",
+      source_provider: "garmin",
+      source_activity_id: member,
+      target_power_watts: watts,
+      fit_source: "workout_step_lap",
+      planned_duration_seconds: 180,
+      recorded_timer_duration_seconds: 179,
+    });
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        fitLap(memberActivityId, "2026-06-15T15:02:59.100Z", 200),
+        fitLap(activityId, "2026-06-15T15:02:59.200Z", 300),
+      ]);
+    const query = vi.fn(async (_schema, text: string) =>
+      text.includes(":activities") ? [activityRow()] : text.includes(":samples") ? samples() : [],
+    );
+    const result = await new CyclingTrainingMetricsRepository(
+      { execute },
+      { query },
+      userId,
+      "UTC",
+    ).listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      modalities: [],
+      providers: [],
+      durationsSeconds: [],
+      cursor: null,
+      limit: 10,
+    });
+
+    expect(
+      result.activities[0]?.metrics.intervals.map((interval) => [
+        interval.source_activity_id,
+        interval.planned_comparison?.target,
+        interval.planned_comparison?.end_offset_seconds,
+      ]),
+    ).toEqual([
+      [memberActivityId, { kind: "point", watts: 200 }, 179.1],
+      [activityId, { kind: "point", watts: 300 }, 179.2],
+    ]);
+  });
+
+  it("compares planned laps over the exact canonical window, not whole-second elapsed time", async () => {
+    // ClickHouse reports 2 elapsed seconds for a canonical window that actually ends at 2.4 s.
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          ...unknownIntervalSource,
+          member_activity_id: memberActivityId,
+          interval_index: 0,
+          label: "Step 1",
+          interval_type: "lap",
+          started_at: "2026-06-15T15:00:00.000Z",
+          ended_at: "2026-06-15T15:00:02.400Z",
+          source_kind: "provider_recorded",
+          source_provider: "garmin",
+          source_activity_id: memberActivityId,
+          target_power_watts: 200,
+          fit_source: "workout_step_lap",
+          planned_duration_seconds: 180,
+          recorded_timer_duration_seconds: 2.4,
+        },
+      ]);
+    const rampSamples = [10, 20, 30].map((power, second) => ({
+      ...samples()[0],
+      elapsed_seconds: second,
+      power,
+      heart_rate: null,
+      cadence: null,
+      stream_evidence: [["power", "peloton", "Peloton Bike", "direct"]],
+    }));
+    const query = vi.fn(async (_schema, text: string) =>
+      text.includes(":activities")
+        ? [activityRow({ ended_at: "2026-06-15T15:00:02.400Z", elapsed_seconds: 2 })]
+        : text.includes(":samples")
+          ? rampSamples
+          : [],
+    );
+    const result = await new CyclingTrainingMetricsRepository(
+      { execute },
+      { query },
+      userId,
+      "UTC",
+    ).listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      modalities: [],
+      providers: [],
+      durationsSeconds: [],
+      cursor: null,
+      limit: 10,
+    });
+    const [interval] = result.activities[0]?.metrics.intervals ?? [];
+
+    expect(interval?.planned_comparison).toMatchObject({
+      start_offset_seconds: 0,
+      end_offset_seconds: 2.4,
+      average_power_watts: 20,
+    });
+    // The legacy aggregate keeps its whole-second elapsed-time window.
+    expect(interval?.average_power_watts).toBe(15);
+    expect(query.mock.calls.filter(([, text]) => String(text).includes(":samples"))).toHaveLength(
+      1,
+    );
+  });
+
   it("computes a paginated activity from canonical streams and historical settings", async () => {
     const execute = vi
       .fn()

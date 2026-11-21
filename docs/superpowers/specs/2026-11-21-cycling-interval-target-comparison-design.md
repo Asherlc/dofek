@@ -11,13 +11,15 @@ omits the time-with-power-data column.
 The existing FIT activity import is the proposed source. Garmin FIT describes
 how an Activity file can embed its Workout Step messages and how a Lap's
 `wkt_step_index` references a step's `message_index`. The first version is
-limited to a clean, single-session cycling Activity file with that same-file
-link, unambiguous lap boundaries, a fixed-time step and a custom absolute power
-target. A file must meet the field requirements regardless of which existing FIT
-import path delivered it. A template alone, an unlinked lap, a percentage of
-FTP, or a preset zone supplies insufficient evidence for this comparison.
+limited to a clean, unchained, single-session cycling Activity file with
+unambiguous lap boundaries and a step index within the same file's declared
+workout step count. The linked step needs a fixed duration and a custom absolute
+power target. These field requirements apply across existing FIT import paths.
+A template alone, an unlinked lap, a percentage of FTP, or a preset zone supplies
+insufficient evidence for this comparison.
 [Garmin FIT Activity files](https://developer.garmin.com/fit/file-types/activity)
-· [Garmin FIT Workout files](https://developer.garmin.com/fit/file-types/workout)
+· [Garmin FIT Workout files](https://developer.garmin.com/fit/articles/file-types/workout.html)
+· [Garmin FIT protocol](https://developer.garmin.com/fit/articles/fit-protocol/fit_protocol.html#chained-fit-files)
 
 Preserve each recorded lap, including distinct repetitions of one step.
 Keep a point target as a watt value and a range as both endpoints. The
@@ -29,8 +31,10 @@ the cause. An absent lap supplies no completion evidence.
 [Garmin Edge workout controls](https://www8.garmin.com/manuals/webhelp/GUID-28E0106C-B05A-44E9-BF7C-9CB36A596B82/EN-US/GUID-DA139DEC-5B83-410E-ADF5-51880B22FA4B.html)
 
 Use the existing deduplicated cycling power stream and its gap-aware averaging
-for the lap. A missing average or timer duration is unknown. A measured zero
-remains zero. A point or range and a recorded average are a direct comparison.
+for the lap. Include the resampled timestamps from the lap start up to its end,
+excluding the end timestamp. A missing average or timer duration is unknown.
+A measured zero remains zero. A point or range and a recorded average are a
+direct comparison.
 The section reports those values and timer differences without a workout grade
 or a training recommendation. TrainingPeaks presents the same basic
 planned-versus-recorded question as a chart overlay, whose alignment the user
