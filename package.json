@@ -53,6 +53,7 @@
     "./db/schema/nutrition": "./src/db/schema/nutrition.ts",
     "./db/schema/mcp": "./src/db/schema/mcp.ts",
     "./db/schema/reference": "./src/db/schema/reference.ts",
+    "./fit/lamberts-workout": "./src/fit/lamberts-workout.ts",
     "./processing/dataset-contracts": "./src/processing/dataset-contracts.ts",
     "./processing/processing-event-store": "./src/processing/processing-event-store.ts",
     "./processing/processing-state": "./src/processing/processing-state.ts",

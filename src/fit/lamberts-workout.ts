@@ -11,6 +11,10 @@ const protocol = [
 ] as const;
 
 export const lambertsFitSegments = protocol.map(({ segment }) => segment);
+export const lambertsFitDurationSeconds = protocol.reduce(
+  (total, { seconds }) => total + seconds,
+  0,
+);
 // One Workout, one optional Zones Target, and one prescribed step and linked lap per segment.
 export const maximumLambertsWorkoutObservations = 2 + 2 * protocol.length;
 
