@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dofek iOS · Training / Cycling</title>
+  <link rel="stylesheet" href="app-preview.css">
+  <script defer src="app-preview.js"></script>
+</head>
+<body class="ios">
+  <header data-dc-id="cycling-stack-header">
+    <div class="ios-status" aria-hidden="true"><span>9:41</span><i class="battery"></i></div>
+    <div class="ios-nav"><span>Training</span><h1>Cycling</h1></div>
+  </header>
+  <main>
+    <fieldset class="range" aria-label="Time range" data-dc-id="time-range">
+      <label><input type="radio" name="range" value="7">7d</label>
+      <label><input type="radio" name="range" value="14">14d</label>
+      <label><input type="radio" name="range" value="30" checked>30d</label>
+      <label><input type="radio" name="range" value="90">90d</label>
+    </fieldset>
+    <section class="card" aria-labelledby="ascent-title" data-dc-id="vertical-ascent">
+      <h2 class="section-title" id="ascent-title">Vertical Ascent Rate</h2>
+      <svg class="chart" viewBox="0 0 324 109" role="img" aria-labelledby="ascent-chart-title">
+        <title id="ascent-chart-title">Sample ascent rate for six rides, from 410 to 810 meters per hour</title>
+        <text x="1" y="15">m/h</text>
+        <line x1="31" y1="25" x2="319" y2="25"/><line x1="31" y1="53" x2="319" y2="53"/><line x1="31" y1="81" x2="319" y2="81"/>
+        <text x="1" y="29">800</text><text x="1" y="57">600</text><text x="1" y="85">400</text>
+        <circle cx="44" cy="79" r="4"/><circle cx="80" cy="56" r="6"/><circle cx="127" cy="64" r="5"/>
+        <circle cx="186" cy="25" r="7"/><circle cx="241" cy="44" r="5"/><circle cx="310" cy="34" r="6"/>
+        <g text-anchor="middle"><text x="44" y="103">Oct 24</text><text x="301" y="103">Nov 14</text></g>
+      </svg>
+    </section>
+    <section class="card" aria-labelledby="durability-heading" data-dc-id="durability" data-durability></section>
+    <section class="card" aria-labelledby="volume-title" data-dc-id="cycling-volume">
+      <h2 class="section-title" id="volume-title">Cycling Volume</h2>
+      <div class="volume-options" aria-label="Sample volume chart metrics"><span>Time</span><span>Distance</span><span>Elevation</span><span>Work</span></div>
+      <svg class="chart" viewBox="0 0 324 109" role="img" aria-labelledby="volume-chart-title">
+        <title id="volume-chart-title">Sample cycling volume for four weeks, ranging from five to eight hours</title>
+        <line x1="38" y1="15" x2="319" y2="15"/><line x1="38" y1="48" x2="319" y2="48"/><line x1="38" y1="80" x2="319" y2="80"/>
+        <text x="1" y="19">8:00</text><text x="1" y="52">4:00</text><text x="1" y="84">0:00</text>
+        <rect x="54" y="33" width="32" height="47" rx="2"/><rect x="126" y="21" width="32" height="59" rx="2"/>
+        <rect x="198" y="15" width="32" height="65" rx="2"/><rect x="270" y="39" width="32" height="41" rx="2"/>
+        <g text-anchor="middle"><text x="70" y="102">Oct 19</text><text x="142" y="102">Oct 26</text><text x="214" y="102">Nov 2</text><text x="286" y="102">Nov 9</text></g>
+      </svg>
+    </section>
+  </main>
+</body>
+</html>

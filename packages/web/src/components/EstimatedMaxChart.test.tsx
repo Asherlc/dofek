@@ -5,8 +5,22 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 vi.mock("./DofekChart.tsx", () => ({
-  DofekChart: ({ option }: { option: Record<string, unknown> }) => (
-    <div data-testid="estimated-max-chart" data-option={JSON.stringify(option)} />
+  DofekChart: ({
+    option,
+    empty,
+    emptyMessage,
+  }: {
+    option: { tooltip?: { formatter?: (point: { dataIndex: number }) => string } };
+    empty: boolean;
+    emptyMessage: string;
+  }) => (
+    <div data-testid="estimated-max-chart" data-option={JSON.stringify(option)}>
+      {empty ? (
+        emptyMessage
+      ) : (
+        <div>{option.tooltip?.formatter?.({ dataIndex: 0 })?.split("<br/>").join(" ")}</div>
+      )}
+    </div>
   ),
 }));
 
@@ -14,11 +28,27 @@ import { EstimatedMaxChart } from "./EstimatedMaxChart.tsx";
 
 const exercises = [
   {
-    exerciseName: "Barbell Back Squat",
+    exerciseName: "Back Squat",
     equipment: null,
     history: [
-      { date: "2026-05-01", estimatedMax: 118, actualWeight: 100, actualReps: 5 },
-      { date: "2026-07-01", estimatedMax: 128, actualWeight: 110, actualReps: 5 },
+      {
+        date: "2026-05-01",
+        estimatedMax: 118,
+        actualWeight: 100,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000001",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
+      {
+        date: "2026-07-01",
+        estimatedMax: 128,
+        actualWeight: 110,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000002",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
     ],
     trend: {
       direction: "increasing" as const,
@@ -29,11 +59,27 @@ const exercises = [
     },
   },
   {
-    exerciseName: "Single-Arm Cable Row",
+    exerciseName: "Deadlift",
     equipment: null,
     history: [
-      { date: "2026-05-08", estimatedMax: 70, actualWeight: 60, actualReps: 5 },
-      { date: "2026-07-08", estimatedMax: 65, actualWeight: 55, actualReps: 5 },
+      {
+        date: "2026-05-08",
+        estimatedMax: 70,
+        actualWeight: 60,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000003",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
+      {
+        date: "2026-07-08",
+        estimatedMax: 65,
+        actualWeight: 55,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000004",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
     ],
     trend: {
       direction: "decreasing" as const,
@@ -68,6 +114,19 @@ function chartOption(): z.infer<typeof chartOptionSchema> {
 }
 
 describe("EstimatedMaxChart", () => {
+  it("explains the minimum when the chart has no trend", () => {
+    render(<EstimatedMaxChart exercises={[]} />);
+    expect(
+      screen.getByText("A trend needs three workouts with qualifying sets and recorded fatigue."),
+    ).toBeVisible();
+  });
+
+  it("shows the recorded load, repetitions, and fatigue evidence in the tooltip", () => {
+    render(<EstimatedMaxChart exercises={[firstExercise]} />);
+    expect(screen.getByText(/Recorded set · 100.0 kg × 5/)).toBeVisible();
+    expect(screen.getByText(/Strong set tag · Failure/)).toBeVisible();
+  });
+
   it("selects and distinguishes same-name equipment variants", () => {
     render(
       <EstimatedMaxChart
@@ -114,21 +173,21 @@ describe("EstimatedMaxChart", () => {
     const selector = screen.getByRole("group", { name: "Choose an exercise to chart" });
     expect(selector).toHaveClass("flex-wrap");
 
-    const squatButton = screen.getByRole("button", { name: "Chart Barbell Back Squat" });
-    const rowButton = screen.getByRole("button", { name: "Chart Single-Arm Cable Row" });
+    const squatButton = screen.getByRole("button", { name: "Chart Back Squat" });
+    const rowButton = screen.getByRole("button", { name: "Chart Deadlift" });
     expect(squatButton).toHaveAttribute("aria-pressed", "true");
     expect(rowButton).toHaveAttribute("aria-pressed", "false");
 
     const initialOption = chartOption();
     expect(initialOption.legend).toBeUndefined();
     expect(initialOption.series).toHaveLength(1);
-    expect(initialOption.series.at(0)?.name).toBe("Barbell Back Squat");
+    expect(initialOption.series.at(0)?.name).toBe("Back Squat");
 
     fireEvent.click(rowButton);
 
     expect(squatButton).toHaveAttribute("aria-pressed", "false");
     expect(rowButton).toHaveAttribute("aria-pressed", "true");
-    expect(chartOption().series.at(0)?.name).toBe("Single-Arm Cable Row");
+    expect(chartOption().series.at(0)?.name).toBe("Deadlift");
   });
 
   it("renders server-owned trend evidence and explicit selected date bounds", () => {
@@ -140,7 +199,7 @@ describe("EstimatedMaxChart", () => {
     expect(screen.getByText("10.0 kg")).toBeVisible();
     expect(screen.getByText("May 1 – Jul 1")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Chart Single-Arm Cable Row" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart Deadlift" }));
 
     expect(
       screen.getByText("Estimated max decreased from first to latest estimate."),

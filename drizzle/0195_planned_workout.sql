@@ -1,5 +1,5 @@
 CREATE TABLE fitness.planned_workout (
-  user_id uuid NOT NULL REFERENCES fitness.user_profile (id) ON DELETE cascade,
+  user_id uuid NOT NULL REFERENCES fitness.user_profile (id) ON DELETE CASCADE,
   provider_id text NOT NULL REFERENCES fitness.provider (id),
   external_id text NOT NULL,
   start_date date NOT NULL,

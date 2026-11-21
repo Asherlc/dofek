@@ -3,11 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import { invalidateSyncedHealthData } from "./invalidate-synced-health-data";
 
 describe("invalidateSyncedHealthData", () => {
-  it.each(["volumeIncrease", "attemptIncrease"])(
-    "refreshes %s when its first fetch overlaps a completed sync",
-    async (procedure) => {
+  it.each([
+    ["climbing", "volumeIncrease"],
+    ["climbing", "attemptIncrease"],
+    ["activity", "byId"],
+  ])(
+    "refreshes %s.%s when its first fetch overlaps a completed sync",
+    async (router, procedure) => {
       const queryClient = new QueryClient();
-      const queryKey = [["climbing", procedure], { type: "query" }];
+      const queryKey = [[router, procedure], { type: "query" }];
       const initial = Promise.withResolvers<string>();
       const queryFn = vi.fn().mockReturnValueOnce(initial.promise).mockResolvedValue("after sync");
       const observer = new QueryObserver(queryClient, { queryKey, queryFn });
@@ -39,6 +43,7 @@ describe("invalidateSyncedHealthData", () => {
       [["calendar", "weekListV2"], { type: "query" }],
       [["calendar", "activityOverview"], { type: "query" }],
       [["activity", "list"], { type: "query" }],
+      [["activity", "byId"], { input: { id: "ride" }, type: "query" }],
       [["food", "byDateV2"], { type: "query" }],
       [["processing", "status"], { type: "query" }],
       [["dailyMetrics", "recorded"], { type: "query" }],

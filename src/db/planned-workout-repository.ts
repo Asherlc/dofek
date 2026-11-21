@@ -61,7 +61,7 @@ export async function replacePlannedWorkoutSnapshot(
     }
     externalIds.add(event.externalId);
   }
-  // Padded fetch windows can return neighbours; only the exact window is authoritative.
+  // A padded fetch can return workouts outside the authoritative window.
   const events = allEvents.filter((event) => event.startDate >= from && event.startDate <= to);
   const ids = events.map((event) => event.externalId);
 

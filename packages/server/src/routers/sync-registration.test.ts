@@ -109,6 +109,9 @@ vi.mock("dofek/providers/zwift", () => ({ ZwiftProvider: mockProviderConstructor
 vi.mock("dofek/providers/trainerroad", () => ({
   TrainerRoadProvider: mockProviderConstructor("trainerroad"),
 }));
+vi.mock("dofek/providers/runalyze", () => ({
+  RunalyzeProvider: mockProviderConstructor("runalyze"),
+}));
 vi.mock("dofek/providers/ultrahuman", () => ({
   UltrahumanProvider: mockProviderConstructor("ultrahuman"),
 }));
@@ -186,6 +189,7 @@ describe("ensureProvidersRegistered failure path", () => {
         "intervals.icu",
         "openbeta",
         "thecrag",
+        "runalyze",
         "ultrahuman",
         "wger",
         "ziva",

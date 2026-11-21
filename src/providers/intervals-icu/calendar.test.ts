@@ -122,7 +122,7 @@ describe("fetchPlannedWorkouts", () => {
     expect(result.events.map((item) => item.id)).toEqual([1]);
   });
 
-  it("filters a record returned by a neighbouring chunk by that chunk's start-day bounds", async () => {
+  it("filters an adjacent chunk's records using its start-day bounds", async () => {
     captureRequests({
       "2026-03-01": [event(1, "2026-03-10")],
       "2026-03-31": [event(1, "2026-03-10")],

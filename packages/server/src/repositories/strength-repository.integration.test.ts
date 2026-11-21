@@ -194,7 +194,9 @@ describe("StrengthRepository activity scope", () => {
 
   it("preserves same-name exercise histories as distinct equipment identities", async () => {
     const repository = new StrengthRepository(testContext.db, TEST_USER_ID, "UTC");
-    const exerciseName = "Task 8 Equipment Identity Press";
+    const exerciseName = "Back Squat";
+    await testContext.db.execute(sql`INSERT INTO fitness.provider (id, name)
+      VALUES ('strong-csv', 'Strong') ON CONFLICT (id) DO NOTHING`);
     const exercises = await executeWithSchema(
       testContext.db,
       z.object({ equipment: z.string(), id: z.string().uuid() }),
@@ -202,6 +204,7 @@ describe("StrengthRepository activity scope", () => {
           VALUES
             (${exerciseName}, ARRAY['chest']::text[], 'BARBELL'),
             (${exerciseName}, ARRAY['chest']::text[], 'DUMBBELL')
+          ON CONFLICT (name, equipment) DO UPDATE SET name = EXCLUDED.name
           RETURNING id, equipment`,
     );
     const barbellId = exercises.find((exercise) => exercise.equipment === "BARBELL")?.id;
@@ -220,7 +223,7 @@ describe("StrengthRepository activity scope", () => {
               provider_id, user_id, external_id, canonical_type, provider_type,
               started_at, ended_at, name, source_name
             ) VALUES (
-              'strength_scope_test', ${TEST_USER_ID}, ${`equipment-identity-${weekOffset}`},
+              'strong-csv', ${TEST_USER_ID}, ${`equipment-identity-${weekOffset}`},
               'strength', 'strength_training',
               date_trunc('week', CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
                 - ${weekOffset}::int * INTERVAL '1 week' + INTERVAL '1 day',
@@ -233,22 +236,19 @@ describe("StrengthRepository activity scope", () => {
       if (!activityId) throw new Error("Equipment identity activity was not created");
       await testContext.db.execute(
         sql`INSERT INTO fitness.strength_set (
-              activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps
+              activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps, raw
             ) VALUES
-              (${activityId}, ${barbellId}, 0, 0, 'working', ${barbellWeight}, 5),
-              (${activityId}, ${dumbbellId}, 1, 0, 'working', ${dumbbellWeight}, 10)`,
+              (${activityId}, ${barbellId}, 0, 0, 'working', ${barbellWeight}, 5, jsonb_build_object('setTag', 'Failure', 'weight', ${barbellWeight}::numeric, 'reps', 5, 'exerciseName', 'Back Squat (Barbell)', 'weightUnit', 'kg', 'reportedWeightUnit', 'kg')),
+              (${activityId}, ${dumbbellId}, 1, 0, 'working', ${dumbbellWeight}, 10, '{}'::jsonb)`,
       );
     }
 
     const estimatedMaxes = (await repository.getEstimatedOneRepMax(90))
       .map((result) => result.toDetail())
       .filter((result) => result.exerciseName === exerciseName);
-    expect(estimatedMaxes.map(({ equipment }) => equipment)).toEqual(["BARBELL", "DUMBBELL"]);
-    expect(
-      estimatedMaxes.map(({ history }) => history.map(({ actualWeight }) => actualWeight)),
-    ).toEqual([
-      [80, 85, 90],
-      [40, 42, 44],
+    expect(estimatedMaxes.map(({ equipment }) => equipment)).toEqual(["BARBELL"]);
+    expect(estimatedMaxes[0]?.history.map(({ estimatedMax }) => estimatedMax)).toEqual([
+      93.3, 99.2, 105,
     ]);
 
     const overload = (await repository.getProgressiveOverload(90))

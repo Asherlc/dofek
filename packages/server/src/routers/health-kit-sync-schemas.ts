@@ -66,6 +66,26 @@ export const workoutActivitySchema = z.object({
   metadata: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
 });
 
+/**
+ * Apple's explicitly reported whole-workout effort (not the separate estimated
+ * sample) on its 1–10 `appleEffortScore` scale. The type and named Apple unit
+ * are implicit in this transport field; the sample bounds and source belong to
+ * the effort sample itself. No scale or entry-time semantics are inferred.
+ */
+export const workoutEffortSchema = z
+  .object({
+    uuid: z.uuid(),
+    value: z.number().min(1).max(10),
+    startDate: z.iso.datetime({ offset: true }),
+    endDate: z.iso.datetime({ offset: true }),
+    sourceName: z.string().min(1),
+    sourceBundle: z.string().min(1),
+  })
+  .refine((sample) => Date.parse(sample.startDate) <= Date.parse(sample.endDate), {
+    path: ["endDate"],
+    message: "Workout effort must end at or after its start. Resync Apple Health workouts.",
+  });
+
 export const workoutSampleSchema = z.object({
   sourceProductType: z.string().optional(),
   uuid: z.string(),
@@ -78,6 +98,7 @@ export const workoutSampleSchema = z.object({
   sourceBundle: z.string(),
   metadata: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
   workoutActivities: z.array(workoutActivitySchema).optional(),
+  workoutEffort: workoutEffortSchema.optional(),
   device: z
     .object({
       name: z.string().optional(),

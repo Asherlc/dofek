@@ -311,6 +311,7 @@ export function getRecordDisplayColumns(dataType: DataType): readonly string[] {
 /** Provider-owned record tables, in foreign-key-safe deletion order. */
 export const PROVIDER_DATA_TABLES = [
   "fitness.daily_metrics",
+  "fitness.running_race_result",
   "fitness.sleep_session",
   "fitness.food_entry",
   "fitness.clinical_record",

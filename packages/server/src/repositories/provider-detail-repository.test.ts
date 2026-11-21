@@ -95,8 +95,8 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("PROVIDER_ACCOUNT_TABLES", () => {
-  it("contains 15 child tables", () => {
-    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(15);
+  it("contains 16 child tables", () => {
+    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(16);
   });
 
   it("includes all required child tables", () => {
@@ -105,6 +105,7 @@ describe("PROVIDER_ACCOUNT_TABLES", () => {
     expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.body_measurement");
     expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.nutrition_daily");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.daily_metrics");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.running_race_result");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.sleep_session");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.food_entry");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.clinical_record");
@@ -821,9 +822,9 @@ describe("ProviderDetailRepository", () => {
     });
 
     it("PROVIDER_ACCOUNT_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(15);
+      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(16);
       expect(PROVIDER_ACCOUNT_TABLES[0]).toBe("fitness.daily_metrics");
-      expect(PROVIDER_ACCOUNT_TABLES[14]).toBe("fitness.provider_connection");
+      expect(PROVIDER_ACCOUNT_TABLES.at(-1)).toBe("fitness.provider_connection");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {
