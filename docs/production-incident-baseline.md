@@ -39665,6 +39665,32 @@ Local qualification and CI are separate from production throughput acceptance. T
   [Native WAL replay](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleStore%2BInboxWriteTests.swift)
   · [Apple disk-write profiling](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
 
+## 2026-11-21 — Docker VM AIO exhaustion during cycling durability validation
+
+- The local command `pnpm test:integration -- src/db/cycling-durability-effort.integration.test.ts`
+  stopped during `compose:up`, before test collection. Redpanda repeatedly exited
+  with code 133. PostgreSQL and Redis were healthy when inspected. The failure
+  interrupted local validation. Production was unaffected.
+- Redpanda’s first fatal message began `Could not setup Async I/O: unknown error`.
+  A read-only check in the workspace PostgreSQL container returned `65536` for
+  both `aio-nr` and `aio-max-nr`, confirming that the shared Docker Desktop Linux
+  VM could not allocate another AIO slot. [Linux kernel AIO settings](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+- With user authorization, set the local VM runtime ceiling to `1048576` and
+  confirmed it from the workspace container. The unchanged command then
+  reported Redpanda healthy. The change used a disposable container and leaves
+  the repository and persistent Docker configuration untouched.
+- The unchanged command still stopped before test collection with `container
+  insights-cycling-durability-clickhouse-1 is unhealthy`. The health-check log
+  repeatedly reported `Health check exceeded timeout (5s)`. A manual `SELECT 1`
+  succeeded over both HTTP and the native client. At inspection, the ten-CPU VM
+  reported a one-minute load of 855.41 and 95.59 percent CPU waiting over the
+  last ten seconds. The ClickHouse health gate and rebuilt feature tests remain
+  pending. [Shared Docker VM resource checks](testing.md#shared-docker-vm-resource-pressure).
+- At 18:42 UTC, the unchanged integration command passed service health and
+  all ten model fixtures with its standard test timeout. The earlier direct
+  run isolated inefficient array processing in the draft SQL, which was
+  corrected before this run. The temporary AIO ceiling is the only VM change.
+
 ## 2026-11-21 — Integration diagnostics reporter fixture deadline
 
 - **Impact.** The required CI gate on [PR #3437](https://github.com/Asherlc/dofek/pull/3437) failed during `pnpm exec vitest run --project unit --coverage`. Production was unaffected. The failing test reported `Runner pipes did not close; hook observed: false; stderr empty: true`. The same test required a retry on another branch that morning. [Failed unit job](https://github.com/Asherlc/dofek/actions/runs/44930189502/job/136925408470) · [Unit job with a retry](https://github.com/Asherlc/dofek/actions/runs/44927966697/job/136918401004).
