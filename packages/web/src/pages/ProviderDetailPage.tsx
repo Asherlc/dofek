@@ -186,6 +186,7 @@ export function ProviderDetailPage() {
               trpcUtils.providerDetail.availableDataTypes.invalidate({ providerId });
               trpcUtils.providerDetail.logs.invalidate();
               trpcUtils.providerDetail.records.invalidate();
+              trpcUtils.dailyMetrics.recorded.invalidate();
             },
             onError: (error) => {
               captureException(error, {

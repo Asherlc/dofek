@@ -184,6 +184,7 @@ export function useProviderDetailActions(
       trpcUtils.providerDetail.logs.invalidate({ providerId });
       trpcUtils.providerDetail.records.invalidate({ providerId });
     }
+    trpcUtils.dailyMetrics.recorded.invalidate();
   }, [providerId, trpcUtils]);
 
   const pollSyncJob = useCallback(

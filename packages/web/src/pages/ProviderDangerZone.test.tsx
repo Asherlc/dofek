@@ -7,15 +7,18 @@ const operationId = "30000000-0000-4000-8000-000000000001";
 const mockMutateAsync = vi.fn().mockResolvedValue({ success: true, operationId });
 const mockDisconnectMutateAsync = vi.fn().mockResolvedValue({ success: true });
 const mockInvalidate = vi.fn().mockResolvedValue(undefined);
-const { mockProcessingStatusInvalidate, mockDeletionStatusQuery } = vi.hoisted(() => ({
-  mockProcessingStatusInvalidate: vi.fn().mockResolvedValue(undefined),
-  mockDeletionStatusQuery: vi.fn(),
-}));
+const { mockProcessingStatusInvalidate, mockRecordedInvalidate, mockDeletionStatusQuery } =
+  vi.hoisted(() => ({
+    mockRecordedInvalidate: vi.fn().mockResolvedValue(undefined),
+    mockProcessingStatusInvalidate: vi.fn().mockResolvedValue(undefined),
+    mockDeletionStatusQuery: vi.fn(),
+  }));
 
 vi.mock("../lib/telemetry.ts", () => ({ captureException: vi.fn() }));
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     useUtils: () => ({
+      dailyMetrics: { recorded: { invalidate: mockRecordedInvalidate } },
       processing: {
         status: { invalidate: mockProcessingStatusInvalidate },
       },
@@ -158,6 +161,7 @@ describe("ProviderDangerZone", () => {
     rerender(<ProviderDangerZone canDisconnect providerId="strava" providerName="Strava" />);
 
     await waitFor(() => expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce());
+    expect(mockRecordedInvalidate).toHaveBeenCalledOnce();
   });
 
   it("names, focuses, and allows dismissal of the idle confirmation dialog", async () => {

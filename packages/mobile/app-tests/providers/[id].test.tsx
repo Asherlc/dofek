@@ -360,6 +360,7 @@ const mockInvalidateProviderStats = vi.fn();
 const mockInvalidateDataHealth = vi.fn();
 const mockInvalidateAvailableDataTypes = vi.fn();
 const mockInvalidateRecords = vi.fn();
+const mockInvalidateRecordedDailyMetrics = vi.fn();
 const mockInvalidateDetailLogs = vi.fn();
 const mockInvalidateLogs = vi.fn();
 const mockInvalidateSensorSnapshot = vi.fn();
@@ -444,6 +445,7 @@ vi.mock("../../lib/trpc", () => ({
         records: { invalidate: mockInvalidateRecords },
         logs: { invalidate: mockInvalidateDetailLogs },
       },
+      dailyMetrics: { recorded: { invalidate: mockInvalidateRecordedDailyMetrics } },
       settings: {
         get: {
           getData: mockSettingsGetGetData,
@@ -635,6 +637,7 @@ describe("ProviderDetailScreen", () => {
     mockInvalidateDataHealth.mockReset();
     mockInvalidateAvailableDataTypes.mockReset();
     mockInvalidateRecords.mockReset();
+    mockInvalidateRecordedDailyMetrics.mockReset();
     mockInvalidateDetailLogs.mockReset();
     mockInvalidateLogs.mockReset();
     mockInvalidateSensorSnapshot.mockReset();
@@ -1269,6 +1272,7 @@ describe("ProviderDetailScreen", () => {
 
         expect(screen.getByText("Sync complete")).toBeTruthy();
         expect(mockSyncStatusFetch).toHaveBeenCalledTimes(2);
+        expect(mockInvalidateRecordedDailyMetrics).toHaveBeenCalledOnce();
       } finally {
         vi.useRealTimers();
       }

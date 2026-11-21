@@ -1,10 +1,14 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode, useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   findNodeHandle: vi.fn<() => number | null | undefined>(),
   setAccessibilityFocus: vi.fn(),
+  dailyMetricsRecordedInvalidate: vi.fn<() => Promise<void>>(),
+  deleteAllData: vi.fn(),
+  deletionStatus: vi.fn(),
+  otherInvalidate: vi.fn<() => Promise<void>>(),
 }));
 
 vi.mock("react-native", () => ({
@@ -27,7 +31,20 @@ vi.mock("react-native", () => ({
   },
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
-  TextInput: "input",
+  TextInput: ({
+    onChangeText,
+    placeholder,
+    value,
+  }: {
+    onChangeText?: (text: string) => void;
+    placeholder?: string;
+    value?: string;
+  }) =>
+    createElement("input", {
+      placeholder,
+      value,
+      onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
+    }),
   TouchableOpacity: ({
     accessibilityLabel,
     children,
@@ -48,10 +65,23 @@ vi.mock("react-native", () => ({
 vi.mock("../../lib/telemetry", () => ({ captureException: vi.fn() }));
 vi.mock("../../lib/trpc", () => ({
   trpc: {
-    useUtils: () => ({}),
+    useUtils: () => ({
+      dailyMetrics: { recorded: { invalidate: mocks.dailyMetricsRecordedInvalidate } },
+      processing: { status: { invalidate: mocks.otherInvalidate } },
+      sync: {
+        providers: { invalidate: mocks.otherInvalidate },
+        providerStats: { invalidate: mocks.otherInvalidate },
+      },
+      providerDetail: {
+        logs: { invalidate: mocks.otherInvalidate },
+        records: { invalidate: mocks.otherInvalidate },
+      },
+    }),
     providerDetail: {
-      deleteAllData: { useMutation: () => ({ mutateAsync: vi.fn() }) },
-      deletionStatus: { useQuery: () => ({}) },
+      deleteAllData: {
+        useMutation: () => ({ mutateAsync: mocks.deleteAllData, isPending: false }),
+      },
+      deletionStatus: { useQuery: mocks.deletionStatus },
       disconnect: { useMutation: () => ({ mutateAsync: vi.fn() }) },
     },
   },
@@ -61,6 +91,13 @@ import { ProviderDangerZone } from "./provider-danger-zone";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.deleteAllData.mockResolvedValue({ operationId: "30000000-0000-4000-8000-000000000001" });
+  mocks.deletionStatus.mockReturnValue({
+    data: { status: "completed", message: "Provider data deletion completed." },
+    error: null,
+  });
+  mocks.dailyMetricsRecordedInvalidate.mockResolvedValue(undefined);
+  mocks.otherInvalidate.mockResolvedValue(undefined);
 });
 
 describe("ProviderDangerZone", () => {
@@ -82,5 +119,23 @@ describe("ProviderDangerZone", () => {
     expect(mocks.setAccessibilityFocus).not.toHaveBeenCalled();
     fireEvent.click(screen.getByLabelText("Cancel disconnect"));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("invalidates provider-reported daily metrics when source deletion completes", async () => {
+    render(
+      <ProviderDangerZone
+        canDisconnect={false}
+        providerId="intervals.icu"
+        providerName="Intervals.icu"
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Delete All Data"));
+    fireEvent.change(screen.getByPlaceholderText("DELETE"), { target: { value: "DELETE" } });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Permanently Delete Data"));
+    });
+
+    await waitFor(() => expect(mocks.dailyMetricsRecordedInvalidate).toHaveBeenCalledOnce());
   });
 });

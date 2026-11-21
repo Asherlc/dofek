@@ -1,10 +1,13 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activity } from "../../db/schema/activity.ts";
+import { z } from "zod";
+import { activity, dailyMetrics } from "../../db/schema/activity.ts";
 import { TEST_USER_ID } from "../../db/schema/core.ts";
+import { syncLog } from "../../db/schema/events.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
+import { executeWithSchema } from "../../db/typed-sql.ts";
 import { createIntegrationMswFixture } from "../../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../../test/msw.ts";
 import { SyncRun } from "../sync-run.ts";
@@ -45,7 +48,16 @@ const streamsFixture = [
   { type: "latlng", data: [40.1, 40.2, 40.3], data2: [-73.1, -73.2, -73.3] },
 ];
 
+function useWellness(body: JsonBody | "fail" = []) {
+  server.use(
+    http.get(`${API}/athlete/0/wellness`, () =>
+      body === "fail" ? new HttpResponse("boom", { status: 500 }) : HttpResponse.json(body),
+    ),
+  );
+}
+
 function useList(body: JsonBody, onRequest?: (url: URL) => void) {
+  useWellness();
   server.use(
     http.get(`${API}/athlete/0/activities`, ({ request }) => {
       onRequest?.(new URL(request.url));
@@ -65,7 +77,10 @@ function useStreams(id: string, body: JsonBody, status = 200) {
 describe("IntervalsIcuProvider.sync() (integration)", () => {
   let ctx: TestContext;
   const provider = new IntervalsIcuProvider();
-  const run = (until = "2026-04-01T00:00:00Z") =>
+  const run = (
+    until = "2026-04-01T00:00:00Z",
+    onProgress?: (percentage: number, message: string) => void,
+  ) =>
     new SyncRun({
       db: ctx.db,
       window: SyncWindow.fromSince({
@@ -74,6 +89,7 @@ describe("IntervalsIcuProvider.sync() (integration)", () => {
       }),
       userId: TEST_USER_ID,
       metricStreamPublisher: capture.publisher,
+      onProgress,
     });
 
   beforeAll(async () => {
@@ -93,6 +109,8 @@ describe("IntervalsIcuProvider.sync() (integration)", () => {
 
   beforeEach(async () => {
     await ctx.db.delete(activity).where(eq(activity.providerId, PROVIDER_ID));
+    await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, PROVIDER_ID));
+    await ctx.db.delete(syncLog).where(eq(syncLog.providerId, PROVIDER_ID));
     capture.publishedMetricStreamRows.length = 0;
     capture.deletedMetricStreamScopes.length = 0;
   });
@@ -112,6 +130,16 @@ describe("IntervalsIcuProvider.sync() (integration)", () => {
     )[0];
   const published = (channel: string) =>
     capture.publishedMetricStreamRows.filter((row) => row.channel === channel);
+  const recordedWellness = async () =>
+    executeWithSchema(
+      ctx.db,
+      z.object({ date: z.string(), metric_type_id: z.string(), value: z.number() }),
+      sql`SELECT dm.date::text AS date, v.metric_type_id, v.value
+          FROM fitness.daily_metric_value v
+          JOIN fitness.daily_metrics dm ON dm.id = v.daily_metrics_id
+          WHERE dm.provider_id = ${PROVIDER_ID} AND dm.user_id = ${TEST_USER_ID}
+          ORDER BY dm.date, v.metric_type_id`,
+    );
 
   /** Seed a previously imported, then tombstoned, record through a normal sync. */
   async function seedTombstoned(id: string, startDate: string) {
@@ -287,5 +315,78 @@ describe("IntervalsIcuProvider.sync() (integration)", () => {
     const result = await provider.sync(run());
     expect(result.errors).toEqual([]);
     expect((await byExternalId("a1"))?.providerAbsentAt).not.toBeNull();
+  });
+
+  it("keeps completed-activity writes when the wellness feed fails", async () => {
+    useList([activityFixture("a1", { stream_types: [] })]);
+    useWellness("fail");
+    const result = await provider.sync(run());
+    expect(await byExternalId("a1")).toBeDefined();
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors.some((error) => error.message.startsWith("Wellness"))).toBe(true);
+  });
+
+  it("keeps wellness writes when the activity list fails, and counts both feeds", async () => {
+    server.use(
+      http.get(`${API}/athlete/0/activities`, () => new HttpResponse("boom", { status: 500 })),
+    );
+    useWellness([{ id: "2026-03-01", weight: 70.5 }]);
+    const result = await provider.sync(run());
+    expect(result.errors.some((error) => error.message.startsWith("Activity list"))).toBe(true);
+    expect(result.recordsSynced).toBe(1);
+    expect(await recordedWellness()).toEqual([
+      { date: "2026-03-01", metric_type_id: "weight", value: 70.5 },
+    ]);
+  });
+
+  it("does not report a failing feed as synced in progress", async () => {
+    const messages: string[] = [];
+    useList([activityFixture("a1", { stream_types: [] })]);
+    useWellness("fail");
+    const result = await provider.sync(
+      run(undefined, (_percentage, message) => messages.push(message)),
+    );
+
+    expect(result.errors.some((error) => error.message.startsWith("Wellness"))).toBe(true);
+    expect(messages).toContain("Activities synced");
+    expect(messages).toContain("Wellness completed with errors");
+    expect(messages).not.toContain("Wellness synced");
+  });
+
+  it("logs one degraded sync for a feed warning without a per-feed success log", async () => {
+    const messages: string[] = [];
+    useList([{ id: "malformed" }]);
+    const result = await provider.sync(
+      run(undefined, (_percentage, message) => messages.push(message)),
+    );
+
+    expect(result.degradations?.[0]?.kind).toBe("schema_mismatch");
+    expect(result.errors).toEqual([]);
+    expect(messages).toContain("Activities completed with warnings");
+    expect(messages).not.toContain("Activities synced");
+
+    const degraded = await ctx.db
+      .select()
+      .from(syncLog)
+      .where(
+        and(
+          eq(syncLog.providerId, PROVIDER_ID),
+          eq(syncLog.userId, TEST_USER_ID),
+          eq(syncLog.status, "degraded"),
+        ),
+      );
+    expect(degraded).toHaveLength(1);
+    expect(degraded[0]).toMatchObject({
+      dataType: "activities",
+      degradationKind: "schema_mismatch",
+      recordCount: 0,
+      errorMessage: "Intervals.icu activity does not match the expected shape",
+    });
+    expect(
+      await ctx.db
+        .select()
+        .from(syncLog)
+        .where(and(eq(syncLog.providerId, PROVIDER_ID), eq(syncLog.status, "success"))),
+    ).toEqual([]);
   });
 });

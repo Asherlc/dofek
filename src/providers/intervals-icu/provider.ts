@@ -1,5 +1,8 @@
+import { logSync } from "../../db/sync-log.ts";
 import { loadTokens } from "../../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
+import type { SyncDegradation } from "../../sync/sync-degradation.ts";
+import { reportSyncDegradation } from "../../sync/sync-degradation-reporting.ts";
 import { ProviderAuthenticationFailedError } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "../types.ts";
@@ -10,6 +13,10 @@ import {
   createIntervalsIcuAuthSetup,
   validateIntervalsIcuConfig,
 } from "./oauth.ts";
+import { syncIntervalsIcuWellness } from "./wellness.ts";
+
+/** Shared shape returned by both independent Intervals.icu feeds. */
+type FeedResult = Pick<SyncResult, "recordsSynced" | "errors" | "degradations">;
 
 export class IntervalsIcuProvider implements SyncProvider {
   readonly id = "intervals.icu";
@@ -57,13 +64,62 @@ export class IntervalsIcuProvider implements SyncProvider {
     }
 
     const client = new IntervalsIcuClient(tokens.accessToken, this.#fetchFn);
-    const activities = await syncIntervalsIcuActivities(client, run, this.id);
-    errors.push(...activities.errors);
+    // Independent feeds: a throw or throttle in one never discards the other's successful writes.
+    const feeds: { name: string; dataType: string; sync: () => Promise<FeedResult> }[] = [
+      {
+        name: "Activities",
+        dataType: "activities",
+        sync: () => syncIntervalsIcuActivities(client, run, this.id),
+      },
+      {
+        name: "Wellness",
+        dataType: "wellness",
+        sync: () => syncIntervalsIcuWellness(client, run, this.id),
+      },
+    ];
+    let recordsSynced = 0;
+    const degradations: SyncDegradation[] = [];
+    for (const [index, feed] of feeds.entries()) {
+      let message = `${feed.name} synced`;
+      try {
+        const feedResult = await feed.sync();
+        // Accumulate before diagnostics so a failed diagnostic write cannot drop saved counts.
+        recordsSynced += feedResult.recordsSynced;
+        errors.push(...feedResult.errors);
+        const warnings = feedResult.degradations ?? [];
+        degradations.push(...warnings);
+        if (feedResult.errors.length > 0) {
+          message = `${feed.name} completed with errors`;
+        } else if (warnings.length > 0) {
+          message = `${feed.name} completed with warnings`;
+        }
+        const firstWarning = warnings[0];
+        if (firstWarning) {
+          for (const warning of warnings) reportSyncDegradation(warning);
+          await logSync(run.db, {
+            providerId: this.id,
+            dataType: feed.dataType,
+            status: "degraded",
+            recordCount: feedResult.recordsSynced,
+            errorMessage: firstWarning.message,
+            degradationKind: firstWarning.kind,
+            userId: run.options.userId,
+          });
+        }
+      } catch (error) {
+        errors.push({
+          message: `${feed.name}: ${error instanceof Error ? error.message : String(error)}`,
+          cause: error,
+        });
+        message = `${feed.name} failed`;
+      }
+      run.options.onProgress?.(((index + 1) / feeds.length) * 100, message);
+    }
     return {
       provider: this.id,
-      recordsSynced: activities.recordsSynced,
+      recordsSynced,
       errors,
-      degradations: activities.degradations.length > 0 ? activities.degradations : undefined,
+      degradations: degradations.length > 0 ? degradations : undefined,
       duration: Date.now() - start,
     };
   }

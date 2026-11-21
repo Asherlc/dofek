@@ -12,6 +12,7 @@ const SYNCED_HEALTH_DATA_QUERY_PATHS = new Set([
   "activity.list",
   "food.byDateV2",
   "processing.status",
+  "dailyMetrics.recorded",
   "nutritionAnalytics.adaptiveTdee",
   "nutritionAnalytics.macroRatios",
   "nutritionAnalytics.micronutrientAdequacyV2",

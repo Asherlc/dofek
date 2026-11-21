@@ -20,6 +20,7 @@
     "./summary-date-context": "./src/summary-date-context.ts",
     "./sleep-data-state": "./src/sleep-data-state.ts",
     "./user-facing-error": "./src/user-facing-error.ts",
+    "./recorded-daily-metrics": "./src/recorded-daily-metrics.ts",
     "./units": "./src/units.ts"
   },
   "dependencies": {

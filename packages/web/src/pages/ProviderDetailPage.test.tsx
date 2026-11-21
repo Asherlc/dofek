@@ -175,6 +175,7 @@ const mockSettingsGetGetData = vi.fn();
 const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
+const mockRecordedDailyMetricsInvalidate = vi.fn();
 const mockProcessingDismissMutation = { mutate: vi.fn(), isPending: false, error: null };
 const mockPollSyncJob = vi.fn();
 const mockSyncStatusFetch = vi.fn();
@@ -225,6 +226,7 @@ vi.mock("../lib/trpc.ts", () => ({
         logs: { invalidate: vi.fn() },
         records: { invalidate: vi.fn() },
       },
+      dailyMetrics: { recorded: { invalidate: mockRecordedDailyMetricsInvalidate } },
       settings: {
         get: {
           getData: mockSettingsGetGetData,
@@ -983,7 +985,7 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.getByText("Full sync is already current.")).toBeTruthy();
   });
 
-  it("invalidates processing status when a manual sync completes", async () => {
+  it("invalidates processing status and recorded daily metrics when a manual sync completes", async () => {
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
       {
@@ -1016,6 +1018,7 @@ describe("ProviderDetailPage import-only providers", () => {
     });
 
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
+    expect(mockRecordedDailyMetricsInvalidate).toHaveBeenCalledOnce();
   });
 
   it("cancels sync polling when the provider page unmounts", async () => {
