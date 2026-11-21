@@ -1,10 +1,12 @@
 import { z } from "zod";
+import { loggedSetComparisonSchema } from "../contracts/logged-set-comparison.ts";
 import {
   type ProgressiveOverloadRow,
   progressiveOverloadRowSchema,
 } from "../contracts/progressive-overload.ts";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { rangeDaysSchema } from "../lib/date-window.ts";
+import { StrengthProgressionRepository } from "../repositories/strength-progression-repository.ts";
 import {
   type EstimatedMaxTrendEvidence,
   StrengthRepository,
@@ -64,6 +66,18 @@ export interface WorkoutSummaryRow {
 }
 
 export const strengthRouter = router({
+  loggedSetComparison: selectedChartRangeQuery(
+    "strength.loggedSetComparison",
+    CacheTTL.LONG,
+    ({ ctx, range }) =>
+      new StrengthProgressionRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).listLoggedSetComparison(range.days),
+    { outputSchema: loggedSetComparisonSchema, expiresAt: "localDayBoundary" },
+  ),
   volumeOverTime: selectedChartRangeQuery(
     "strength.volumeOverTime",
     CacheTTL.LONG,

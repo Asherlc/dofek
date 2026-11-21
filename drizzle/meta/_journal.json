@@ -1331,6 +1331,13 @@
       "when": 1794789928821,
       "tag": "0189_restore_manual_cycling_ftp",
       "breakpoints": true
+    },
+    {
+      "idx": 190,
+      "version": "7",
+      "when": 1795280008126,
+      "tag": "0190_activity_effort_provenance",
+      "breakpoints": true
     }
   ]
 }

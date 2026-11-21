@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { StrengthProgressionRepository } from "./strength-progression-repository.ts";
 
 describe("StrengthProgressionRepository database semantics", () => {
@@ -168,6 +170,126 @@ describe("StrengthProgressionRepository database semantics", () => {
         ],
       }),
     ]);
+  });
+
+  it("bounds logged comparisons by timestamp and access before deduplicating canonical sessions", async () => {
+    const all = await new StrengthProgressionRepository(
+      context.db,
+      userId,
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(all.exercises[0]).toMatchObject({ exerciseId: benchExercise, totalLoggedSets: 3 });
+    expect(all.exercises[0]?.sessions).toHaveLength(3);
+    expect(all.exercises[0]?.comparisons[0]).toMatchObject({
+      observedDates: 3,
+      first: { weightKg: 90 },
+      latest: { weightKg: 110 },
+    });
+    const restricted = await new StrengthProgressionRepository(context.db, userId, "UTC", {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2026-05-01",
+      endDateExclusive: "2026-06-01",
+    }).listLoggedSetComparison(null);
+    expect(restricted.exercises[0]).toMatchObject({ totalLoggedSets: 1 });
+    expect(restricted.exercises[0]?.sessions[0]).toMatchObject({
+      date: "2026-05-01",
+      sourceProviders: expect.arrayContaining([primaryProvider, mirrorProvider]),
+    });
+    expect(restricted.exercises[0]?.comparisons[0]?.latest).toBeNull();
+    const futureActivity = randomUUID();
+    await context.db.execute(sql`
+      INSERT INTO fitness.activity (
+        id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+        started_at, ended_at, raw
+      ) VALUES (
+        ${futureActivity}::uuid, ${futureActivity}::uuid, ${primaryProvider}, ${userId}::uuid,
+        'future-session', 'strength', 'strength_training',
+        CURRENT_TIMESTAMP + INTERVAL '1 day', CURRENT_TIMESTAMP + INTERVAL '2 days', '{}'::jsonb
+      )
+    `);
+    await context.db.execute(sql`
+      INSERT INTO fitness.strength_set (
+        activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps, raw
+      ) VALUES (${futureActivity}::uuid, ${benchExercise}::uuid, 0, 0, 'working', 200, 5, '{}'::jsonb)
+    `);
+    const withFuture = await new StrengthProgressionRepository(
+      context.db,
+      userId,
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(withFuture.exercises[0]?.totalLoggedSets).toBe(3);
+    const recent = await new StrengthProgressionRepository(
+      context.db,
+      userId,
+      "UTC",
+    ).listLoggedSetComparison(1);
+    expect(recent.exercises).toEqual([]);
+    const [clock] = await executeWithSchema(
+      context.db,
+      z.object({ now: timestampStringSchema }),
+      sql`SELECT CURRENT_TIMESTAMP::text AS now`,
+    );
+    if (!clock) throw new Error("Database clock is required");
+    const now = new Date(clock.now);
+    const offsetStart = new Date(now);
+    offsetStart.setUTCDate(offsetStart.getUTCDate() - 3);
+    offsetStart.setUTCHours(0, 30, 0, 0);
+    const offsetDate = new Date(offsetStart.getTime() - 120 * 60_000).toISOString().slice(0, 10);
+    const insideId = randomUUID();
+    const outsideId = randomUUID();
+    const offsetId = randomUUID();
+    for (const observation of [
+      { id: insideId, start: new Date(now.getTime() - (30 * 24 - 1) * 3_600_000), offset: null },
+      { id: outsideId, start: new Date(now.getTime() - (30 * 24 + 1) * 3_600_000), offset: null },
+      { id: offsetId, start: offsetStart, offset: -120 },
+    ]) {
+      await context.db.execute(sql`
+        INSERT INTO fitness.activity (
+          id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+          started_at, ended_at, raw, start_utc_offset_minutes, local_time_source
+        ) VALUES (
+          ${observation.id}::uuid, ${observation.id}::uuid, ${primaryProvider}, ${userId}::uuid,
+          ${observation.id}, 'strength', 'strength_training',
+          ${observation.start.toISOString()}::timestamptz,
+          ${new Date(observation.start.getTime() + 60_000).toISOString()}::timestamptz,
+          '{}'::jsonb, ${observation.offset},
+          ${observation.offset === null ? "unknown" : "provider_offset"}
+        )
+      `);
+      await context.db.execute(sql`
+        INSERT INTO fitness.strength_set (
+          activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps, raw
+        ) VALUES (${observation.id}::uuid, ${benchExercise}::uuid, 0, 0, 'working', 120, 5, '{}'::jsonb)
+      `);
+    }
+    const selected = await new StrengthProgressionRepository(
+      context.db,
+      userId,
+      "UTC",
+    ).listLoggedSetComparison(30);
+    expect(selected.exercises[0]?.totalLoggedSets).toBe(2);
+    expect(selected.exercises[0]?.sessions.map((session) => session.activityId).sort()).toEqual(
+      [insideId, offsetId].sort(),
+    );
+    expect(
+      selected.exercises[0]?.sessions.find((session) => session.activityId === offsetId)?.date,
+    ).toBe(offsetDate);
+    const unbounded = await new StrengthProgressionRepository(
+      context.db,
+      userId,
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(
+      unbounded.exercises[0]?.sessions.some((session) => session.activityId === outsideId),
+    ).toBe(true);
+    const otherUser = await new StrengthProgressionRepository(
+      context.db,
+      randomUUID(),
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(otherUser.exercises).toEqual([]);
   });
 
   it("returns suspicious original values but excludes them without correcting them", async () => {
