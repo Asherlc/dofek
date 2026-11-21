@@ -18,6 +18,11 @@ export const mockHrZonesInvalidate = vi.fn();
 export const mockPolarizationInvalidate = vi.fn();
 export const mockProcessingStatusInvalidate = vi.fn();
 export const mockRunningInvalidate = vi.fn();
+export const mockCyclingPowerProfileQuery = vi.fn(() => ({
+  data: undefined,
+  isLoading: false,
+  error: null,
+}));
 export const mockRouteComparisonInvalidate = vi.fn();
 export const mockRouteComparisonQuery = vi.fn();
 export const mockVolumeIncreaseQuery = vi.fn();
@@ -162,6 +167,7 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    cycling: { powerProfile: { useQuery: mockCyclingPowerProfileQuery } },
     running: {
       dynamicsV2: {
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
@@ -255,6 +261,7 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     useUtils: () => ({
+      cycling: { powerProfile: { invalidate: vi.fn() } },
       running: { dynamicsV2: { invalidate: mockRunningInvalidate } },
       hiking: { activityComparison: { invalidate: mockRouteComparisonInvalidate } },
       climbing: {

@@ -130,7 +130,8 @@ vi.mock("../repositories/cycling-performance-repository.ts", () => ({
   }),
 }));
 
-vi.mock("../repositories/cycling-power-curve-repository.ts", () => ({
+vi.mock("../repositories/cycling-power-curve-repository.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../repositories/cycling-power-curve-repository.ts")>()),
   CyclingPowerCurveRepository: vi.fn(function vitestConstructor() {
     return { listRange: toolTestMocks.cyclingPowerCurveListRange };
   }),
@@ -964,6 +965,7 @@ describe("createMcpRouter", () => {
         "get_cycling_training_metrics",
         "find_repeated_efforts",
         "get_cycling_power_curve",
+        "get_cycling_power_profile",
         "get_activity_details",
         "get_climbing_sessions",
       ],
@@ -1296,6 +1298,7 @@ describe("createMcpRouter", () => {
       "get_effort_trend",
       "get_cycling_performance",
       "get_cycling_power_curve",
+      "get_cycling_power_profile",
       "get_cycling_training_metrics",
       "get_sleep_summary",
       "search_activities",
@@ -1382,6 +1385,10 @@ describe("createMcpRouter", () => {
       {
         name: "get_cycling_power_curve",
         path: ["result", "bests", "[]", "quality", "median_sample_interval_seconds"],
+      },
+      {
+        name: "get_cycling_power_profile",
+        path: ["result", "threshold", "effective_from"],
       },
       {
         name: "get_cycling_training_metrics",
@@ -2555,6 +2562,30 @@ describe("createMcpRouter", () => {
       includeActivityCurve: false,
       cursor: null,
       limit: 100,
+    });
+  });
+
+  it("returns the compact power profile for the requested MCP dates", async () => {
+    authorizeMcpToken(["activity:read"]);
+    const response = await request(createTestApp(makeMockSensorStore()), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_cycling_power_profile", {
+        start_date: "2026-10-01",
+        end_date: "2026-10-31",
+      }),
+    });
+    const parsed = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsed.result.structuredContent).toMatchObject({
+      result: {
+        range: { start_date: "2026-10-01", end_date: "2026-10-31" },
+        maximal_test_status: "unverified",
+        efforts: [
+          { duration_seconds: 5, effort: null },
+          { duration_seconds: 60, effort: null },
+          { duration_seconds: 300, effort: null },
+        ],
+        threshold: { watts: null, method: "configured" },
+      },
     });
   });
 

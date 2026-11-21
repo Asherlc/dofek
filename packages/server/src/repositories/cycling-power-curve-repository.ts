@@ -12,7 +12,7 @@ const MODEL_DURATIONS = new Set([
   1, 5, 15, 30, 60, 120, 180, 300, 420, 600, 720, 1200, 1800, 2400, 3600, 5400, 7200,
 ]);
 
-const curveRowSchema = z.object({
+export const curveRowSchema = z.object({
   activity_id: z.string().uuid(),
   activity_date: z.string(),
   started_at: z.string(),
@@ -142,11 +142,11 @@ function filterSql(alias: string): string {
     )`;
 }
 
-function curveColumns(source: string, activitySource = source): string {
+export function curveColumns(source: string, activitySource = source, dateSource = source): string {
   return `
     toString(${source}.activity_id) AS activity_id,
-    toString(toDate(toTimeZone(${source}.started_at, {timezone:String}))) AS activity_date,
-    formatDateTime(${source}.started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
+    toString(toDate(toTimeZone(${dateSource}.started_at, {timezone:String}))) AS activity_date,
+    formatDateTime(${dateSource}.started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
     ${activitySource}.canonical_type AS canonical_type,
     ${source}.duration_seconds AS duration_seconds,
     ${source}.best_power AS best_power,
@@ -578,6 +578,32 @@ function qualityFor(row: CurveRow): CyclingPowerCurveEffort["quality"] {
   };
 }
 
+export function toCyclingPowerCurveEffort(
+  row: CurveRow,
+  weight: CyclingPowerCurveEffort["weight"],
+): CyclingPowerCurveEffort {
+  return {
+    duration_seconds: row.duration_seconds,
+    watts: row.best_power,
+    watts_per_kg:
+      weight.value_kg === null
+        ? null
+        : Math.round((row.best_power / weight.value_kg) * 1000) / 1000,
+    watts_per_kg_reason: weight.value_kg === null ? weight.reason : null,
+    weight,
+    activity_id: row.activity_id,
+    date: row.activity_date,
+    started_at: row.started_at,
+    start_offset_seconds: row.start_offset_seconds,
+    canonical_type: row.canonical_type,
+    power_kind: row.power_measurement_kind ?? "unknown",
+    source_providers: row.source_providers,
+    source_devices: row.source_devices,
+    member_activity_ids: row.member_activity_ids,
+    quality: qualityFor(row),
+  };
+}
+
 export class CyclingPowerCurveRepository {
   readonly #store: Pick<ActivitySensorStore, "query">;
   readonly #userId: string;
@@ -666,29 +692,8 @@ export class CyclingPowerCurveRepository {
       input.startDate,
       input.endDate,
     );
-    const toEffort = (row: CurveRow): CyclingPowerCurveEffort => {
-      const weight = selectNearbyWeight(row.activity_date, weightObservations);
-      return {
-        duration_seconds: row.duration_seconds,
-        watts: row.best_power,
-        watts_per_kg:
-          weight.value_kg === null
-            ? null
-            : Math.round((row.best_power / weight.value_kg) * 1000) / 1000,
-        watts_per_kg_reason: weight.value_kg === null ? weight.reason : null,
-        weight,
-        activity_id: row.activity_id,
-        date: row.activity_date,
-        started_at: row.started_at,
-        start_offset_seconds: row.start_offset_seconds,
-        canonical_type: row.canonical_type,
-        power_kind: row.power_measurement_kind ?? "unknown",
-        source_providers: row.source_providers,
-        source_devices: row.source_devices,
-        member_activity_ids: row.member_activity_ids,
-        quality: qualityFor(row),
-      };
-    };
+    const toEffort = (row: CurveRow) =>
+      toCyclingPowerCurveEffort(row, selectNearbyWeight(row.activity_date, weightObservations));
 
     bestRows.sort(sortRows);
     pageRows.sort(sortRows);

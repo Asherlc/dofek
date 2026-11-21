@@ -108,6 +108,11 @@ records fetch the selected log's complete graph and retain cached rows during
 refresh errors. See the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
 
+Training → Cycling shows a demonstrated power profile below the Power Duration Curve.
+It follows the Training date range and links each eligible effort and its supporting
+body-weight observations to the underlying records. Configured FTP carries its
+effective date. See [server profile semantics](../server/README.md#architecture).
+
 Activity-list cards use the stored cycling modality to show training stats instead
 of distance and elevation for indoor and virtual rides, including reported zeros.
 See [the card](src/components/ActivityCardContent.tsx) and the

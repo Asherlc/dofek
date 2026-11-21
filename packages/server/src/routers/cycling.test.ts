@@ -51,6 +51,32 @@ function makeContext() {
 }
 
 describe("cyclingRouter", () => {
+  it("uses the selected number of local dates for the power profile", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-01T00:30:00Z"));
+    try {
+      const caller = createCaller(makeContext());
+      await expect(caller.powerProfile({ days: 7 })).resolves.toMatchObject({
+        range: {
+          start_date: "2026-10-25",
+          end_date: "2026-10-31",
+          timezone: "America/Los_Angeles",
+        },
+        efforts: [
+          { duration_seconds: 5, effort: null },
+          { duration_seconds: 60, effort: null },
+          { duration_seconds: 300, effort: null },
+        ],
+        threshold: { watts: null },
+      });
+      await expect(caller.powerProfile({ days: null })).resolves.toMatchObject({
+        range: { start_date: null, end_date: "2026-10-31" },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("versions the performance cache contract", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 3_600_000,

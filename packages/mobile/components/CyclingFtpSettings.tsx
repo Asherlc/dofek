@@ -73,6 +73,7 @@ export function CyclingFtpSettings({
       void utils.sportSettings.getBySport.invalidate(undefined, { refetchType: "all" });
       void utils.sportSettings.history.invalidate(undefined, { refetchType: "all" });
       void utils.activity.powerZones.invalidate(undefined, { refetchType: "all" });
+      void utils.cycling.powerProfile.invalidate(undefined, { refetchType: "all" });
       void utils.calendar.weekListV2.invalidate(undefined, { refetchType: "all" });
     },
     onError: (writeError) => {

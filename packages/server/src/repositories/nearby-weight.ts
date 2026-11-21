@@ -6,6 +6,7 @@ export interface DirectWeightObservation {
   measurementKind: "direct" | "estimated" | "unknown";
   provider: string;
   sourceRecordId: string | null;
+  recordId?: string;
 }
 
 export interface WeightEvidenceSource {
@@ -14,6 +15,7 @@ export interface WeightEvidenceSource {
   value_kg: number;
   provider: string;
   source_record_id: string | null;
+  record_id?: string;
   measurement_kind: "direct";
 }
 
@@ -44,6 +46,7 @@ function source(observation: DirectWeightObservation): WeightEvidenceSource {
     value_kg: observation.valueKg,
     provider: observation.provider,
     source_record_id: observation.sourceRecordId,
+    ...(observation.recordId ? { record_id: observation.recordId } : {}),
     measurement_kind: "direct",
   };
 }

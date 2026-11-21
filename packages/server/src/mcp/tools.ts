@@ -38,6 +38,7 @@ import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { registerCyclingPerformanceTool } from "./cycling-performance-tool.ts";
 import { registerCyclingPowerCurveTool } from "./cycling-power-curve-tool.ts";
+import { registerCyclingPowerProfileTool } from "./cycling-power-profile-tool.ts";
 import { registerCyclingTrainingMetricsTool } from "./cycling-training-metrics-tool.ts";
 import { registerEffortTrendTool } from "./effort-trend-tool.ts";
 import { registerFingerLoadingProgressionTool } from "./finger-loading-progression-tool.ts";
@@ -278,6 +279,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   registerEffortTrendTool(server, context);
   registerCyclingPerformanceTool(server, context);
   registerCyclingPowerCurveTool(server, context);
+  registerCyclingPowerProfileTool(server, context);
   registerCyclingTrainingMetricsTool(server, context);
   registerActivityStreamsTool(server, context);
   registerActivityTimeseriesTool(server, context);
