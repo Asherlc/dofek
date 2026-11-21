@@ -39664,3 +39664,21 @@ Local qualification and CI are separate from production throughput acceptance. T
   received sample in Instruments before closing the Sentry issue.
   [Native WAL replay](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleStore%2BInboxWriteTests.swift)
   · [Apple disk-write profiling](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
+
+## 2026-11-21 — Local Docker capacity delayed race forecast validation
+
+- `pnpm test:integration` stopped before Vitest when the workspace's Redpanda
+  service reported `Could not setup Async I/O`. The shared Docker VM had
+  `aio-nr=65536` and `aio-max-nr=65536`. Exhausting the VM-wide AIO limit
+  prevented the broker from starting. The impact was limited to local validation.
+  [Linux kernel AIO limits](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr)
+- Later the limit was `1048576` and usage was `131692`. The workspace services
+  passed their health checks and the standard runner passed the forecast and
+  import integration tests on PostgreSQL. The provider-deletion suite still
+  hit the existing 120-second fixture setup deadline before assertions. A
+  rollback-only PostgreSQL check verified owner-scoped deletion. The cause of the
+  remaining fixture timeout was unresolved. The implementation left the shared
+  runner and service configuration intact.
+- When local Redpanda logs report AIO exhaustion, record both counters and check
+  the workspace service status before retrying. Keep the full integration suite
+  as a GitHub CI gate. [Shared Docker VM resource pressure](testing.md#shared-docker-vm-resource-pressure)
