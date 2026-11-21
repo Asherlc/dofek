@@ -17,7 +17,7 @@ const meta = {
   args: { selection: cyclingDurabilityExample.selection, onChange: () => {} },
   decorators: [
     (Story) => (
-      <View style={{ width: 390, maxWidth: "100%" }}>
+      <View style={{ width: "100%", maxWidth: 390 }}>
         <Story />
       </View>
     ),

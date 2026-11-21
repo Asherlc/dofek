@@ -10,27 +10,21 @@
 import { z } from "zod";
 
 /** Effort durations preserved by the cycling durability read model. */
-export const cyclingDurabilityDurationSecondsSchema = z.union([
+const cyclingDurabilityDurationSecondsSchema = z.union([
   z.literal(10),
   z.literal(60),
   z.literal(300),
   z.literal(1200),
 ]);
-export type CyclingDurabilityDurationSeconds = z.infer<
-  typeof cyclingDurabilityDurationSecondsSchema
->;
 
 /** Nonzero accumulated-work thresholds, in kJ/kg, offered by the control. */
-export const cyclingDurabilityWorkKilojoulesPerKgSchema = z.union([
+const cyclingDurabilityWorkKilojoulesPerKgSchema = z.union([
   z.literal(10),
   z.literal(20),
   z.literal(30),
   z.literal(40),
   z.literal(50),
 ]);
-export type CyclingDurabilityWorkKilojoulesPerKg = z.infer<
-  typeof cyclingDurabilityWorkKilojoulesPerKgSchema
->;
 
 export const cyclingDurabilitySelectionSchema = z.object({
   durationSeconds: cyclingDurabilityDurationSecondsSchema,
@@ -38,29 +32,24 @@ export const cyclingDurabilitySelectionSchema = z.object({
 });
 export type CyclingDurabilitySelection = z.infer<typeof cyclingDurabilitySelectionSchema>;
 
-export const cyclingDurabilityStatusSchema = z.enum([
+const cyclingDurabilityStatusSchema = z.enum([
   "available",
   "no_eligible_power_and_weight",
   "no_effort_after_work",
 ]);
-export type CyclingDurabilityStatus = z.infer<typeof cyclingDurabilityStatusSchema>;
 
 /** `watts` when both winners share a weight, `w_per_kg` otherwise. */
-export const cyclingDurabilityPresentationUnitSchema = z.enum(["watts", "w_per_kg"]);
+const cyclingDurabilityPresentationUnitSchema = z.enum(["watts", "w_per_kg"]);
 export type CyclingDurabilityPresentationUnit = z.infer<
   typeof cyclingDurabilityPresentationUnitSchema
 >;
 
 /** Only direct and positively-flagged meter power can qualify an effort. */
-export const cyclingDurabilityPowerProvenanceSchema = z.enum(["direct", "meter_flag"]);
-export type CyclingDurabilityPowerProvenance = z.infer<
-  typeof cyclingDurabilityPowerProvenanceSchema
->;
+const cyclingDurabilityPowerProvenanceSchema = z.enum(["direct", "meter_flag"]);
 
-export const cyclingDurabilityWeightKindSchema = z.enum(["measured", "interpolated", "nearest"]);
-export type CyclingDurabilityWeightKind = z.infer<typeof cyclingDurabilityWeightKindSchema>;
+const cyclingDurabilityWeightKindSchema = z.enum(["measured", "interpolated", "nearest"]);
 
-export const cyclingDurabilityWeightSourceSchema = z.object({
+const cyclingDurabilityWeightSourceSchema = z.object({
   date: z.string(),
   recorded_at: z.string(),
   value_kg: z.number(),
@@ -68,10 +57,9 @@ export const cyclingDurabilityWeightSourceSchema = z.object({
   source_record_id: z.string().nullable(),
   measurement_kind: z.literal("direct"),
 });
-export type CyclingDurabilityWeightSource = z.infer<typeof cyclingDurabilityWeightSourceSchema>;
 
 /** The nearby-weight match attached to an effort, with dated source evidence. */
-export const cyclingDurabilityWeightEvidenceSchema = z.object({
+const cyclingDurabilityWeightEvidenceSchema = z.object({
   value_kg: z.number(),
   kind: cyclingDurabilityWeightKindSchema,
   method: z.enum(["same_day", "linear_interpolation", "nearest_within_30_days"]),
@@ -79,9 +67,8 @@ export const cyclingDurabilityWeightEvidenceSchema = z.object({
   distance_days: z.number(),
   sources: z.array(cyclingDurabilityWeightSourceSchema),
 });
-export type CyclingDurabilityWeightEvidence = z.infer<typeof cyclingDurabilityWeightEvidenceSchema>;
 
-export const cyclingDurabilityPowerEvidenceSchema = z.object({
+const cyclingDurabilityPowerEvidenceSchema = z.object({
   provenance: cyclingDurabilityPowerProvenanceSchema,
   sourceMemberId: z.string(),
   deviceId: z.string().nullable(),
@@ -89,24 +76,20 @@ export const cyclingDurabilityPowerEvidenceSchema = z.object({
   sourceExternalId: z.string().nullable(),
   measurementKind: z.string(),
 });
-export type CyclingDurabilityPowerEvidence = z.infer<typeof cyclingDurabilityPowerEvidenceSchema>;
 
-export const cyclingDurabilityCoverageEvidenceSchema = z.object({
+const cyclingDurabilityCoverageEvidenceSchema = z.object({
   percent: z.number(),
   observedSamples: z.number().int(),
   medianSampleIntervalSeconds: z.number(),
   largestGapSeconds: z.number(),
 });
-export type CyclingDurabilityCoverageEvidence = z.infer<
-  typeof cyclingDurabilityCoverageEvidenceSchema
->;
 
 /**
  * One winning effort. `date` is the ride's canonical local day and `startedAt`
  * its UTC timestamp. Work is the time integral of watts before the effort;
  * both the activity and source evidence are retained for the ride disclosure.
  */
-export const cyclingDurabilityEffortSchema = z.object({
+const cyclingDurabilityEffortSchema = z.object({
   activityId: z.string(),
   activityName: z.string().nullable(),
   date: z.string(),

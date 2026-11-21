@@ -317,7 +317,7 @@ describe("CyclingDurabilityRepository on ClickHouse", () => {
     });
   });
 
-  it("reselects efforts when a new weight changes the recorded power ranking", async () => {
+  it("updates the comparison when a new weight changes the recorded power ranking", async () => {
     expect((await compare(30)).baseline?.activityId).toBe(lightRide);
     await client.insert({
       table: `${database}.v_body_measurement`,

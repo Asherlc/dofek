@@ -522,9 +522,11 @@ describe("trpc", () => {
   describe("cached middleware", () => {
     it("keeps access-scoped cached results separate for the same account and range", async () => {
       const testRouter = router({
-        scoped: cachedProtectedQuery({ maxAge: CacheTTL.SHORT, scopeByAccessWindow: true }).query(
-          ({ ctx }) => ctx.accessWindow.kind,
-        ),
+        scoped: cachedProtectedQuery({
+          maxAge: CacheTTL.SHORT,
+          scopeByAccessWindow: true,
+          keyVersion: "result-v2",
+        }).query(({ ctx }) => ctx.accessWindow.kind),
       });
       const createCaller = initTRPC.context<Context>().create().createCallerFactory(testRouter);
       const context = { db: {}, userId: "user-1", timezone: "UTC" };
@@ -547,6 +549,14 @@ describe("trpc", () => {
           },
         }).scoped(),
       ).resolves.toBe("limited");
+      expect(queryCache.get).toHaveBeenNthCalledWith(
+        1,
+        "user-1:scoped:result-v2-full:UTC:undefined",
+      );
+      expect(queryCache.get).toHaveBeenNthCalledWith(
+        2,
+        "user-1:scoped:result-v2-2026-11-15-to-2026-11-22:UTC:undefined",
+      );
     });
 
     function createCachedRouter() {
