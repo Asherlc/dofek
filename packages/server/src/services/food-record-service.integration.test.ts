@@ -904,6 +904,168 @@ describe("FoodRecordService with Postgres", { concurrent: false }, () => {
     });
   });
 
+  it("preserves an offset-bearing consumption time through create, retry, edits, history, and visibility", async () => {
+    const commands = service();
+    const repository = new FoodRecordRepository(context.db, userId);
+    const consumedAt = "2026-11-21T00:15:00.123456+02:00";
+    const createRequest = randomUUID();
+    const created = await commands.create({
+      requestId: createRequest,
+      date: "2026-11-21",
+      foodName: "Consumption gel",
+      consumedAt,
+      nutrients: { calories: 100, protein: 0, carbohydrate: 25, fat: 0 },
+    });
+    expect(created.record).toMatchObject({ date: "2026-11-21", consumedAt });
+    expect(created.record.provenance.consumedAt).toMatchObject({ origin: "human" });
+    // The instant is 2026-11-20T22:15Z although the diary date is 2026-11-21.
+    expect(new Date(consumedAt).toISOString()).toBe("2026-11-20T22:15:00.123Z");
+
+    const replayed = await commands.create({
+      requestId: createRequest,
+      date: "2026-11-21",
+      foodName: "Consumption gel",
+      consumedAt,
+      nutrients: { calories: 100, protein: 0, carbohydrate: 25, fat: 0 },
+    });
+    expect(replayed.operation.replayed).toBe(true);
+    expect(replayed.record.recordId).toBe(created.record.recordId);
+
+    await expect(
+      commands.create({
+        requestId: createRequest,
+        date: "2026-11-21",
+        foodName: "Consumption gel",
+        consumedAt: "2026-11-21T00:16:00+02:00",
+        nutrients: { calories: 100, protein: 0, carbohydrate: 25, fat: 0 },
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    const updatedAt = "2026-11-21T08:30:00-05:00";
+    const updated = await commands.update({
+      recordId: created.record.recordId,
+      expectedVersion: created.record.version,
+      requestId: randomUUID(),
+      set: { consumedAt: updatedAt },
+      clear: [],
+      nutrientSet: {},
+      nutrientClear: [],
+    });
+    expect(updated.record.consumedAt).toBe(updatedAt);
+
+    const cleared = await commands.update({
+      recordId: created.record.recordId,
+      expectedVersion: updated.record.version,
+      requestId: randomUUID(),
+      set: {},
+      clear: ["consumedAt"],
+      nutrientSet: {},
+      nutrientClear: [],
+    });
+    expect(cleared.record).not.toHaveProperty("consumedAt");
+    expect(cleared.record.provenance.consumedAt).toMatchObject({ origin: "human" });
+
+    const versions = [created.record.version, updated.record.version] as const;
+    expect((await repository.getAtVersion(created.record.recordId, versions[0]))?.consumedAt).toBe(
+      consumedAt,
+    );
+    expect((await repository.getAtVersion(created.record.recordId, versions[1]))?.consumedAt).toBe(
+      updatedAt,
+    );
+    const history = await repository.history(created.record.recordId, null, 50);
+    expect(history.items.map((item) => item.fields.consumed_at)).toEqual([
+      { operation: "clear" },
+      { operation: "set", value: updatedAt },
+      { operation: "set", value: consumedAt },
+    ]);
+
+    const reset = await commands.update({
+      recordId: created.record.recordId,
+      expectedVersion: cleared.record.version,
+      requestId: randomUUID(),
+      set: { consumedAt },
+      clear: [],
+      nutrientSet: {},
+      nutrientClear: [],
+    });
+    const deleted = await commands.delete({
+      recordId: created.record.recordId,
+      expectedVersion: reset.record.version,
+      requestId: randomUUID(),
+    });
+    expect(deleted.record).toMatchObject({ deleted: true, consumedAt });
+    const restored = await commands.restore({
+      recordId: created.record.recordId,
+      expectedVersion: deleted.record.version,
+      requestId: randomUUID(),
+    });
+    expect(restored.record).toMatchObject({ deleted: false, consumedAt });
+
+    await expect(
+      service(otherUserId).update({
+        recordId: created.record.recordId,
+        expectedVersion: restored.record.version,
+        requestId: randomUUID(),
+        set: { consumedAt: updatedAt },
+        clear: [],
+        nutrientSet: {},
+        nutrientClear: [],
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("keeps date-only creates unknown and rejects consumption times on imported records", async () => {
+    const created = await service().create({
+      requestId: randomUUID(),
+      date: "2026-11-21",
+      foodName: "Date-only oats",
+      nutrients: { calories: 300, protein: 10, carbohydrate: 40, fat: 8 },
+    });
+    expect(created.record).not.toHaveProperty("consumedAt");
+    expect(created.record.provenance).not.toHaveProperty("consumedAt");
+
+    const sourceEntryId = await addProviderFood({ date: "2026-11-21", name: "Imported oats" });
+    const { identityId } = await new FoodRecordRepository(context.db, userId).resolveStableIdentity(
+      sourceEntryId,
+    );
+    await expect(
+      service().update({
+        recordId: identityId,
+        expectedVersion: null,
+        requestId: randomUUID(),
+        set: { consumedAt: "2026-11-21T07:00:00+00:00" },
+        clear: [],
+        nutrientSet: {},
+        nutrientClear: [],
+      }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+    await new FoodRepository(context.db, userId, "UTC").ensureDofekProvider();
+    const aggregateSourceId = await addProviderFood({
+      date: "2026-11-21",
+      name: "Daily total",
+      providerId: "dofek",
+    });
+    await context.db.execute(sql`
+      UPDATE fitness.food_entry SET nutrition_grain = 'daily_aggregate'
+      WHERE id = ${aggregateSourceId}
+    `);
+    const aggregate = await new FoodRecordRepository(context.db, userId).resolveStableIdentity(
+      aggregateSourceId,
+    );
+    await expect(
+      service().update({
+        recordId: aggregate.identityId,
+        expectedVersion: null,
+        requestId: randomUUID(),
+        set: { consumedAt: "2026-11-21T07:00:00+00:00" },
+        clear: [],
+        nutrientSet: {},
+        nutrientClear: [],
+      }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+  });
+
   it("rejects commands while account erasure is active", async () => {
     const fencedUserId = randomUUID();
     await context.db.execute(

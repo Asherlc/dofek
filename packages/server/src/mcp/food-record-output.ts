@@ -1,5 +1,6 @@
 import { dayNutritionPreviewSchema } from "@dofek/mcp-contracts/day-nutrition";
 import { z } from "zod";
+import { consumedAtSchema } from "../repositories/food-record-types.ts";
 
 const nullableNumber = z.number().nullable();
 const nullableString = z.string().nullable();
@@ -25,6 +26,7 @@ export const foodRecordOutputSchema = z.object({
   number_of_units: nullableNumber,
   serving_unit: nullableString,
   serving_weight_grams: nullableNumber,
+  consumed_at: consumedAtSchema.optional(),
   nutrients: z.record(z.string(), nullableNumber),
   source_provider: z.string(),
   provenance: z.record(z.string(), foodRecordProvenanceOutputSchema),
