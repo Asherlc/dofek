@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cycling · Power-to-heart-rate decoupling · Published protocol only</title>
+<link rel="stylesheet" href="cycling.css">
+</head>
+<body>
+  <main id="cycling-decoupling-preview" data-dc-id="cycling-page">
+    <div class="cycling-page">
+      <header class="page-heading" data-dc-id="page-heading">
+        <div><p class="crumb">Training <span aria-hidden="true">/</span> Cycling</p><h1>Cycling</h1></div>
+        <label class="picker" data-dc-id="date-range">Date range
+          <select><option>90 days</option><option>30 days</option><option>7 days</option></select>
+        </label>
+      </header>
+
+      <article class="trend-panel" aria-labelledby="cycling-trend-title" data-dc-id="trend-panel">
+        <header class="trend-heading">
+          <div data-dc-id="metric-heading">
+            <h2 id="cycling-trend-title">Power-to-heart-rate decoupling</h2>
+            <p>How power relative to heart rate changed between halves of a ride.</p>
+          </div>
+        </header>
+        <div class="empty-state" role="status" data-dc-id="no-eligible-efforts">
+          <h3>No eligible efforts in this date range</h3>
+          <p>The imported rides lack verification of the 60-minute indoor effort, power target, or test conditions.</p>
+        </div>
+      </article>
+      <p class="preview-note" data-dc-id="sample-data">Mockup · Sample data</p>
+    </div>
+  </main>
+</body>
+</html>
