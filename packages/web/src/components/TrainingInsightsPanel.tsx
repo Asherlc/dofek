@@ -242,16 +242,18 @@ function IntensityDonut({ distribution }: { distribution: IntensityDistribution 
         return `${escapeTooltipHtml(name)}: ${formatIntensity(data.serverPercent)} (${formatDurationSeconds(value)})`;
       },
     }),
-    legend: dofekLegend(true, { type: "scroll" }),
     series: [
       {
         type: "pie",
         radius: ["50%", "75%"],
         avoidLabelOverlap: true,
+        label: { overflow: "break" },
+        labelLine: { length: 10, length2: 10 },
         data: distribution.zones.map((zone) => ({
           name: zone.zone === 0 ? zone.label : `Zone ${zone.zone}: ${zone.label}`,
           value: zone.seconds,
           serverPercent: zone.percent,
+          label: { show: zone.seconds > 0 },
           itemStyle: { color: HEART_RATE_ZONE_COLORS[zone.zone] ?? chartThemeColors.axisLabel },
         })),
       },

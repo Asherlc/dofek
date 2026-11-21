@@ -1,16 +1,30 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { type EChartsOption, init, setPlatformAPI } from "echarts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   expectRegistryInputs,
   resetRangePlumbingState,
   state,
 } from "../routes/training/range-plumbing.test-helper.tsx";
-import { TrainingInsightsPanel } from "./TrainingInsightsPanel.tsx";
+import { buildChartTable } from "./chart-accessibility.ts";
+
+const chartOptions = vi.fn<(option: EChartsOption) => void>();
+vi.doMock("./DofekChart.tsx", () => ({
+  DofekChart: ({ option }: { option: EChartsOption }) => {
+    chartOptions(option);
+    return <div />;
+  },
+}));
+
+const { TrainingInsightsPanel } = await import("./TrainingInsightsPanel.tsx");
 
 describe("TrainingInsightsPanel range plumbing", () => {
-  beforeEach(resetRangePlumbingState);
+  beforeEach(() => {
+    resetRangePlumbingState();
+    chartOptions.mockClear();
+  });
   afterEach(cleanup);
 
   it("passes finite and All ranges to selected-range chart queries", () => {
@@ -63,6 +77,52 @@ describe("TrainingInsightsPanel range plumbing", () => {
       "data-description",
       expect.stringContaining("Karvonen"),
     );
+  });
+
+  it("keeps recorded zones readable in a narrow donut and zero time in the chart data", () => {
+    state.trainingHrZonesQuery = {
+      data: {
+        maxHr: 190,
+        weeks: [
+          { week: "2026-07-20", zone0: 34, zone1: 18, zone2: 24, zone3: 19, zone4: 5, zone5: 0 },
+        ],
+        intensityDistribution: {
+          model: "karvonen-five-zone",
+          activityScope: "endurance",
+          totalSeconds: 100,
+          zones: [
+            { zone: 0, label: "Below Zone 1", seconds: 34, percent: 34 },
+            { zone: 1, label: "Recovery", seconds: 18, percent: 18 },
+            { zone: 2, label: "Aerobic", seconds: 24, percent: 24 },
+            { zone: 3, label: "Tempo", seconds: 19, percent: 19 },
+            { zone: 4, label: "Threshold", seconds: 5, percent: 5 },
+            { zone: 5, label: "VO2max", seconds: 0, percent: 0 },
+          ],
+          explanation: "Observed intensity distribution.",
+        },
+      },
+      isLoading: false,
+      error: null,
+    };
+
+    render(<TrainingInsightsPanel days={30} />);
+
+    const option = chartOptions.mock.lastCall?.[0];
+    expect(option).toBeDefined();
+    setPlatformAPI({ measureText: (text) => ({ width: String(text).length * 6 }) });
+    const chart = init(null, null, { renderer: "svg", ssr: true, width: 320, height: 200 });
+    try {
+      chart.setOption({ ...option, animation: false });
+      const svg = new DOMParser().parseFromString(chart.renderToSVGString(), "image/svg+xml");
+      const labels = Array.from(svg.querySelectorAll("text"), (node) => node.textContent).join(" ");
+      expect(labels).not.toContain("VO2max");
+      expect(labels).toMatch(/Zone 2:\s+Aerobic/);
+      expect(buildChartTable({ ...option }).rows).toContainEqual(
+        expect.objectContaining({ category: "Zone 5: VO2max", value: "0" }),
+      );
+    } finally {
+      chart.dispose();
+    }
   });
 
   it("renders query failures separately from an empty period", () => {
