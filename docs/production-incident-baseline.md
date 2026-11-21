@@ -39714,3 +39714,50 @@ Local qualification and CI are separate from production throughput acceptance. T
 - When local Redpanda logs report AIO exhaustion, record both counters and check
   the workspace service status before retrying. Keep the full integration suite
   as a GitHub CI gate. [Shared Docker VM resource pressure](testing.md#shared-docker-vm-resource-pressure)
+
+## 2026-11-21 — RideWithGPS queue paused while the card showed Syncing
+
+- **Impact.** The provider card showed both “Syncing” and “Sync overdue”. The
+  Dofek provider-status tool reported a connected OAuth account and a last
+  successful sync of November 3 at 15:56:29 UTC. The expected interval is 30
+  minutes. The provider's latest recorded attempt was that same success.
+- **Cause and evidence.** Redis retained a global pause event for
+  `sync-ride-with-gps` at November 3 16:15:21.416 UTC, 12 ms before the Strava
+  queue's pause. The RideWithGPS queue remained paused on November 21 with zero
+  active or delayed jobs and 20 waiting jobs. Axiom retained two occurrences of
+  `[worker] BullMQ job stalled: queue=sync-ride-with-gps` at 15:56:24 UTC and
+  two more at 16:16:40 UTC. The full-history job was returned to waiting and
+  still carries its last `running` progress at 0%. The provider card restores
+  that progress for queued jobs, which explains the active-looking label. The
+  pause owner, purpose, and original stall cause remain unresolved.
+  [BullMQ pause semantics](https://docs.bullmq.io/guide/workers/pausing-queues) ·
+  [Deployed card logic](https://github.com/Asherlc/dofek/blob/8f7735bfb1a93afcbb20bd9de0dc38c17f5d4887/packages/web/src/components/DataSourcesPanel.tsx#L254-L277) ·
+  [Earlier Strava investigation](#2026-11-11--strava-history-recovery-remains-paused-server-7h).
+- **Approved recovery and validation.** The history job covers January 1970
+  through November 3 at 15:23:42.754 UTC. A prior resync controller stopped
+  while observing that job when disk headroom fell below 15 GiB. On November 21
+  the worker readiness endpoint returned HTTP 200 and the data mount had
+  66 GiB available. After the user approved admitting all 20 jobs, the existing
+  queue factory and BullMQ `Queue.resume()` resumed RideWithGPS at 22:17:44 UTC.
+  Redis recorded 19 completions, one failure, and a drained queue at 22:19:20
+  UTC. A separate check confirmed zero waiting, active or delayed jobs and an
+  unpaused queue. Dofek reported a fresh successful sync at 22:19:20.823 UTC and
+  cleared the overdue state. Disk headroom remained at 66 GiB in the rounded
+  readings.
+  [Resync capacity investigation](#2026-11-19--resync-capacity-guard-rechecked-after-november-3-stops).
+- **Remaining risk.** At 22:17:44 UTC, BullMQ failed the full-history job at
+  pickup with `job stalled more than allowable limit`. Its durable processing
+  operation recorded six `processing_stalled` CDC failures on November 4 and
+  no newer stage events. The full-history sync remains incomplete. The original
+  pause intent and stall cause remain unknown. A tab that was polling the
+  history job can retain its spinner until reload because the poller applies
+  the job's saved provider progress before exiting on the terminal state.
+  [Deployed poller](https://github.com/Asherlc/dofek/blob/8f7735bfb1a93afcbb20bd9de0dc38c17f5d4887/packages/web/src/lib/poll-sync-job.ts#L96-L120).
+- **Retrospective and follow-up.** The provider's last-success record and the
+  Redis queue snapshot explained the two labels. Axiom supplied stall history,
+  and Redis supplied the pause time. Proposed wording for the processing runbook
+  is “When Syncing and Sync overdue appear together, verify active job count,
+  global pause state, and the last progress of any requeued job.” Verify fresh
+  scheduled success and any retained history job's own terminal outcome after
+  a resume. Reuse the production logs skill and the existing processing runbook.
+  [Processing diagnosis](processing-status-runbook.md#diagnosis).
