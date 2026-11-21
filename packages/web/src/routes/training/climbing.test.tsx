@@ -2,10 +2,12 @@
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { demonstratedGradeFixture } from "../../components/climbing-demonstrated-grade-fixture.ts";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers.ts";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures.ts";
 
 const gradeProgressionQuery = vi.hoisted(() => vi.fn());
+const demonstratedGradeQuery = vi.hoisted(() => vi.fn());
 const volumeByGradeQuery = vi.hoisted(() => vi.fn());
 const hangboardingSummaryQuery = vi.hoisted(() => vi.fn());
 const locationMapQuery = vi.hoisted(() => vi.fn());
@@ -65,6 +67,7 @@ vi.mock("../../lib/trpc.ts", () => ({
   trpc: {
     climbing: {
       gradeProgressionV2: { useQuery: gradeProgressionQuery },
+      demonstratedGrade: { useQuery: demonstratedGradeQuery },
       volumeByGrade: { useQuery: volumeByGradeQuery },
       volumeIncrease: { useQuery: volumeIncreaseQuery },
       attemptIncrease: { useQuery: attemptIncreaseQuery },
@@ -367,6 +370,13 @@ describe("ClimbingTab", () => {
     strengthsQuery.mockReset();
     strengthsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     gradeProgressionQuery.mockReset();
+    demonstratedGradeQuery.mockReset();
+    demonstratedGradeQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
     volumeByGradeQuery.mockReset();
     hangboardingSummaryQuery.mockReset();
     locationMapQuery.mockReset();
@@ -391,6 +401,10 @@ describe("ClimbingTab", () => {
     render(<ClimbingTab />);
 
     expect(gradeProgressionQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
+    expect(demonstratedGradeQuery).toHaveBeenCalledWith(
+      { endDate: "2026-10-26", filters: {} },
+      expect.objectContaining({ placeholderData: expect.any(Function) }),
+    );
     expect(strengthsQuery).toHaveBeenCalledWith(
       { days: 90, endDate: "2026-10-26", includeAreaMetadata: true, responseVersion: 2 },
       expect.objectContaining({ placeholderData: expect.any(Function) }),
@@ -413,6 +427,50 @@ describe("ClimbingTab", () => {
       { days: null, endDate: "2026-10-26", includeAreaMetadata: true, responseVersion: 2 },
       expect.any(Object),
     );
+  });
+
+  it("anchors demonstrated grade to today and current filters, independent of chart days", async () => {
+    demonstratedGradeQuery.mockReturnValue({
+      data: demonstratedGradeFixture,
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
+    const ClimbingTab = await importClimbingTab();
+    const { rerender } = render(<ClimbingTab />);
+    expect(demonstratedGradeQuery).toHaveBeenLastCalledWith(
+      { endDate: "2026-10-26", filters: {} },
+      expect.any(Object),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
+    trainingDaysState.days = null;
+    rerender(<ClimbingTab />);
+    expect(demonstratedGradeQuery).toHaveBeenLastCalledWith(
+      { endDate: "2026-10-26", filters: { types: ["lead"] } },
+      expect.any(Object),
+    );
+    expect(gradeProgressionQuery).toHaveBeenLastCalledWith({ types: ["lead"] }, expect.any(Object));
+  });
+
+  it("keeps demonstrated grades visible beside their refresh error", async () => {
+    demonstratedGradeQuery.mockReturnValue({
+      data: demonstratedGradeFixture,
+      isLoading: false,
+      isFetching: true,
+      error: new Error("Demonstrated grades unavailable"),
+    });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    const section = screen.getByRole("heading", { name: "Grade Progression" }).closest("section");
+    if (!section) throw new Error("Missing grade progression section");
+    expect(within(section).getByRole("heading", { name: "Demonstrated grade" })).toBeVisible();
+    expect(within(section).getByText("Demonstrated grades unavailable")).toBeVisible();
+    expect(
+      within(section).getByRole("button", { name: "Indoor bouldering, V5, 3 climbs" }),
+    ).toBeVisible();
   });
 
   it("renders climbing charts and hangboarding", async () => {

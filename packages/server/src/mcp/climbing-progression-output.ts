@@ -1,3 +1,4 @@
+import { climbingDemonstratedGradeSchema } from "@dofek/training/climbing-demonstrated-grade";
 import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import {
   attemptScopeSchema,
@@ -236,6 +237,7 @@ const legacyProgressionEntrySchema = progressionEntrySchema.omit({ hold_types: t
 
 export const climbingProgressionOutputSchema = canonicalClimbingProgressionOutputSchema.extend({
   result: progressionResultSchema.extend({
+    demonstrated_grade: climbingDemonstratedGradeSchema.optional(),
     sessions: z.array(
       progressionSessionSchema.extend({
         climbing_log_entries: z.array(

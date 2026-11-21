@@ -219,6 +219,41 @@ Climb names link to verified route destinations; additional route destinations r
 
 Analytics default to whole-Climb scope. Explicit pitch filters use pitch observations. Progression lanes separate kind, scope, rope method, solo, aid, and compatible published free-grade system; setting remains separate. Generic logs stay browseable, and ungraded known rock records retain participation. Counts and rates come from the server, with unknown execution distinguished from known failures. Source records are retained during ingestion; query-time mirror selection preserves distinct repeats and conflicting evidence. See the [observation query](../packages/server/src/repositories/climbing-rock-observations.ts) and [progression repository](../packages/server/src/repositories/climbing-progression-repository.ts).
 
+### Demonstrated grade
+
+The web and iOS Grade Progression sections show the highest published grade
+supported by at least three confirmed free sends on distinct whole climbs
+at that exact grade in the previous three calendar months. Bouldering, lead,
+top rope, and unroped each have indoor and outdoor results. Top rope includes
+follows. An eligible send can be an onsight, flash, redpoint, repeat, or a clean
+send with unspecified ascent style. Dofek adapted the original IRCRA redpoint
+rule for these records. Söderqvist et al. used a nonflash version for bouldering.
+See the [IRCRA position statement](https://doi.org/10.1080/19346182.2015.1107081)
+and [bouldering study methods](https://journals.humankinetics.com/downloadpdf/view/journals/ijspp/19/3/article-p290.pdf).
+
+The [repository](../packages/server/src/repositories/climbing-demonstrated-grade-repository.ts)
+uses the source ascent date or the exact dated native observation. It requires
+a source climb ID, exact published grade, known setting and type, and clean
+execution evidence on the qualifying attempt. Known repeats count once within
+each eligible grade and setting. When cross-source overlap is unresolved,
+each source verifies its own distinct climbs. Supporting sends show the
+recorded source and date. When access covers only part of the window, the
+result identifies that limit.
+
+BoardSesh uses the published consensus grade for the recorded problem and wall
+angle. Conflicting consensus labels leave the grade unresolved. A problem ID
+counts once across angles and mirror states. Evidence
+based on BoardSesh IDs explains that a merged problem can appear under more
+than one imported ID and count more than once. The feed resolves problem
+aliases when looking up grades and returns the original tick's problem ID.
+See the [consensus lookup](https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/backend/src/graphql/resolvers/ticks/queries.ts#L710-L766)
+and the [returned tick fields](https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/backend/src/graphql/resolvers/ticks/queries.ts#L883-L889).
+
+The [existing MCP climbing progression tool](../packages/server/src/mcp/climbing-progression-tool.ts)
+includes the same result when `include_demonstrated_grade` is true. The
+three-month window ends on `end_date` and remains independent of the session
+range start and pagination.
+
 The current filters independently select kind, scope, rope method, solo, aid, actual protection, advertised protection, and setting, including explicit false and unknown values. See the [filter contract](../packages/training/src/climbing-filters.ts).
 
 ## Maintenance cutover

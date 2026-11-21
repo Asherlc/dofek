@@ -139,6 +139,13 @@ export function TrainingAnalysis({
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
+  const climbingDemonstratedGradeQuery = trpc.climbing.demonstratedGrade.useQuery(
+    { endDate, filters: climbingFilters },
+    {
+      enabled: isHydrated && show("climbing"),
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
   const climbingIncreaseQueryOptions = {
     enabled: isHydrated && isFocused && show("climbing"),
     staleTime: 0,
@@ -189,6 +196,7 @@ export function TrainingAnalysis({
 
   useReportQueryError(trainingQuery);
   useReportQueryError(climbingLocationMapQuery);
+  useReportQueryError(climbingDemonstratedGradeQuery);
   useReportQueryError(climbingStrengthsQuery);
   useReportQueryError(hrZonesQuery);
   useReportQueryError(polarizationQuery);
@@ -244,6 +252,7 @@ export function TrainingAnalysis({
         utils.mobileDashboard.trainingV2.invalidate(),
         utils.running.dynamicsV2.invalidate(),
         utils.climbing.locationMap.invalidate(),
+        utils.climbing.demonstratedGrade.invalidate(),
         utils.climbing.strengths.invalidate(),
         utils.climbing.volumeIncrease.invalidate(),
         utils.climbing.attemptIncrease.invalidate(),
@@ -501,6 +510,9 @@ export function TrainingAnalysis({
         <ClimbingTrainingCard
           data={trainingData?.climbing}
           loading={trainingQuery.isLoading && trainingData == null}
+          demonstratedGrade={climbingDemonstratedGradeQuery.data}
+          demonstratedGradeLoading={climbingDemonstratedGradeQuery.isLoading}
+          demonstratedGradeError={climbingDemonstratedGradeQuery.error}
         />
       ) : null}
 

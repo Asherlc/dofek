@@ -16,6 +16,8 @@ import { trainingSections } from "../../lib/training-sections";
 import {
   mockAttemptIncreaseQuery,
   mockCaptureException,
+  mockDemonstratedGradeInvalidate,
+  mockDemonstratedGradeQuery,
   mockHrZonesInvalidate,
   mockHrZonesState,
   mockLocationMapInvalidate,
@@ -305,6 +307,25 @@ describe("StrainScreen", () => {
     expect(screen.getByText("Climbing locations")).toBeTruthy();
   });
 
+  it("anchors demonstrated grade to the shared date and filters, not the chart range", async () => {
+    const { default: StrainScreen } = await import("../../app/strain");
+    render(<StrainScreen />);
+    expect(mockDemonstratedGradeQuery).toHaveBeenLastCalledWith(
+      { endDate: "2026-03-28", filters: {} },
+      expect.any(Object),
+    );
+
+    mockQueryState.timeRangePreference.days = 30;
+    fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
+    expect(mockDemonstratedGradeQuery).toHaveBeenLastCalledWith(
+      { endDate: "2026-03-28", filters: { types: ["lead"] } },
+      expect.any(Object),
+    );
+    expect(mockQueryState.rangeQueryCalls.training.at(-1)?.input.days).toBe(30);
+  });
+
   it("refreshes training, intensity, polarization, and processing status together", async () => {
     const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
@@ -314,6 +335,7 @@ describe("StrainScreen", () => {
 
     expect(mockTrainingInvalidate).toHaveBeenCalledOnce();
     expect(mockLocationMapInvalidate).toHaveBeenCalledOnce();
+    expect(mockDemonstratedGradeInvalidate).toHaveBeenCalledOnce();
     expect(mockHrZonesInvalidate).toHaveBeenCalledOnce();
     expect(mockPolarizationInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();

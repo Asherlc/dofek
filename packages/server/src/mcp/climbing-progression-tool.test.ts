@@ -1,10 +1,26 @@
+import { buildDemonstratedGrade } from "@dofek/training/climbing-demonstrated-grade";
+import { DEFAULT_CLIMBING_GRADE_PREFERENCE } from "@dofek/training/climbing-grades";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, McpServer } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { climbingAttemptFixture } from "../repositories/climbing-test-helpers.ts";
 import { climbingProgressionOutputSchema } from "./climbing-progression-output.ts";
 
-const mocks = vi.hoisted(() => ({ listRange: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  listRange: vi.fn(),
+  getDemonstratedGrade: vi.fn(),
+  loadAccess: vi.fn(),
+}));
+
+vi.mock("../billing/access-window-repository.ts", () => ({
+  getAccessWindowForUser: mocks.loadAccess,
+}));
+
+vi.mock("../repositories/climbing-demonstrated-grade-repository.ts", () => ({
+  ClimbingDemonstratedGradeRepository: vi.fn(function vitestConstructor() {
+    return { getDemonstratedGrade: mocks.getDemonstratedGrade };
+  }),
+}));
 
 vi.mock("../repositories/climbing-progression-repository.ts", () => ({
   ClimbingProgressionRepository: vi.fn(function vitestConstructor() {
@@ -161,6 +177,8 @@ describe("get_climbing_progression", () => {
 
   beforeEach(async () => {
     mocks.listRange.mockReset().mockResolvedValue(fixture());
+    mocks.getDemonstratedGrade.mockReset();
+    mocks.loadAccess.mockReset();
     server = new McpServer({ name: "climbing-progression-test", version: "1.0.0" });
     registerClimbingProgressionTool(server, {
       db: { execute: vi.fn().mockResolvedValue([]), select: vi.fn(), transaction: vi.fn() },
@@ -208,7 +226,63 @@ describe("get_climbing_progression", () => {
     expect(climbingProgressionOutputSchema.parse(result.structuredContent)).toEqual({
       result: fixture(),
     });
+    expect(mocks.loadAccess).not.toHaveBeenCalled();
+    expect(mocks.getDemonstratedGrade).not.toHaveBeenCalled();
   });
+
+  it.each([1, 2] as const)(
+    "adds independent demonstrated grade evidence for version %s",
+    async (version) => {
+      const grade = buildDemonstratedGrade({
+        endDate: "2026-07-31",
+        preference: DEFAULT_CLIMBING_GRADE_PREFERENCE,
+        coverage: { fullWindow: false, startDate: "2026-07-21", endDate: "2026-07-31" },
+        observations: [],
+      });
+      mocks.getDemonstratedGrade.mockResolvedValue(grade);
+      mocks.loadAccess.mockResolvedValue({
+        kind: "limited",
+        paid: false,
+        reason: "free_week",
+        startDate: "2026-07-21",
+        endDateExclusive: "2026-08-01",
+      });
+
+      const result = await client.callTool({
+        name: "get_climbing_progression",
+        arguments: {
+          start_date: "2026-07-30",
+          end_date: "2026-07-31",
+          filters: { types: ["bouldering"] },
+          providers: ["kaya"],
+          locations: ["Pacific Pipe"],
+          grade_systems: ["v_scale"],
+          limit: 1,
+          response_version: version,
+          include_demonstrated_grade: true,
+        },
+      });
+
+      expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+      expect(mocks.loadAccess).toHaveBeenCalledWith(
+        expect.anything(),
+        "00000000-0000-4000-8000-000000000002",
+        "UTC",
+      );
+      expect(mocks.getDemonstratedGrade).toHaveBeenCalledWith({
+        endDate: "2026-07-31",
+        filters: { types: ["bouldering"] },
+        sources: ["kaya"],
+        locations: ["Pacific Pipe"],
+        gradeSystems: ["v_scale"],
+      });
+      const parsed = climbingProgressionOutputSchema.parse(result.structuredContent);
+      expect(parsed.result).toMatchObject({ demonstrated_grade: grade });
+      const content = result.content[0];
+      if (content?.type !== "text") throw new Error("Expected JSON text");
+      expect(JSON.parse(String(content.text))).toEqual(parsed.result);
+    },
+  );
 
   it.each([undefined, 1, 2, 3] as const)(
     "negotiates grip responses for version %s",

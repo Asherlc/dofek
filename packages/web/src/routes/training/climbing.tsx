@@ -8,6 +8,7 @@ import type { ClimbingFilters as Filters } from "@dofek/training/climbing-filter
 import { keepPreviousData } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useId, useState } from "react";
+import { ClimbingDemonstratedGrade } from "../../components/ClimbingDemonstratedGrade.tsx";
 import { ClimbingFilters } from "../../components/ClimbingFilters.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
 import { ClimbingLocationMap } from "../../components/ClimbingLocationMap.tsx";
@@ -43,6 +44,10 @@ export function ClimbingTab() {
     rangeInput,
     climbingQueryOptions,
   );
+  const demonstratedGrade = trpc.climbing.demonstratedGrade.useQuery(
+    { endDate, filters },
+    climbingQueryOptions,
+  );
   const volumeByGrade = trpc.climbing.volumeByGrade.useQuery(rangeInput, climbingQueryOptions);
   const increaseQueryOptions = { refetchOnWindowFocus: true };
   const volumeIncrease = trpc.climbing.volumeIncrease.useQuery(undefined, increaseQueryOptions);
@@ -74,7 +79,8 @@ export function ClimbingTab() {
         volumeByGrade.isFetching ||
         volumeOverTime.isFetching ||
         strengths.isFetching ||
-        locationMap.isFetching
+        locationMap.isFetching ||
+        demonstratedGrade.isFetching
           ? "Updating climbing…"
           : null}
       </p>
@@ -125,6 +131,11 @@ export function ClimbingTab() {
         </Section>
 
         <Section title="Grade Progression">
+          <ClimbingDemonstratedGrade
+            data={demonstratedGrade.data}
+            loading={demonstratedGrade.isLoading}
+            error={demonstratedGrade.error}
+          />
           {gradeProgression.error ? (
             <QueryStatePanel error={gradeProgression.error} height={0} />
           ) : null}
