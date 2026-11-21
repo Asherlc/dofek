@@ -69,6 +69,9 @@ function recordRow(overrides: Record<string, unknown> = {}) {
     serving_unit_change_id: null,
     serving_weight_grams_operation: null,
     serving_weight_grams_change_id: null,
+    consumed_at: null,
+    consumed_at_operation: null,
+    consumed_at_change_id: null,
     visibility_change_id: null,
     ...overrides,
   };
@@ -139,6 +142,8 @@ function lockedHead(overrides: Record<string, unknown> = {}) {
   return {
     identity_id: recordId,
     source_entry_id: sourceEntryId,
+    namespace: "dofek",
+    itemized: true,
     current_version: version,
     modifiable: true,
     ...overrides,
@@ -633,6 +638,8 @@ describe("FoodRecordRepository", () => {
         {
           identity_id: recordId,
           source_entry_id: sourceEntryId,
+          namespace: "dofek",
+          itemized: true,
           current_version: null,
           modifiable: true,
         },
@@ -684,6 +691,8 @@ describe("FoodRecordRepository", () => {
         {
           identity_id: recordId,
           source_entry_id: sourceEntryId,
+          namespace: "dofek",
+          itemized: true,
           current_version: version,
           modifiable: true,
         },

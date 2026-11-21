@@ -59,32 +59,39 @@ update `set`, and `consumed_at` in update `clear`. When known, expose optional
 boundary. Use `consumed_at` as the ledger field key, with `set` for create and
 update and `clear` for returning to unknown.
 
-- [ ] Add MCP contract regressions for create and update forwarding the
+- [x] Add MCP contract regressions for create and update forwarding the
   offset-bearing value, accepting the clear key, rejecting a missing offset and
   malformed value, and leaving date-only calls compatible. Exercise response
   schema validation and retained field provenance with a known timestamp.
-- [ ] Extend the real PostgreSQL service suite. Use `2026-11-21T00:15:00+02:00`
+- [x] Extend the real PostgreSQL service suite. Use `2026-11-21T00:15:00+02:00`
   for creation on diary date `2026-11-21` and assert the instant is
   `2026-11-20T22:15:00Z`. Assert exact retry and changed-time conflict with the
   same request ID, update to a distinct time, clear, and confirm current and
   versioned results. Exercise account isolation, imported records, and
   delete/restore with the stored time. Include at least one date-only create.
-- [ ] Observe the tests fail because the field is absent. Run the targeted unit
+- [x] Observe the tests fail because the field is absent. Run the targeted unit
   test with `pnpm exec vitest run --project unit` and the targeted service test
   through `pnpm test:integration --` with the exact test paths.
-- [ ] Extend the existing schemas and the service's field decision mapping.
+- [x] Extend the existing schemas and the service's field decision mapping.
   Reuse the itemized Dofek record identity from the existing create path.
   Append the timestamp decision on create and apply versioned updates with the
   same write fence. Reuse the latest-field and historical lineage projections
   for effective values and provenance. Keep `recorded_at` and `effective_at`
   semantics distinct from consumption and preserve the existing attempt to
   replay identical commands.
-- [ ] Document MCP inputs, reads, time semantics, and compatibility. Repeat
+- [x] Document MCP inputs, reads, time semantics, and compatibility. Repeat
   the targeted unit and real PostgreSQL tests and record the passing results.
-- [ ] Review the diff against the spec and the focus list. Run `pnpm lint`,
+- [x] Review the diff against the spec and the focus list. Run `pnpm lint`,
   `pnpm --recursive --include-workspace-root --if-present typecheck`, and the
   relevant non-interactive unit tests. Leave the diff for the lead to review,
   commit, push, and verify through GitHub CI.
+
+The MCP regression failed before the transport change. The PostgreSQL regression
+was also verified against the original service after implementation. The original
+service rejected the intake time. The final focused runs passed 125 unit tests and
+27 PostgreSQL tests. On this workstation, the default integration diagnostics
+reporter hit `EAGAIN` while writing to stdout. The same integration suites exited
+cleanly through the repository wrapper with Vitest's `--reporter=default` flag.
 
 ## Task 2 — Verify cycling source eligibility
 
