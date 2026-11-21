@@ -50,19 +50,10 @@ h1 {
   line-height: 1.3;
 }
 
-.period,
-.legend,
-.evidence {
+.period {
   color: var(--muted);
   font-size: 12px;
-}
-
-.period {
   margin: 4px 0 0;
-}
-
-.legend {
-  margin: 12px 0 0;
 }
 
 table {
@@ -108,31 +99,31 @@ tbody tr:last-child > * {
   color: var(--muted);
 }
 
-.evidence {
-  display: block;
-  margin: 3px 0 0;
-}
-
-summary {
-  width: fit-content;
+.grade-link,
+.back-link {
   color: var(--accent);
-  cursor: pointer;
+  text-underline-offset: 3px;
 }
 
-.chat {
-  --page: light-dark(#f7f7f7, #191919);
-  --surface: light-dark(#ffffff, #212121);
-  --ink: light-dark(#202020, #f0f0f0);
-  --muted: light-dark(#545454, #b9b9b9);
-  --line: light-dark(#e0e0e0, #424242);
-  --inset: light-dark(#f2f2f2, #303030);
+.grade-link {
+  font-weight: 650;
 }
 
-.chat-question {
-  width: fit-content;
-  max-width: 84%;
-  margin: 0 0 18px auto;
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  background: var(--inset);
+.back-link {
+  display: inline-block;
+  margin-bottom: 14px;
+}
+
+.send-detail,
+body:has(.send-detail:target) .onsight-summary {
+  display: none;
+}
+
+.send-detail:target {
+  display: block;
+}
+
+.recorded-result {
+  margin: 12px 0 0;
+  font-weight: 650;
 }
