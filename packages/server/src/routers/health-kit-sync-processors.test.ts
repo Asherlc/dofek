@@ -237,6 +237,69 @@ describe("processBodyMeasurements", () => {
 });
 
 describe("processWorkouts", () => {
+  const workoutEffort = {
+    uuid: "c0ffee11-1111-4111-8111-111111111111",
+    value: 7,
+    startDate: "2026-06-20T21:49:00.000-07:00",
+    endDate: "2026-06-20T22:17:59.000-07:00",
+    sourceName: "Fitness",
+    sourceBundle: "com.apple.fitness",
+  };
+  const workoutWithEffort = {
+    uuid: "workout-with-effort",
+    startDate: workoutEffort.startDate,
+    endDate: workoutEffort.endDate,
+    duration: 1739,
+    totalDistance: null,
+    sourceName: "Apple Watch",
+    sourceBundle: "com.apple.health",
+    workoutEffort,
+  };
+  const effortSyncWindow = {
+    windowStart: "2026-06-20T00:00:00.000Z",
+    windowEnd: "2026-06-22T00:00:00.000Z",
+  };
+
+  it("passes the cycling rating and its source evidence together to the upsert", async () => {
+    providerActivitySyncMocks.upsert.mockClear();
+    const db = makeTransactionalTestDatabase({ execute: vi.fn(async () => []) });
+
+    await processWorkouts(
+      db,
+      "00000000-0000-0000-0000-000000000001",
+      [{ ...workoutWithEffort, workoutType: "13" }],
+      effortSyncWindow,
+    );
+
+    const storedEffort = expect.objectContaining({
+      perceivedExertion: 7,
+      raw: expect.objectContaining({ workoutEffort }),
+    });
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledExactlyOnceWith(
+      storedEffort,
+      storedEffort,
+      db,
+    );
+  });
+
+  it("imports a running workout without its cycling-only effort fields", async () => {
+    providerActivitySyncMocks.upsert.mockClear();
+    const db = makeTransactionalTestDatabase({ execute: vi.fn(async () => []) });
+
+    await processWorkouts(
+      db,
+      "00000000-0000-0000-0000-000000000001",
+      [{ ...workoutWithEffort, workoutType: "37" }],
+      effortSyncWindow,
+    );
+
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledTimes(1);
+    const [insert, update] = providerActivitySyncMocks.upsert.mock.calls[0] ?? [];
+    expect(insert).not.toHaveProperty("perceivedExertion");
+    expect(insert).not.toHaveProperty("raw.workoutEffort");
+    expect(update).not.toHaveProperty("perceivedExertion");
+  });
+
   it("classifies Hang Ten workouts from the HealthKit source", async () => {
     providerActivitySyncMocks.upsert.mockClear();
     const execute = vi.fn(async () => []);
