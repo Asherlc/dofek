@@ -40,6 +40,7 @@ type MockRangeQueryName =
   | "strengths"
   | "climbingVolume"
   | "strengthVolume"
+  | "durability"
   | "sportVolume";
 
 type MockRangeQueryCalls = Record<
@@ -50,6 +51,7 @@ type MockRangeQueryCalls = Record<
 function emptyRangeQueryCalls(): MockRangeQueryCalls {
   return {
     running: [],
+    durability: [],
     training: [],
     locationMap: [],
     strengths: [],
@@ -162,6 +164,14 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    cycling: {
+      durability: {
+        useQuery: (input: { days: number | null }, options: MockRangeQueryOptions) => {
+          mockQueryState.rangeQueryCalls.durability.push({ input, options });
+          return { data: undefined, isLoading: true, error: null };
+        },
+      },
+    },
     running: {
       dynamicsV2: {
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {

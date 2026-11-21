@@ -39686,3 +39686,7 @@ Local qualification and CI are separate from production throughput acceptance. T
   reported a one-minute load of 855.41 and 95.59 percent CPU waiting over the
   last ten seconds. The ClickHouse health gate and rebuilt feature tests remain
   pending. [Shared Docker VM resource checks](testing.md#shared-docker-vm-resource-pressure).
+- At 18:42 UTC, the unchanged integration command passed service health and
+  all ten model fixtures with its standard test timeout. The earlier direct
+  run isolated inefficient array processing in the draft SQL, which was
+  corrected before this run. The temporary AIO ceiling is the only VM change.

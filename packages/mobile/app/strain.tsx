@@ -28,6 +28,7 @@ import { ClimbingFilters } from "../components/ClimbingFilters";
 import { ClimbingLocationMapCard } from "../components/ClimbingLocationMapCard";
 import { ClimbingStrengths } from "../components/ClimbingStrengths";
 import { ClimbingTrainingCard } from "../components/ClimbingTrainingCard";
+import { CyclingDurability } from "../components/CyclingDurability";
 import { VerticalAscentChart } from "../components/charts/VerticalAscentChart";
 import { DaySelector } from "../components/DaySelector";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget";
@@ -358,6 +359,10 @@ export function TrainingAnalysis({
             ) : null}
           </>
         ))}
+
+      {section === "cycling" ? (
+        <CyclingDurability days={days} enabled={isHydrated} units={units} />
+      ) : null}
 
       {show("overview") ||
       show("endurance") ||

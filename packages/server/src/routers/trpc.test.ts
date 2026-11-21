@@ -520,6 +520,35 @@ describe("trpc", () => {
   });
 
   describe("cached middleware", () => {
+    it("keeps access-scoped cached results separate for the same account and range", async () => {
+      const testRouter = router({
+        scoped: cachedProtectedQuery({ maxAge: CacheTTL.SHORT, scopeByAccessWindow: true }).query(
+          ({ ctx }) => ctx.accessWindow.kind,
+        ),
+      });
+      const createCaller = initTRPC.context<Context>().create().createCallerFactory(testRouter);
+      const context = { db: {}, userId: "user-1", timezone: "UTC" };
+      const values = new Map<string, unknown>();
+      vi.mocked(queryCache.get).mockImplementation(async (key) => values.get(key));
+      vi.mocked(queryCache.set).mockImplementation(async (key, value) => {
+        values.set(key, value);
+      });
+
+      await expect(createCaller(context).scoped()).resolves.toBe("full");
+      await expect(
+        createCaller({
+          ...context,
+          accessWindow: {
+            kind: "limited",
+            paid: false,
+            reason: "free_recent_week",
+            startDate: "2026-11-15",
+            endDateExclusive: "2026-11-22",
+          },
+        }).scoped(),
+      ).resolves.toBe("limited");
+    });
+
     function createCachedRouter() {
       const testRouter = router({
         cachedQuery: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(() => "db-result"),
