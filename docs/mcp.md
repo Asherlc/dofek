@@ -313,6 +313,20 @@ non-negative amount or explicit `null`; `nutrient_clear` resumes following the
 raw nutrient. A field or nutrient cannot appear in both forms, and an update
 must contain at least one decision; supplied zero-calorie evidence counts as a
 description decision ([service schema](../packages/server/src/services/food-record-service.ts)).
+
+`consumed_at` is an optional intake time for itemized Dofek food records. When
+the user reports when they ate or drank an item, pass that time to
+`create_food_entry` or in `update_food_entry` `set`. Supply an ISO 8601
+timestamp with an explicit UTC offset, such as `2026-11-21T00:15:00+02:00`.
+The server returns the validated string unchanged with its field provenance.
+The diary `date` is independent of this instant. A date-only create has unknown
+intake time. An update that omits the time preserves the current value. To
+return it to unknown, list `consumed_at` in `clear`. Effective responses omit
+unknown times, and history preserves each reported value and clear decision.
+Setting or clearing the field on an imported or non-itemized food record
+returns `PRECONDITION_FAILED`. Retrying an identical create replays it. Reusing
+the request ID with a different time returns `CONFLICT`.
+
 `delete_food_entry` hides the effective
 record and removes its contribution from canonical nutrition without deleting
 the raw provider row. `restore_food_entry` makes the same effective record

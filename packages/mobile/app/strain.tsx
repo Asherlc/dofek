@@ -36,6 +36,7 @@ import { QueryStatePanel } from "../components/QueryStatePanel";
 import { RouteComparisonCard } from "../components/RouteComparisonCard";
 import { RunningTrainingCard } from "../components/RunningTrainingCard";
 import { SportVolumeChart } from "../components/SportVolumeChart";
+import { StrengthLoggedSetComparison } from "../components/StrengthLoggedSetComparison";
 import { TrainingChartEmptyState } from "../components/TrainingChartEmptyState";
 import { TrainingDistributionCards } from "../components/TrainingDistributionCards";
 import { TrainingVolumeChart } from "../components/TrainingVolumeChart";
@@ -160,6 +161,14 @@ export function TrainingAnalysis({
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
+  const loggedSetsQuery = trpc.strength.loggedSetComparison.useQuery(
+    { days },
+    {
+      enabled: isHydrated && show("strength"),
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  useReportQueryError(loggedSetsQuery);
   const strengthVolumeQuery = trpc.strength.volumeOverTime.useQuery(
     { days },
     {
@@ -249,6 +258,7 @@ export function TrainingAnalysis({
         utils.climbing.attemptIncrease.invalidate(),
         utils.climbing.volumeOverTime.invalidate(),
         utils.strength.volumeOverTime.invalidate(),
+        utils.strength.loggedSetComparison.invalidate(),
         utils.training.hrZones.invalidate(),
         utils.training.sportVolume.invalidate(),
         utils.hiking.activityComparison.invalidate(),
@@ -407,6 +417,12 @@ export function TrainingAnalysis({
       ) : null}
       {show("strength") ? (
         <>
+          <StrengthLoggedSetComparison
+            data={loggedSetsQuery.data}
+            loading={loggedSetsQuery.isLoading}
+            error={loggedSetsQuery.error}
+            units={units}
+          />
           {strengthVolumeQuery.error ? (
             <QueryStatePanel variant="error" message={strengthVolumeQuery.error.message} />
           ) : null}

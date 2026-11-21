@@ -353,6 +353,16 @@ block-bootstrap methods for weakly dependent time-series errors
 ([Lahiri et al.](https://doi.org/10.1080/01621459.2011.646929)). Clients only render and
 unit-format this evidence; they do not calculate slopes, intervals, or interpretations.
 
+The shared web and mobile `strength.loggedSetComparison` query compares observed loads at matching
+rep counts within the selected timestamp range and request access window. It counts canonical,
+deduplicated sets with positive normalized load and reps that pass the existing working-volume
+quality checks, excluding warm-ups, rests, missing values, and ambiguous or conflicting observations.
+Session and set evidence retain provider attribution; first/latest comparisons require distinct
+local dates. The response includes context from the
+[Schoenfeld et al. trial](https://pmc.ncbi.nlm.nih.gov/articles/pmid/30153194/), which used supervised
+sets to failure and tested squat and bench-press strength, without prescribing set targets or
+inferring personal causation.
+
 ### Health-status evidence contract
 
 Health-status values are interpreted only by

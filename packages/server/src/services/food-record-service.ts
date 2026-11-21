@@ -19,6 +19,7 @@ import {
   type FoodRecordRepositoryCommands,
 } from "../repositories/food-record-repository.ts";
 import {
+  consumedAtSchema,
   type EffectiveFoodRecord,
   type FoodRecordFieldDecision,
   FoodRecordPreconditionError,
@@ -43,6 +44,7 @@ const editableFieldSchema = z.enum([
   "numberOfUnits",
   "servingUnit",
   "servingWeightGrams",
+  "consumedAt",
 ]);
 
 const createFoodRecordSchema = z
@@ -57,6 +59,7 @@ const createFoodRecordSchema = z
     numberOfUnits: z.number().finite().nonnegative().nullable().optional(),
     servingUnit: nullableTextSchema.optional(),
     servingWeightGrams: z.number().finite().nonnegative().nullable().optional(),
+    consumedAt: consumedAtSchema.optional(),
     nutrients: z.record(nutrientIdSchema, nutrientAmountSchema),
   })
   .strict();
@@ -71,6 +74,7 @@ const scalarSetSchema = z
     numberOfUnits: z.number().finite().nonnegative().nullable().optional(),
     servingUnit: nullableTextSchema.optional(),
     servingWeightGrams: z.number().finite().nonnegative().nullable().optional(),
+    consumedAt: consumedAtSchema.optional(),
   })
   .strict();
 
@@ -197,6 +201,7 @@ const fieldNames: Record<string, string> = {
   numberOfUnits: "number_of_units",
   servingUnit: "serving_unit",
   servingWeightGrams: "serving_weight_grams",
+  consumedAt: "consumed_at",
 };
 
 const internalFoodRecordErrorMessage = "The food record request could not be completed.";
