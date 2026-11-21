@@ -17,6 +17,12 @@ function strengthRow(overrides: Partial<StrengthComparisonRow> = {}): StrengthCo
     set_id: "00000000-0000-4000-8000-000000000031",
     set_activity_id: SOURCE_ACTIVITY_A,
     set_provider: "hevy",
+    exercise_name: "Bench Press",
+    equipment: "barbell",
+    raw: {},
+    distance_meters: null,
+    duration_seconds: null,
+    notes: null,
     exercise_id: EXERCISE_ID,
     exercise_index: 0,
     set_index: 0,
@@ -53,6 +59,122 @@ function climbingRow(overrides: Partial<ClimbingComparisonRow> = {}): ClimbingCo
 }
 
 describe("computeStrengthComparisonMetrics", () => {
+  it("requires exact scope and tracks estimate coverage independently of volume", () => {
+    const tagged = strengthRow({
+      set_provider: "strong-csv",
+      raw: {
+        setTag: "Failure",
+        exerciseName: "Bench Press (Barbell)",
+        weight: 100,
+        reps: 5,
+        weightUnit: "kg",
+        reportedWeightUnit: "kg",
+      },
+    });
+    const untagged = strengthRow({
+      set_id: "00000000-0000-4000-8000-000000000032",
+      set_index: 1,
+      rpe: 10,
+    });
+    const missingLoad = strengthRow({
+      set_id: "00000000-0000-4000-8000-000000000033",
+      set_index: 2,
+      weight_kg: null,
+    });
+    expect(
+      computeStrengthComparisonMetrics([tagged, untagged, missingLoad], EXERCISE_ID),
+    ).toMatchObject({
+      volume_status: "partial",
+      estimated_one_rep_max_status: "complete",
+      best_estimated_one_rep_max_kg: 116.65,
+    });
+    expect(
+      computeStrengthComparisonMetrics([tagged], "other-exercise")?.best_estimated_one_rep_max_kg,
+    ).toBeNull();
+    expect(computeStrengthComparisonMetrics([tagged])?.best_estimated_one_rep_max_kg).toBeNull();
+
+    const invalidCopy = { ...tagged, set_index: 2, set_id: missingLoad.set_id, rpe: 11 };
+    expect(computeStrengthComparisonMetrics([tagged, invalidCopy], EXERCISE_ID)).toMatchObject({
+      estimated_one_rep_max_status: "partial",
+      best_estimated_one_rep_max_kg: 116.65,
+    });
+  });
+
+  it.each([
+    ["units", { reportedWeightUnit: "lbs" }],
+    ["exercise", { exerciseName: "Squat (Barbell)" }],
+    ["reps", { reps: 4 }],
+    ["load", { weight: 99 }],
+  ])("excludes a set with a conflicting explicit source %s", (_field, badEvidence) => {
+    const evidence = {
+      setTag: "Failure",
+      exerciseName: "Bench Press (Barbell)",
+      weight: 100,
+      reps: 5,
+      weightUnit: "kg",
+      reportedWeightUnit: "kg",
+    };
+    const tagged = strengthRow({ set_provider: "strong-csv", raw: evidence });
+    const mirror = strengthRow({
+      set_id: "00000000-0000-4000-8000-000000000032",
+      set_activity_id: SOURCE_ACTIVITY_B,
+      set_provider: "strong-csv",
+      raw: { ...evidence, ...badEvidence },
+    });
+    const clean = strengthRow({
+      set_id: "00000000-0000-4000-8000-000000000033",
+      set_index: 1,
+      set_provider: "strong-csv",
+      weight_kg: 80,
+      raw: { ...evidence, weight: 80 },
+    });
+    expect(computeStrengthComparisonMetrics([tagged, mirror, clean], EXERCISE_ID)).toMatchObject({
+      valid_volume_kg_reps: 900,
+      volume_status: "complete",
+      estimated_one_rep_max_status: "partial",
+      best_estimated_one_rep_max_kg: 93.32,
+    });
+    expect(
+      computeStrengthComparisonMetrics([tagged, { ...mirror, raw: {} }, clean], EXERCISE_ID),
+    ).toMatchObject({
+      estimated_one_rep_max_status: "complete",
+      best_estimated_one_rep_max_kg: 116.65,
+    });
+  });
+
+  it.each([{ distance_meters: 5 }, { duration_seconds: 5 }, { notes: "Different set note" }])(
+    "preserves volume but excludes estimate evidence for a nonidentical mirror (%o)",
+    (difference) => {
+      const raw = {
+        setTag: "Failure",
+        exerciseName: "Bench Press (Barbell)",
+        weight: 100,
+        reps: 5,
+        weightUnit: "kg",
+        reportedWeightUnit: "kg",
+      };
+      const tagged = strengthRow({ set_provider: "strong-csv", raw });
+      const mirror = strengthRow({
+        set_id: "00000000-0000-4000-8000-000000000032",
+        set_activity_id: SOURCE_ACTIVITY_B,
+        ...difference,
+      });
+      const clean = strengthRow({
+        set_id: "00000000-0000-4000-8000-000000000033",
+        set_index: 1,
+        set_provider: "strong-csv",
+        weight_kg: 80,
+        raw: { ...raw, weight: 80 },
+      });
+      expect(computeStrengthComparisonMetrics([tagged, mirror, clean], EXERCISE_ID)).toMatchObject({
+        valid_volume_kg_reps: 900,
+        volume_status: "complete",
+        estimated_one_rep_max_status: "partial",
+        best_estimated_one_rep_max_kg: 93.32,
+      });
+    },
+  );
+
   it("returns no metrics when no strength observations exist", () => {
     expect(computeStrengthComparisonMetrics([])).toBeNull();
   });
@@ -78,7 +200,7 @@ describe("computeStrengthComparisonMetrics", () => {
       working_sets: 1,
       missing_volume_sets: 0,
       volume_status: "complete",
-      estimated_one_rep_max_status: "complete",
+      estimated_one_rep_max_status: "unavailable",
     });
   });
 
@@ -190,8 +312,8 @@ describe("computeStrengthComparisonMetrics", () => {
       missing_volume_sets: 1,
       valid_volume_kg_reps: 500,
       volume_status: "partial",
-      best_estimated_one_rep_max_kg: expect.any(Number),
-      estimated_one_rep_max_status: "partial",
+      best_estimated_one_rep_max_kg: null,
+      estimated_one_rep_max_status: "unavailable",
       excluded_sets: 1,
     });
   });
@@ -248,8 +370,8 @@ describe("computeStrengthComparisonMetrics", () => {
       missing_volume_sets: 0,
       valid_volume_kg_reps: 1870,
       volume_status: "partial",
-      best_estimated_one_rep_max_kg: 112,
-      estimated_one_rep_max_status: "partial",
+      best_estimated_one_rep_max_kg: null,
+      estimated_one_rep_max_status: "unavailable",
       suspicious_sets: 3,
       excluded_sets: 3,
     });
