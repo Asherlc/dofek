@@ -1,3 +1,7 @@
+vi.mock("../../components/StrengthLoggedSetComparison", () => ({
+  StrengthLoggedSetComparison: () => <div />,
+}));
+
 /** @vitest-environment jsdom */
 
 import { render } from "@testing-library/react";
@@ -156,6 +160,7 @@ vi.mock("../../lib/trpc.ts", () => ({
       },
     },
     strength: {
+      loggedSetComparison: { useQuery: recordQuery("strength.loggedSetComparison") },
       estimatedOneRepMax: { useQuery: recordQuery("strength.estimatedOneRepMax") },
       exerciseHistory: { useQuery: recordQuery("strength.exerciseHistory") },
       muscleGroupVolume: { useQuery: recordQuery("strength.muscleGroupVolume") },

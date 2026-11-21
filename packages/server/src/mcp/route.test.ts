@@ -964,6 +964,7 @@ describe("createMcpRouter", () => {
         "get_cycling_training_metrics",
         "find_repeated_efforts",
         "get_cycling_power_curve",
+        "get_running_race_forecast",
         "get_activity_details",
         "get_climbing_sessions",
       ],
@@ -1296,6 +1297,7 @@ describe("createMcpRouter", () => {
       "get_effort_trend",
       "get_cycling_performance",
       "get_cycling_power_curve",
+      "get_running_race_forecast",
       "get_cycling_training_metrics",
       "get_sleep_summary",
       "search_activities",
@@ -1387,6 +1389,7 @@ describe("createMcpRouter", () => {
         name: "get_cycling_training_metrics",
         path: ["result", "activities", "[]", "metrics", "coverage", "power", "missing_seconds"],
       },
+      { name: "get_running_race_forecast", path: ["result", "source", "distance_meters"] },
       { name: "render_health_explorer", path: ["coverage", "by_metric"] },
       {
         name: "get_sleep_summary",

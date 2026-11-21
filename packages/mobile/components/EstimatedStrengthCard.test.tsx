@@ -21,8 +21,24 @@ const squat: StrengthExerciseHistoryRow = {
     exerciseName: "Barbell Back Squat",
     equipment: null,
     history: [
-      { date: "2026-05-01", estimatedMax: 118, actualWeight: 100, actualReps: 5 },
-      { date: "2026-07-01", estimatedMax: 128, actualWeight: 110, actualReps: 5 },
+      {
+        date: "2026-05-01",
+        estimatedMax: 118,
+        actualWeight: 100,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000001",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
+      {
+        date: "2026-07-01",
+        estimatedMax: 128,
+        actualWeight: 110,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000001",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
     ],
     trend: {
       direction: "increasing",

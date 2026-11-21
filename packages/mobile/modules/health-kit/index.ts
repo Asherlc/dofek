@@ -65,6 +65,24 @@ export interface HealthKitDevice {
   udiDeviceIdentifier?: string;
 }
 
+/**
+ * Apple's explicitly reported whole-workout effort sample (iOS 18+). The
+ * `HKQuantityTypeIdentifierWorkoutEffortScore` type and named Apple
+ * `appleEffortScore` unit are implicit in this field; the value is the literal
+ * 1–10 rating. `startDate` and `endDate` are the sample's own interval, and
+ * `sourceName`/`sourceBundle` identify the effort sample's source (which can
+ * differ from the workout's). A later edit replaces the sample on the next sync
+ * of the workout. An omitted field means no readable rating, not a deletion.
+ */
+export interface WorkoutEffortSample {
+  uuid: string;
+  value: number;
+  startDate: string;
+  endDate: string;
+  sourceName: string;
+  sourceBundle: string;
+}
+
 export interface WorkoutSample {
   sourceProductType?: string;
   device?: HealthKitDevice;
@@ -80,6 +98,8 @@ export interface WorkoutSample {
   metadata?: Record<string, string | number>;
   /** Sub-activities within the workout (iOS 16+) */
   workoutActivities?: WorkoutActivity[];
+  /** Apple's reported whole-workout effort (iOS 18+), when a rating was read. */
+  workoutEffort?: WorkoutEffortSample;
 }
 
 export interface SleepSample {

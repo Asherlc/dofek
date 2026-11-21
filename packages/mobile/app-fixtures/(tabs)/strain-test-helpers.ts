@@ -26,13 +26,13 @@ export const sectionExpectations = {
     cards: ["Weekly Volume", "Easy-to-hard training balance"],
   },
   cycling: {
-    queries: ["training", "sportVolume"],
-    cards: ["Weekly Volume", "Vertical Ascent Rate"],
+    queries: ["training", "sportVolume", "durability"],
+    cards: ["Weekly Volume", "Vertical Ascent Rate", "Power after sustained riding"],
   },
   running: { queries: ["running", "sportVolume"], cards: ["Running", "Weekly Volume"] },
   strength: {
-    queries: ["training", "strengthVolume", "strengthHistory"],
-    cards: ["Strength Volume", "Estimated single-rep strength"],
+    queries: ["training", "strengthVolume", "loggedSets", "strengthHistory"],
+    cards: ["Strength Volume", "Sets and performance", "Estimated single-rep strength"],
   },
   hiking: { queries: ["sportVolume"], cards: ["Route comparison", "Weekly Volume"] },
   climbing: {

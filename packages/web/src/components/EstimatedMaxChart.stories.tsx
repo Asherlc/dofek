@@ -5,7 +5,15 @@ import { EstimatedMaxChart } from "./EstimatedMaxChart.tsx";
 const estimatedExercises: Array<{
   exerciseName: string;
   equipment: string | null;
-  history: Array<{ date: string; estimatedMax: number; actualWeight: number; actualReps: number }>;
+  history: Array<{
+    date: string;
+    estimatedMax: number;
+    actualWeight: number;
+    actualReps: number;
+    sourceSetId: string;
+    provider: string;
+    fatigueMarker: "Failure";
+  }>;
   trend: {
     direction: "increasing" | "decreasing" | "stable";
     summary: string;
@@ -18,14 +26,38 @@ const estimatedExercises: Array<{
     exerciseName: "Back Squat",
     equipment: "BARBELL",
     history: [
-      { date: "2026-06-01", estimatedMax: 118, actualWeight: 100, actualReps: 5 },
-      { date: "2026-06-15", estimatedMax: 123, actualWeight: 105, actualReps: 5 },
-      { date: "2026-07-01", estimatedMax: 128, actualWeight: 110, actualReps: 5 },
+      {
+        date: "2026-06-01",
+        estimatedMax: 116.7,
+        actualWeight: 100,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000001",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
+      {
+        date: "2026-06-15",
+        estimatedMax: 122.5,
+        actualWeight: 105,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000002",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
+      {
+        date: "2026-07-01",
+        estimatedMax: 128.3,
+        actualWeight: 110,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000003",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
     ],
     trend: {
       direction: "increasing",
       summary: "Estimated max increased from first to latest estimate.",
-      changeMagnitudeKg: 10,
+      changeMagnitudeKg: 11.6,
       firstDate: "2026-06-01",
       latestDate: "2026-07-01",
     },
@@ -34,45 +66,40 @@ const estimatedExercises: Array<{
     exerciseName: "Bench Press",
     equipment: "BARBELL",
     history: [
-      { date: "2026-06-01", estimatedMax: 86, actualWeight: 75, actualReps: 4 },
-      { date: "2026-07-01", estimatedMax: 91, actualWeight: 80, actualReps: 4 },
+      {
+        date: "2026-06-01",
+        estimatedMax: 85,
+        actualWeight: 75,
+        actualReps: 4,
+        sourceSetId: "00000000-0000-4000-8000-000000000004",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
+      {
+        date: "2026-06-15",
+        estimatedMax: 87.3,
+        actualWeight: 77,
+        actualReps: 4,
+        sourceSetId: "00000000-0000-4000-8000-000000000006",
+        provider: "strong-csv",
+        fatigueMarker: "Failure",
+      },
+      {
+        date: "2026-07-01",
+        estimatedMax: 90.7,
+        actualWeight: 80,
+        actualReps: 4,
+        sourceSetId: "00000000-0000-4000-8000-000000000005",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
     ],
     trend: {
       direction: "increasing",
       summary: "Estimated max increased from first to latest estimate.",
-      changeMagnitudeKg: 5,
+      changeMagnitudeKg: 5.7,
       firstDate: "2026-06-01",
       latestDate: "2026-07-01",
-    },
-  },
-  {
-    exerciseName: "Single-Arm Cable Row",
-    equipment: "CABLE",
-    history: [
-      { date: "2026-06-03", estimatedMax: 70, actualWeight: 60, actualReps: 5 },
-      { date: "2026-07-03", estimatedMax: 65, actualWeight: 55, actualReps: 5 },
-    ],
-    trend: {
-      direction: "decreasing",
-      summary: "Estimated max decreased from first to latest estimate.",
-      changeMagnitudeKg: 5,
-      firstDate: "2026-06-03",
-      latestDate: "2026-07-03",
-    },
-  },
-  {
-    exerciseName: "Bulgarian Split Squat",
-    equipment: "DUMBBELL",
-    history: [
-      { date: "2026-06-05", estimatedMax: 45, actualWeight: 40, actualReps: 4 },
-      { date: "2026-07-05", estimatedMax: 45, actualWeight: 40, actualReps: 4 },
-    ],
-    trend: {
-      direction: "stable",
-      summary: "Estimated max did not change from first to latest estimate.",
-      changeMagnitudeKg: 0,
-      firstDate: "2026-06-05",
-      latestDate: "2026-07-05",
     },
   },
 ];

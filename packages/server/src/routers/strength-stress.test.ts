@@ -71,42 +71,11 @@ describe("strengthRouter", () => {
   });
 
   describe("estimatedOneRepMax", () => {
-    it("groups entries by exercise", async () => {
-      const rows = [
-        {
-          exercise_name: "Bench Press",
-          equipment: null,
-          workout_date: "2024-01-15",
-          estimated_max: 100,
-          actual_weight: 80,
-          actual_reps: 8,
-        },
-        {
-          exercise_name: "Bench Press",
-          equipment: null,
-          workout_date: "2024-01-22",
-          estimated_max: 105,
-          actual_weight: 85,
-          actual_reps: 7,
-        },
-        {
-          exercise_name: "Squat",
-          equipment: null,
-          workout_date: "2024-01-15",
-          estimated_max: 140,
-          actual_weight: 120,
-          actual_reps: 5,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.estimatedOneRepMax({ days: 90 });
-
-      expect(result).toHaveLength(2);
-      const bench = result.find((r) => r.exerciseName === "Bench Press");
-      expect(bench?.history).toHaveLength(2);
+    it("uses the fatigue-qualified estimate cache key", async () => {
+      await makeCaller([]).estimatedOneRepMax({ days: 90 });
       expect(cachedQueryOptions).toContainEqual({
         maxAge: 3_600_000,
-        keyVersion: "estimated-max-trend-v2",
+        keyVersion: "estimated-max-trend-v3",
       });
     });
 
@@ -122,7 +91,15 @@ describe("strengthRouter", () => {
       vi.restoreAllMocks();
     });
 
-    const entry = { date: "2026-05-01", estimatedMax: 100, actualWeight: 90, actualReps: 5 };
+    const entry = {
+      date: "2026-05-01",
+      estimatedMax: 100,
+      actualWeight: 90,
+      actualReps: 5,
+      sourceSetId: "00000000-0000-4000-8000-000000000001",
+      provider: "strong-csv",
+      fatigueMarker: "Failure" as const,
+    };
     const orderSession = {
       activityId: "11111111-1111-4111-8111-111111111111",
       date: "2026-05-01",

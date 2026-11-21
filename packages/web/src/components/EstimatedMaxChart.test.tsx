@@ -10,7 +10,7 @@ vi.mock("./DofekChart.tsx", () => ({
     empty,
     emptyMessage,
   }: {
-    option: Record<string, unknown>;
+    option: { tooltip?: { formatter?: (point: { dataIndex: number }) => string } };
     empty?: boolean;
     emptyMessage?: string;
   }) => (
@@ -19,7 +19,13 @@ vi.mock("./DofekChart.tsx", () => ({
       data-option={JSON.stringify(option)}
       data-empty={String(Boolean(empty))}
       data-empty-message={emptyMessage}
-    />
+    >
+      {empty ? (
+        emptyMessage
+      ) : (
+        <div>{option.tooltip?.formatter?.({ dataIndex: 0 })?.split("<br/>").join(" ")}</div>
+      )}
+    </div>
   ),
 }));
 
@@ -32,8 +38,24 @@ const squat = {
     exerciseName: "Barbell Back Squat",
     equipment: null,
     history: [
-      { date: "2026-05-01", estimatedMax: 118, actualWeight: 100, actualReps: 5 },
-      { date: "2026-07-01", estimatedMax: 128, actualWeight: 110, actualReps: 5 },
+      {
+        date: "2026-05-01",
+        estimatedMax: 118,
+        actualWeight: 100,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000001",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
+      {
+        date: "2026-07-01",
+        estimatedMax: 128,
+        actualWeight: 110,
+        actualReps: 5,
+        sourceSetId: "00000000-0000-4000-8000-000000000002",
+        provider: "strong-csv",
+        fatigueMarker: "Failure" as const,
+      },
     ],
     trend: {
       direction: "increasing" as const,
@@ -107,6 +129,21 @@ function openSelector() {
   fireEvent.click(selectorSummary());
 }
 
+describe("EstimatedMaxChart eligibility and tooltip", () => {
+  it("explains the minimum when the chart has no trend", () => {
+    render(<EstimatedMaxChart exercises={[]} />);
+    expect(
+      screen.getByText("A trend needs three workouts with qualifying sets and recorded fatigue."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the recorded load, repetitions, and fatigue evidence in the tooltip", () => {
+    render(<EstimatedMaxChart exercises={[squat]} />);
+    expect(screen.getByText(/Recorded set · 100.0 kg × 5/)).toBeInTheDocument();
+    expect(screen.getByText(/Strong set tag · Failure/)).toBeInTheDocument();
+  });
+});
+
 describe("EstimatedMaxChart exercise selector", () => {
   it("opens a native disclosure, focuses search, filters, and selects with focus returned to the trigger", () => {
     render(<EstimatedMaxChart exercises={[squat, orderOnlyPullUp]} />);
@@ -159,7 +196,7 @@ describe("EstimatedMaxChart exercise selector", () => {
     expect(screen.getByTestId("estimated-max-chart")).toHaveAttribute("data-empty", "true");
     expect(screen.getByTestId("estimated-max-chart")).toHaveAttribute(
       "data-empty-message",
-      "No estimated max for this lift",
+      "A trend needs three workouts with qualifying sets and recorded fatigue.",
     );
     expect(chartOption().series).toHaveLength(0);
   });

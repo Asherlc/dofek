@@ -32,6 +32,9 @@ export const estimatedOneRepMaxEntrySchema = z.object({
   estimatedMax: z.number(),
   actualWeight: z.number(),
   actualReps: z.number(),
+  sourceSetId: z.string(),
+  provider: z.string(),
+  fatigueMarker: z.literal("Failure"),
 });
 export type EstimatedOneRepMaxEntry = z.infer<typeof estimatedOneRepMaxEntrySchema>;
 

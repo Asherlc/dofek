@@ -1,5 +1,6 @@
 import { strengthExerciseIdentityKey } from "@dofek/training/training";
 import { z } from "zod";
+import { loggedSetComparisonSchema } from "../contracts/logged-set-comparison.ts";
 import {
   type ProgressiveOverloadRow,
   progressiveOverloadRowSchema,
@@ -14,6 +15,7 @@ import {
   type ExerciseOrderResult,
   StrengthExerciseOrderRepository,
 } from "../repositories/strength-exercise-order-repository.ts";
+import { StrengthProgressionRepository } from "../repositories/strength-progression-repository.ts";
 import {
   type EstimatedMaxTrendEvidence,
   StrengthRepository,
@@ -39,6 +41,9 @@ export interface EstimatedOneRepMaxEntry {
   estimatedMax: number;
   actualWeight: number;
   actualReps: number;
+  sourceSetId: string;
+  provider: string;
+  fatigueMarker: "Failure";
 }
 
 export interface EstimatedOneRepMaxRow {
@@ -70,6 +75,18 @@ export interface WorkoutSummaryRow {
 }
 
 export const strengthRouter = router({
+  loggedSetComparison: selectedChartRangeQuery(
+    "strength.loggedSetComparison",
+    CacheTTL.LONG,
+    ({ ctx, range }) =>
+      new StrengthProgressionRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).listLoggedSetComparison(range.days),
+    { outputSchema: loggedSetComparisonSchema, expiresAt: "localDayBoundary" },
+  ),
   volumeOverTime: selectedChartRangeQuery(
     "strength.volumeOverTime",
     CacheTTL.LONG,
@@ -85,11 +102,11 @@ export const strengthRouter = router({
     "strength.estimatedOneRepMax",
     CacheTTL.LONG,
     async ({ ctx, range }): Promise<EstimatedOneRepMaxRow[]> => {
-      const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const exercises = await repo.getEstimatedOneRepMax(range.days);
       return exercises.map((exercise) => exercise.toDetail());
     },
-    { keyVersion: "estimated-max-trend-v2" },
+    { keyVersion: "estimated-max-trend-v3" },
   ),
 
   exerciseHistory: selectedChartRangeQuery(

@@ -20,6 +20,9 @@ describe("strengthExerciseHistoryRowSchema", () => {
             estimatedMax: 100,
             actualWeight: 80,
             actualReps: 8,
+            sourceSetId: "00000000-0000-4000-8000-000000000001",
+            provider: "strong-csv",
+            fatigueMarker: "Failure" as const,
           },
         ],
         trend: {
@@ -86,6 +89,9 @@ describe("strengthExerciseHistoryRowSchema", () => {
             estimatedMax: 140,
             actualWeight: 120,
             actualReps: 5,
+            sourceSetId: "00000000-0000-4000-8000-000000000001",
+            provider: "strong-csv",
+            fatigueMarker: "Failure" as const,
           },
         ],
         trend: {
