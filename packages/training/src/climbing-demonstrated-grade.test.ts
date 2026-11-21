@@ -307,35 +307,6 @@ describe("buildDemonstratedGrade evidence selection", () => {
     expect(cell(qualified, "bouldering", "indoor").grades[0].count).toBe(3);
   });
 
-  it("attaches the BoardSesh identity note only to winning BoardSesh evidence", () => {
-    const board = (targetId: string) =>
-      observation({
-        attemptId: targetId,
-        targetId,
-        provider: "boardsesh",
-        providerId: "boardsesh",
-        gradeComponents: [
-          {
-            value: "6b",
-            system: "font",
-            identity: "boardsesh:kilter:18:6b/V4",
-            publishedLabel: "6b/V4",
-          },
-        ],
-      });
-    const boardResult = gradeSet([board("b:1"), board("b:2"), board("b:3")]);
-    expect(cell(boardResult, "bouldering", "indoor").grades[0].identityNote).toBe(
-      "BoardSesh sends are counted by imported problem ID. A merged problem can appear under more than one ID and count more than once.",
-    );
-
-    const kayaResult = gradeSet([
-      observation({ attemptId: "a1", targetId: "k:1" }),
-      observation({ attemptId: "a2", targetId: "k:2" }),
-      observation({ attemptId: "a3", targetId: "k:3" }),
-    ]);
-    expect(cell(kayaResult, "bouldering", "indoor").grades[0].identityNote).toBeUndefined();
-  });
-
   it("ranks the precise Font consensus before v_scale display filtering", () => {
     const at = (targetId: string, difficulty: number, label: string, font: string) =>
       observation({

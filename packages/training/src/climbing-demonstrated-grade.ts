@@ -63,8 +63,6 @@ export const demonstratedGradeSchema = z.object({
   gradeSortValue: z.number(),
   count: z.number().int().min(3),
   publishedLabel: z.string().nullable(),
-  /** Present only when the winning evidence is BoardSesh and needs provenance. */
-  identityNote: z.string().min(1).optional(),
   sends: z.array(demonstratedGradeSendSchema).max(3),
 });
 
@@ -124,9 +122,6 @@ export type DemonstratedGradeObservation = z.infer<typeof demonstratedGradeObser
 
 const TYPES = ["bouldering", "lead", "top_rope", "unroped"] as const;
 const SETTINGS = ["indoor", "outdoor"] as const;
-
-const BOARDSESH_IDENTITY_NOTE =
-  "BoardSesh sends are counted by imported problem ID. A merged problem can appear under more than one ID and count more than once.";
 
 type DatedObservation = DemonstratedGradeObservation & {
   climbedOn: string;
@@ -229,14 +224,11 @@ export function buildDemonstratedGrade(
   // Qualify only from a single independently verified namespace; never pool an
   // unresolved cross-source two-plus-one into a third distinct climb.
   const qualified = [...cohorts.values()].flatMap((cohort) => {
-    const best = [...cohort.namespaces.entries()].reduce(
-      (winner, [namespace, targets]) =>
-        targets.size > winner.targets.size ? { namespace, targets } : winner,
-      { namespace: "", targets: new Map<string, DatedObservation[]>() },
+    const best = [...cohort.namespaces.values()].reduce(
+      (winner, targets) => (targets.size > winner.size ? targets : winner),
+      new Map<string, DatedObservation[]>(),
     );
-    return best.targets.size >= 3
-      ? [{ cohort, targets: best.targets, namespace: best.namespace }]
-      : [];
+    return best.size >= 3 ? [{ cohort, targets: best }] : [];
   });
   const highest = new Map<string, (typeof qualified)[number]>();
   for (const candidate of qualified) {
@@ -294,9 +286,6 @@ export function buildDemonstratedGrade(
             gradeSortValue: selected.cohort.sortValue,
             count: selected.targets.size,
             publishedLabel: selected.cohort.component.publishedLabel ?? null,
-            ...(selected.namespace === "boardsesh"
-              ? { identityNote: BOARDSESH_IDENTITY_NOTE }
-              : {}),
             sends: representatives,
           },
         ],

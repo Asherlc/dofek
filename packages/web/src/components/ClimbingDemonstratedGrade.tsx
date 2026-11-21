@@ -206,9 +206,6 @@ export function ClimbingDemonstratedGrade({
               className="mt-3 rounded-md bg-accent/5 p-3"
             >
               <h4 className="text-sm font-medium text-foreground">{label}</h4>
-              {grade.identityNote ? (
-                <p className="mt-1 text-xs text-muted">{grade.identityNote}</p>
-              ) : null}
               <ul className="mt-1 divide-y divide-border">
                 {grade.sends.map((send) => {
                   const style = ascentStyleLabel(send, type.key === "top_rope");

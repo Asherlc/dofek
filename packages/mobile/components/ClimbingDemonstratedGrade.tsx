@@ -183,9 +183,6 @@ export function ClimbingDemonstratedGrade({
           return (
             <View key={key} style={styles.evidence}>
               <Text style={styles.evidenceTitle}>{label}</Text>
-              {grade.identityNote ? (
-                <Text style={styles.qualifier}>{grade.identityNote}</Text>
-              ) : null}
               {grade.sends.map((send) => (
                 <View
                   key={`${send.climbExternalId ?? send.logEntryId ?? ""}-${send.climbedOn}-${send.displayName ?? ""}`}

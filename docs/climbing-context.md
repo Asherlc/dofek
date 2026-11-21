@@ -241,13 +241,12 @@ recorded source and date. When access covers only part of the window, the
 result identifies that limit.
 
 BoardSesh uses the published consensus grade for the recorded problem and wall
-angle. Conflicting consensus labels leave the grade unresolved. A problem ID
-counts once across angles and mirror states. Evidence
-based on BoardSesh IDs explains that a merged problem can appear under more
-than one imported ID and count more than once. The feed resolves problem
-aliases when looking up grades and returns the original tick's problem ID.
-See the [consensus lookup](https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/backend/src/graphql/resolvers/ticks/queries.ts#L710-L766)
-and the [returned tick fields](https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/backend/src/graphql/resolvers/ticks/queries.ts#L883-L889).
+angle. Conflicting consensus labels leave the grade unresolved. Normal sync
+looks up the canonical problem ID. A merged problem counts once at the same
+grade across aliases, angles, and mirror states. Sends with unresolved IDs
+remain in the logbook and become eligible for demonstrated grade when sync
+verifies their identity. See the [BoardSesh sync](boardsesh.md#implemented-in-dofek)
+and [canonical climb lookup](https://github.com/boardsesh/boardsesh/blob/1e643dfbff086cb2147b54c0643708b8eb8121af/packages/backend/src/db/queries/climbs/get-climb.ts#L29-L38).
 
 The [existing MCP climbing progression tool](../packages/server/src/mcp/climbing-progression-tool.ts)
 includes the same result when `include_demonstrated_grade` is true. The

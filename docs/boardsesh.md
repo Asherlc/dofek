@@ -167,6 +167,15 @@ even when the feed page has no matching tick. Enrichment is accepted only when
 tick UUID, climb UUID, board type, mirror state, and angle all match. A grade at
 one angle is never copied to another angle or to the shared climb definition.
 
+For demonstrated grade, sync uses the ascent feed's climb layout and render
+configuration to look up the canonical problem for a send with consensus
+metadata. BoardSesh resolves merged aliases before returning the climb UUID.
+Dofek retains that UUID on the matched ascent alongside the original record.
+The next normal sync refreshes existing ticks, so evidence can count the
+canonical problem once across aliases, angles, and mirror states. See the
+[ascent feed metadata](https://github.com/boardsesh/boardsesh/blob/1e643dfbff086cb2147b54c0643708b8eb8121af/packages/backend/src/graphql/resolvers/ticks/queries.ts#L925-L949)
+and [canonical climb lookup](https://github.com/boardsesh/boardsesh/blob/1e643dfbff086cb2147b54c0643708b8eb8121af/packages/backend/src/db/queries/climbs/get-climb.ts#L29-L38).
+
 The server keeps the tick's personal `difficulty` in `reportedGrades` and gives
 it display precedence. For a tick without a personal grade, it rounds a
 BoardSesh model grade unless confidence is `setter_only`,

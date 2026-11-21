@@ -28,6 +28,7 @@ function importedMountainProjectRow(target: string, rating: string) {
 
 function boardSeshRow(input: {
   target: string;
+  canonical?: string;
   difficulty: number;
   label: string;
   ascentLabel?: string | null;
@@ -51,6 +52,7 @@ function boardSeshRow(input: {
         ascent: {
           boardType: "kilter",
           climbUuid: input.target,
+          canonicalClimbUuid: input.canonical ?? input.target,
           isMirror: false,
           angle,
           consensusDifficulty: input.difficulty,
@@ -89,9 +91,6 @@ async function boardSeshBoulder(
   });
   return result.cells.find(({ type, setting }) => type === "bouldering" && setting === "indoor");
 }
-
-const IDENTITY_NOTE =
-  "BoardSesh sends are counted by imported problem ID. A merged problem can appear under more than one ID and count more than once.";
 
 describe("ClimbingDemonstratedGradeRepository BoardSesh consensus", () => {
   it("rejects conflicting exact ascent and catalogue labels but keeps either source alone", async () => {
@@ -167,9 +166,29 @@ describe("ClimbingDemonstratedGradeRepository BoardSesh consensus", () => {
         gradeSystem: "v_scale",
         publishedLabel: "6b+/V4",
         count: 3,
-        identityNote: IDENTITY_NOTE,
       }),
     ]);
+  });
+
+  it("requires the full native BoardSesh ID and degree wall angle for consensus evidence", async () => {
+    const rows = Array.from({ length: 3 }, (_, index) =>
+      boardSeshRow({ target: `native-${index}`, difficulty: 18, label: "6b/V4" }),
+    );
+    expect((await boardSeshBoulder(rows))?.grades[0]).toEqual(
+      expect.objectContaining({ count: 3 }),
+    );
+
+    const badSuffix = rows.map((row) => ({ ...row }));
+    badSuffix[2] = { ...badSuffix[2], climb_external_id: "kilter:native-2:bogus" };
+    expect((await boardSeshBoulder(badSuffix))?.grades).toEqual([]);
+
+    const extraSegment = rows.map((row) => ({ ...row }));
+    extraSegment[2] = { ...extraSegment[2], climb_external_id: "kilter:native-2:normal:extra" };
+    expect((await boardSeshBoulder(extraSegment))?.grades).toEqual([]);
+
+    const nonDegrees = rows.map((row) => ({ ...row }));
+    nonDegrees[2] = { ...nonDegrees[2], wall_angle: { value: 30, unit: "radians" } };
+    expect((await boardSeshBoulder(nonDegrees))?.grades).toEqual([]);
   });
 });
 

@@ -51,6 +51,7 @@ const evidenceRowSchema = z.object({
 const boardSeshAscentSchema = z.object({
   boardType: z.string(),
   climbUuid: z.string(),
+  canonicalClimbUuid: z.string().min(1).optional(),
   isMirror: z.boolean(),
   angle: z.number(),
   consensusDifficulty: z.number().nullable().optional(),
@@ -98,38 +99,43 @@ function metricFilters(filters: ClimbingFilters | undefined): ClimbingFilters {
  * consensus metadata matching this tick's native problem, board type, mirror
  * state and angle supplies evidence; personal, reported and model grades do not.
  */
+type BoardSeshGradeComponent = {
+  value: string;
+  system: "font" | "v_scale";
+  identity: string;
+  publishedLabel: string;
+  rankingValue?: number;
+};
+
 function boardSeshConsensusGrade(
   providerId: string | null,
   logRaw: Record<string, unknown> | null,
   climbExternalId: string | null,
   wallAngle: Record<string, unknown> | null,
   gradeSystems: ClimbingDemonstratedGradeInput["gradeSystems"],
-): {
-  value: string;
-  system: "font" | "v_scale";
-  identity: string;
-  publishedLabel: string;
-  rankingValue?: number;
-}[] {
-  if (providerId !== "boardsesh" || !climbExternalId) return [];
+): { targetId: string; grades: BoardSeshGradeComponent[] } | null {
+  if (providerId !== "boardsesh" || !climbExternalId) return null;
   const metadata = z
     .object({
       ascent: boardSeshAscentSchema.optional(),
       grades: boardSeshGradesSchema.optional(),
     })
     .safeParse(logRaw?.metadata);
-  if (!metadata.success) return [];
+  if (!metadata.success) return null;
   const ascent = metadata.data.ascent;
-  if (!ascent || ascent.consensusDifficulty == null) return [];
-  const parts = climbExternalId.split(":");
-  if (parts.length < 3) return [];
+  if (!ascent || ascent.consensusDifficulty == null) return null;
   if (
-    parts[0] !== ascent.boardType ||
-    parts[1] !== ascent.climbUuid ||
-    (parts[2] === "mirror") !== ascent.isMirror ||
-    wallAngle?.value !== ascent.angle
+    climbExternalId !==
+      `${ascent.boardType}:${ascent.climbUuid}:${ascent.isMirror ? "mirror" : "normal"}` ||
+    wallAngle?.value !== ascent.angle ||
+    wallAngle?.unit !== "degrees"
   )
-    return [];
+    return null;
+  // Only the exact ascent used for consensus carries usable identity. Ticks
+  // synced before the canonical ID was published stay visible but cannot
+  // establish a demonstrated grade.
+  const canonicalClimbUuid = ascent.canonicalClimbUuid?.trim();
+  if (!canonicalClimbUuid) return null;
   const catalogueLabel =
     (metadata.data.grades ?? []).find((grade) => grade.difficultyId === ascent.consensusDifficulty)
       ?.name ?? null;
@@ -140,9 +146,9 @@ function boardSeshConsensusGrade(
     ascentLabel?.trim() &&
     normalized(catalogueLabel) !== normalized(ascentLabel)
   )
-    return [];
+    return null;
   const label = catalogueLabel?.trim() || ascentLabel?.trim();
-  if (!label) return [];
+  if (!label) return null;
   const components: { value: string; system: "font" | "v_scale" }[] = [];
   let rankingValue: number | undefined;
   for (const part of label.split("/").map((value) => value.trim())) {
@@ -162,15 +168,18 @@ function boardSeshConsensusGrade(
     }
   }
   const selected = components.find((component) => component.system === "font") ?? components[0];
-  if (!selected) return [];
-  return [
-    {
-      ...selected,
-      ...(rankingValue === undefined ? {} : { rankingValue }),
-      identity: `boardsesh:${ascent.boardType}:${ascent.consensusDifficulty}:${label.trim()}`,
-      publishedLabel: label.trim(),
-    },
-  ];
+  if (!selected) return null;
+  return {
+    targetId: `boardsesh:${ascent.boardType}:${canonicalClimbUuid}`,
+    grades: [
+      {
+        ...selected,
+        ...(rankingValue === undefined ? {} : { rankingValue }),
+        identity: `boardsesh:${ascent.boardType}:${ascent.consensusDifficulty}:${label.trim()}`,
+        publishedLabel: label.trim(),
+      },
+    ],
+  };
 }
 
 export class ClimbingDemonstratedGradeRepository extends BaseRepository {
@@ -281,9 +290,7 @@ export class ClimbingDemonstratedGradeRepository extends BaseRepository {
       evidenceRowSchema,
       sql`SELECT
           (attempt->>'id')::text AS attempt_id,
-          CASE WHEN ce.provider_id = 'boardsesh' AND split_part(climb.external_id, ':', 2) <> ''
-            THEN 'boardsesh:' || split_part(climb.external_id, ':', 1) || ':' || split_part(climb.external_id, ':', 2)
-            ELSE ce.provider_id || ':' || climb.external_id END AS target_id,
+          ce.provider_id || ':' || climb.external_id AS target_id,
           ce.provider_id,
           COALESCE(NULLIF(BTRIM(ce.source_name), ''), ce.provider_id) AS provider,
           ce.climb_kind,
@@ -351,17 +358,18 @@ export class ClimbingDemonstratedGradeRepository extends BaseRepository {
           ? [{ value: component.value, system: parsed.data }]
           : [];
       });
-      const boardGrades = boardSeshConsensusGrade(
+      const boardSesh = boardSeshConsensusGrade(
         row.provider_id,
         row.log_raw,
         row.climb_external_id,
         row.wall_angle,
         gradeSystems,
       );
-      const gradeComponents = row.provider_id === "boardsesh" ? boardGrades : publishedGrades;
+      const gradeComponents =
+        row.provider_id === "boardsesh" ? (boardSesh?.grades ?? []) : publishedGrades;
       return {
         attemptId: row.attempt_id,
-        targetId: row.target_id,
+        targetId: boardSesh?.targetId ?? row.target_id,
         provider: row.provider,
         providerId: row.provider_id,
         climbKind: row.climb_kind,

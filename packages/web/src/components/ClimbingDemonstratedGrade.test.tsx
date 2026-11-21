@@ -238,24 +238,4 @@ describe("ClimbingDemonstratedGrade", () => {
     rerender(<ClimbingDemonstratedGrade data={demonstratedGradeFixture} />);
     expect(screen.queryByRole("region", { name: "Indoor bouldering · V5 · V Scale" })).toBeNull();
   });
-
-  it("shows the BoardSesh identity caveat only when the grade supplies one", () => {
-    const note =
-      "BoardSesh sends are counted by imported problem ID. A merged problem can appear under more than one ID and count more than once.";
-    const data = {
-      ...demonstratedGradeFixture,
-      cells: demonstratedGradeFixture.cells.map((cell) => {
-        if (cell.type !== "bouldering" || cell.setting !== "indoor") return cell;
-        const grade = cell.grades[0];
-        return { ...cell, grades: grade ? [{ ...grade, identityNote: note }] : [] };
-      }),
-    };
-    const { rerender } = render(<ClimbingDemonstratedGrade data={data} />);
-
-    const panel = screen.getByRole("region", { name: "Indoor bouldering · V5 · V Scale" });
-    expect(within(panel).getByText(note)).toBeVisible();
-
-    rerender(<ClimbingDemonstratedGrade data={demonstratedGradeFixture} />);
-    expect(screen.queryByText(note)).toBeNull();
-  });
 });

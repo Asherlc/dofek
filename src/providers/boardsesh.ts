@@ -47,6 +47,11 @@ const tickSchema = z
     layoutId: z.number().int().nullable().optional(),
   })
   .passthrough();
+const renderBoardSchema = z.object({
+  layoutId: z.number().int(),
+  sizeId: z.number().int(),
+  setIds: z.array(z.number().int()),
+});
 const ascentMetadataSchema = z.object({
   uuid: identifier,
   climbUuid: identifier,
@@ -60,6 +65,13 @@ const ascentMetadataSchema = z.object({
   consensusDifficultyName: z.string().nullable(),
   boardseshDifficulty: z.number().nullable(),
   boardseshConfidence: z.string().nullable(),
+  layoutId: z.number().int().nullable().optional(),
+  renderBoard: renderBoardSchema.nullable().optional(),
+});
+const climbIdentitySchema = z.object({
+  uuid: identifier,
+  boardType: identifier,
+  layoutId: z.number().int(),
 });
 const boardIdentitySchema = z.object({ uuid: identifier, name: identifier, boardType: identifier });
 const boardMetadataSchema = boardIdentitySchema.extend({
@@ -252,6 +264,8 @@ class BoardSeshClient implements ClimbingBoardClient {
     };
     const entries: BoardLogbook["entries"] = [];
     const allIds = new Set<string>();
+    const canonicalClimbIds = new Map<string, string>();
+    const identityByEntry = new Map<BoardLogbook["entries"][number], string>();
     for (const boardType of boardTypes) {
       const tickData = await request(
         "query BoardSeshTicks($input: GetTicksInput!) { authenticatedUserId ticks(input: $input) { uuid userId boardType climbUuid climbRevision angle isMirror status attemptCount quality difficulty isBenchmark comment climbedAt createdAt updatedAt sessionId auroraType auroraId auroraSyncedAt layoutId boardId boardDisplayName } }",
@@ -341,7 +355,7 @@ class BoardSeshClient implements ClimbingBoardClient {
       let offset = 0;
       while (true) {
         const data = await request(
-          "query BoardSeshMetadata($userId: ID!, $input: AscentFeedInput!) { authenticatedUserId userAscentsFeed(userId: $userId, input: $input) { items { uuid climbUuid boardType isMirror angle climbName boardId boardDisplayName consensusDifficulty consensusDifficultyName boardseshDifficulty boardseshConfidence } hasMore } }",
+          "query BoardSeshMetadata($userId: ID!, $input: AscentFeedInput!) { authenticatedUserId userAscentsFeed(userId: $userId, input: $input) { items { uuid climbUuid boardType isMirror angle climbName boardId boardDisplayName consensusDifficulty consensusDifficultyName boardseshDifficulty boardseshConfidence layoutId renderBoard { layoutId sizeId setIds } } hasMore } }",
           { userId: current.providerAccountId, input: { limit: 50, offset, statusMode: "both" } },
         );
         const page = z
@@ -414,6 +428,57 @@ class BoardSeshClient implements ClimbingBoardClient {
                   },
                 ]
               : [];
+          const completedSend = entry.attempts.some(
+            (attempt) =>
+              attempt.sourceCompleted &&
+              (attempt.sourceResult === "flash" || attempt.sourceResult === "send"),
+          );
+          const hasConsensus = metadata.consensusDifficulty != null;
+          const renderBoard = metadata.renderBoard;
+          const climbConfig =
+            metadata.layoutId != null &&
+            metadata.layoutId > 0 &&
+            renderBoard != null &&
+            renderBoard.layoutId === metadata.layoutId &&
+            renderBoard.sizeId > 0
+              ? {
+                  layoutId: metadata.layoutId,
+                  sizeId: renderBoard.sizeId,
+                  setIds: renderBoard.setIds.join(","),
+                }
+              : null;
+          const sourceIdentity = `${metadata.boardType}:${metadata.climbUuid}`;
+          if (completedSend && hasConsensus && climbConfig) {
+            identityByEntry.set(entry, sourceIdentity);
+          }
+          if (
+            completedSend &&
+            hasConsensus &&
+            climbConfig &&
+            !canonicalClimbIds.has(sourceIdentity)
+          ) {
+            const climbData = await request(
+              "query BoardSeshClimb($boardName: String!, $layoutId: Int!, $sizeId: Int!, $setIds: String!, $angle: Int!, $climbUuid: ID!) { authenticatedUserId climb(boardName: $boardName, layoutId: $layoutId, sizeId: $sizeId, setIds: $setIds, angle: $angle, climbUuid: $climbUuid) { uuid boardType layoutId } }",
+              {
+                boardName: metadata.boardType,
+                layoutId: climbConfig.layoutId,
+                sizeId: climbConfig.sizeId,
+                setIds: climbConfig.setIds,
+                angle: metadata.angle,
+                climbUuid: metadata.climbUuid,
+              },
+            );
+            const climb = z
+              .object({ climb: climbIdentitySchema.nullable() })
+              .parse(climbData).climb;
+            if (climb) {
+              if (climb.boardType !== metadata.boardType || climb.layoutId !== climbConfig.layoutId)
+                throw new Error(
+                  "BoardSesh returned a different climb identity; no logbook records were reconciled.",
+                );
+              canonicalClimbIds.set(sourceIdentity, climb.uuid);
+            }
+          }
           entry.raw = z.json().parse({
             ...z.record(z.string(), z.json()).parse(entry.raw),
             metadata: {
@@ -428,6 +493,19 @@ class BoardSeshClient implements ClimbingBoardClient {
         if (!page.hasMore) break;
         offset += page.items.length;
       }
+    }
+    // A temporarily unresolved lookup can succeed on a later tick in this sync;
+    // attach the verified ID to every exactly matched tick after the feed is read.
+    for (const [entry, sourceIdentity] of identityByEntry) {
+      const canonicalClimbUuid = canonicalClimbIds.get(sourceIdentity);
+      if (!canonicalClimbUuid) continue;
+      const raw = z.record(z.string(), z.json()).parse(entry.raw);
+      const metadata = z.record(z.string(), z.json()).parse(raw.metadata ?? {});
+      const ascent = z.record(z.string(), z.json()).parse(metadata.ascent ?? {});
+      entry.raw = z.json().parse({
+        ...raw,
+        metadata: { ...metadata, ascent: { ...ascent, canonicalClimbUuid } },
+      });
     }
     return { entries, absentExternalIds: [], authoritative: true };
   }

@@ -65,6 +65,8 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
   function boardSeshTick(input: {
     boardType: string;
     climbUuid: string;
+    canonicalClimbUuid?: string | null;
+    setting?: "indoor" | "outdoor";
     mirror?: boolean;
     angle: number;
     consensusDifficulty: number | null;
@@ -80,6 +82,7 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
     const ascent = {
       boardType: input.boardType,
       climbUuid: input.climbUuid,
+      ...(input.canonicalClimbUuid ? { canonicalClimbUuid: input.canonicalClimbUuid } : {}),
       isMirror: mirror,
       angle: input.angle,
       consensusDifficulty: input.consensusDifficulty,
@@ -92,7 +95,14 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
       { difficultyId: 19, name: "6b+/V4" },
       { difficultyId: 20, name: "6c/V5" },
     ];
-    return { externalId, activityId, climbExternalId, ascent, grades };
+    return {
+      externalId,
+      activityId,
+      climbExternalId,
+      ascent,
+      grades,
+      setting: input.setting ?? "indoor",
+    };
   }
 
   async function persistBoardSeshTick(
@@ -127,7 +137,7 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
             externalId: tick.climbExternalId,
             kind: "boulder",
             name: tick.climbUuid,
-            setting: "indoor",
+            setting: tick.setting,
           },
           attempts: [{ scope: "climb", qualifier: "free-flash", sourceResult: "flash" }],
         },
@@ -386,6 +396,7 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
         boardSeshTick({
           boardType: "kilter",
           climbUuid: uuid,
+          canonicalClimbUuid: `canonical-${uuid}`,
           angle: 30,
           consensusDifficulty: 18,
           consensusDifficultyName: "6b/V4",
@@ -445,6 +456,7 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
         boardSeshTick({
           boardType: "moonboard",
           climbUuid: uuid,
+          canonicalClimbUuid: `canonical-${uuid}`,
           angle: 40,
           consensusDifficulty: difficulty,
           consensusDifficultyName: name,
@@ -467,6 +479,7 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
         boardSeshTick({
           boardType: "kilter",
           climbUuid: "shared-problem",
+          canonicalClimbUuid: "canonical-shared",
           mirror,
           angle: index === 0 ? 0 : 40,
           consensusDifficulty: 18,
@@ -477,6 +490,7 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
       boardSeshTick({
         boardType: "kilter",
         climbUuid: "other-problem",
+        canonicalClimbUuid: "canonical-other",
         angle: 25,
         consensusDifficulty: 18,
         consensusDifficultyName: "6b/V4",
@@ -493,10 +507,53 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
     expect(new Set(sends.map((send) => send.logEntryId)).size).toBeLessThanOrEqual(1);
   });
 
+  it("counts a merged BoardSesh alias once and ignores unresolved ids", async () => {
+    const send = (climbUuid: string, canonicalClimbUuid?: string) =>
+      persistBoardSeshTick(
+        boardSeshTick({
+          boardType: "kilter",
+          climbUuid,
+          canonicalClimbUuid,
+          setting: "outdoor",
+          angle: 30,
+          consensusDifficulty: 17,
+          consensusDifficultyName: "6a/V3",
+        }),
+      );
+    const mergedGrades = async () => {
+      const result = await repository().getDemonstratedGrade({
+        endDate: "2026-11-21",
+        sources: [boardSeshProvider],
+      });
+      const cell = result.cells.find(
+        (entry) => entry.type === "bouldering" && entry.setting === "outdoor",
+      );
+      return (cell?.grades ?? []).filter((grade) => grade.publishedLabel === "6a/V3");
+    };
+
+    // The alias and its canonical share one target; a second independently
+    // known canonical makes only two. An old tick without a verified identity
+    // must add nothing even though its source ID is unique.
+    await send("alias-source", "canonical-one");
+    await send("canonical-one", "canonical-one");
+    await send("canonical-two", "canonical-two");
+    await send("old-unresolved");
+    expect(await mergedGrades()).toEqual([]);
+
+    await send("canonical-three", "canonical-three");
+    const [grade] = await mergedGrades();
+    expect(grade).toEqual(expect.objectContaining({ grade: "6a", gradeSystem: "font", count: 3 }));
+    expect(grade?.sends).toHaveLength(3);
+    expect(
+      grade?.sends.some((send) => send.climbExternalId === "kilter:old-unresolved:normal"),
+    ).toBe(false);
+  });
+
   it("does not date an undated tick from a deleted observation", async () => {
     const tick = boardSeshTick({
       boardType: "kilter",
       climbUuid: "deleted-observation",
+      canonicalClimbUuid: "canonical-deleted",
       angle: 30,
       consensusDifficulty: 18,
       consensusDifficultyName: "6b/V4",
