@@ -398,3 +398,7 @@ Replace `CLIMBING_STRENGTHS_PURPOSES`, `climbingStrengthsPurpose`, and
 alternate-format selector. The renderer-level `CLIMBING_STRENGTHS_VIEWS` and
 `ClimbingStrengthsView` exports remain available. This is a breaking subpath API
 change for package consumers; both repository clients migrate together.
+
+### Cycling power-to-heart-rate decoupling
+
+The workout calculation compares paired mean watts divided by paired mean heart rate between two elapsed halves. It reports the percentage drop relative to the first-half ratio and requires at least 20 elapsed minutes, a positive first-half ratio, and paired coverage of at least 90% in each half. Recorded zero watts contribute to coverage and the mean. Missing readings and nonpositive heart rate do not contribute. A positive percentage means the ratio fell. The result describes the observed ride and can vary with conditions such as hydration. [Equation reference](https://link.springer.com/article/10.1186/s13102-026-01678-w) · [Hydration study](https://pubmed.ncbi.nlm.nih.gov/1447078/)

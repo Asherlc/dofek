@@ -6,7 +6,11 @@ import { trainingChartAvailabilitySchema } from "../contracts/training-chart-ava
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
-import { CacheTTL, router } from "../trpc.ts";
+import {
+  CyclingDecouplingRepository,
+  cyclingDecouplingOutputSchema,
+} from "../repositories/cycling-decoupling-repository.ts";
+import { type AuthenticatedContext, CacheTTL, router } from "../trpc.ts";
 
 const powerModelSchema = z.object({
   cp: z.number(),
@@ -152,12 +156,8 @@ const activitiesOutputSchema = z.object({
   }),
 });
 
-function requireRepository(ctx: {
-  db: ConstructorParameters<typeof CyclingAnalyticsRepository>[0];
-  userId: string;
-  timezone: string;
-  sensorStore: ConstructorParameters<typeof CyclingAnalyticsRepository>[3] | undefined;
-  accessWindow: ConstructorParameters<typeof CyclingAnalyticsRepository>[4];
+function requireSensorStore(ctx: {
+  sensorStore?: ConstructorParameters<typeof CyclingAnalyticsRepository>[3];
 }) {
   if (!ctx.sensorStore) {
     throw new TRPCError({
@@ -166,16 +166,32 @@ function requireRepository(ctx: {
         "ClickHouse activity analytics store is required for cycling analytics. Set CLICKHOUSE_URL and retry.",
     });
   }
+  return ctx.sensorStore;
+}
+
+function requireRepository(ctx: AuthenticatedContext) {
   return new CyclingAnalyticsRepository(
     ctx.db,
     ctx.userId,
     ctx.timezone,
-    ctx.sensorStore,
+    requireSensorStore(ctx),
     ctx.accessWindow,
   );
 }
 
 export const cyclingRouter = router({
+  decoupling: selectedChartRangeQuery(
+    "cycling.decoupling",
+    CacheTTL.LONG,
+    ({ ctx, range }) =>
+      new CyclingDecouplingRepository(
+        requireSensorStore(ctx),
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).getTrend(range),
+    { expiresAt: "localDayBoundary", outputSchema: cyclingDecouplingOutputSchema },
+  ),
   performance: selectedChartRangeQuery(
     "cycling.performance",
     CacheTTL.LONG,

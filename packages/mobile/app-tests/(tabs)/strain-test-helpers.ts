@@ -17,6 +17,14 @@ export const mockLocationMapInvalidate = vi.fn();
 export const mockHrZonesInvalidate = vi.fn();
 export const mockPolarizationInvalidate = vi.fn();
 export const mockProcessingStatusInvalidate = vi.fn();
+export const mockDecouplingInvalidate = vi.fn();
+const emptyDecoupling = () => ({
+  data: { workoutName: null, rides: [] },
+  isLoading: false,
+  isError: false,
+  error: null,
+});
+export const mockDecouplingQuery = vi.fn<(...args: unknown[]) => unknown>(emptyDecoupling);
 export const mockRunningInvalidate = vi.fn();
 export const mockRouteComparisonInvalidate = vi.fn();
 export const mockRouteComparisonQuery = vi.fn();
@@ -162,6 +170,7 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    cycling: { decoupling: { useQuery: mockDecouplingQuery } },
     running: {
       dynamicsV2: {
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
@@ -255,6 +264,7 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     useUtils: () => ({
+      cycling: { decoupling: { invalidate: mockDecouplingInvalidate } },
       running: { dynamicsV2: { invalidate: mockRunningInvalidate } },
       hiking: { activityComparison: { invalidate: mockRouteComparisonInvalidate } },
       climbing: {
@@ -320,6 +330,7 @@ vi.mock("../../lib/units", () => ({
 }));
 
 export function resetStrainMocks() {
+  mockDecouplingQuery.mockReset();
   mockQueryState.focused = true;
   mockVolumeIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
   mockVolumeIncreaseInvalidate.mockReset().mockResolvedValue(undefined);

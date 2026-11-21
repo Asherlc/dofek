@@ -279,14 +279,22 @@ function pairedEfficiency(
   heartRate: Array<number | null>,
   start = 0,
   end = power.length,
-): { ratio: number | null; seconds: number } {
+): { ratio: number | null; seconds: number; powerTotal: number; heartRateTotal: number } {
   let powerTotal = 0;
   let heartRateTotal = 0;
   let seconds = 0;
   for (let index = start; index < end; index++) {
     const watts = power[index];
     const bpm = heartRate[index];
-    if (watts == null || bpm == null || bpm <= 0) continue;
+    if (
+      watts == null ||
+      bpm == null ||
+      bpm <= 0 ||
+      watts < 0 ||
+      !Number.isFinite(watts) ||
+      !Number.isFinite(bpm)
+    )
+      continue;
     powerTotal += watts;
     heartRateTotal += bpm;
     seconds++;
@@ -294,6 +302,8 @@ function pairedEfficiency(
   return {
     ratio: seconds > 0 && heartRateTotal > 0 ? powerTotal / heartRateTotal : null,
     seconds,
+    powerTotal,
+    heartRateTotal,
   };
 }
 
@@ -546,22 +556,17 @@ export function computeCyclingWorkoutMetrics(
     );
   }
 
-  const midpoint = Math.floor(durationSeconds / 2);
-  const firstHalf = pairedEfficiency(power.values, heartRate.values, 0, midpoint);
-  const secondHalf = pairedEfficiency(power.values, heartRate.values, midpoint, durationSeconds);
-  const driftCoverageRequired = midpoint * 0.9;
-  const driftAvailable =
-    durationSeconds >= 1_200 &&
-    firstHalf.ratio != null &&
-    secondHalf.ratio != null &&
-    firstHalf.seconds >= driftCoverageRequired &&
-    secondHalf.seconds >= (durationSeconds - midpoint) * 0.9;
+  const drift = summarizeCyclingDecoupling(power.values, heartRate.values);
+  const driftAvailable = drift.percent !== null;
   if (!driftAvailable) {
     addUnavailable(
       "cardiac_drift",
       durationSeconds < 1_200
         ? "activity is shorter than 20 minutes"
-        : "paired power and heart-rate coverage is below 90% in one or both halves",
+        : drift.firstHalf.pairedSeconds < Math.floor(durationSeconds / 2) * 0.9 ||
+            drift.secondHalf.pairedSeconds < Math.ceil(durationSeconds / 2) * 0.9
+          ? "paired power and heart-rate coverage is below 90% in one or both halves"
+          : "paired power-to-heart-rate ratios cannot be compared",
     );
   }
 
@@ -591,16 +596,15 @@ export function computeCyclingWorkoutMetrics(
       pairedSeconds: efficiency.seconds,
     },
     cardiacDrift: {
-      percent:
-        driftAvailable && firstHalf.ratio != null && secondHalf.ratio != null
-          ? round(((firstHalf.ratio - secondHalf.ratio) / firstHalf.ratio) * 100)
-          : null,
+      percent: drift.percent,
       firstHalfPowerToHeartRate:
-        driftAvailable && firstHalf.ratio != null ? round(firstHalf.ratio, 3) : null,
+        driftAvailable && drift.firstHalf.ratio !== null ? round(drift.firstHalf.ratio, 3) : null,
       secondHalfPowerToHeartRate:
-        driftAvailable && secondHalf.ratio != null ? round(secondHalf.ratio, 3) : null,
-      pairedSeconds: driftAvailable ? firstHalf.seconds + secondHalf.seconds : 0,
-      method: "equal_elapsed_time_halves_power_to_heart_rate",
+        driftAvailable && drift.secondHalf.ratio !== null ? round(drift.secondHalf.ratio, 3) : null,
+      pairedSeconds: driftAvailable
+        ? drift.firstHalf.pairedSeconds + drift.secondHalf.pairedSeconds
+        : 0,
+      method: drift.method,
     },
     powerZones: zoneDistribution(power.values, validFtp, input.settings?.powerZoneUpperPcts),
     heartRateZones: zoneDistribution(
@@ -629,5 +633,48 @@ export function computeCyclingWorkoutMetrics(
       );
     }),
     unavailableReasons,
+  };
+}
+
+export function summarizeCyclingDecoupling(
+  power: Array<number | null>,
+  heartRate: Array<number | null>,
+) {
+  const midpoint = Math.floor(power.length / 2);
+  const summarizeHalf = (start: number, end: number) => {
+    const { ratio, seconds, powerTotal, heartRateTotal } = pairedEfficiency(
+      power,
+      heartRate,
+      start,
+      end,
+    );
+    return {
+      ratio,
+      pairedSeconds: seconds,
+      meanWatts: seconds > 0 ? round(powerTotal / seconds) : null,
+      meanBpm: seconds > 0 ? round(heartRateTotal / seconds) : null,
+      coveragePct: end > start ? round((seconds / (end - start)) * 100) : 0,
+    };
+  };
+  const firstHalf = summarizeHalf(0, midpoint);
+  const secondHalf = summarizeHalf(midpoint, power.length);
+  let percent: number | null = null;
+  if (
+    power.length >= 1200 &&
+    firstHalf.pairedSeconds >= midpoint * 0.9 &&
+    secondHalf.pairedSeconds >= (power.length - midpoint) * 0.9 &&
+    firstHalf.ratio !== null &&
+    firstHalf.ratio > 0 &&
+    Number.isFinite(firstHalf.ratio) &&
+    secondHalf.ratio !== null
+  ) {
+    const change = ((firstHalf.ratio - secondHalf.ratio) / firstHalf.ratio) * 100;
+    if (Number.isFinite(change)) percent = round(change);
+  }
+  return {
+    percent,
+    firstHalf,
+    secondHalf,
+    method: "equal_elapsed_time_halves_power_to_heart_rate" as const,
   };
 }

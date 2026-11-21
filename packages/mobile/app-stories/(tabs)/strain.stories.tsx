@@ -25,6 +25,7 @@ import { runningData } from "../../components/running-training-test-helpers";
 import { trpc } from "../../lib/trpc";
 
 const STRAIN_COMPANION_RESPONSES = {
+  "cycling.decoupling": { workoutName: null, rides: [] },
   "running.dynamicsV2": runningData,
   "hiking.activityComparison": routeComparisonFixture,
   "climbing.attachmentActivities": climbingAttachmentActivities,

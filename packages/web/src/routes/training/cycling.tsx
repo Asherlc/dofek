@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 
+import { CyclingDecouplingChart } from "../../components/CyclingDecouplingChart.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
@@ -54,7 +55,23 @@ interface PeriodEstimateEvidence {
 
 function CyclingTab() {
   const { days } = useTrainingDays();
-  return <CyclingContent key={days ?? "all"} days={days} />;
+  const decoupling = trpc.cycling.decoupling.useQuery(
+    { days },
+    {
+      ...TRAINING_SLOW_QUERY_OPTIONS,
+      placeholderData: (previousData) => previousData,
+    },
+  );
+  return (
+    <>
+      <CyclingContent key={days ?? "all"} days={days} />
+      <CyclingDecouplingChart
+        data={decoupling.data}
+        error={decoupling.error}
+        loading={decoupling.isLoading}
+      />
+    </>
+  );
 }
 
 function CyclingContent({ days }: { days: TimeRangeDays }) {

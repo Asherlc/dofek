@@ -34,6 +34,7 @@ vi.mock("../trpc.ts", async () => {
 });
 
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
+import { CyclingDecouplingRepository } from "../repositories/cycling-decoupling-repository.ts";
 import { cyclingRouter } from "./cycling.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
@@ -51,6 +52,22 @@ function makeContext() {
 }
 
 describe("cyclingRouter", () => {
+  it("passes the selected decoupling range to the repository", async () => {
+    const getTrend = vi
+      .spyOn(CyclingDecouplingRepository.prototype, "getTrend")
+      .mockResolvedValue({ workoutName: null, rides: [] });
+    try {
+      const caller = createCaller(makeContext());
+      await expect(caller.decoupling({ days: 30 })).resolves.toEqual({
+        workoutName: null,
+        rides: [],
+      });
+      expect(getTrend.mock.calls[0]?.[0].days).toBe(30);
+    } finally {
+      getTrend.mockRestore();
+    }
+  });
+
   it("versions the performance cache contract", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 3_600_000,

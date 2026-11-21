@@ -28,6 +28,7 @@ import { ClimbingFilters } from "../components/ClimbingFilters";
 import { ClimbingLocationMapCard } from "../components/ClimbingLocationMapCard";
 import { ClimbingStrengths } from "../components/ClimbingStrengths";
 import { ClimbingTrainingCard } from "../components/ClimbingTrainingCard";
+import { CyclingDecouplingChart } from "../components/charts/CyclingDecouplingChart";
 import { VerticalAscentChart } from "../components/charts/VerticalAscentChart";
 import { DaySelector } from "../components/DaySelector";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget";
@@ -95,6 +96,15 @@ export function TrainingAnalysis({
   useEffect(() => {
     hasCommittedHydratedRange.current = isHydrated;
   }, [isHydrated]);
+
+  const decouplingQuery = trpc.cycling.decoupling.useQuery(
+    { days },
+    {
+      enabled: isHydrated && show("cycling"),
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  useReportQueryError(decouplingQuery);
 
   const trainingQuery = trpc.mobileDashboard.trainingV2.useQuery(
     { days, endDate, ...(Object.keys(climbingFilters).length ? { climbingFilters } : {}) },
@@ -242,6 +252,7 @@ export function TrainingAnalysis({
     invalidate: () =>
       Promise.all([
         utils.mobileDashboard.trainingV2.invalidate(),
+        utils.cycling.decoupling.invalidate(),
         utils.running.dynamicsV2.invalidate(),
         utils.climbing.locationMap.invalidate(),
         utils.climbing.strengths.invalidate(),
@@ -372,6 +383,13 @@ export function TrainingAnalysis({
               ? section
               : undefined
           }
+        />
+      ) : null}
+      {show("cycling") ? (
+        <CyclingDecouplingChart
+          data={decouplingQuery.data}
+          loading={decouplingQuery.isLoading}
+          error={decouplingQuery.error}
         />
       ) : null}
       {show("hiking") ? <RouteComparisonCard days={days} enabled={isHydrated} /> : null}

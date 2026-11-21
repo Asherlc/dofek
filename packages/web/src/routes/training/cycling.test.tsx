@@ -5,6 +5,7 @@ import type { ComponentType, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted<{
+  repeatRides: boolean;
   capturedRouteComponents: Record<string, ComponentType>;
   outletComponent: ComponentType | null;
   efficiencyActivities: Array<{
@@ -28,6 +29,7 @@ const state = vi.hoisted<{
   queryCalls: Array<{ name: string; input: unknown }>;
   selectedDays: number | null;
 }>(() => ({
+  repeatRides: false,
   capturedRouteComponents: {},
   outletComponent: null,
   efficiencyActivities: [],
@@ -55,6 +57,10 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("@dofek/training/training", () => ({
   CYCLING_ACTIVITY_TYPES: ["cycling"],
+}));
+vi.mock("../../components/DofekChart.tsx", () => ({
+  ChartRangeProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  DofekChart: ({ dataDisclosure }: { dataDisclosure: ReactNode }) => <>{dataDisclosure}</>,
 }));
 vi.mock("../../components/AerobicEfficiencyChart.tsx", () => ({
   AerobicEfficiencyChart: ({ activities }: { activities: unknown[] }) => {
@@ -99,6 +105,64 @@ const emptyQuery = { data: [], isLoading: false, error: null };
 vi.mock("../../lib/trpc.ts", () => ({
   trpc: {
     cycling: {
+      decoupling: {
+        useQuery: (input: unknown) => ({
+          ...recordQuery("cycling.decoupling")(input),
+          data: state.repeatRides
+            ? {
+                workoutName: "Endurance",
+                rides: [
+                  {
+                    activityId: "ride-1",
+                    name: "Endurance",
+                    date: "2026-03-15T12:00:00Z",
+                    elapsedSeconds: 3600,
+                    modality: null,
+                    percent: 4,
+                    method: "equal_elapsed_time_halves_power_to_heart_rate",
+                    powerMeasurementKind: "direct",
+                    heartRateMeasurementKind: "unknown",
+                    firstHalf: {
+                      meanWatts: 200,
+                      meanBpm: 130,
+                      coveragePct: 99,
+                      pairedSeconds: 1782,
+                    },
+                    secondHalf: {
+                      meanWatts: 195,
+                      meanBpm: 135,
+                      coveragePct: 98,
+                      pairedSeconds: 1764,
+                    },
+                  },
+                  {
+                    activityId: "ride-2",
+                    name: "Endurance",
+                    date: "2026-03-15T12:00:00Z",
+                    elapsedSeconds: 3600,
+                    modality: null,
+                    percent: 4,
+                    method: "equal_elapsed_time_halves_power_to_heart_rate",
+                    powerMeasurementKind: "direct",
+                    heartRateMeasurementKind: "unknown",
+                    firstHalf: {
+                      meanWatts: 200,
+                      meanBpm: 130,
+                      coveragePct: 99,
+                      pairedSeconds: 1782,
+                    },
+                    secondHalf: {
+                      meanWatts: 195,
+                      meanBpm: 135,
+                      coveragePct: 98,
+                      pairedSeconds: 1764,
+                    },
+                  },
+                ],
+              }
+            : { workoutName: null, rides: [] },
+        }),
+      },
       performance: {
         useQuery: (input: { days: number | null }) => {
           const period = (watts: number, cp: number) => ({
@@ -388,6 +452,7 @@ describe("CyclingTab", () => {
     await renderCyclingTab();
 
     expect(state.queryCalls).toEqual([
+      { name: "cycling.decoupling", input: { days: 365 } },
       { name: "cycling.performance", input: { days: 365 } },
       {
         name: "cycling.activities",
@@ -404,6 +469,7 @@ describe("CyclingTab", () => {
     await renderCyclingTab();
 
     expect(state.queryCalls).toEqual([
+      { name: "cycling.decoupling", input: { days: null } },
       { name: "cycling.performance", input: { days: null } },
       {
         name: "cycling.activities",
@@ -421,6 +487,7 @@ describe("CyclingTab", () => {
     fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expect(state.queryCalls).toEqual([
+      { name: "cycling.decoupling", input: { days: null } },
       { name: "cycling.performance", input: { days: null } },
       {
         name: "cycling.activities",
@@ -433,3 +500,24 @@ describe("CyclingTab", () => {
 });
 
 vi.mock("../../components/SportVolumeChart.tsx", () => ({ SportVolumeChart: () => <div /> }));
+
+it("shows the repeat-ride empty state", async () => {
+  await renderCyclingTab();
+  expect(screen.getByText("No repeat rides in this date range")).toBeTruthy();
+});
+
+it("opens selected ride details with both paired halves and its activity link", async () => {
+  state.repeatRides = true;
+  try {
+    await renderCyclingTab();
+    expect(screen.queryByLabelText("Selected workout")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Endurance.*4.0%.*Ride 2/ }));
+    expect(screen.getByText(/200 W.*130 bpm.*99%/)).toBeTruthy();
+    expect(screen.getByText(/195 W.*135 bpm.*98%/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Endurance" }).getAttribute("href")).toBe(
+      "/activity/ride-2",
+    );
+  } finally {
+    state.repeatRides = false;
+  }
+});

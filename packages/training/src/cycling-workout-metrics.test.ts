@@ -8,6 +8,7 @@ import {
   computeCyclingWorkoutMetrics,
   prepareCyclingWorkoutMetrics,
   resampleCyclingStream,
+  summarizeCyclingDecoupling,
 } from "./cycling-workout-metrics.ts";
 
 const fixtureCoveragePolicy = {
@@ -926,5 +927,39 @@ describe("computeCyclingWorkoutMetrics", () => {
     expect(result.intervalSource).toBe("none");
     expect(result.intervals).toEqual([]);
     expect(result.intervalDetection).toBeNull();
+  });
+});
+
+describe("summarizeCyclingDecoupling", () => {
+  it.each([
+    [100, 125, 20],
+    [100, 100, 0],
+    [125, 100, -25],
+  ])("compares the paired ratios at %i and %i bpm", (first, second, percent) => {
+    const power = Array<number>(1200).fill(200);
+    const heartRate = Array<number>(1200).fill(second).fill(first, 0, 600);
+    expect(summarizeCyclingDecoupling(power, heartRate).percent).toBe(percent);
+  });
+
+  it("counts recorded zero power and excludes invalid or missing pairs", () => {
+    const power = Array<number | null>(1200).fill(200);
+    const heartRate = Array<number | null>(1200).fill(100);
+    power[0] = 0;
+    power[1] = null;
+    heartRate[2] = Number.NaN;
+    expect(summarizeCyclingDecoupling(power, heartRate).firstHalf).toMatchObject({
+      pairedSeconds: 598,
+      meanWatts: 199.7,
+      meanBpm: 100,
+      coveragePct: 99.7,
+    });
+    expect(summarizeCyclingDecoupling(power.fill(0, 0, 600), heartRate).percent).toBeNull();
+  });
+
+  it.each([0, 600])("requires coverage in the half starting at second %i", (start) => {
+    const power = Array<number | null>(1200)
+      .fill(200)
+      .fill(null, start, start + 66);
+    expect(summarizeCyclingDecoupling(power, Array<number>(1200).fill(100)).percent).toBeNull();
   });
 });
