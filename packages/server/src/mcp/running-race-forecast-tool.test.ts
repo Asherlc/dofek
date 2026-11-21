@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, McpServer } from "@modelcontextprotocol/server";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { expect, it, vi } from "vitest";
 import type { DofekMcpContext } from "./context.ts";
 import { registerRunningRaceForecastTool } from "./running-race-forecast-tool.ts";
@@ -41,6 +42,48 @@ async function withForecast(
 }
 
 const name = "get_running_race_forecast";
+
+it("advertises a read-only, non-destructive tool with no open-world interaction", async () => {
+  await withForecast(vi.fn(), ["activity:read"], async (client) => {
+    const { tools } = await client.listTools();
+    expect(tools.find((tool) => tool.name === name)?.annotations).toMatchObject({
+      readOnlyHint: true,
+      openWorldHint: false,
+      destructiveHint: false,
+    });
+  });
+});
+
+it.each([
+  ["2026-04-30", "2026-04-30"],
+  ["2026-05-02", "2026-05-01"],
+])("bounds the query's end date %s to %s in the context timezone", async (endDate, boundedEnd) => {
+  const execute = vi.fn().mockResolvedValue([]);
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-05-02T01:00:00Z"));
+  try {
+    await withForecast(execute, ["activity:read"], async (client) => {
+      const result = await client.callTool({
+        name,
+        arguments: { start_date: "2026-04-01", end_date: endDate, target: "half_marathon" },
+      });
+      expect(result.isError).not.toBe(true);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]).params).toEqual([
+        "00000000-0000-4000-8000-000000000001",
+        "2026-04-01",
+        boundedEnd,
+        5000,
+        8046.72,
+        10000,
+        16093.44,
+        21097.5,
+      ]);
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 it.each([
   ["10k", 10000, 3149.150050869202],
