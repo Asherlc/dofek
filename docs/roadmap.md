@@ -66,6 +66,15 @@ Connect daily decisions to planned and completed work.
 - [ ] Explain plan deviations using recovery, availability, and completed-work evidence without moral judgment.
 - [ ] Adjust future recommendations when the user accepts a change or repeatedly dismisses a type of action.
 - [ ] Prefer importing existing structured plans and device calendars before building a broad custom plan-authoring system.
+- [ ] Show imported TrainingPeaks races and planned workouts in Activities on
+  web and iOS, with source labels and any verified race goals. Start with the
+  next race once a populated response confirms authorized Partner API access.
+  Verify planned-workout access separately. A one-time Premium calendar snapshot
+  can ship independently once a representative `.ics` file confirms which
+  entries and fields it carries. See the
+  [provider import design](superpowers/specs/2026-11-21-provider-goals-and-calendar-design.md#provider-evidence),
+  [next-event API](https://github.com/TrainingPeaks/PartnersAPI/wiki/Event-Get-Next),
+  and [Premium calendar feed](https://help.trainingpeaks.com/hc/en-us/articles/204072184-Sync-your-calendar).
 
 [TrainingPeaks](https://www.trainingpeaks.com/) demonstrates the complete plan-calendar-device-compliance loop, including structured plans and workouts that sync to compatible devices in its [training-plan catalog](https://www.trainingpeaks.com/training-plans/). Dofek's opportunity is to combine that planning loop with cross-provider recovery, nutrition, and behavior evidence.
 
