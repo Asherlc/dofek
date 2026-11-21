@@ -39,7 +39,9 @@ type MockRangeQueryName =
   | "locationMap"
   | "strengths"
   | "climbingVolume"
+  | "loggedSets"
   | "strengthVolume"
+  | "durability"
   | "sportVolume";
 
 type MockRangeQueryCalls = Record<
@@ -50,12 +52,14 @@ type MockRangeQueryCalls = Record<
 function emptyRangeQueryCalls(): MockRangeQueryCalls {
   return {
     running: [],
+    durability: [],
     training: [],
     locationMap: [],
     strengths: [],
     hrZones: [],
     polarization: [],
     climbingVolume: [],
+    loggedSets: [],
     strengthVolume: [],
     sportVolume: [],
   };
@@ -162,6 +166,14 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    cycling: {
+      durability: {
+        useQuery: (input: { days: number | null }, options: MockRangeQueryOptions) => {
+          mockQueryState.rangeQueryCalls.durability.push({ input, options });
+          return { data: undefined, isLoading: true, error: null };
+        },
+      },
+    },
     running: {
       dynamicsV2: {
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
@@ -200,6 +212,18 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     strength: {
+      loggedSetComparison: {
+        useQuery: (input: { days: number | null }, options: MockRangeQueryOptions) => {
+          mockQueryState.rangeQueryCalls.loggedSets.push({ input, options });
+          return {
+            data: undefined,
+            isLoading: false,
+            isFetching: false,
+            isError: false,
+            error: null,
+          };
+        },
+      },
       volumeOverTime: {
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
           mockQueryState.rangeQueryCalls.strengthVolume.push({ input, options });
@@ -264,7 +288,10 @@ vi.mock("../../lib/trpc", () => ({
         locationMap: { invalidate: mockLocationMapInvalidate },
         strengths: { invalidate: vi.fn().mockResolvedValue(undefined) },
       },
-      strength: { volumeOverTime: { invalidate: vi.fn() } },
+      strength: {
+        loggedSetComparison: { invalidate: vi.fn() },
+        volumeOverTime: { invalidate: vi.fn() },
+      },
       mobileDashboard: {
         trainingV2: { invalidate: mockTrainingInvalidate },
       },

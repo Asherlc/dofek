@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
+// Stored and submitted consumption times keep their validated offset and fraction.
+export const consumedAtSchema = z.iso.datetime({ offset: true });
+
 export const foodRecordVisibilitySchema = z.enum(["visible", "deleted", "all"]);
 
 export const foodRecordCursorSchema = z.object({
@@ -36,6 +39,7 @@ export interface EffectiveFoodRecord {
   numberOfUnits: number | null;
   servingUnit: string | null;
   servingWeightGrams: number | null;
+  consumedAt?: string;
   nutrients: Record<string, number | null>;
   sourceProvider: string;
   provenance: Record<string, FoodRecordProvenance>;
@@ -61,6 +65,7 @@ export const effectiveFoodRecordSchema: z.ZodType<EffectiveFoodRecord> = z.objec
   numberOfUnits: z.number().nullable(),
   servingUnit: z.string().nullable(),
   servingWeightGrams: z.number().nullable(),
+  consumedAt: consumedAtSchema.optional(),
   nutrients: z.record(z.string(), z.number().nullable()),
   sourceProvider: z.string(),
   provenance: z.record(z.string(), foodRecordProvenanceSchema),

@@ -1,4 +1,5 @@
 import type { StrengthExerciseIdentity } from "@dofek/training/training";
+import { STRONG_PROVIDER_ID } from "dofek/providers/strong-csv";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { lookupExerciseMuscleGroups } from "../../../../src/exercise-metadata.ts";
@@ -10,6 +11,12 @@ import {
   ProgressiveOverload,
   type ProgressiveOverloadObservation,
 } from "./progressive-overload.ts";
+import {
+  consolidatedStrengthQualityFlags,
+  consolidateSets,
+  estimateConsolidatedStrengthSet,
+  strengthSetRowSchema,
+} from "./strength-set-estimate.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -51,6 +58,9 @@ export interface OneRepMaxEntryRow {
   estimatedMax: number;
   actualWeight: number;
   actualReps: number;
+  sourceSetId: string;
+  provider: string;
+  fatigueMarker: "Failure";
 }
 
 export type EstimatedMaxTrendDirection = "increasing" | "decreasing" | "stable";
@@ -235,14 +245,7 @@ const volumeRowSchema = z.object({
   recorded_set_count: z.coerce.number().nullable(),
 });
 
-const oneRepMaxRowSchema = z.object({
-  exercise_name: z.string(),
-  equipment: z.string().nullable(),
-  workout_date: dateStringSchema,
-  estimated_max: z.coerce.number(),
-  actual_weight: z.coerce.number(),
-  actual_reps: z.coerce.number(),
-});
+const oneRepMaxRowSchema = strengthSetRowSchema.extend({ workout_date: dateStringSchema });
 
 const muscleGroupRowSchema = z.object({
   muscle_group: z.string(),
@@ -501,86 +504,92 @@ export class StrengthRepository extends BaseRepository {
 
   /** Estimated 1RM using Epley formula, best e1RM per workout per exercise. */
   async getEstimatedOneRepMax(days: RangeDays): Promise<EstimatedOneRepMax[]> {
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.db,
       oneRepMaxRowSchema,
-      sql`${this.#dedupedStrengthSets(days)},
-          best_per_workout AS (
-            SELECT
-              exercise_name,
-              equipment,
-              normalized_exercise_name,
-              normalized_equipment,
-              (started_at AT TIME ZONE ${this.timezone})::date::text AS workout_date,
-              weight_kg * (1 + reps / 30.0) AS e1rm,
-              weight_kg AS actual_weight,
-              reps AS actual_reps,
-              ROW_NUMBER() OVER (
-                PARTITION BY
-                  normalized_exercise_name,
-                  normalized_equipment,
-                  group_activity_id
-                ORDER BY weight_kg * (1 + reps / 30.0) DESC
-              ) AS rn
-            FROM deduped_strength_sets
-            WHERE set_type = 'working'
-              AND weight_kg > 0
-              AND reps BETWEEN 1 AND 12
-          ),
-          qualified_exercises AS (
-            SELECT normalized_exercise_name, normalized_equipment
-            FROM best_per_workout
-            WHERE rn = 1
-            GROUP BY normalized_exercise_name, normalized_equipment
-            HAVING COUNT(*) >= 3
+      sql`SELECT a.id AS activity_id,
+          (a.started_at AT TIME ZONE ${this.timezone})::date::text AS workout_date,
+          ss.id AS set_id, ss.activity_id AS set_activity_id, member.provider_id AS set_provider,
+          e.id AS exercise_id, e.name AS exercise_name, e.equipment,
+          ss.exercise_index, ss.set_index, ss.set_type::text AS set_type,
+          ss.weight_kg, ss.reps, ss.distance_meters, ss.duration_seconds, ss.rpe, ss.notes, ss.raw
+        FROM fitness.v_activity a
+        JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
+        JOIN fitness.exercise e ON e.id = ss.exercise_id
+        JOIN fitness.activity member ON member.id = ss.activity_id
+        WHERE a.user_id = ${this.userId}
+          AND a.canonical_type = 'strength'
+          ${rangeFilter}
+          ${this.timestampAccessPredicate(sql`a.started_at`)}
+          AND EXISTS (
+            SELECT 1
+            FROM fitness.strength_set candidate
+            JOIN fitness.activity source ON source.id = candidate.activity_id
+            WHERE candidate.activity_id = ANY(a.member_activity_ids)
+              AND candidate.exercise_id = ss.exercise_id
+              AND source.provider_id = ${STRONG_PROVIDER_ID}
+              AND candidate.raw->>'setTag' = 'Failure'
           )
-          SELECT
-            MIN(b.exercise_name) OVER (
-              PARTITION BY b.normalized_exercise_name, b.normalized_equipment
-            ) AS exercise_name,
-            MIN(b.equipment) OVER (
-              PARTITION BY b.normalized_exercise_name, b.normalized_equipment
-            ) AS equipment,
-            b.workout_date,
-            ROUND(b.e1rm::numeric, 1)::real AS estimated_max,
-            b.actual_weight,
-            b.actual_reps
-          FROM best_per_workout b
-          JOIN qualified_exercises q
-            ON q.normalized_exercise_name = b.normalized_exercise_name
-            AND q.normalized_equipment = b.normalized_equipment
-          WHERE b.rn = 1
-          ORDER BY b.exercise_name, b.normalized_equipment, b.workout_date`,
+        ORDER BY a.started_at, a.id, ss.id`,
     );
 
-    const exerciseMap = new Map<string, Map<string | null, OneRepMaxEntryRow[]>>();
-    for (const row of rows) {
-      const equipmentMap = exerciseMap.get(row.exercise_name) ?? new Map();
-      const entries = equipmentMap.get(row.equipment) ?? [];
-      entries.push({
-        date: row.workout_date,
-        estimatedMax: row.estimated_max,
-        actualWeight: row.actual_weight,
-        actualReps: row.actual_reps,
-      });
-      equipmentMap.set(row.equipment, entries);
-      exerciseMap.set(row.exercise_name, equipmentMap);
+    const exercises = new Map<
+      string,
+      {
+        identity: { exerciseName: string; equipment: string | null };
+        workouts: Map<string, OneRepMaxEntryRow>;
+      }
+    >();
+    for (const set of consolidateSets(rows).sets) {
+      const { source, value } = estimateConsolidatedStrengthSet(
+        set,
+        consolidatedStrengthQualityFlags(set),
+      );
+      if (source === null || value === null || source.weight_kg === null || source.reps === null)
+        continue;
+      const exercise = exercises.get(source.exercise_id) ?? {
+        identity: { exerciseName: source.exercise_name, equipment: source.equipment },
+        workouts: new Map<string, OneRepMaxEntryRow>(),
+      };
+      const current = exercise.workouts.get(source.activity_id);
+      if (
+        !current ||
+        value > current.estimatedMax ||
+        (value === current.estimatedMax && source.set_id < current.sourceSetId)
+      ) {
+        exercise.workouts.set(source.activity_id, {
+          date: source.workout_date,
+          estimatedMax: value,
+          actualWeight: source.weight_kg,
+          actualReps: source.reps,
+          sourceSetId: source.set_id,
+          provider: source.set_provider,
+          fatigueMarker: "Failure",
+        });
+      }
+      exercises.set(source.exercise_id, exercise);
     }
 
-    return Array.from(exerciseMap.entries())
-      .flatMap(([exerciseName, equipmentMap]) =>
-        Array.from(equipmentMap.entries()).map(([equipment, history]) => ({
-          identity: { exerciseName, equipment },
-          history,
-        })),
-      )
-      .sort((a, b) => {
-        return (
+    return [...exercises.values()]
+      .filter(({ workouts }) => workouts.size >= 3)
+      .sort(
+        (a, b) =>
           a.identity.exerciseName.localeCompare(b.identity.exerciseName) ||
-          (a.identity.equipment ?? "").localeCompare(b.identity.equipment ?? "")
-        );
-      })
-      .map(({ identity, history }) => new EstimatedOneRepMax(identity, history));
+          (a.identity.equipment ?? "").localeCompare(b.identity.equipment ?? ""),
+      )
+      .map(
+        ({ identity, workouts }) =>
+          new EstimatedOneRepMax(
+            identity,
+            [...workouts.values()]
+              .sort((a, b) => a.date.localeCompare(b.date))
+              .map((entry) => ({
+                ...entry,
+                estimatedMax: Math.round(entry.estimatedMax * 10) / 10,
+              })),
+          ),
+      );
   }
 
   /** Weekly sets per muscle group. */

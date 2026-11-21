@@ -339,6 +339,18 @@ entity "finger_loading_entry" {
   created_at : timestamp
 }
 
+entity "running_race_result" {
+  * user_id : uuid <<PK>>
+  * provider_id : text <<PK>>
+  * source_activity_id : text <<PK>>
+  --
+  source_name : text
+  source_sport : text
+  source_date_time : text
+  distance_meters : double precision
+  finish_seconds : double precision
+}
+
 entity "sleep_session" {
   * id : uuid <<PK>>
   --
@@ -1370,6 +1382,8 @@ user_profile ||--o{ effort_equivalence_group_member
 effort_equivalence_group ||--o{ effort_equivalence_group_member
 activity_group ||--o{ effort_equivalence_group_member
 activity ||--o{ finger_loading_entry
+user_profile ||--o{ running_race_result
+provider ||--o{ running_race_result
 provider ||--o{ sleep_session
 user_profile ||--o{ sleep_session
 sleep_session ||--o{ sleep_stage

@@ -350,3 +350,12 @@ These are the application storage and analytics invariants. Follow them when cha
 - **ClickHouse read models are dbt-owned incremental models**: Put expensive analytics in incremental `.sql` dbt models under `analytics/models/`. Never embed transformation SQL in TypeScript, add naive materialized views that recompute on read, full-refresh in serving/deploy, or refresh history from web/worker requests. Keep `pnpm lint:analytics-policy` enforced. Full refresh/backfill needs explicit operator intent, bounded resources, and a runbook.
 - **Name analytics serving tables by domain and grain**: Name new ClickHouse/dbt tables for domain and row grain (`daily_recovery`, `daily_strain`, `daily_sleep`). Avoid architectural suffixes `_read_model`, `_summary`, `_aggregate`, `_table`, and `_model`.
 - **Expensive sensor calculations belong in ClickHouse read models**: Compute costly sensor/location operations (centroids, distance, elevation, per-activity aggregates, time-series summaries) in ClickHouse dbt/read models over deduped data, not per request in TypeScript. Preserve canonical provider-agnostic raw inputs.
+
+### Running race results
+
+`fitness.running_race_result` stores one finish per owner, provider, and source
+activity ID. It preserves the source race name, sport label, and date-time text
+(including the source offset when supplied), plus official distance in meters
+and elapsed finish time in seconds. Runalyze supplies both measurements in the
+same race-result record. Unsuccessful inventory reads leave the current
+snapshot intact. [Runalyze Supporter OpenAPI](https://runalyze.com/doc/api/supporter)

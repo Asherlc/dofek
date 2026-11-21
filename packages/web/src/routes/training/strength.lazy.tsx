@@ -1,8 +1,10 @@
+import { keepPreviousData } from "@tanstack/react-query";
 import { createLazyFileRoute } from "@tanstack/react-router";
 import { EstimatedMaxChart } from "../../components/EstimatedMaxChart.tsx";
 import { MuscleGroupVolumeChart } from "../../components/MuscleGroupVolumeChart.tsx";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
+import { StrengthLoggedSetComparison } from "../../components/StrengthLoggedSetComparison";
 import { StrengthVolumeChart } from "../../components/StrengthVolumeChart.tsx";
 import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
@@ -15,6 +17,10 @@ export const Route = createLazyFileRoute("/training/strength")({
 
 function StrengthTab() {
   const { days } = useTrainingDays();
+  const loggedSets = trpc.strength.loggedSetComparison.useQuery(selectedRangeQueryInput(days), {
+    ...TRAINING_SLOW_QUERY_OPTIONS,
+    placeholderData: keepPreviousData,
+  });
   const strengthVolume = trpc.strength.volumeOverTime.useQuery(
     selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
@@ -34,6 +40,11 @@ function StrengthTab() {
 
   return (
     <>
+      <StrengthLoggedSetComparison
+        data={loggedSets.data}
+        loading={loggedSets.isLoading}
+        error={loggedSets.error}
+      />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Strength Volume">
           {strengthVolume.error && !strengthVolume.data ? (

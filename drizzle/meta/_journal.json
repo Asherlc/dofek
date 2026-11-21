@@ -1335,8 +1335,22 @@
     {
       "idx": 190,
       "version": "7",
-      "when": 1794789928822,
-      "tag": "0190_fit_workout_step_intervals",
+      "when": 1795280008126,
+      "tag": "0190_activity_effort_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1795281538223,
+      "tag": "0191_running_race_result",
+      "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1795281538224,
+      "tag": "0192_fit_workout_step_intervals",
       "breakpoints": true
     }
   ]

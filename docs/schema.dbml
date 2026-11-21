@@ -716,6 +716,21 @@ table fitness.finger_loading_entry {
   }
 }
 
+table fitness.running_race_result {
+  user_id uuid [not null]
+  provider_id text [not null]
+  source_activity_id text [not null]
+  source_name text
+  source_sport text [not null]
+  source_date_time text [not null]
+  distance_meters "double precision" [not null]
+  finish_seconds "double precision" [not null]
+
+  indexes {
+    (user_id, provider_id, source_activity_id) [pk]
+  }
+}
+
 table fitness.sleep_session {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   provider_id text [not null]
@@ -2183,6 +2198,10 @@ ref effort_equivalence_group_member_user_group_fk: fitness.effort_equivalence_gr
 ref effort_equivalence_group_member_user_activity_fk: fitness.effort_equivalence_group_member.(user_id, canonical_activity_id) > fitness.activity_group.(user_id, id) [delete: restrict, update: no action]
 
 ref finger_loading_entry_activity_id_activity_id_fk: fitness.finger_loading_entry.activity_id > fitness.activity.id [delete: cascade, update: no action]
+
+ref running_race_result_user_id_user_profile_id_fk: fitness.running_race_result.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref running_race_result_provider_id_provider_id_fk: fitness.running_race_result.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref sleep_session_provider_id_provider_id_fk: fitness.sleep_session.provider_id > fitness.provider.id [delete: no action, update: no action]
 
