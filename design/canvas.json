@@ -1,6 +1,7 @@
 {
   "version": 1,
   "agents": {
-    "whoop-battery-status": "7882f4e8-4c8c-4046-bde8-fe969e33e90a"
+    "whoop-battery-status": "7882f4e8-4c8c-4046-bde8-fe969e33e90a",
+    "concept2-benchmark-placement": "99e1d4c4-c201-477a-94a0-aa7577287ff7"
   }
 }

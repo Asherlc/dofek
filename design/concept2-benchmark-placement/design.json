@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "title": "Concept2 · 2,000 m benchmark",
+  "kind": "prototype",
+  "description": "The same published-cutoff comparison in Dofek’s web and iOS activity details.",
+  "artboards": [
+    {
+      "id": "web",
+      "title": "Web · Activity detail",
+      "file": "web.html",
+      "width": 950,
+      "height": 408,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "ios",
+      "title": "iOS · Activity detail",
+      "file": "ios.html",
+      "width": 390,
+      "height": 520,
+      "x": 1010,
+      "y": 0
+    }
+  ]
+}
