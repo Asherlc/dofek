@@ -7,7 +7,6 @@ import { type AccessWindow, dateAccessPredicate } from "../billing/entitlement.t
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 export const plannedWorkoutTargetTypeSchema = z.enum(["power", "heart_rate", "pace", "cadence"]);
-export type PlannedWorkoutTargetType = z.infer<typeof plannedWorkoutTargetTypeSchema>;
 
 /** One authored target as it was written, including a value or a start/end range. */
 export const plannedWorkoutTargetSchema = z.object({
