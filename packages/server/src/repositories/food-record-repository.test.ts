@@ -816,6 +816,170 @@ describe("FoodRecordRepository", () => {
     },
   );
 
+  describe("consumption time", () => {
+    const consumedAt = "2026-11-21T00:15:00.123456+02:00";
+    const consumedAtDecision = { operation: "set", value: consumedAt };
+
+    it("projects a timed effective record with its exact instant and change provenance", async () => {
+      const { repository } = makeRepository([
+        [
+          recordRow({
+            consumed_at: consumedAt,
+            consumed_at_operation: "set",
+            consumed_at_change_id: changeId,
+          }),
+        ],
+      ]);
+
+      await expect(repository.get(recordId)).resolves.toMatchObject({
+        consumedAt,
+        provenance: { consumedAt: { origin: "human", changeId } },
+      });
+    });
+
+    it("reads a timed value from an explicit version snapshot", async () => {
+      const { repository } = makeRepository([
+        [
+          recordRow({
+            consumed_at: consumedAt,
+            consumed_at_operation: "set",
+            consumed_at_change_id: changeId,
+          }),
+        ],
+      ]);
+
+      await expect(repository.getAtVersion(recordId, version)).resolves.toMatchObject({
+        consumedAt,
+        provenance: { consumedAt: { origin: "human", changeId } },
+      });
+    });
+
+    it("omits an absent or cleared consumption time and keeps clear provenance", async () => {
+      const { repository } = makeRepository([[recordRow()]]);
+      const absent = await repository.get(recordId);
+      expect(absent).not.toHaveProperty("consumedAt");
+      expect(absent?.provenance).not.toHaveProperty("consumedAt");
+
+      const cleared = makeRepository([
+        [
+          recordRow({
+            consumed_at: null,
+            consumed_at_operation: "clear",
+            consumed_at_change_id: changeId,
+          }),
+        ],
+      ]).repository;
+      const result = await cleared.get(recordId);
+      expect(result).not.toHaveProperty("consumedAt");
+      expect(result?.provenance.consumedAt).toEqual({ origin: "human", changeId });
+    });
+
+    it("records the timed create decision and no consumption decision for a date-only create", async () => {
+      foodRepositoryMocks.create.mockResolvedValue({ id: sourceEntryId });
+      const responses = () => [
+        [],
+        [],
+        [{ identity_id: recordId }],
+        [lockedHead({ current_version: null })],
+        [],
+        [{ change_id: changeId }],
+        [{ version }],
+      ];
+      const timed = makeRepository(responses());
+      await timed.repository.createSourceAndIdentity({
+        requestId: "60000000-0000-4000-8000-000000000031",
+        requestHash: "f".repeat(64),
+        actor: { channel: "mcp", clientId: "token:client-1" },
+        externalId: "mcp:timed",
+        date: "2026-11-21",
+        foodName: "Gel",
+        consumedAt,
+        nutrients: { calories: 100 },
+      });
+      const timedTarget = timed.execute.mock.calls
+        .map((call) => queryDetails(call[0]))
+        .find((query) => query.sql.includes("INSERT INTO fitness.human_record_target"));
+      expect(timedTarget?.params).toContain(JSON.stringify({ consumed_at: consumedAtDecision }));
+
+      const dateOnly = makeRepository(responses());
+      await dateOnly.repository.createSourceAndIdentity({
+        requestId: "60000000-0000-4000-8000-000000000032",
+        requestHash: "f".repeat(64),
+        actor: { channel: "mcp", clientId: "token:client-1" },
+        externalId: "mcp:date-only",
+        date: "2026-11-21",
+        foodName: "Gel",
+        nutrients: { calories: 100 },
+      });
+      const dateOnlyTarget = dateOnly.execute.mock.calls
+        .map((call) => queryDetails(call[0]))
+        .find((query) => query.sql.includes("INSERT INTO fitness.human_record_target"));
+      expect(dateOnlyTarget?.params).toContain("{}");
+      expect(JSON.stringify(dateOnlyTarget?.params)).not.toContain("consumed_at");
+    });
+
+    it("appends a consumption time set or clear for an itemized Dofek record", async () => {
+      const { execute, repository } = makeRepository([
+        [lockedHead()],
+        [],
+        [{ change_id: changeId }],
+        [{ version }],
+        [lockedHead()],
+        [],
+        [{ change_id: changeId }],
+        [{ version }],
+      ]);
+
+      await repository.appendChange(appendInput({ fields: { consumed_at: consumedAtDecision } }));
+      await repository.appendChange(
+        appendInput({
+          requestId: "60000000-0000-4000-8000-000000000033",
+          fields: { consumed_at: { operation: "clear" } },
+        }),
+      );
+      const targetParams = execute.mock.calls
+        .map((call) => queryDetails(call[0]))
+        .filter((query) => query.sql.includes("INSERT INTO fitness.human_record_target"))
+        .map((query) => query.params);
+      expect(targetParams).toHaveLength(2);
+      expect(targetParams[0]).toContain(JSON.stringify({ consumed_at: consumedAtDecision }));
+      expect(targetParams[1]).toContain(JSON.stringify({ consumed_at: { operation: "clear" } }));
+    });
+
+    it("rejects a consumption time for an imported or non-itemized record before writing", async () => {
+      for (const head of [
+        lockedHead({ namespace: "cronometer" }),
+        lockedHead({ itemized: false }),
+      ]) {
+        const { execute, repository } = makeRepository([[head]]);
+        await expect(
+          repository.appendChange(appendInput({ fields: { consumed_at: consumedAtDecision } })),
+        ).rejects.toMatchObject({ name: FoodRecordPreconditionError.name, sourceEntryId });
+        expect(execute).toHaveBeenCalledOnce();
+      }
+    });
+
+    it("keeps ordinary edits to imported and non-itemized records unchanged", async () => {
+      for (const head of [
+        lockedHead({ namespace: "cronometer" }),
+        lockedHead({ itemized: false }),
+      ]) {
+        const { execute, repository } = makeRepository([
+          [head],
+          [],
+          [{ change_id: changeId }],
+          [{ version }],
+        ]);
+        await expect(
+          repository.appendChange(
+            appendInput({ fields: { meal: { operation: "set", value: "dinner" } } }),
+          ),
+        ).resolves.toMatchObject({ replayed: false, changeId });
+        expect(execute).toHaveBeenCalledTimes(4);
+      }
+    });
+  });
+
   it("rethrows non-unique database failures", async () => {
     const databaseError = Object.assign(new Error("check failed"), { code: "23514" });
     let callCount = 0;
