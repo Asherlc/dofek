@@ -57,7 +57,7 @@ body {
 #cycling-decoupling-preview h1 { font-size: 25px; font-weight: 650; letter-spacing: -0.03em; }
 #cycling-decoupling-preview h2 { font-size: 18px; font-weight: 650; letter-spacing: -0.018em; }
 #cycling-decoupling-preview h3 { font-size: 15px; font-weight: 650; }
-#cycling-decoupling-preview :is(.crumb, .trend-heading p, .picker, .cohort span, .chart-note, .method-note, .preview-note, .ride-heading p, .empty-state p) {
+#cycling-decoupling-preview :is(.crumb, .trend-heading p, .picker, .cohort span, .chart-note, .preview-note, .ride-heading p, .empty-state p) {
   color: var(--subtle);
   font-size: 12px;
 }
@@ -162,7 +162,6 @@ body {
 #cycling-decoupling-preview .samples dt { color: var(--subtle); font-size: 12px; }
 #cycling-decoupling-preview .samples dd { margin: 3px 0 0; }
 #cycling-decoupling-preview .coverage { display: block; color: var(--subtle); font-size: 12px; }
-#cycling-decoupling-preview .method-note { margin-top: 11px; }
 #cycling-decoupling-preview .preview-note { margin: 10px 0 0; }
 #cycling-decoupling-preview .empty-state {
   display: grid;

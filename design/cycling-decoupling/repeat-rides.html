@@ -23,9 +23,6 @@
             <h2 id="cycling-trend-title">Power-to-heart-rate decoupling</h2>
             <p>How power relative to heart rate changed between halves of a ride.</p>
           </div>
-          <label class="picker" data-dc-id="ride-setting">Ride setting
-            <select data-setting><option value="indoor">Indoor</option><option value="outdoor">Outdoor</option></select>
-          </label>
         </header>
 
         <div data-results>
@@ -40,11 +37,10 @@
           </div>
           <p class="chart-note" data-dc-id="chart-sign">Positive values mean power was lower relative to heart rate in the second half.</p>
           <section class="ride-details" data-details aria-live="polite" aria-label="Selected workout" data-dc-id="ride-details"></section>
-          <p class="method-note" data-dc-id="method-note">Descriptive comparison of repeat rides. Steady effort was unverified.</p>
         </div>
 
         <div class="empty-state" data-empty role="status" data-dc-id="no-repeat-rides" hidden>
-          <h3 data-empty-title>No repeat rides in this date range</h3>
+          <h3>No repeat rides in this date range</h3>
           <p>No matching workouts have paired power and heart-rate data in the selected dates.</p>
         </div>
       </article>
