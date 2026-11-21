@@ -47,6 +47,12 @@ export const performanceStrengthRowSchema = z.object({
   set_activity_id: z.uuid(),
   set_provider: z.string(),
   exercise_id: z.uuid(),
+  exercise_name: z.string(),
+  equipment: z.string().nullable(),
+  raw: z.record(z.string(), z.unknown()),
+  distance_meters: z.coerce.number().nullable(),
+  duration_seconds: z.coerce.number().nullable(),
+  notes: z.string().nullable(),
   exercise_index: z.coerce.number().int().optional().default(0),
   set_index: z.coerce.number().int().optional().default(0),
   set_type: z.string().nullable(),
@@ -128,6 +134,7 @@ export function buildPerformanceComparisonRows(input: {
   sensorRows: SensorRow[];
   climbingRows: ClimbingComparisonRow[];
   strengthRows: StrengthComparisonRow[];
+  estimateExerciseId: string | undefined;
   timezone: string;
   evidenceFor: (
     activityId?: string,
@@ -178,7 +185,10 @@ export function buildPerformanceComparisonRows(input: {
           effort: effort ?? null,
           cycling,
           climbing: computeClimbingComparisonMetrics(climbsByActivity.get(row.activity_id) ?? []),
-          strength: computeStrengthComparisonMetrics(strengthByActivity.get(row.activity_id) ?? []),
+          strength: computeStrengthComparisonMetrics(
+            strengthByActivity.get(row.activity_id) ?? [],
+            input.estimateExerciseId,
+          ),
         },
       ] as const;
     }),

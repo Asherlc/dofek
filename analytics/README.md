@@ -477,6 +477,23 @@ activity length support them. dbt recommends a full refresh when incremental
 model logic changes because existing rows retain the old transformation
 ([dbt incremental model guidance](https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model)).
 
+`cycling_durability_effort` keeps each completed outdoor ride's best measured
+power candidates at 10, 60, 300, and 1200 seconds. It uses the recorded outdoor,
+road, mountain, gravel, and cyclocross modalities. It stores elapsed offsets,
+average watts, work in joules before each effort, and power-source evidence.
+Each build takes at most 32 dirty rides before reading their power samples.
+The duration-zero row records completed processing even when a ride has no
+eligible efforts. Date access, body weight, and the selected work level are
+applied when serving the comparison.
+
+For historical processing, build the canonical activity, member, and sensor
+models first. Use the dbt invocation above with
+`--select cycling_durability_effort` and omit `--full-refresh` so each run
+continues from the previous batch. The dbt variable
+`cycling_durability_dirty_key_batch_size` can lower the batch size when
+processing long recordings. A single first build processes only one batch.
+Keep advancing incrementally so completed ride checkpoints are retained.
+
 Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `deduped_sensor`, `activity_source_records`, `activity_duplicate_matches`,
 `activity_duplicate_groups`, `deduped_activities`, `deduped_activity_members`,
@@ -489,7 +506,7 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `hiking_activity`, `body_measurement`, `activity_vo2max_estimate`,
 `activity_aerobic_efficiency`, `activity_polarization_zones`,
 `activity_power_curve`, `activity_pace_curve`, `activity_heart_rate_distribution`,
-`cycling_activity`, `daily_cycling`, `provider_stats`,
+`cycling_activity`, `cycling_durability_effort`, `daily_cycling`, `provider_stats`,
 `daily_activity_load`, and `daily_strain`. `activity_pace_curve` reads canonical `deduped_sensor FINAL`
 speed samples within each canonical activity's inclusive temporal window, using
 the exact effective end (`ended_at`, or start plus twelve hours). Eligible types
