@@ -3,6 +3,7 @@ import {
   getDailyMetricAccumulatorKey,
   healthKitSampleSchema,
   workoutActivityTypeMap,
+  workoutEffortSchema,
   workoutSampleSchema,
 } from "./health-kit-sync-schemas.ts";
 
@@ -30,6 +31,32 @@ it("retains optional reported workout hardware through validation", () => {
       device,
     }),
   ).toMatchObject({ device, sourceProductType: "Watch7,12" });
+});
+
+describe("reported workout effort validation", () => {
+  const rating = {
+    uuid: "c0ffee11-1111-4111-8111-111111111111",
+    value: 7,
+    startDate: "2026-10-01T00:00:00-07:00",
+    endDate: "2026-10-01T07:00:00Z",
+    sourceName: "Fitness",
+    sourceBundle: "com.apple.fitness",
+  };
+
+  it("retains the source and bounds for a point-in-time sample", () => {
+    expect(workoutEffortSchema.parse(rating)).toEqual(rating);
+  });
+
+  it.each([
+    { uuid: "not-a-sample-id" },
+    { startDate: "2026-10-01" },
+    { endDate: "2026-10-01T06:59:59Z" },
+    { sourceBundle: "" },
+    { value: 0 },
+    { value: 11 },
+  ])("rejects malformed source facts %j", (invalid) => {
+    expect(workoutEffortSchema.safeParse({ ...rating, ...invalid }).success).toBe(false);
+  });
 });
 
 describe("healthKitSampleSchema", () => {

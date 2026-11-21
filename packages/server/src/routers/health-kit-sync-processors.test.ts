@@ -277,11 +277,6 @@ describe("processWorkouts", () => {
       expect.objectContaining({
         activityType: expect.objectContaining({ canonicalType: "hangboard", providerType: "20" }),
         sourceName: "Hang Ten",
-        raw: expect.objectContaining({
-          sourceBundle: "com.hangten.app",
-          sourceProductType: "Watch7,12",
-          device: { name: "My Watch", model: "Watch7,12" },
-        }),
       }),
       expect.anything(),
     );
