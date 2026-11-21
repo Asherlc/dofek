@@ -39664,3 +39664,32 @@ Local qualification and CI are separate from production throughput acceptance. T
   received sample in Instruments before closing the Sentry issue.
   [Native WAL replay](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleStore%2BInboxWriteTests.swift)
   · [Apple disk-write profiling](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
+
+## 2026-11-21 — Strava sync overdue after the history recovery pause
+
+- **Impact.** Dofek reports Strava connected, with no reauthorization request,
+  no recorded error and no attempt since the last success on November 11 at
+  18:08:19.855 UTC. The overdue alert reflects the gap in sync execution.
+- **Cause and evidence.** At 17:46:55 UTC, the live `sync-strava` queue had its
+  global pause flag set, 26 waiting jobs and zero active or delayed jobs. The
+  latest retained pause event was November 11 at 16:01:06.271 UTC, at the end
+  of the approved admission window. The backlog contains 16 one-day scheduled
+  requests and 10 targeted webhook jobs for one account. Axiom shows a Strava
+  activity-create webhook accepted and enqueued on November 18 at 23:15:27 UTC.
+  Swarm reported one running worker, and Axiom showed recent worker activity.
+  [History recovery and pause](#2026-11-11--strava-history-recovery-remains-paused-server-7h)
+  · [BullMQ queue pausing](https://docs.bullmq.io/guide/workers/pausing-queues)
+  · [Axiom query runbook](axiom-observability-runbook.md#queries).
+- **Recovery pending approval.** Confirm the queue can reopen and use the
+  existing BullMQ resume operation with monitoring. Verify a new successful
+  Strava sync and check date coverage against the queued requests, whose
+  one-day windows are anchored to their original request times. The historical
+  operation's downstream processing was verified on November 16. This check
+  was read-only in production. The alert remains open and API quota headroom
+  is unverified.
+  [Sync window handling](../src/jobs/sync-job-window.ts)
+  · [Historical operation completion](#2026-11-16--cdc-publication-recovery-and-strava-operation-reconciliation-server-7h).
+- **Retrospective.** Checking the pause event and job payload summaries
+  explained the lack of attempts. The processing runbook could ask operators
+  to record who owns reopening a provider queue after a bounded recovery.
+  [Processing status runbook](processing-status-runbook.md#diagnosis).
