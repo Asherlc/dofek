@@ -1,6 +1,7 @@
 {
   "version": 1,
   "agents": {
-    "whoop-battery-status": "7882f4e8-4c8c-4046-bde8-fe969e33e90a"
+    "whoop-battery-status": "7882f4e8-4c8c-4046-bde8-fe969e33e90a",
+    "late-workouts-and-sleep": "b653b310-4771-4979-a67d-c43235fe9b21"
   }
 }

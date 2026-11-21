@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Late workouts &amp; sleep</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --ls-surface: light-dark(#fdfbf7, #191b22);
+    --ls-raised: light-dark(#eeeff8, #292d42);
+    --ls-selected: light-dark(#eff0f8, #252a3d);
+    --ls-ink: light-dark(#222433, #f1eff6);
+    --ls-secondary: light-dark(#565a6e, #b8bdd0);
+    --ls-accent: light-dark(#464d92, #b7bffb);
+    --ls-start: light-dark(#9f5733, #efad86);
+    --ls-line: light-dark(#d9dbe6, #3d435a);
+    --ls-interim: light-dark(#dadff2, #444d73);
+    --ls-ring: light-dark(#4e579c, #bac3ff);
+    --ls-canvas: light-dark(#f3f1f5, #14151a);
+    --ls-dot: light-dark(#d6d3df, #353745);
+    --ls-radius: 20px;
+    --ls-inset: clamp(13px, 3.2vw, 27px);
+  }
+  body { margin: 0; background-color: var(--ls-canvas); }
+  #late-sleep-preview {
+    background: radial-gradient(circle, var(--ls-dot) 0.85px, transparent 1px) 0 0 / 17px 17px;
+    padding: clamp(8px, 2.4vw, 25px);
+    font: 14px / 1.45 system-ui, sans-serif;
+  }
+  #late-sleep-preview * { box-sizing: border-box; }
+  #late-sleep-preview .ls-report { max-width: 690px; margin: auto; color: var(--ls-ink); background: var(--ls-surface); border: 1px solid var(--ls-line); border-radius: var(--ls-radius); padding: var(--ls-inset); }
+  #late-sleep-preview h2, #late-sleep-preview h3, #late-sleep-preview p, #late-sleep-preview dl, #late-sleep-preview dd { margin: 0; }
+  #late-sleep-preview h2 { font-size: clamp(21px, 4vw, 29px); letter-spacing: -0.045em; font-weight: 650; line-height: 1.15; }
+  #late-sleep-preview h3 { font-size: 14px; line-height: 1.3; font-weight: 650; }
+  #late-sleep-preview .ls-heading { display: flex; gap: 12px; align-items: center; margin-bottom: 23px; }
+  #late-sleep-preview .ls-heading p { margin-top: 4px; }
+  #late-sleep-preview .ls-moon { width: 41px; height: 41px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 12px; background: var(--ls-raised); color: var(--ls-accent); }
+  #late-sleep-preview .ls-moon { position: relative; }
+  #late-sleep-preview .ls-moon::before { content: ""; width: 13px; height: 13px; border-radius: 50%; box-shadow: -3px 2px 0 1px currentColor; margin: -3px 0 0 3px; }
+  #late-sleep-preview .ls-star { position: absolute; top: 7px; right: 7px; font-size: 12px; line-height: 1; }
+  #late-sleep-preview .ls-meta, #late-sleep-preview .ls-key, #late-sleep-preview .ls-scale, #late-sleep-preview small { font-size: 12px; color: var(--ls-secondary); }
+  #late-sleep-preview .ls-chart-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; }
+  #late-sleep-preview .ls-key { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 9px; }
+  #late-sleep-preview .ls-key span { display: inline-flex; align-items: center; gap: 7px; }
+  #late-sleep-preview .ls-square, #late-sleep-preview .ls-circle { display: inline-block; width: 8px; height: 8px; flex-shrink: 0; }
+  #late-sleep-preview .ls-square { background: var(--ls-start); border-radius: 1px; }
+  #late-sleep-preview .ls-circle { background: var(--ls-accent); border-radius: 50%; }
+  #late-sleep-preview .ls-axis, #late-sleep-preview .ls-night { display: grid; grid-template-columns: 82px minmax(0, 1fr) 109px; gap: 10px; align-items: center; }
+  #late-sleep-preview .ls-axis { padding: 0 9px; margin-top: 9px; }
+  #late-sleep-preview .ls-scale { grid-column: 2; position: relative; display: flex; justify-content: space-between; height: 22px; white-space: nowrap; }
+  #late-sleep-preview .ls-scale span:nth-child(2) { position: absolute; right: calc(16.6667% + 7px); }
+  #late-sleep-preview .ls-night { appearance: none; border: 0; width: 100%; text-align: left; background: transparent; color: inherit; font: inherit; padding: 8px 9px; border-radius: 8px; min-height: 51px; }
+  #late-sleep-preview button, #late-sleep-preview summary { cursor: pointer; }
+  #late-sleep-preview .ls-night:hover, #late-sleep-preview .ls-night[aria-pressed="true"] { background: var(--ls-selected); }
+  #late-sleep-preview .ls-night:focus-visible, #late-sleep-preview a:focus-visible, #late-sleep-preview summary:focus-visible { outline: 2px solid var(--ls-ring); outline-offset: 2px; }
+  #late-sleep-preview .ls-date, #late-sleep-preview .ls-status { display: grid; gap: 1px; }
+  #late-sleep-preview .ls-night strong { font-size: 13px; font-weight: 620; }
+  #late-sleep-preview .ls-status { text-align: right; }
+  #late-sleep-preview .ls-track { position: relative; height: 25px; display: block; }
+  #late-sleep-preview .ls-track::before { content: ""; position: absolute; top: 12px; inset-inline: 0; height: 1px; background: var(--ls-line); }
+  #late-sleep-preview .ls-track::after { content: ""; position: absolute; top: 1px; bottom: 1px; left: 83.3333%; width: 1px; background: var(--ls-secondary); opacity: .65; }
+  #late-sleep-preview .ls-range { position: absolute; left: var(--finish); right: calc(100% - var(--onset)); top: 10px; height: 5px; background: var(--ls-interim); }
+  #late-sleep-preview .ls-finish, #late-sleep-preview .ls-onset { position: absolute; z-index: 1; top: 8.5px; transform: translateX(-50%); }
+  #late-sleep-preview .ls-finish { left: var(--finish); }
+  #late-sleep-preview .ls-onset { left: var(--onset); }
+  #late-sleep-preview .ls-missing { font-size: 12px; color: var(--ls-secondary); }
+  #late-sleep-preview .ls-evidence { margin-top: 13px; padding: 14px; border: 1px solid var(--ls-line); border-radius: 12px; }
+  #late-sleep-preview .ls-evidence-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 5px 12px; }
+  #late-sleep-preview .ls-pill { padding: 3px 8px; border-radius: 20px; color: var(--ls-accent); background: var(--ls-raised); font-size: 12px; font-weight: 620; }
+  #late-sleep-preview .ls-readings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px 13px; margin-top: 11px; }
+  #late-sleep-preview .ls-readings dt, #late-sleep-preview .ls-provenance, #late-sleep-preview details { font-size: 12px; color: var(--ls-secondary); }
+  #late-sleep-preview .ls-readings dd { font-size: clamp(14px, 3.1vw, 20px); font-weight: 610; line-height: 1.25; font-variant-numeric: tabular-nums; }
+  #late-sleep-preview .ls-readings small { display: block; margin-top: 2px; font-weight: 400; }
+  #late-sleep-preview .ls-provenance { margin-top: 11px; }
+  #late-sleep-preview details { margin-top: 7px; }
+  #late-sleep-preview details p { margin: 5px 0 0 14px; }
+  #late-sleep-preview summary { color: var(--ls-accent); width: fit-content; }
+  #late-sleep-preview .ls-study { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 5px 13px; padding: 13px 0 0; margin-top: 15px; border-top: 1px solid var(--ls-line); }
+  #late-sleep-preview .ls-study p, #late-sleep-preview .ls-study a { color: var(--ls-secondary); font-size: 12px; margin-top: 3px; }
+  #late-sleep-preview .ls-study a { color: var(--ls-accent); text-underline-offset: 3px; }
+  @media (max-width: 470px) {
+    #late-sleep-preview .ls-axis, #late-sleep-preview .ls-night { grid-template-columns: 60px minmax(0, 1fr) 84px; gap: 5px; padding-inline: 5px; }
+    #late-sleep-preview .ls-scale span:nth-child(2) { right: 6px; }
+    #late-sleep-preview .ls-scale span:last-child { display: none; }
+    #late-sleep-preview .ls-readings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 390px) {
+    #late-sleep-preview .ls-axis { display: block; }
+    #late-sleep-preview .ls-night { grid-template-columns: 1fr 1fr; row-gap: 2px; }
+    #late-sleep-preview .ls-track, #late-sleep-preview .ls-missing { grid-column: 1 / -1; grid-row: 2; }
+  }
+</style>
+</head>
+<body>
+<div id="late-sleep-preview">
+  <article data-dc-id="evidence-report" class="ls-report" aria-label="Late workouts and sleep mockup">
+    <header data-dc-id="report-heading" class="ls-heading">
+      <div class="ls-moon" aria-hidden="true"><span class="ls-star">+</span></div>
+      <div>
+        <h2 data-dc-id="report-title">Late workouts &amp; sleep</h2>
+        <p data-dc-id="sample-date-range" class="ls-meta">Sample data · Nov 8–21, 2026 · Pacific time</p>
+      </div>
+    </header>
+
+    <section data-dc-id="night-comparison" aria-label="Workout timing and sleep by night">
+      <div data-dc-id="comparison-heading" class="ls-chart-heading">
+        <h3>Compared with your usual sleep onset</h3>
+        <span class="ls-meta">3 matched nights · 2 with load</span>
+      </div>
+      <div data-dc-id="timing-legend" class="ls-key" aria-hidden="true">
+        <span><b class="ls-square"></b> Workout finish</span>
+        <span><b class="ls-circle"></b> Sleep onset</span>
+      </div>
+      <div data-dc-id="timing-axis" class="ls-axis" aria-hidden="true">
+        <div class="ls-scale"><span>5 h earlier</span><span>Usual onset</span><span>1 h later</span></div>
+      </div>
+
+      <div class="ls-nights" role="group" aria-label="Select a night to see its evidence">
+        <button class="ls-night" type="button" data-dc-id="night-nov-10" data-night="nov10" aria-pressed="false" aria-controls="ls-evidence" aria-label="November 10, workout finished 4 hours 45 minutes before usual onset, sleep began 10 minutes before usual, light load">
+          <span class="ls-date"><strong>Nov 10</strong><small>Tue · Ride</small></span>
+          <span class="ls-track" style="--finish:4.1667%; --onset:80.5556%" aria-hidden="true">
+            <span class="ls-range"></span><span class="ls-square ls-finish"></span><span class="ls-circle ls-onset"></span>
+          </span>
+          <span class="ls-status"><strong>Light</strong><small>7 h 38 m asleep</small></span>
+        </button>
+        <button class="ls-night" type="button" data-dc-id="night-nov-13" data-night="nov13" aria-pressed="true" aria-controls="ls-evidence" aria-label="November 13, workout finished 1 hour 15 minutes before usual onset, sleep began 25 minutes after usual, high load">
+          <span class="ls-date"><strong>Nov 13</strong><small>Fri · Run</small></span>
+          <span class="ls-track" style="--finish:62.5%; --onset:90.2778%" aria-hidden="true">
+            <span class="ls-range"></span><span class="ls-square ls-finish"></span><span class="ls-circle ls-onset"></span>
+          </span>
+          <span class="ls-status"><strong>High</strong><small>7 h 06 m asleep</small></span>
+        </button>
+        <button class="ls-night" type="button" data-dc-id="night-nov-15" data-night="nov15" aria-pressed="false" aria-controls="ls-evidence" aria-label="November 15, workout finished 20 minutes before usual onset, sleep began 29 minutes after usual, load unknown">
+          <span class="ls-date"><strong>Nov 15</strong><small>Sun · Ride</small></span>
+          <span class="ls-track" style="--finish:77.7778%; --onset:91.3889%" aria-hidden="true">
+            <span class="ls-range"></span><span class="ls-square ls-finish"></span><span class="ls-circle ls-onset"></span>
+          </span>
+          <span class="ls-status"><strong>Load unknown</strong><small>7 h 14 m asleep</small></span>
+        </button>
+        <button class="ls-night" type="button" data-dc-id="night-nov-18" data-night="nov18" aria-pressed="false" aria-controls="ls-evidence" aria-label="November 18, sleep onset unavailable, outside the matched-night count">
+          <span class="ls-date"><strong>Nov 18</strong><small>Wed · Run</small></span>
+          <span class="ls-missing">Sleep onset unavailable</span>
+          <span class="ls-status"><strong>Unmatched</strong><small>Shown for context</small></span>
+        </button>
+      </div>
+    </section>
+
+    <section data-dc-id="selected-night" id="ls-evidence" class="ls-evidence" aria-labelledby="ls-selected" aria-live="polite">
+      <div class="ls-evidence-top">
+        <h3 data-dc-id="selected-night-title" id="ls-selected">Night ending Fri, Nov 13</h3>
+        <span data-dc-id="load-category" data-value="category" class="ls-pill">High · 258 points</span>
+      </div>
+      <dl class="ls-readings">
+        <div><dt>Workout finished</dt><dd><span data-dc-id="workout-finish" data-value="finish">9:35 PM</span><small data-value="relative">1 h 15 m before usual</small></dd></div>
+        <div><dt>Fell asleep</dt><dd><span data-dc-id="actual-sleep-onset" data-value="onset">11:15 PM</span><small data-value="onsetDelta">25 m after usual</small><small data-dc-id="interval-to-sleep" data-value="elapsed">1 h 40 m after workout</small></dd></div>
+        <div><dt>Time asleep</dt><dd><span data-dc-id="time-asleep" data-value="asleep">7 h 06 m</span></dd></div>
+      </dl>
+      <p class="ls-provenance" data-dc-id="source-attribution" data-value="provenance">Workout from FIT file · Sleep onset from Polar · Usual onset 10:50 PM from 6 November weeknights</p>
+      <details>
+        <summary data-dc-id="source-disclosure">Source records and reference nights</summary>
+        <p data-dc-id="source-records" data-value="records">FIT workout FIT-106 · Polar sleep POL-213 · Reference nights ending Nov 3, 5, 10, 13, 17, and 20.</p>
+        <p data-dc-id="recording-coverage" data-value="coverage">Complete one-second heart-rate recording. Personal maximum heart rate 190 bpm from profile.</p>
+      </details>
+    </section>
+
+    <aside data-dc-id="study-suggestion" class="ls-study" aria-label="Suggestion from the study">
+      <div><h3>Suggestion from the study</h3><p>Try finishing exercise at least four hours before sleep, or choose lighter exercise closer to bedtime.</p></div>
+      <a data-dc-id="study-citation" href="https://doi.org/10.1038/s41467-025-58271-x" target="_blank" rel="noopener noreferrer">Leota et al., 2025&nbsp;↗</a>
+    </aside>
+  </article>
+</div>
+
+<script>
+(() => {
+  const preview = document.getElementById('late-sleep-preview');
+  const nights = {
+    nov10: {
+      title: 'Night ending Tue, Nov 10', category: 'Light · 64 points', finish: '6:05 PM', relative: '4 h 45 m before usual',
+      onset: '10:40 PM', onsetDelta: '10 m before usual', asleep: '7 h 38 m', elapsed: '4 h 35 m after workout',
+      provenance: 'Workout from FIT file · Sleep onset from Polar · Usual onset 10:50 PM from 6 November weeknights',
+      records: 'FIT workout FIT-103 · Polar sleep POL-210 · Reference nights ending Nov 3, 5, 10, 13, 17, and 20.',
+      coverage: 'Complete one-second heart-rate recording. Personal maximum heart rate 190 bpm from profile.'
+    },
+    nov13: {
+      title: 'Night ending Fri, Nov 13', category: 'High · 258 points', finish: '9:35 PM', relative: '1 h 15 m before usual',
+      onset: '11:15 PM', onsetDelta: '25 m after usual', asleep: '7 h 06 m', elapsed: '1 h 40 m after workout',
+      provenance: 'Workout from FIT file · Sleep onset from Polar · Usual onset 10:50 PM from 6 November weeknights',
+      records: 'FIT workout FIT-106 · Polar sleep POL-213 · Reference nights ending Nov 3, 5, 10, 13, 17, and 20.',
+      coverage: 'Complete one-second heart-rate recording. Personal maximum heart rate 190 bpm from profile.'
+    },
+    nov15: {
+      title: 'Night ending Sun, Nov 15', category: 'Load unknown', finish: '10:45 PM', relative: '20 m before usual',
+      onset: '11:34 PM', onsetDelta: '29 m after usual', asleep: '7 h 14 m', elapsed: '49 m after workout',
+      provenance: 'Workout from FIT file · Sleep onset from Polar · Usual onset 11:05 PM from 3 November weekend nights',
+      records: 'FIT workout FIT-108 · Polar sleep POL-215 · Reference nights ending Nov 8, 15, and 21.',
+      coverage: 'Gaps in the heart-rate recording leave the load unknown. This night contributes timing and sleep duration.'
+    },
+    nov18: {
+      title: 'Night ending Wed, Nov 18', category: 'Unmatched', finish: '8:10 PM', relative: 'Recorded finish',
+      onset: 'Unknown', onsetDelta: 'Only in-bed start recorded', asleep: 'Unknown', elapsed: '',
+      provenance: 'Workout from FIT file · Sleep record from Apple Health',
+      records: 'FIT workout FIT-110 · Apple Health sleep AH-218.',
+      coverage: 'The imported sleep session begins at the in-bed timestamp. This night is excluded from the matched-night count.'
+    }
+  };
+  const buttons = [...preview.querySelectorAll('button[data-night]')];
+  const values = [...preview.querySelectorAll('[data-value]')];
+  const title = preview.querySelector('#ls-selected');
+
+  function showNight(key) {
+    const night = nights[key];
+    if (!night) return;
+    title.textContent = night.title;
+    for (const element of values) element.textContent = night[element.dataset.value];
+    for (const button of buttons) button.setAttribute('aria-pressed', String(button.dataset.night === key));
+  }
+
+  for (const button of buttons) {
+    button.addEventListener('click', () => {
+      const key = button.dataset.night;
+      showNight(key);
+    });
+  }
+  showNight('nov13');
+})();
+</script>
+</body>
+</html>
