@@ -6,10 +6,11 @@ import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { FoodRecordRepository } from "../repositories/food-record-repository.ts";
-import type {
-  EffectiveFoodRecord,
-  FoodRecordHistoryItem,
-  FoodRecordHistoryPage,
+import {
+  consumedAtSchema,
+  type EffectiveFoodRecord,
+  type FoodRecordHistoryItem,
+  type FoodRecordHistoryPage,
 } from "../repositories/food-record-types.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import {
@@ -43,6 +44,9 @@ const zeroCalorieEvidenceSchema = z
   .describe(
     "Required whenever the resulting calories are zero. Identify the product label, manufacturer, reliable food database (include a URL when available), or user confirmation of a genuinely zero-calorie item. This evidence is retained in food_description and cannot override contradictory protein/fat values. Never use zero for unknown nutrition.",
   );
+const consumedAtInputSchema = consumedAtSchema.describe(
+  "Optional time the user reported eating or drinking this item, as an ISO 8601 timestamp with an explicit UTC offset (for example 2026-11-21T00:15:00+02:00). Supply it only when the user explicitly reports the intake time. It does not change the diary date.",
+);
 const editableFieldSchema = z.enum([
   "date",
   "meal",
@@ -52,6 +56,7 @@ const editableFieldSchema = z.enum([
   "number_of_units",
   "serving_unit",
   "serving_weight_grams",
+  "consumed_at",
 ]);
 const foodRecordCursorSchema = z.object({
   record_id: z.uuid(),
@@ -99,6 +104,7 @@ function foodRecordToTransport(record: EffectiveFoodRecord) {
     number_of_units: record.numberOfUnits,
     serving_unit: record.servingUnit,
     serving_weight_grams: record.servingWeightGrams,
+    ...(record.consumedAt === undefined ? {} : { consumed_at: record.consumedAt }),
     nutrients: record.nutrients,
     source_provider: record.sourceProvider,
     provenance: Object.fromEntries(
@@ -235,9 +241,11 @@ function scalarSetToDomain(set: {
   number_of_units?: number | null;
   serving_unit?: string | null;
   serving_weight_grams?: number | null;
+  consumed_at?: string;
 }) {
   return {
     ...(set.date !== undefined ? { date: set.date } : {}),
+    ...(set.consumed_at !== undefined ? { consumedAt: set.consumed_at } : {}),
     ...(set.meal !== undefined ? { meal: set.meal } : {}),
     ...(set.food_name !== undefined ? { foodName: set.food_name } : {}),
     ...(set.food_description !== undefined ? { foodDescription: set.food_description } : {}),
@@ -260,6 +268,7 @@ function editableFieldToDomain(field: z.infer<typeof editableFieldSchema>) {
     number_of_units: "numberOfUnits",
     serving_unit: "servingUnit",
     serving_weight_grams: "servingWeightGrams",
+    consumed_at: "consumedAt",
   } as const;
   return fieldNames[field];
 }
@@ -380,6 +389,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
           .nullable()
           .optional()
           .describe("Weight actually consumed in grams, not the label's reference serving weight."),
+        consumed_at: consumedAtInputSchema.optional(),
         nutrients: z
           .object({
             calories: nutrientAmountSchema,
@@ -417,6 +427,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
       number_of_units,
       serving_unit,
       serving_weight_grams,
+      consumed_at,
       nutrients,
     }) => {
       requireMutationScopes(context);
@@ -434,6 +445,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
               numberOfUnits: number_of_units,
               servingUnit: serving_unit,
               servingWeightGrams: serving_weight_grams,
+              consumedAt: consumed_at,
               nutrients,
             }),
           ),
@@ -464,6 +476,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
           number_of_units: z.number().finite().nonnegative().nullable().optional(),
           serving_unit: nullableNonemptyTextSchema.optional(),
           serving_weight_grams: z.number().finite().nonnegative().nullable().optional(),
+          consumed_at: consumedAtInputSchema.optional(),
         }),
         clear: z.array(editableFieldSchema),
         nutrient_set: z

@@ -51,6 +51,7 @@ import { registerPerformanceComparisonTool } from "./performance-comparison-tool
 import { listProviderStatuses } from "./provider-status.ts";
 import { registerRecoveryTrainingSeriesTool } from "./recovery-training-series-tool.ts";
 import { registerRepeatedEffortsTool } from "./repeated-efforts-tool.ts";
+import { registerRunningRaceForecastTool } from "./running-race-forecast-tool.ts";
 import { registerStrengthProgressionTool } from "./strength-progression-tool.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { requireMcpScope } from "./token-repository.ts";
@@ -278,6 +279,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   registerEffortTrendTool(server, context);
   registerCyclingPerformanceTool(server, context);
   registerCyclingPowerCurveTool(server, context);
+  registerRunningRaceForecastTool(server, context);
   registerCyclingTrainingMetricsTool(server, context);
   registerActivityStreamsTool(server, context);
   registerActivityTimeseriesTool(server, context);

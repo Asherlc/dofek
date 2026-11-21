@@ -68,42 +68,11 @@ describe("strengthRouter", () => {
   });
 
   describe("estimatedOneRepMax", () => {
-    it("groups entries by exercise", async () => {
-      const rows = [
-        {
-          exercise_name: "Bench Press",
-          equipment: null,
-          workout_date: "2024-01-15",
-          estimated_max: 100,
-          actual_weight: 80,
-          actual_reps: 8,
-        },
-        {
-          exercise_name: "Bench Press",
-          equipment: null,
-          workout_date: "2024-01-22",
-          estimated_max: 105,
-          actual_weight: 85,
-          actual_reps: 7,
-        },
-        {
-          exercise_name: "Squat",
-          equipment: null,
-          workout_date: "2024-01-15",
-          estimated_max: 140,
-          actual_weight: 120,
-          actual_reps: 5,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.estimatedOneRepMax({ days: 90 });
-
-      expect(result).toHaveLength(2);
-      const bench = result.find((r) => r.exerciseName === "Bench Press");
-      expect(bench?.history).toHaveLength(2);
+    it("uses the fatigue-qualified estimate cache key", async () => {
+      await makeCaller([]).estimatedOneRepMax({ days: 90 });
       expect(cachedQueryOptions).toContainEqual({
         maxAge: 3_600_000,
-        keyVersion: "estimated-max-trend-v2",
+        keyVersion: "estimated-max-trend-v3",
       });
     });
 

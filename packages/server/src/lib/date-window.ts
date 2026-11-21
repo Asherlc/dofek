@@ -27,6 +27,7 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
     input: "custom",
   },
   "cycling.activities": { defaultDays: 90, routerFile: "cycling.ts", input: "custom" },
+  "cycling.durability": { defaultDays: 90, routerFile: "cycling.ts", input: "custom" },
   "cycling.performance": { defaultDays: 90, routerFile: "cycling.ts", input: "days" },
   "cyclingAdvanced.verticalAscentRate": {
     defaultDays: 90,
@@ -108,6 +109,7 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "sleep.lateWorkouts": { defaultDays: 30, routerFile: "sleep.ts", input: "dateRange" },
   "strength.estimatedOneRepMax": { defaultDays: 90, routerFile: "strength.ts", input: "days" },
   "strength.muscleGroupVolume": { defaultDays: 90, routerFile: "strength.ts", input: "days" },
+  "strength.loggedSetComparison": { defaultDays: 90, routerFile: "strength.ts", input: "days" },
   "strength.progressiveOverload": { defaultDays: 90, routerFile: "strength.ts", input: "days" },
   "strength.volumeOverTime": { defaultDays: 90, routerFile: "strength.ts", input: "days" },
   "stress.scores": { defaultDays: 90, routerFile: "stress.ts", input: "dateRange" },

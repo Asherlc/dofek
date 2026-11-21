@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dofek Web · Training / Cycling</title>
+  <link rel="stylesheet" href="app-preview.css">
+  <script defer src="app-preview.js"></script>
+</head>
+<body class="web">
+  <aside class="sidebar" data-dc-id="app-sidebar">
+    <div class="brand"><img src="dofek-icon.svg" alt="">Dofek</div>
+    <nav class="primary-nav" aria-label="App sections">
+      <span>Overview</span><span aria-current="page">Training</span><span>Activities</span>
+      <span>Sleep</span><span>Nutrition</span><span>Body</span><span>Correlation</span><span>Alerts</span>
+    </nav>
+  </aside>
+  <div>
+    <nav class="training-tabs" aria-label="Training sections" data-dc-id="training-tabs">
+      <span>Overview</span><span>Endurance</span><span aria-current="page">Cycling</span><span>Running</span>
+      <span>Strength</span><span>Hiking</span><span>Climbing</span><span>Recovery</span>
+    </nav>
+    <main aria-label="Cycling training">
+      <fieldset class="range" aria-label="Time range" data-dc-id="time-range">
+        <label><input type="radio" name="range" value="7">7d</label>
+        <label><input type="radio" name="range" value="14">14d</label>
+        <label><input type="radio" name="range" value="30" checked>30d</label>
+        <label><input type="radio" name="range" value="90">90d</label>
+        <label><input type="radio" name="range" value="365">1y</label>
+        <label><input type="radio" name="range" value="Infinity">All</label>
+      </fieldset>
+      <section class="card" aria-labelledby="volume-title" data-dc-id="cycling-volume">
+        <div class="volume-heading"><h2 id="volume-title">Cycling Volume</h2><span>Time</span></div>
+        <svg class="chart" viewBox="0 0 488 144" role="img" aria-labelledby="volume-chart-title">
+          <title id="volume-chart-title">Sample cycling volume for four weeks, ranging from five to eight hours</title>
+          <text x="8" y="25">Time (h:mm)</text>
+          <line x1="45" y1="44" x2="473" y2="44"/><line x1="45" y1="76" x2="473" y2="76"/><line x1="45" y1="108" x2="473" y2="108"/>
+          <text x="10" y="48">8:00</text><text x="10" y="80">4:00</text><text x="10" y="112">0:00</text>
+          <rect x="76" y="61" width="39" height="47" rx="2"/><rect x="184" y="49" width="39" height="59" rx="2"/>
+          <rect x="292" y="44" width="39" height="64" rx="2"/><rect x="400" y="67" width="39" height="41" rx="2"/>
+          <g text-anchor="middle"><text x="95" y="128">Oct 19</text><text x="203" y="128">Oct 26</text><text x="311" y="128">Nov 2</text><text x="419" y="128">Nov 9</text></g>
+        </svg>
+      </section>
+      <section aria-labelledby="curve-title" data-dc-id="power-curve">
+        <h2 class="section-title" id="curve-title">Power Duration Curve</h2>
+        <div class="card">
+          <div class="curve-grid">
+            <svg class="chart" viewBox="0 0 484 144" role="img" aria-labelledby="curve-chart-title">
+              <title id="curve-chart-title">Sample power duration curves for the selected range and this season</title>
+              <line x1="44" y1="25" x2="474" y2="25"/><line x1="44" y1="55" x2="474" y2="55"/><line x1="44" y1="83" x2="474" y2="83"/><line x1="44" y1="107" x2="474" y2="107"/>
+              <text x="7" y="29">800 W</text><text x="7" y="59">550 W</text><text x="7" y="87">300 W</text>
+              <polyline class="season" points="70,16 188,59 330,78 452,84"/>
+              <polyline data-recent-curve points="70,23 188,63 330,80 452,86"/>
+              <g text-anchor="middle"><text x="70" y="129">10 s</text><text x="188" y="129">1 min</text><text x="330" y="129">5 min</text><text x="452" y="129">20 min</text></g>
+            </svg>
+            <table class="curve-summary" aria-label="Power summary">
+              <thead><tr><th>Duration</th><th>Selected range</th><th>This season</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">10 s</th><td data-recent-value>815 W</td><td>878 W</td></tr>
+                <tr><th scope="row">1 min</th><td data-recent-value>472 W</td><td>504 W</td></tr>
+                <tr><th scope="row">5 min</th><td data-recent-value>320 W</td><td>339 W</td></tr>
+                <tr><th scope="row">20 min</th><td data-recent-value>267 W</td><td>283 W</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="legend"><span data-recent-label>30d</span><span>This season</span></div>
+        </div>
+      </section>
+      <section class="card" aria-labelledby="durability-heading" data-dc-id="durability" data-durability></section>
+    </main>
+  </div>
+</body>
+</html>

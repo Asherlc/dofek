@@ -23,7 +23,7 @@ export const sleepRouter = router({
         ctx.accessWindow,
         ctx.sensorStore,
       ).list(input),
-    { outputSchema: lateWorkoutSleepSchema, scopeToAccessWindow: true },
+    { outputSchema: lateWorkoutSleepSchema, scopeByAccessWindow: true },
   ),
 
   list: selectedChartDateRangeQuery(
