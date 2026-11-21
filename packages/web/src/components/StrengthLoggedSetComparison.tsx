@@ -89,9 +89,9 @@ export function StrengthLoggedSetComparison({
                   {comparison.latest ? ` → ${weight(comparison.latest.weightKg)}` : ""}
                 </strong>
                 <p className="text-xs text-muted">
-                  {formatDateMedium(comparison.first.date)}
+                  {formatDateMedium(comparison.first.date, { timeZone: "UTC" })}
                   {comparison.latest
-                    ? ` to ${formatDateMedium(comparison.latest.date)}`
+                    ? ` to ${formatDateMedium(comparison.latest.date, { timeZone: "UTC" })}`
                     : " · One recorded date"}
                 </p>
               </div>
@@ -118,7 +118,7 @@ export function StrengthLoggedSetComparison({
                   return (
                     <tr key={session.activityId} className="border-b border-border">
                       <th scope="row" className="py-2 text-left">
-                        {formatDateMedium(session.date)}
+                        {formatDateMedium(session.date, { timeZone: "UTC" })}
                       </th>
                       <td className="text-center">{session.loggedSets}</td>
                       <td className="text-center">

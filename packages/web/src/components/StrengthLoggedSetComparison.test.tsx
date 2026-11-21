@@ -57,3 +57,10 @@ it("includes the year in recorded dates", () => {
   render(<StrengthLoggedSetComparison data={loggedSetFixture} />);
   expect(screen.getAllByText(/2026/).length).toBeGreaterThan(0);
 });
+
+it("preserves server calendar dates in sessions and comparison endpoints", () => {
+  render(<StrengthLoggedSetComparison data={loggedSetFixture} />);
+  expect(screen.getByText("Nov 3, 2026 to Nov 20, 2026")).toBeTruthy();
+  expect(screen.getByRole("rowheader", { name: "Nov 3, 2026" })).toBeTruthy();
+  expect(screen.getByRole("rowheader", { name: "Nov 12, 2026" })).toBeTruthy();
+});

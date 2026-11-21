@@ -504,13 +504,8 @@ export class StrengthProgressionRepository extends BaseRepository {
           byReps.set(set.reps, dates);
           const endpoint = { ...set, activityId: session.activityId, date: session.date };
           const current = dates.get(session.date);
-          if (
-            !current ||
-            endpoint.weightKg > current.weightKg ||
-            (endpoint.weightKg === current.weightKg &&
-              (endpoint.activityId < current.activityId ||
-                (endpoint.activityId === current.activityId && endpoint.setId < current.setId)))
-          ) {
+          // Sessions are ordered by activity ID within each date; keep the first equal load.
+          if (!current || endpoint.weightKg > current.weightKg) {
             dates.set(session.date, endpoint);
           }
         }

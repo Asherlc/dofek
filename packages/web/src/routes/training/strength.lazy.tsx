@@ -1,3 +1,4 @@
+import { keepPreviousData } from "@tanstack/react-query";
 import { createLazyFileRoute } from "@tanstack/react-router";
 import { EstimatedMaxChart } from "../../components/EstimatedMaxChart.tsx";
 import { MuscleGroupVolumeChart } from "../../components/MuscleGroupVolumeChart.tsx";
@@ -16,10 +17,10 @@ export const Route = createLazyFileRoute("/training/strength")({
 
 function StrengthTab() {
   const { days } = useTrainingDays();
-  const loggedSets = trpc.strength.loggedSetComparison.useQuery(
-    selectedRangeQueryInput(days),
-    TRAINING_SLOW_QUERY_OPTIONS,
-  );
+  const loggedSets = trpc.strength.loggedSetComparison.useQuery(selectedRangeQueryInput(days), {
+    ...TRAINING_SLOW_QUERY_OPTIONS,
+    placeholderData: keepPreviousData,
+  });
   const strengthVolume = trpc.strength.volumeOverTime.useQuery(
     selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,

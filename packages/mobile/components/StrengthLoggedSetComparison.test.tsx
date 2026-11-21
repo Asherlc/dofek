@@ -92,3 +92,12 @@ it("visibly marks the active exercise and rep choices", () => {
   expect(eight.style.borderColor).toBe(barbell.style.borderColor);
   expect(six.style.borderColor).toBe(dumbbell.style.borderColor);
 });
+
+it("preserves server calendar dates in sessions and comparison endpoints", () => {
+  render(
+    <StrengthLoggedSetComparison data={loggedSetFixture} units={new UnitConverter("metric")} />,
+  );
+  expect(screen.getByText("Nov 3, 2026 to Nov 20, 2026")).toBeTruthy();
+  expect(screen.getByText("Nov 3, 2026 · 3 logged sets")).toBeTruthy();
+  expect(screen.getByText("Nov 12, 2026 · 2 logged sets")).toBeTruthy();
+});
