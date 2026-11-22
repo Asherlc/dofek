@@ -784,6 +784,75 @@ describe("streamFitFile", () => {
     expect(onRecordBatch).not.toHaveBeenCalled();
   });
 
+  it("accepts exactly the maximum batch size and tolerates consumers without lap or step handlers", async () => {
+    for (const type of ["laps", "workoutSteps"] as const) {
+      const decoder = simulatedDecoder();
+      mockSpawn.mockReturnValue(decoder.child);
+      queueMicrotask(async () => {
+        decoder.send(metadataMessage());
+        await decoder.waitForAcknowledgement(1);
+        decoder.send({ type, messages: Array.from({ length: 250 }, () => ({})) });
+        await decoder.waitForAcknowledgement(2);
+        decoder.send({ type: "end", messageCount: 250 });
+        decoder.finish();
+      });
+      const { onLapBatch, onWorkoutStepBatch, ...withoutHandlers } = noopConsumer();
+      expect(onLapBatch).toBeDefined();
+      expect(onWorkoutStepBatch).toBeDefined();
+      await expect(streamFitFile("activity.fit", withoutHandlers)).resolves.toEqual({
+        messageCount: 250,
+      });
+    }
+  });
+
+  it("rejects lap and workout step batches for a weight file", async () => {
+    for (const type of ["laps", "workoutSteps"] as const) {
+      const decoder = simulatedDecoder();
+      mockSpawn.mockReturnValue(decoder.child);
+      const handler = vi.fn(async () => undefined);
+      queueMicrotask(async () => {
+        decoder.send(metadataMessage({ fileType: 9, fileTypeName: "weight" }));
+        await decoder.waitForAcknowledgement(1);
+        decoder.send({ type, messages: [{}] });
+        decoder.finish();
+      });
+      await expect(
+        streamFitFile(
+          "weight.fit",
+          noopConsumer({ onLapBatch: handler, onWorkoutStepBatch: handler }),
+        ),
+      ).rejects.toThrow(`Native FIT decoder returned ${type} for a weight file`);
+      expect(handler).not.toHaveBeenCalled();
+    }
+  });
+
+  it("restarts the idle timeout after each lap and workout step batch", async () => {
+    for (const type of ["laps", "workoutSteps"] as const) {
+      vi.useFakeTimers();
+      const decoder = simulatedDecoder();
+      mockSpawn.mockReturnValue(decoder.child);
+      const streamPromise = streamFitFile("activity.fit", noopConsumer());
+      const rejection = expect(streamPromise).rejects.toThrow(
+        "Native FIT decoder was idle for 120000ms",
+      );
+      decoder.send(metadataMessage());
+      await decoder.waitForAcknowledgement(1);
+      await vi.advanceTimersByTimeAsync(100_000);
+      decoder.send({ type, messages: [{}] });
+      await decoder.waitForAcknowledgement(2);
+      await vi.advanceTimersByTimeAsync(100_000);
+      expect(decoder.child.kill).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(20_000);
+      if (decoder.child.kill.mock.calls.length === 0) {
+        decoder.finish();
+      }
+      expect(decoder.child.kill).toHaveBeenCalledWith("SIGKILL");
+      decoder.finish();
+      await rejection;
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects record batches for a weight file", async () => {
     const decoder = simulatedDecoder();
     mockSpawn.mockReturnValue(decoder.child);
