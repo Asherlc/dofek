@@ -3,6 +3,7 @@ import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import { createFileRoute } from "@tanstack/react-router";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
+import { CyclingDurability } from "../../components/CyclingDurability.tsx";
 
 import { CyclingDecouplingChart } from "../../components/CyclingDecouplingChart.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
@@ -110,47 +111,50 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
       {performanceUnavailable ? (
         <QueryStatePanel contextLabel="Cycling performance" error={performance.error} />
       ) : (
-        <>
-          {/* Power Duration Curve with comparison */}
-          <Section title="Power Duration Curve">
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6">
-              <PowerCurveChart
-                data={performance.data?.powerCurve.recent.points ?? []}
-                comparisonData={performance.data?.powerCurve.season.points ?? []}
-                model={recentModel}
-                availability={performance.data?.availability?.powerCurve}
-                loading={loading}
-              />
-              <PowerSummaryTable
-                recentByDuration={recentByDuration}
-                seasonByDuration={seasonByDuration}
-                recentModel={recentModel}
-                seasonModel={seasonModel}
-                recentMap={recentSummary?.maximalAerobicPower ?? null}
-                seasonMap={seasonSummary?.maximalAerobicPower ?? null}
-                recentVo2max={recentSummary?.vo2Max ?? null}
-                seasonVo2max={seasonSummary?.vo2Max ?? null}
-                recentTte={recentSummary?.timeToExhaustionSeconds ?? null}
-                seasonTte={seasonSummary?.timeToExhaustionSeconds ?? null}
-                loading={loading}
-                recentDays={days}
-              />
-            </div>
-            {/* Period labels */}
-            <div className="mt-3 flex flex-wrap gap-4 text-xs">
-              <PeriodLabel
-                color={chartColors.purple}
-                label={formatTimeRangeLabel(days)}
-                model={recentModel}
-              />
-              <PeriodLabel
-                color={chartThemeColors.axisLabel}
-                label="This season"
-                model={seasonModel}
-              />
-            </div>
-          </Section>
+        <Section title="Power Duration Curve">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6">
+            <PowerCurveChart
+              data={performance.data?.powerCurve.recent.points ?? []}
+              comparisonData={performance.data?.powerCurve.season.points ?? []}
+              model={recentModel}
+              availability={performance.data?.availability?.powerCurve}
+              loading={loading}
+            />
+            <PowerSummaryTable
+              recentByDuration={recentByDuration}
+              seasonByDuration={seasonByDuration}
+              recentModel={recentModel}
+              seasonModel={seasonModel}
+              recentMap={recentSummary?.maximalAerobicPower ?? null}
+              seasonMap={seasonSummary?.maximalAerobicPower ?? null}
+              recentVo2max={recentSummary?.vo2Max ?? null}
+              seasonVo2max={seasonSummary?.vo2Max ?? null}
+              recentTte={recentSummary?.timeToExhaustionSeconds ?? null}
+              seasonTte={seasonSummary?.timeToExhaustionSeconds ?? null}
+              loading={loading}
+              recentDays={days}
+            />
+          </div>
+          {/* Period labels */}
+          <div className="mt-3 flex flex-wrap gap-4 text-xs">
+            <PeriodLabel
+              color={chartColors.purple}
+              label={formatTimeRangeLabel(days)}
+              model={recentModel}
+            />
+            <PeriodLabel
+              color={chartThemeColors.axisLabel}
+              label="This season"
+              model={seasonModel}
+            />
+          </div>
+        </Section>
+      )}
 
+      <CyclingDurability days={days} />
+
+      {!performanceUnavailable && (
+        <>
           {estimateEvidence && (
             <EstimateEvidencePanel
               recent={estimateEvidence.recent}

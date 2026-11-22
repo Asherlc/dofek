@@ -29,6 +29,7 @@ const mockProviders = {
   "eight-sleep": { id: "eight-sleep" },
   zwift: { id: "zwift" },
   trainerroad: { id: "trainerroad" },
+  runalyze: { id: "runalyze" },
   ultrahuman: { id: "ultrahuman" },
   concept2: { id: "concept2" },
   xert: { id: "xert" },
@@ -107,6 +108,9 @@ vi.mock("../providers/zwift.ts", () => ({
 }));
 vi.mock("../providers/trainerroad.ts", () => ({
   TrainerRoadProvider: mockProviderConstructor(mockProviders.trainerroad),
+}));
+vi.mock("../providers/runalyze.ts", () => ({
+  RunalyzeProvider: mockProviderConstructor(mockProviders.runalyze),
 }));
 vi.mock("../providers/ultrahuman.ts", () => ({
   UltrahumanProvider: mockProviderConstructor(mockProviders.ultrahuman),

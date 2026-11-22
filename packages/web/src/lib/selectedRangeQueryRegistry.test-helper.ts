@@ -37,6 +37,7 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
   ],
   sleep: ["sleep.list", "insights.compute"],
   strength: [
+    "strength.loggedSetComparison",
     "strength.volumeOverTime",
     "strength.estimatedOneRepMax",
     "strength.muscleGroupVolume",

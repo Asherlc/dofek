@@ -48,6 +48,10 @@ const STRAIN_COMPANION_RESPONSES = {
     baselineAttempts: 40,
     increasePercent: 25,
   },
+  "strength.loggedSetComparison": {
+    exercises: [],
+    research: { summary: "", url: "https://pmc.ncbi.nlm.nih.gov/articles/pmid/30153194/" },
+  },
   "strength.volumeOverTime": [
     {
       week: "2026-09-28",

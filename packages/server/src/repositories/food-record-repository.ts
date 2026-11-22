@@ -3,6 +3,7 @@ import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import {
+  consumedAtSchema,
   type EffectiveFoodRecord,
   type FoodRecordFieldDecision,
   type FoodRecordHistoryItem,
@@ -58,6 +59,9 @@ const effectiveFoodRecordRowSchema = z.object({
   serving_unit_change_id: z.uuid().nullable(),
   serving_weight_grams_operation: z.enum(["set", "clear"]).nullable(),
   serving_weight_grams_change_id: z.uuid().nullable(),
+  consumed_at: consumedAtSchema.nullable(),
+  consumed_at_operation: z.enum(["set", "clear"]).nullable(),
+  consumed_at_change_id: z.uuid().nullable(),
   visibility_change_id: z.uuid().nullable(),
 });
 
@@ -110,6 +114,8 @@ const storedRequestRowSchema = z.object({
 const lockedHeadRowSchema = z.object({
   identity_id: z.uuid(),
   source_entry_id: z.uuid(),
+  namespace: z.string(),
+  itemized: z.boolean(),
   current_version: z.uuid().nullable(),
   modifiable: z.boolean(),
 });
@@ -160,6 +166,7 @@ export interface CreateFoodRecordSourceInput {
   numberOfUnits?: number | null;
   servingUnit?: string | null;
   servingWeightGrams?: number | null;
+  consumedAt?: string;
   nutrients: Record<string, number>;
 }
 
@@ -260,6 +267,11 @@ function mapRecord(row: EffectiveFoodRecordRow): EffectiveFoodRecord {
       row.serving_weight_grams_operation,
       row.serving_weight_grams_change_id,
     ),
+    ...(row.consumed_at_operation === null
+      ? {}
+      : {
+          consumedAt: fieldProvenance(row.consumed_at_operation, row.consumed_at_change_id),
+        }),
     deleted:
       row.visibility_change_id === null
         ? { origin: "source", changeId: null }
@@ -284,6 +296,7 @@ function mapRecord(row: EffectiveFoodRecordRow): EffectiveFoodRecord {
     numberOfUnits: row.number_of_units,
     servingUnit: row.serving_unit,
     servingWeightGrams: row.serving_weight_grams,
+    ...(row.consumed_at === null ? {} : { consumedAt: row.consumed_at }),
     nutrients: row.nutrients,
     sourceProvider: row.source_provider,
     provenance,
@@ -327,6 +340,10 @@ function effectiveRecordQuery(where: SQL, limit: number | null = null): SQL {
       serving_unit_decision.change_id AS serving_unit_change_id,
       serving_weight_decision.operation AS serving_weight_grams_operation,
       serving_weight_decision.change_id AS serving_weight_grams_change_id,
+      CASE WHEN consumed_at_decision.operation = 'set'
+        THEN consumed_at_decision.value #>> '{}' END AS consumed_at,
+      consumed_at_decision.operation AS consumed_at_operation,
+      consumed_at_decision.change_id AS consumed_at_change_id,
       visibility.change_id AS visibility_change_id
     FROM fitness.v_food_entry_effective AS effective
     LEFT JOIN fitness.v_human_record_visibility AS visibility
@@ -364,6 +381,10 @@ function effectiveRecordQuery(where: SQL, limit: number | null = null): SQL {
       ON serving_weight_decision.user_id = effective.user_id
       AND serving_weight_decision.identity_id = effective.record_id
       AND serving_weight_decision.field = 'serving_weight_grams'
+    LEFT JOIN fitness.v_human_record_field AS consumed_at_decision
+      ON consumed_at_decision.user_id = effective.user_id
+      AND consumed_at_decision.identity_id = effective.record_id
+      AND consumed_at_decision.field = 'consumed_at'
     LEFT JOIN LATERAL (
       SELECT
         jsonb_object_agg(nutrient.nutrient_id, nutrient.amount) AS amounts,
@@ -480,11 +501,23 @@ export class FoodRecordRepository {
         SELECT
           identity.id AS identity_id,
           source.id AS source_entry_id,
+          source.itemized,
+          identity.namespace,
           head.id AS current_version,
           identity.source_key LIKE 'external:%' AS modifiable
         FROM fitness.human_record_identity AS identity
         INNER JOIN LATERAL (
-          SELECT entry.id
+          SELECT
+            entry.id,
+            -- Mirrors the effective grain rule in the daily nutrition view: an explicit
+            -- grain wins, and an unset grain is itemized when the row names a food.
+            COALESCE(entry.nutrition_grain::text, CASE
+              WHEN NULLIF(BTRIM(entry.food_name), '') IS NOT NULL
+                OR entry.meal IS NOT NULL
+                OR entry.provider_food_id IS NOT NULL
+                OR entry.provider_serving_id IS NOT NULL
+                THEN 'itemized'
+            END) IS NOT DISTINCT FROM 'itemized' AS itemized
           FROM fitness.food_entry AS entry
           WHERE entry.user_id = identity.user_id
             AND entry.provider_id = identity.namespace
@@ -608,7 +641,10 @@ export class FoodRecordRepository {
       requestHash: input.requestHash,
       kind: "create",
       actor: input.actor,
-      fields: {},
+      fields:
+        input.consumedAt === undefined
+          ? {}
+          : { consumed_at: { operation: "set", value: input.consumedAt } },
       nutrients: {},
       deleted: null,
     }).then((result) => ({ ...result, sourceEntryId: created.id }));
@@ -620,6 +656,12 @@ export class FoodRecordRepository {
     const locked = await this.#lockHead(identityId);
     if (!locked) throw new FoodRecordNotFoundError(identityId);
     if (!locked.modifiable) throw new FoodRecordPreconditionError(locked.source_entry_id);
+    if ("consumed_at" in input.fields && (locked.namespace !== "dofek" || !locked.itemized)) {
+      throw new FoodRecordPreconditionError(
+        locked.source_entry_id,
+        "Consumption time can only be recorded for itemized Dofek-authored food records.",
+      );
+    }
 
     const stored = await this.findRequest(requestId);
     if (stored) {
@@ -886,6 +928,10 @@ export class FoodRecordRepository {
           serving_unit_decision.change_id AS serving_unit_change_id,
           serving_weight_decision.operation AS serving_weight_grams_operation,
           serving_weight_decision.change_id AS serving_weight_grams_change_id,
+          CASE WHEN consumed_at_decision.operation = 'set'
+            THEN consumed_at_decision.value #>> '{}' END AS consumed_at,
+          consumed_at_decision.operation AS consumed_at_operation,
+          consumed_at_decision.change_id AS consumed_at_change_id,
           visibility.change_id AS visibility_change_id
         FROM source
         LEFT JOIN LATERAL (
@@ -941,6 +987,12 @@ export class FoodRecordRepository {
           FROM lineage AS target CROSS JOIN LATERAL jsonb_each(target.fields) AS field
           WHERE field.key = 'serving_weight_grams' ORDER BY target.depth LIMIT 1
         ) AS serving_weight_decision ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT field.value->>'operation' AS operation, field.value->'value' AS value,
+                 target.change_id
+          FROM lineage AS target CROSS JOIN LATERAL jsonb_each(target.fields) AS field
+          WHERE field.key = 'consumed_at' ORDER BY target.depth LIMIT 1
+        ) AS consumed_at_decision ON TRUE
         LEFT JOIN LATERAL (
           WITH keys AS (
             SELECT nutrient_id FROM fitness.food_entry_nutrient
