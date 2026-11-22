@@ -82,6 +82,50 @@ describe("listSleepEpisodes", () => {
     expect(episodes).toHaveLength(1);
   });
 
+  it("binds access scope and analyzes in the access timezone when detected onset access is given", async () => {
+    const store = makeMockSensorStore([]);
+    await listSleepEpisodes(store, {
+      userId: "user-1",
+      startDate: "2026-03-09",
+      endDate: "2026-03-11",
+      profileTimezone: "UTC",
+      detectedOnsetAccess: {
+        startDate: "2026-03-01",
+        endDate: "2026-03-31",
+        timezone: "Asia/Tokyo",
+      },
+    });
+    const [, , params] = vi.mocked(store.query).mock.calls[0] ?? [];
+    expect(params).toEqual({
+      userId: "user-1",
+      startDate: "2026-03-09",
+      endDate: "2026-03-11",
+      providers: [],
+      includeNaps: false,
+      analysisTimezone: "Asia/Tokyo",
+      accessStartDate: "2026-03-01",
+      accessEndDate: "2026-03-31",
+    });
+  });
+
+  it("maps episodes using the access timezone over the input timezone", async () => {
+    const store = makeMockSensorStore([row({ timezone: null, local_time_source: "unknown" })]);
+    const [episode] = await listSleepEpisodes(store, {
+      userId: "user-1",
+      startDate: "2026-03-10",
+      endDate: "2026-03-11",
+      profileTimezone: "UTC",
+      alignToProfileTimezone: true,
+      detectedOnsetAccess: {
+        startDate: "2026-03-01",
+        endDate: "2026-03-31",
+        timezone: "Asia/Tokyo",
+      },
+    });
+    expect(episode?.timing.display_timezone).toBe("Asia/Tokyo");
+    expect(episode?.timing.local_start_date).toBe("2026-03-10");
+  });
+
   it("passes copied provider bindings and explicit nap inclusion", async () => {
     const providers = ["oura", "apple"];
     const store = makeMockSensorStore([]);
