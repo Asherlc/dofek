@@ -83,6 +83,16 @@ describe("validateIntervalsIcuConfig", () => {
     process.env.INTERVALS_ICU_CLIENT_SECRET = "secret-123";
     expect(validateIntervalsIcuConfig()).toBeNull();
   });
+
+  it("rejects whitespace-only credentials as missing", () => {
+    process.env.INTERVALS_ICU_CLIENT_ID = "   ";
+    process.env.INTERVALS_ICU_CLIENT_SECRET = "secret-123";
+    expect(validateIntervalsIcuConfig()).toContain("Missing INTERVALS_ICU_CLIENT_ID");
+
+    process.env.INTERVALS_ICU_CLIENT_ID = "client-123";
+    process.env.INTERVALS_ICU_CLIENT_SECRET = "   ";
+    expect(validateIntervalsIcuConfig()).toContain("Missing INTERVALS_ICU_CLIENT_ID");
+  });
 });
 
 describe("createIntervalsIcuAuthSetup", () => {
@@ -138,6 +148,20 @@ describe("createIntervalsIcuAuthSetup", () => {
     expect(parsed.searchParams.get("scope")).toBe("ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ");
     expect(parsed.searchParams.get("code_challenge")).toBe("s256-test-challenge");
     expect(parsed.searchParams.get("code_challenge_method")).toBe("S256");
+  });
+
+  it("disables the OAuth flow when either credential is blank or missing", () => {
+    process.env.INTERVALS_ICU_CLIENT_ID = "   ";
+    process.env.INTERVALS_ICU_CLIENT_SECRET = "test-client-secret";
+    expect(requireAuthSetup().oauthConfig).toBeUndefined();
+
+    process.env.INTERVALS_ICU_CLIENT_ID = "test-client-id";
+    process.env.INTERVALS_ICU_CLIENT_SECRET = "   ";
+    expect(requireAuthSetup().oauthConfig).toBeUndefined();
+
+    delete process.env.INTERVALS_ICU_CLIENT_ID;
+    process.env.INTERVALS_ICU_CLIENT_SECRET = "test-client-secret";
+    expect(requireAuthSetup().oauthConfig).toBeUndefined();
   });
 });
 
@@ -232,12 +256,11 @@ describe("Intervals.icu OAuth exchangeCode", () => {
   it("rejects when PKCE code verifier is missing or blank", async () => {
     const setup = requireAuthSetup();
     const exchangeCode = requireExchangeCode(setup);
-    await expect(exchangeCode("test-code", "")).rejects.toThrow(
-      "Intervals.icu OAuth requires the original PKCE code verifier",
-    );
-    await expect(exchangeCode("test-code", undefined)).rejects.toThrow(
-      "Intervals.icu OAuth requires the original PKCE code verifier",
-    );
+    for (const verifier of ["", "   ", undefined]) {
+      await expect(exchangeCode("test-code", verifier)).rejects.toThrow(
+        "Intervals.icu OAuth requires the original PKCE code verifier",
+      );
+    }
   });
 
   it("identifies missing scopes on partial grants and prompts user to reconnect", async () => {
@@ -274,6 +297,48 @@ describe("Intervals.icu OAuth exchangeCode", () => {
     const exchangeCode = requireExchangeCode(setup);
     await expect(exchangeCode("code", "verifier")).rejects.toThrow(
       /ACTIVITY:READ.*WELLNESS:READ|WELLNESS:READ.*ACTIVITY:READ/i,
+    );
+  });
+
+  it("trims whitespace around granted scopes before checking the required set", async () => {
+    server.use(
+      http.post(TOKEN_URL, () => {
+        return HttpResponse.json({
+          access_token: "secret-token",
+          scope: " ACTIVITY:READ , WELLNESS:READ , CALENDAR:READ ",
+          athlete: { id: "i123" },
+        });
+      }),
+    );
+
+    const setup = requireAuthSetup();
+    const exchangeCode = requireExchangeCode(setup);
+    await expect(exchangeCode("code", "verifier")).resolves.toMatchObject({
+      scopes: " ACTIVITY:READ , WELLNESS:READ , CALENDAR:READ ",
+    });
+  });
+
+  it("reports the athlete issue when the token response has several schema problems", async () => {
+    server.use(
+      http.post(TOKEN_URL, () => {
+        return HttpResponse.json({ scope: "ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ" });
+      }),
+    );
+
+    const setup = requireAuthSetup();
+    const exchangeCode = requireExchangeCode(setup);
+    await expect(exchangeCode("code", "verifier")).rejects.toThrow(
+      "Intervals.icu token response is missing athlete information",
+    );
+  });
+
+  it("wraps a plain network failure without rethrowing the raw error", async () => {
+    server.use(http.post(TOKEN_URL, () => HttpResponse.error()));
+
+    const setup = requireAuthSetup();
+    const exchangeCode = requireExchangeCode(setup);
+    await expect(exchangeCode("code", "verifier")).rejects.toThrow(
+      "Intervals.icu token exchange network request failed",
     );
   });
 
