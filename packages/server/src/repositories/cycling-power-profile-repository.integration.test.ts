@@ -19,6 +19,12 @@ describe("Cycling power profile database semantics", () => {
   const outsideRide = randomUUID();
   const deletedRide = randomUUID();
   const otherRide = randomUUID();
+  const mergedRide = randomUUID();
+  const mergedMixedRide = randomUUID();
+  const measuredRecording = randomUUID();
+  const estimatedRecording = randomUUID();
+  const mixedMeasured = randomUUID();
+  const mixedEstimated = randomUUID();
   const nearbyWeightId = randomUUID();
   const laterWeightId = randomUUID();
   const range = { startDate: "2026-10-30", endDate: "2026-10-31" };
@@ -70,6 +76,13 @@ describe("Cycling power profile database semantics", () => {
         activity_id UUID, user_id UUID, provider_id String, raw Nullable(String),
         refresh_version UInt64, is_deleted UInt8
       ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
+    });
+    await client.command({
+      query: `
+      CREATE TABLE ${database}.activity_sensor_sample (
+        activity_id UUID, user_id UUID, recorded_at DateTime64(6, 'UTC'), channel String,
+        member_activity_id Nullable(UUID), refresh_version UInt64, is_deleted UInt8
+      ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id, channel, recorded_at)`,
     });
     await client.command({
       query: `
@@ -154,6 +167,83 @@ describe("Cycling power profile database semantics", () => {
       })),
       format: "JSONEachRow",
     });
+    const merged = [
+      [mergedRide, "2026-10-29 18:00:00", 900, [measuredRecording, estimatedRecording]],
+      [mergedMixedRide, "2026-10-28 18:00:00", 1000, [mixedMeasured, mixedEstimated]],
+    ] as const;
+    await client.insert({
+      table: `${database}.deduped_activities`,
+      values: merged.map(([id, start, , members]) => ({
+        activity_id: id,
+        user_id: userId,
+        started_at: start,
+        ended_at: "2026-11-01 09:00:00",
+        canonical_type: "cycling",
+        modality: "road",
+        name: "Merged fixture ride",
+        member_activity_ids: members,
+        refresh_version: 1,
+        is_deleted: 0,
+      })),
+      format: "JSONEachRow",
+    });
+    await client.insert({
+      table: `${database}.activity_power_curve`,
+      values: merged.map(([id, start, watts]) => ({
+        activity_id: id,
+        user_id: userId,
+        started_at: start,
+        duration_seconds: 5,
+        best_power: watts,
+        power_measurement_kind: "unknown",
+        start_offset_seconds: 100,
+        observed_samples: 6,
+        median_sample_interval_seconds: 1,
+        largest_gap_seconds: 1,
+        coverage_pct: 100,
+        source_providers: ["strava"],
+        source_devices: [],
+        refresh_version: 1,
+        is_deleted: 0,
+      })),
+      format: "JSONEachRow",
+    });
+    await client.insert({
+      table: `${database}.activity_source_records`,
+      values: [
+        [measuredRecording, true],
+        [estimatedRecording, false],
+        [mixedMeasured, true],
+        [mixedEstimated, false],
+      ].map(([id, deviceWatts]) => ({
+        activity_id: id,
+        user_id: userId,
+        provider_id: "strava",
+        raw: JSON.stringify({ device_watts: deviceWatts }),
+        refresh_version: 1,
+        is_deleted: 0,
+      })),
+      format: "JSONEachRow",
+    });
+    const sample = (activity: string, member: string, recordedAt: string) => ({
+      activity_id: activity,
+      user_id: userId,
+      recorded_at: recordedAt,
+      channel: "power",
+      member_activity_id: member,
+      refresh_version: 1,
+      is_deleted: 0,
+    });
+    await client.insert({
+      table: `${database}.activity_sensor_sample`,
+      values: [
+        sample(mergedRide, measuredRecording, "2026-10-29 18:01:42"),
+        sample(mergedRide, estimatedRecording, "2026-10-29 17:00:00"),
+        sample(mergedMixedRide, mixedMeasured, "2026-10-28 18:01:42"),
+        sample(mergedMixedRide, mixedEstimated, "2026-10-28 18:01:43"),
+      ],
+      format: "JSONEachRow",
+    });
     await client.insert({
       table: `${database}.v_body_measurement`,
       values: [
@@ -198,6 +288,20 @@ describe("Cycling power profile database semantics", () => {
         kind: "interpolated",
         sources: [{ record_id: nearbyWeightId }, { record_id: laterWeightId }],
       },
+    });
+  });
+
+  it("judges merged recordings only by those that supplied the winning samples", async () => {
+    const result = await new CyclingPowerProfileRepository(
+      postgres.db,
+      store,
+      userId,
+      "America/Los_Angeles",
+    ).read({ startDate: "2026-10-28", endDate: "2026-10-29" });
+    expect(result.efforts[0]?.effort).toMatchObject({
+      activity_id: mergedRide,
+      watts: 900,
+      power_kind: "direct",
     });
   });
 

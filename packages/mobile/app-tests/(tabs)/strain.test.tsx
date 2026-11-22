@@ -46,6 +46,22 @@ describe("StrainScreen", () => {
     );
     expect(screen.getByText("Cycling power profile")).toBeTruthy();
   });
+  it("shows an explicit error when the power profile response is malformed", async () => {
+    mockCyclingPowerProfileQuery.mockReturnValue({
+      data: { range: "invalid" },
+      isLoading: false,
+      error: null,
+    });
+    const { TrainingAnalysis } = await import("../../app/strain");
+    render(<TrainingAnalysis section="cycling" isFocused />);
+    expect(screen.getByTestId("query-state-error")).toBeTruthy();
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("Cycling power profile: Zod parse failed"),
+      }),
+      expect.objectContaining({ context: "Cycling power profile" }),
+    );
+  });
   it("requests current running response for the selected range", async () => {
     mockQueryState.timeRangePreference.days = 30;
     const { default: StrainScreen } = await import("../../app/strain");

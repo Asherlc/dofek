@@ -18,11 +18,10 @@ export const mockHrZonesInvalidate = vi.fn();
 export const mockPolarizationInvalidate = vi.fn();
 export const mockProcessingStatusInvalidate = vi.fn();
 export const mockRunningInvalidate = vi.fn();
-export const mockCyclingPowerProfileQuery = vi.fn(() => ({
-  data: undefined,
-  isLoading: false,
-  error: null,
-}));
+const emptyCyclingPowerProfileQuery = { data: undefined, isLoading: false, error: null };
+export const mockCyclingPowerProfileQuery = vi
+  .fn<() => { data: unknown; isLoading: boolean; error: null }>()
+  .mockReturnValue(emptyCyclingPowerProfileQuery);
 export const mockRouteComparisonInvalidate = vi.fn();
 export const mockRouteComparisonQuery = vi.fn();
 export const mockVolumeIncreaseQuery = vi.fn();
@@ -363,6 +362,7 @@ vi.mock("../../lib/units", () => ({
 }));
 
 export function resetStrainMocks() {
+  mockCyclingPowerProfileQuery.mockReset().mockReturnValue(emptyCyclingPowerProfileQuery);
   mockQueryState.focused = true;
   mockVolumeIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
   mockVolumeIncreaseInvalidate.mockReset().mockResolvedValue(undefined);

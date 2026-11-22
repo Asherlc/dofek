@@ -20,6 +20,7 @@ import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
 } from "@dofek/training/training";
+import { cyclingPowerProfileSchema } from "dofek-server/cycling-power-profile";
 import { useIsFocused } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -123,6 +124,17 @@ export function TrainingAnalysis({
     },
   );
   useReportQueryError(cyclingPowerProfile);
+  const parsedCyclingPowerProfile = useMemo(
+    () =>
+      cyclingPowerProfile.data === undefined
+        ? { data: undefined, error: null }
+        : safeParseData(
+            cyclingPowerProfileSchema,
+            cyclingPowerProfile.data,
+            "Cycling power profile",
+          ),
+    [cyclingPowerProfile.data],
+  );
   const climbingStrengthsQuery = trpc.climbing.strengths.useQuery(
     {
       days: strengthsAllTime ? null : days,
@@ -413,8 +425,8 @@ export function TrainingAnalysis({
       {section === "cycling" ? (
         <CyclingPowerProfile
           units={units}
-          profile={cyclingPowerProfile.data}
-          error={cyclingPowerProfile.error}
+          profile={parsedCyclingPowerProfile.data}
+          error={cyclingPowerProfile.error ?? parsedCyclingPowerProfile.error}
           loading={cyclingPowerProfile.isLoading}
         />
       ) : null}

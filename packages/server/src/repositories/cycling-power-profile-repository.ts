@@ -34,7 +34,8 @@ function profileCurveQuery(range: ProfileRange, accessWindow: AccessWindow | und
   const activityDate = "toDate(toTimeZone(activity.started_at, {timezone:String}))";
   return `/* cycling-profile:efforts */
     WITH candidates AS (
-      SELECT ${curveColumns("curve", "activity", "activity")},
+      SELECT ${curveColumns("curve", "activity", "curve")},
+        curve.started_at AS curve_started_at,
         activity.name AS activity_name,
         nullIf(activity.modality, '') AS modality
       FROM analytics.activity_power_curve AS curve FINAL
@@ -49,9 +50,26 @@ function profileCurveQuery(range: ProfileRange, accessWindow: AccessWindow | und
         AND curve.duration_seconds IN ({durations:Array(UInt32)})
     ),
     contributing_strava_members AS (
-      SELECT DISTINCT activity_id, arrayJoin(member_activity_ids) AS member_id
-      FROM candidates
-      WHERE has(source_providers, 'strava')
+      SELECT DISTINCT candidate.activity_id AS activity_id, member_id
+      FROM candidates AS candidate
+      ARRAY JOIN candidate.member_activity_ids AS member_id
+      WHERE has(candidate.source_providers, 'strava')
+        AND (length(candidate.member_activity_ids) <= 1 OR candidate.start_offset_seconds IS NULL)
+      UNION DISTINCT
+      SELECT DISTINCT candidate.activity_id AS activity_id, assumeNotNull(sample.member_activity_id) AS member_id
+      FROM candidates AS candidate
+      INNER JOIN analytics.activity_sensor_sample AS sample FINAL
+        ON sample.activity_id = toUUID(candidate.activity_id) AND sample.user_id = {userId:UUID}
+      WHERE has(candidate.source_providers, 'strava')
+        AND length(candidate.member_activity_ids) > 1
+        AND candidate.start_offset_seconds IS NOT NULL
+        AND sample.channel = 'power' AND sample.is_deleted = 0
+        AND sample.member_activity_id IS NOT NULL
+        AND sample.recorded_at >= addMilliseconds(
+          candidate.curve_started_at, toInt64(candidate.start_offset_seconds * 1000))
+        AND sample.recorded_at <= addMilliseconds(
+          candidate.curve_started_at,
+          toInt64((candidate.start_offset_seconds + candidate.duration_seconds) * 1000))
     ),
     active_strava_claims AS (
       SELECT activity_id,
@@ -83,7 +101,7 @@ function profileCurveQuery(range: ProfileRange, accessWindow: AccessWindow | und
       FROM candidates AS candidate
       LEFT JOIN strava_evidence AS evidence ON evidence.activity_id = candidate.activity_id
     )
-    SELECT * EXCEPT (power_measurement_kind, assessed_kind),
+    SELECT * EXCEPT (power_measurement_kind, assessed_kind, curve_started_at),
       assessed_kind AS power_measurement_kind
     FROM assessed
     WHERE assessed_kind != 'estimated'

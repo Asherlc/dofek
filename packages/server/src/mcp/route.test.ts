@@ -26,6 +26,8 @@ import { createDofekMcpServer } from "./tools.ts";
 
 const routeLoggerMocks = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock("../logger.ts", () => ({ logger: routeLoggerMocks }));
+const accessWindowMocks = vi.hoisted(() => ({ getAccessWindowForUser: vi.fn() }));
+vi.mock("../billing/access-window-repository.ts", () => accessWindowMocks);
 
 const toolTestMocks = vi.hoisted(() => {
   const mocks = {
@@ -965,7 +967,6 @@ describe("createMcpRouter", () => {
         "get_cycling_training_metrics",
         "find_repeated_efforts",
         "get_cycling_power_curve",
-        "get_cycling_power_profile",
         "get_running_race_forecast",
         "get_activity_details",
         "get_climbing_sessions",
@@ -992,6 +993,9 @@ describe("createMcpRouter", () => {
     ]) {
       expectedSchemes[name] = [{ type: "oauth2", scopes: ["nutrition:read", "nutrition:write"] }];
     }
+    expectedSchemes.get_cycling_power_profile = [
+      { type: "oauth2", scopes: ["activity:read", "health:read"] },
+    ];
     expectedSchemes.get_training_load = [
       { type: "oauth2", scopes: ["activity:read", "nutrition:read"] },
     ];
@@ -2576,9 +2580,17 @@ describe("createMcpRouter", () => {
     });
   });
 
-  it("returns the compact power profile for the requested MCP dates", async () => {
-    authorizeMcpToken(["activity:read"]);
-    const response = await request(createTestApp(makeMockSensorStore()), {
+  it("returns the compact power profile within the user's access window", async () => {
+    authorizeMcpToken(["activity:read", "health:read"]);
+    accessWindowMocks.getAccessWindowForUser.mockResolvedValue({
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2026-10-25",
+      endDateExclusive: "2026-11-01",
+    });
+    const sensorStore = makeMockSensorStore();
+    const response = await request(createTestApp(sensorStore), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_cycling_power_profile", {
         start_date: "2026-10-01",
@@ -2598,6 +2610,29 @@ describe("createMcpRouter", () => {
         threshold: { watts: null, method: "configured" },
       },
     });
+    expect(accessWindowMocks.getAccessWindowForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      "user-id",
+      expect.any(String),
+    );
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
+      accessStartDate: "2026-10-25",
+      accessEndDateExclusive: "2026-11-01",
+    });
+  });
+
+  it("does not read the power profile without health:read for its body-weight evidence", async () => {
+    authorizeMcpToken(["activity:read"]);
+    const sensorStore = makeMockSensorStore();
+    const response = await request(createTestApp(sensorStore), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_cycling_power_profile", {
+        start_date: "2026-10-01",
+        end_date: "2026-10-31",
+      }),
+    });
+    expect(response.text).not.toContain("maximal_test_status");
+    expect(sensorStore.query).not.toHaveBeenCalled();
   });
 
   it("distinguishes an out-of-range metric from a metric with no recorded history", async () => {
