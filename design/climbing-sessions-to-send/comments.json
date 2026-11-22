@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "nextNumber": 3,
+  "comments": [
+    {
+      "id": "c-b835b2efb756",
+      "number": 1,
+      "body": "the user does not need to know its study based here",
+      "anchor": {
+        "artboardId": "in-progress",
+        "dcId": "model-estimate-preview",
+        "path": "body > section:nth-of-type(1) > main:nth-of-type(1) > section:nth-of-type(3) > details:nth-of-type(2) > summary:nth-of-type(1)",
+        "tag": "summary",
+        "text": "Study-based estimate preview",
+        "html": "<summary data-dc-id=\"model-estimate-preview\">Study-based estimate preview</summary>",
+        "rect": {
+          "x": 28,
+          "y": 449.71875,
+          "width": 334,
+          "height": 36.84375
+        }
+      },
+      "status": "resolved",
+      "createdAt": 1795278374846,
+      "sentAt": 1795278382086,
+      "resolvedAt": 1795278411444,
+      "resolution": "Removed the study reference and described the expected sessions in plain language."
+    },
+    {
+      "id": "c-52f414541464",
+      "number": 2,
+      "body": "and wtf is an \"estimate preview\"",
+      "anchor": {
+        "artboardId": "in-progress",
+        "dcId": "model-estimate-preview",
+        "path": "body > section:nth-of-type(1) > main:nth-of-type(1) > section:nth-of-type(3) > details:nth-of-type(2) > summary:nth-of-type(1)",
+        "tag": "summary",
+        "text": "Study-based estimate preview",
+        "html": "<summary data-dc-id=\"model-estimate-preview\">Study-based estimate preview</summary>",
+        "rect": {
+          "x": 28,
+          "y": 449.71875,
+          "width": 334,
+          "height": 36.84375
+        }
+      },
+      "status": "resolved",
+      "createdAt": 1795278380898,
+      "sentAt": 1795278382086,
+      "resolvedAt": 1795278411444,
+      "resolution": "Renamed the disclosure to “Expected sessions to send.”"
+    }
+  ]
+}

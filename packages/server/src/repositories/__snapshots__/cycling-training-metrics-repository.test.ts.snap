@@ -283,7 +283,7 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
 exports[`CyclingTrainingMetricsRepository > computes a paginated activity from canonical streams and historical settings 2`] = `
 [
   "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
-  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000011",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
+  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw,\\n                fit_source,\\n                planned_duration_seconds,\\n                recorded_timer_duration_seconds,\\n                target_power_min_watts,\\n                target_power_max_watts\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000011",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
 ]
 `;
 
@@ -341,6 +341,11 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
       "activityIds": [
         "00000000-0000-4000-8000-000000000010",
       ],
+      "channels": [
+        "power",
+        "heart_rate",
+        "cadence",
+      ],
       "userId": "00000000-0000-4000-8000-000000000001",
     },
     "query": "/* cycling-training-metrics:samples */
@@ -364,7 +369,7 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
               ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id
             WHERE sensor.user_id = {userId:UUID}
               AND sensor.activity_id IN ({activityIds:Array(UUID)})
-              AND sensor.channel IN ('power', 'heart_rate', 'cadence')
+              AND sensor.channel IN ({channels:Array(String)})
               AND sensor.is_deleted = 0
             GROUP BY sensor.activity_id, activity.started_at, sensor.recorded_at
             ORDER BY sensor.activity_id, sensor.recorded_at",
@@ -898,7 +903,7 @@ exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settin
 exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settings and explains an unpublished canonical power projection 2`] = `
 [
   "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
-  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000012",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
+  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw,\\n                fit_source,\\n                planned_duration_seconds,\\n                recorded_timer_duration_seconds,\\n                target_power_min_watts,\\n                target_power_max_watts\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000012",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
 ]
 `;
 
@@ -952,6 +957,11 @@ exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settin
       "activityIds": [
         "00000000-0000-4000-8000-000000000012",
       ],
+      "channels": [
+        "power",
+        "heart_rate",
+        "cadence",
+      ],
       "userId": "00000000-0000-4000-8000-000000000001",
     },
     "query": "/* cycling-training-metrics:samples */
@@ -975,7 +985,7 @@ exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settin
               ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id
             WHERE sensor.user_id = {userId:UUID}
               AND sensor.activity_id IN ({activityIds:Array(UUID)})
-              AND sensor.channel IN ('power', 'heart_rate', 'cadence')
+              AND sensor.channel IN ({channels:Array(String)})
               AND sensor.is_deleted = 0
             GROUP BY sensor.activity_id, activity.started_at, sensor.recorded_at
             ORDER BY sensor.activity_id, sensor.recorded_at",
@@ -1143,7 +1153,7 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
 exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never double-counts the lookahead activity 2`] = `
 [
   "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
-  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000011",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
+  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw,\\n                fit_source,\\n                planned_duration_seconds,\\n                recorded_timer_duration_seconds,\\n                target_power_min_watts,\\n                target_power_max_watts\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000010",{"value":["::uuid"]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[", "]}]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000011",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
 ]
 `;
 
@@ -1197,6 +1207,11 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
       "activityIds": [
         "00000000-0000-4000-8000-000000000010",
       ],
+      "channels": [
+        "power",
+        "heart_rate",
+        "cadence",
+      ],
       "userId": "00000000-0000-4000-8000-000000000001",
     },
     "query": "/* cycling-training-metrics:samples */
@@ -1220,7 +1235,7 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
               ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id
             WHERE sensor.user_id = {userId:UUID}
               AND sensor.activity_id IN ({activityIds:Array(UUID)})
-              AND sensor.channel IN ('power', 'heart_rate', 'cadence')
+              AND sensor.channel IN ({channels:Array(String)})
               AND sensor.is_deleted = 0
             GROUP BY sensor.activity_id, activity.started_at, sensor.recorded_at
             ORDER BY sensor.activity_id, sensor.recorded_at",

@@ -7,7 +7,7 @@ import {
 import type { ClimbingFilters as Filters } from "@dofek/training/climbing-filters";
 import { keepPreviousData } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ClimbingBestOnsight } from "../../components/ClimbingBestOnsight.tsx";
 import { ClimbingFilters } from "../../components/ClimbingFilters.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
@@ -45,6 +45,13 @@ export function ClimbingTab() {
     climbingQueryOptions,
   );
   const bestOnsight = trpc.climbing.bestOnsight.useQuery(undefined, climbingQueryOptions);
+  const previousEndDate = useRef(endDate);
+  const { refetch: refetchBestOnsight } = bestOnsight;
+  useEffect(() => {
+    if (previousEndDate.current === endDate) return;
+    previousEndDate.current = endDate;
+    void refetchBestOnsight();
+  }, [endDate, refetchBestOnsight]);
   const volumeByGrade = trpc.climbing.volumeByGrade.useQuery(rangeInput, climbingQueryOptions);
   const increaseQueryOptions = { refetchOnWindowFocus: true };
   const volumeIncrease = trpc.climbing.volumeIncrease.useQuery(undefined, increaseQueryOptions);

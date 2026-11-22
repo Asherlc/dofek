@@ -197,7 +197,7 @@ export default defineConfig({ test: { reporters: [new ObservedReporter()], proje
       const marker = path.join(dir, "unit-complete");
       writeFileSync(
         unitFile,
-        `import { writeFileSync } from "node:fs"; import { it } from "vitest"; it("unit", () => writeFileSync(${JSON.stringify(marker)}, "done"));`,
+        `import { writeFileSync } from "node:fs"; import { it } from "vitest"; it("unit", () => writeFileSync(new URL("./unit-complete", import.meta.url), "done"));`,
       );
       writeFileSync(
         testFile,

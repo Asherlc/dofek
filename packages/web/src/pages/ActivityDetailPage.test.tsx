@@ -49,6 +49,7 @@ import {
   mockHrZonesUseQuery,
   mockImagesUseQuery,
   mockMetricSourcesUseQuery,
+  mockPlannedIntervalsUseQuery,
   mockPowerWorkUseQuery,
   mockPowerZonesUseQuery,
   mockRestoreProviderAbsentMutate,
@@ -702,6 +703,53 @@ describe("ActivityDetailPage", () => {
       }
     },
   );
+
+  describe("planned vs. recorded intervals", () => {
+    const planned = [
+      {
+        intervalIndex: 0,
+        startOffsetSeconds: 0,
+        endOffsetSeconds: 180,
+        label: "Work 1",
+        target: { kind: "range" as const, minWatts: 250, maxWatts: 265 },
+        plannedDurationSeconds: 180,
+        recordedTimerDurationSeconds: 134,
+        timerDifferenceSeconds: -46,
+        averagePowerWatts: 256,
+      },
+    ];
+
+    it("shows eligible rows for a cycling activity", () => {
+      mockActivityByIdUseQuery.mockReturnValue(
+        queryResult({ ...mockActivity, activityType: "cycling" }),
+      );
+      mockPlannedIntervalsUseQuery.mockReturnValue(queryResult(planned));
+      renderWithUnits(<ActivityDetailPage />);
+      expect(screen.getByText("Planned vs. recorded intervals")).toBeTruthy();
+      expect(screen.getByText("0:46 short of 3:00")).toBeTruthy();
+      expect(mockPlannedIntervalsUseQuery).toHaveBeenCalledWith(
+        { activityId: activityRouteParams.id },
+        { enabled: true },
+      );
+    });
+
+    it("shows no section without eligible rows", () => {
+      mockActivityByIdUseQuery.mockReturnValue(
+        queryResult({ ...mockActivity, activityType: "cycling" }),
+      );
+      renderWithUnits(<ActivityDetailPage />);
+      expect(screen.queryByText("Planned vs. recorded intervals")).toBeNull();
+    });
+
+    it("does not query or show the section for non-cycling activities", () => {
+      mockPlannedIntervalsUseQuery.mockReturnValue(queryResult(planned));
+      renderWithUnits(<ActivityDetailPage />);
+      expect(screen.queryByText("Planned vs. recorded intervals")).toBeNull();
+      expect(mockPlannedIntervalsUseQuery).toHaveBeenCalledWith(expect.anything(), {
+        enabled: false,
+      });
+    });
+  });
 
   describe("provider tombstone status", () => {
     it("keeps restore completion tracking mounted after PostgreSQL makes the activity visible", async () => {

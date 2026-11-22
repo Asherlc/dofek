@@ -19,6 +19,10 @@ export const mockHrZonesInvalidate = vi.fn();
 export const mockPolarizationInvalidate = vi.fn();
 export const mockProcessingStatusInvalidate = vi.fn();
 export const mockRunningInvalidate = vi.fn();
+const emptyCyclingPowerProfileQuery = { data: undefined, isLoading: false, error: null };
+export const mockCyclingPowerProfileQuery = vi
+  .fn<() => { data: unknown; isLoading: boolean; error: null }>()
+  .mockReturnValue(emptyCyclingPowerProfileQuery);
 export const mockRouteComparisonInvalidate = vi.fn();
 export const mockRouteComparisonQuery = vi.fn();
 export const mockVolumeIncreaseQuery = vi.fn();
@@ -26,6 +30,7 @@ export const mockVolumeIncreaseInvalidate = vi.fn();
 export const mockAttemptIncreaseQuery = vi.fn();
 export const mockAttemptIncreaseInvalidate = vi.fn();
 export const mockBestOnsightQuery = vi.fn();
+export const mockBestOnsightRefetch = vi.fn();
 export const mockBestOnsightInvalidate = vi.fn();
 type MockRangeQueryOptions = {
   enabled?: boolean;
@@ -194,6 +199,7 @@ vi.mock("../../lib/trpc", () => ({
           return { data: undefined, isLoading: true, error: null };
         },
       },
+      powerProfile: { useQuery: mockCyclingPowerProfileQuery },
     },
     running: {
       dynamicsV2: {
@@ -307,6 +313,7 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     useUtils: () => ({
+      cycling: { powerProfile: { invalidate: vi.fn() } },
       running: { dynamicsV2: { invalidate: mockRunningInvalidate } },
       hiking: { activityComparison: { invalidate: mockRouteComparisonInvalidate } },
       climbing: {
@@ -377,12 +384,18 @@ vi.mock("../../lib/units", () => ({
 }));
 
 export function resetStrainMocks() {
+  mockCyclingPowerProfileQuery.mockReset().mockReturnValue(emptyCyclingPowerProfileQuery);
   mockQueryState.focused = true;
   mockVolumeIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
   mockVolumeIncreaseInvalidate.mockReset().mockResolvedValue(undefined);
   mockAttemptIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
   mockAttemptIncreaseInvalidate.mockReset().mockResolvedValue(undefined);
-  mockBestOnsightQuery.mockReset().mockReturnValue({ data: undefined, error: null });
+  mockBestOnsightQuery.mockReset().mockReturnValue({
+    data: undefined,
+    error: null,
+    refetch: mockBestOnsightRefetch,
+  });
+  mockBestOnsightRefetch.mockReset().mockResolvedValue(undefined);
   mockBestOnsightInvalidate.mockReset().mockResolvedValue(undefined);
   mockQueryState.runningData = { ...runningData, data: [] };
   mockQueryState.runningLoading = false;

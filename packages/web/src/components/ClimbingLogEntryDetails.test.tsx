@@ -1,13 +1,46 @@
 // @vitest-environment jsdom
 import { formatDateTime } from "@dofek/format/format";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   climbingAttemptFixture,
   climbingClimbFixture,
   climbingLogEntryFixture,
+  climbingProjectHistoryFixture,
 } from "../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryDetails } from "./ClimbingLogEntryDetails.tsx";
+
+const projectHistory = climbingProjectHistoryFixture();
+
+it("shows the server's recorded sessions and reveals the unknown day", () => {
+  render(
+    <ClimbingLogEntryDetails
+      entry={climbingLogEntryFixture()}
+      projectHistory={{ data: projectHistory }}
+    />,
+  );
+  expect(screen.getByText("3 logged sessions · Send unconfirmed")).toBeTruthy();
+  expect(screen.getByText("2 unsuccessful · 1 result unknown")).toBeTruthy();
+  fireEvent.click(screen.getByText("View sessions"));
+  expect(screen.getByText("Result unknown")).toBeTruthy();
+});
+
+it("shows the separate recorded lead milestone", () => {
+  render(
+    <ClimbingLogEntryDetails
+      entry={climbingLogEntryFixture()}
+      projectHistory={{
+        data: {
+          ...projectHistory,
+          firstSend: { date: "2026-11-09", sessionCount: 2, method: "top_rope" },
+          methodFirstSend: { date: "2026-11-17", sessionCount: 3, method: "lead" },
+        },
+      }}
+    />,
+  );
+  expect(screen.getByText("2 logged sessions to first recorded send")).toBeTruthy();
+  expect(screen.getByText("First recorded lead send after 3 lead sessions · Nov 17")).toBeTruthy();
+});
 
 it("shows BoardSesh's recorded time in standalone log details", () => {
   render(

@@ -12,6 +12,7 @@ const hangboardingSummaryQuery = vi.hoisted(() => vi.fn());
 const locationMapQuery = vi.hoisted(() => vi.fn());
 const strengthsQuery = vi.hoisted(() => vi.fn());
 const bestOnsightQuery = vi.hoisted(() => vi.fn());
+const bestOnsightRefetch = vi.hoisted(() => vi.fn());
 const volumeIncreaseQuery = vi.hoisted(() => vi.fn());
 const attemptIncreaseQuery = vi.hoisted(() => vi.fn());
 const trainingDaysState = vi.hoisted<{ days: number | null }>(() => ({ days: 90 }));
@@ -390,9 +391,13 @@ describe("ClimbingTab", () => {
     volumeByGradeQuery.mockReset();
     hangboardingSummaryQuery.mockReset();
     locationMapQuery.mockReset();
-    bestOnsightQuery
-      .mockReset()
-      .mockReturnValue({ data: undefined, isLoading: false, error: null });
+    bestOnsightQuery.mockReset().mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+      refetch: bestOnsightRefetch,
+    });
+    bestOnsightRefetch.mockReset().mockResolvedValue(undefined);
     trainingDaysState.days = 90;
     queryDate.value = "2026-10-26";
     gradeProgressionQuery.mockReturnValue({ data: null, isLoading: false, error: null });
@@ -488,6 +493,28 @@ describe("ClimbingTab", () => {
 
     expect(screen.getByText("Error: Grade query failed")).toBeTruthy();
     expect(screen.getByText("Grade Progression component")).toBeTruthy();
+  });
+
+  it("refetches only the annual onsight result when the query date advances at midnight", async () => {
+    const ClimbingTab = await importClimbingTab();
+    const view = render(<ClimbingTab />);
+
+    expect(bestOnsightRefetch).not.toHaveBeenCalled();
+    view.rerender(<ClimbingTab />);
+    expect(bestOnsightRefetch).not.toHaveBeenCalled();
+
+    queryDate.value = "2026-10-27";
+    view.rerender(<ClimbingTab />);
+
+    expect(bestOnsightRefetch).toHaveBeenCalledTimes(1);
+    expect(bestOnsightQuery.mock.calls.every(([input]) => input === undefined)).toBe(true);
+    expect(bestOnsightQuery.mock.lastCall?.[1]).toMatchObject({
+      placeholderData: expect.any(Function),
+    });
+    expect(strengthsQuery).toHaveBeenLastCalledWith(
+      { days: 90, endDate: "2026-10-27", includeAreaMetadata: true, responseVersion: 2 },
+      expect.any(Object),
+    );
   });
 
   it("queries the annual onsight result independently of filters and period", async () => {

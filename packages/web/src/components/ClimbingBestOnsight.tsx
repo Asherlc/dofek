@@ -40,7 +40,8 @@ export function ClimbingBestOnsight({ data, error, loading }: ClimbingBestOnsigh
         Best recorded onsight
       </h2>
       <p className="mb-3 text-xs text-dim">
-        Past 12 months · {formatDateMedium(data.startDate)}–{formatDateMedium(data.endDate)}
+        Past 12 months · {formatDateMedium(data.startDate, { timeZone: "UTC" })}–
+        {formatDateMedium(data.endDate, { timeZone: "UTC" })}
       </p>
       {error ? <QueryStatePanel error={error} height={0} /> : null}
       <table aria-labelledby={headingId} className="w-full border-collapse text-left text-sm">

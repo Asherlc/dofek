@@ -1,6 +1,28 @@
 import { climbingAttemptSchema, climbingLogEntrySchema } from "@dofek/training/climbing-log";
+import type { ClimbingProjectHistory } from "@dofek/training/climbing-project-history";
 import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts.ts";
 import type { ActivityRow } from "../models/activity.ts";
+
+export function climbingProjectHistoryFixture(
+  overrides: Partial<ClimbingProjectHistory> = {},
+): ClimbingProjectHistory {
+  return {
+    throughDate: "2026-11-17",
+    sessionCount: 3,
+    unsuccessfulSessionCount: 2,
+    unknownSessionCount: 1,
+    firstSend: null,
+    methodFirstSend: null,
+    repeatBeforeFirstSend: false,
+    earlierSessionsUnknown: false,
+    days: [
+      { date: "2026-11-04", outcome: "unsuccessful", method: null },
+      { date: "2026-11-12", outcome: "unsuccessful", method: null },
+      { date: "2026-11-17", outcome: "unknown", method: null },
+    ],
+    ...overrides,
+  };
+}
 
 export function climbingLogEntryFixture(
   overrides: Partial<ClimbingLogEntryDetail> = {},

@@ -1,5 +1,7 @@
+import { lateWorkoutSleepSchema } from "@dofek/training/late-workout-sleep";
 import { z } from "zod";
 import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
+import { LateWorkoutSleepRepository } from "../repositories/late-workout-sleep-repository.ts";
 import { SleepRepository, sleepStageRowSchema } from "../repositories/sleep-repository.ts";
 
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -10,6 +12,20 @@ const stagesByDateSchema = z.object({
 });
 
 export const sleepRouter = router({
+  lateWorkouts: selectedChartDateRangeQuery(
+    "sleep.lateWorkouts",
+    CacheTTL.MEDIUM,
+    ({ ctx, input }) =>
+      new LateWorkoutSleepRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      ).list(input),
+    { outputSchema: lateWorkoutSleepSchema, scopeByAccessWindow: true },
+  ),
+
   list: selectedChartDateRangeQuery(
     "sleep.list",
     CacheTTL.MEDIUM,

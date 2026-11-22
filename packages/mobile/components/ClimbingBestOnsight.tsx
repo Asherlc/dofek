@@ -41,7 +41,8 @@ export function ClimbingBestOnsight({ data, error, loading }: ClimbingBestOnsigh
         Best recorded onsight
       </Text>
       <Text style={styles.period}>
-        Past 12 months · {formatDateMedium(data.startDate)}–{formatDateMedium(data.endDate)}
+        Past 12 months · {formatDateMedium(data.startDate, { timeZone: "UTC" })}–
+        {formatDateMedium(data.endDate, { timeZone: "UTC" })}
       </Text>
       {error ? (
         <QueryStatePanel variant="error" message={getQueryErrorMessage(error)} minHeight={0} />

@@ -5,7 +5,7 @@ import {
   emptyClimbingBestOnsightFixture,
 } from "@dofek/training/fixtures/climbing-best-onsight";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { ClimbingBestOnsight } from "./ClimbingBestOnsight";
 
 vi.mock("./providers/provider-record-detail", () => ({
@@ -25,10 +25,15 @@ vi.mock("./providers/provider-record-detail", () => ({
   ),
 }));
 
+// Exercise the whole matrix under a UTC+12+ offset so the date-only window
+// bounds must stay on their authored calendar day (a New Zealand regression).
+vi.stubEnv("TZ", "Pacific/Auckland");
+afterAll(() => vi.unstubAllEnvs());
+
 describe("ClimbingBestOnsight", () => {
   afterEach(cleanup);
 
-  it("renders all five climbing types and both settings from the annual result", () => {
+  it("renders the authored date window, all five climbing types, and both settings from the annual result", () => {
     render(<ClimbingBestOnsight data={climbingBestOnsightFixture()} />);
 
     expect(screen.getByText("Best recorded onsight")).toBeTruthy();

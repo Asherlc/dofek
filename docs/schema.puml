@@ -244,6 +244,11 @@ entity "activity_interval" {
   target_power_watts : real
   target_resistance : real
   work_recovery_kind : text
+  fit_source : text
+  planned_duration_seconds : double precision
+  recorded_timer_duration_seconds : double precision
+  target_power_min_watts : real
+  target_power_max_watts : real
   raw : jsonb
   created_at : timestamp
 }
