@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { logger } from "../logger.ts";
 import { type ClimbingLogSyncInput, persistClimbingLogEntries } from "./climbing-log-sync.ts";
 import type { SyncDatabase } from "./index.ts";
 import {
@@ -16,13 +17,26 @@ export function persistClimbingLogSnapshot(
 ) {
   return db.transaction(async (transaction) => {
     const result = await persistClimbingLogEntries(transaction, input);
-    await transaction.execute(sql`
+    const newlyAbsent = await executeWithSchema(
+      transaction,
+      z.object({ external_id: z.string(), climbed_on: z.string().nullable() }),
+      sql`
       UPDATE fitness.climbing_log_entry SET provider_absent_at = NOW()
       WHERE user_id = ${input.userId} AND provider_id = ${input.providerId}
         AND provider_absent_at IS NULL AND external_id IS NOT NULL
         AND id <> ALL(${sql.param(result.logEntryIds)}::uuid[])
         ${retainedExternalIds.length ? sql`AND external_id <> ALL(${sql.param(retainedExternalIds)}::text[])` : sql``}
-    `);
+      RETURNING external_id, climbed_on::text AS climbed_on
+    `,
+    );
+    logger.info(
+      `[climbing-log-snapshot] provider=${input.providerId} snapshotEntries=${input.entries.length} newlyAbsent=${newlyAbsent.length} oldestNewlyAbsent=${
+        newlyAbsent
+          .map((entry) => entry.climbed_on ?? "")
+          .filter(Boolean)
+          .sort()[0] ?? "none"
+      }`,
+    );
     if (retainedExternalIds.length)
       await transaction.execute(sql`
         UPDATE fitness.climbing_log_entry SET provider_absent_at = NULL

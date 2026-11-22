@@ -90,6 +90,16 @@ reported them as unavailable. Whether the earlier days are true failures or
 unlabeled sessions has not been established, and the earlier send rate used as
 the baseline is biased by them (6% at the October cutoff).
 
+A database comparison (2026-11-22) found that the missing August sends exist.
+All 60 August Kaya ascent entries are completed, graded and identified, but have
+been marked provider-absent between 2026-10-15 and 2026-11-13, and 9 of 14
+September entries between 2026-11-19 and 2026-11-22. The export excludes absent
+entries, so those sends are missing from the results above, which are therefore
+biased. Why Kaya entries become absent is unresolved. Kaya sync now logs the
+fetched ascent count and the entries each snapshot newly marks absent, so the
+next sync records whether the API stopped returning them. The cutoff results
+should be rerun once that is understood.
+
 Four-chain CmdStan fits (seed 1234) had maximum R-hat 1.0038 and no divergences.
 
 | Cutoff | Cohort | Days | Observed send rate | Mean model probability | Brier, model / baseline | Log loss, model / baseline |

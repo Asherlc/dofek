@@ -36,6 +36,7 @@ import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { isKnownProviderHttp5xxError } from "../lib/provider-error-reporting.ts";
+import { logger } from "../logger.ts";
 import {
   ProviderInvalidCredentialsError,
   ProviderStoredIdentityMissingError,
@@ -223,6 +224,9 @@ export class KayaSyncProvider implements SyncProvider {
           client.listAscents(identity.data.kayaUserId),
         ]);
       }
+      logger.info(
+        `[kaya] fetched sessions=${sessions.length} ascents=${ascents.length} oldestAscent=${ascents.map((ascent) => ascent.date).sort()[0] ?? "none"}`,
+      );
       const ascentsBySession = new Map<string, typeof ascents>();
       for (const ascent of ascents) {
         if (!ascent.session_id) continue;
