@@ -39,7 +39,7 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
   strength: [
     "strength.loggedSetComparison",
     "strength.volumeOverTime",
-    "strength.estimatedOneRepMax",
+    "strength.exerciseHistory",
     "strength.muscleGroupVolume",
     "strength.progressiveOverload",
   ],

@@ -1,8 +1,27 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { EstimatedOneRepMaxRow } from "dofek-server/types";
+import type { StrengthExerciseHistoryRow } from "dofek-server/types";
 import { EstimatedMaxChart } from "./EstimatedMaxChart.tsx";
 
-const exercises: EstimatedOneRepMaxRow[] = [
+const estimatedExercises: Array<{
+  exerciseName: string;
+  equipment: string | null;
+  history: Array<{
+    date: string;
+    estimatedMax: number;
+    actualWeight: number;
+    actualReps: number;
+    sourceSetId: string;
+    provider: string;
+    fatigueMarker: "Failure";
+  }>;
+  trend: {
+    direction: "increasing" | "decreasing" | "stable";
+    summary: string;
+    changeMagnitudeKg: number;
+    firstDate: string;
+    latestDate: string;
+  };
+}> = [
   {
     exerciseName: "Back Squat",
     equipment: "BARBELL",
@@ -85,6 +104,58 @@ const exercises: EstimatedOneRepMaxRow[] = [
   },
 ];
 
+const exercises: StrengthExerciseHistoryRow[] = estimatedExercises.map((exercise) => ({
+  exerciseName: exercise.exerciseName,
+  equipment: exercise.equipment,
+  estimatedStrength: exercise,
+  exerciseOrder: null,
+}));
+
+const orderedExercises: StrengthExerciseHistoryRow[] = [
+  {
+    exerciseName: "Barbell Back Squat",
+    equipment: "BARBELL",
+    estimatedStrength: estimatedExercises[0] ?? null,
+    exerciseOrder: {
+      source: "Crimpd",
+      baseline: {
+        activityId: "11111111-1111-4111-8111-111111111111",
+        date: "2026-06-01",
+        position: 3,
+        sets: [
+          { position: 1, resistance: 100, unit: "KG", reps: 5 },
+          { position: 2, resistance: 100, unit: "KG", reps: 5 },
+          { position: 3, resistance: 100, unit: "KG", reps: 5 },
+        ],
+      },
+      earlier: {
+        activityId: "22222222-2222-4222-8222-222222222222",
+        date: "2026-07-01",
+        position: 1,
+        sets: [
+          { position: 1, resistance: 105, unit: "KG", reps: 5 },
+          { position: 2, resistance: 105, unit: "KG", reps: 4 },
+        ],
+      },
+    },
+  },
+  {
+    exerciseName: "Nordic Hamstring Curl",
+    equipment: null,
+    estimatedStrength: null,
+    exerciseOrder: {
+      source: "Crimpd",
+      baseline: {
+        activityId: "33333333-3333-4333-8333-333333333333",
+        date: "2026-06-10",
+        position: 2,
+        sets: [{ position: 1, resistance: 0, unit: "LBS", reps: 6 }],
+      },
+      earlier: null,
+    },
+  },
+];
+
 const meta = {
   title: "Strength/EstimatedMaxChart",
   component: EstimatedMaxChart,
@@ -107,6 +178,16 @@ export const MobileManyExercises: Story = {
   decorators: [
     (Story) => (
       <div className="w-[320px] p-4">
+        <Story />
+      </div>
+    ),
+  ],
+};
+export const OrderEvidence: Story = {
+  args: { exercises: orderedExercises },
+  decorators: [
+    (Story) => (
+      <div className="w-[760px] p-4">
         <Story />
       </div>
     ),
