@@ -10,7 +10,7 @@ import {
   chunks,
   groupCandidates,
   resolveClimbIdentities,
-} from "./boardsesh-climb-identity.ts";
+} from "./boardsesh.ts";
 
 vi.mock("../lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 
