@@ -129,13 +129,15 @@ describe("ClimbingDemonstratedGrade", () => {
     );
 
     expect(screen.getByRole("alert")).toHaveTextContent("Demonstrated grades unavailable");
-    expect(screen.getByRole("alert")).toHaveClass("text-danger");
+    expect(screen.getByTestId("query-state-error")).toBeVisible();
     expect(screen.getByRole("button", { name: "Indoor bouldering, V5, 3 climbs" })).toBeVisible();
   });
 
   it("separates loading, error and empty states", () => {
     const { rerender } = render(<ClimbingDemonstratedGrade loading />);
-    expect(screen.getByText("Loading demonstrated grades…")).toBeVisible();
+    expect(screen.getByTestId("query-state-loading")).toHaveAccessibleName(
+      "Loading demonstrated grades.",
+    );
     expect(screen.queryByRole("table")).toBeNull();
 
     rerender(<ClimbingDemonstratedGrade error={new Error("Demonstrated grades unavailable")} />);

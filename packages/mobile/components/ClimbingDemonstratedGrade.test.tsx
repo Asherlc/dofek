@@ -128,7 +128,7 @@ describe("ClimbingDemonstratedGrade", () => {
 
   it("separates loading, error and empty states", () => {
     const { rerender } = render(<ClimbingDemonstratedGrade loading />);
-    expect(screen.getByText("Loading demonstrated grades…")).toBeTruthy();
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /bouldering/ })).toBeNull();
 
     rerender(<ClimbingDemonstratedGrade error={new Error("Demonstrated grades unavailable")} />);

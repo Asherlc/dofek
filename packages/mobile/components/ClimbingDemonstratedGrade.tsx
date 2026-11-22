@@ -11,6 +11,7 @@ import { useState } from "react";
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
+import { QueryStatePanel } from "./QueryStatePanel";
 
 const TYPES = [
   { key: "bouldering", label: "Bouldering", spoken: "bouldering" },
@@ -82,17 +83,26 @@ export function ClimbingDemonstratedGrade({
         : firstAvailableKey(data);
 
   if (loading && !data) {
-    return <Text style={styles.state}>Loading demonstrated grades…</Text>;
+    return <QueryStatePanel variant="loading" minHeight={120} />;
   }
   if (error && !data) {
     return (
-      <Text accessibilityRole="alert" style={styles.errorText}>
-        {userFacingErrorMessage(error, "Demonstrated grades could not be loaded.")}
-      </Text>
+      <QueryStatePanel
+        variant="error"
+        title="Demonstrated grades"
+        message={userFacingErrorMessage(error, "Demonstrated grades could not be loaded.")}
+        minHeight={120}
+      />
     );
   }
   if (!data) {
-    return <Text style={styles.state}>No demonstrated grades in this period.</Text>;
+    return (
+      <QueryStatePanel
+        variant="empty"
+        message="No demonstrated grades in this period."
+        minHeight={120}
+      />
+    );
   }
 
   const bounded =
@@ -121,12 +131,19 @@ export function ClimbingDemonstratedGrade({
       </Text>
       {qualifier ? <Text style={styles.qualifier}>{qualifier}</Text> : null}
       {error ? (
-        <Text accessibilityRole="alert" style={styles.errorText}>
-          {userFacingErrorMessage(error, "Demonstrated grades could not be loaded.")}
-        </Text>
+        <QueryStatePanel
+          variant="error"
+          title="Demonstrated grades"
+          message={userFacingErrorMessage(error, "Demonstrated grades could not be loaded.")}
+          minHeight={0}
+        />
       ) : null}
       {!hasAnyGrade ? (
-        <Text style={styles.state}>No demonstrated grades in this period.</Text>
+        <QueryStatePanel
+          variant="empty"
+          message="No demonstrated grades in this period."
+          minHeight={0}
+        />
       ) : null}
 
       <View style={styles.matrix}>
@@ -261,8 +278,6 @@ const styles = StyleSheet.create({
   window: { color: colors.textTertiary, fontSize: 11, fontVariant: ["tabular-nums"] },
   explanation: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
   qualifier: { color: colors.textTertiary, fontSize: 11 },
-  errorText: { color: "#f87171", fontSize: 12, textAlign: "center", paddingVertical: 8 },
-  state: { color: colors.textTertiary, fontSize: 13, textAlign: "center", paddingVertical: 12 },
   matrix: { gap: 2 },
   row: { flexDirection: "row", alignItems: "center", minHeight: 36 },
   cell: { flex: 1, fontSize: 12 },

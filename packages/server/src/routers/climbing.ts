@@ -311,7 +311,12 @@ export const climbingRouter = router({
       }),
     ),
 
-  demonstratedGrade: protectedProcedure
+  demonstratedGrade: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    outputSchema: climbingDemonstratedGradeSchema,
+    keyVersion: "climbing-demonstrated-grade-v1",
+    scopeByAccessWindow: true,
+  })
     .input(demonstratedGradeInputSchema)
     .output(climbingDemonstratedGradeSchema)
     .query(({ ctx, input }) =>

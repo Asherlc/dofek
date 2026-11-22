@@ -7,6 +7,7 @@ import type {
 } from "@dofek/training/climbing-demonstrated-grade";
 import { gradeSystemLabel } from "@dofek/training/climbing-grades";
 import { useId, useState } from "react";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 const TYPES = [
   { key: "bouldering", label: "Bouldering", spoken: "bouldering" },
@@ -78,18 +79,25 @@ export function ClimbingDemonstratedGrade({
         : firstAvailableKey(data);
 
   if (loading && !data) {
-    return <p className="py-4 text-center text-sm text-muted">Loading demonstrated grades…</p>;
+    return <QueryStatePanel variant="loading" contextLabel="demonstrated grades" height={120} />;
   }
   if (error && !data) {
     return (
-      <p role="alert" className="py-4 text-center text-sm text-danger">
-        {userFacingErrorMessage(error, "Demonstrated grades could not be loaded.")}
-      </p>
+      <QueryStatePanel
+        variant="error"
+        contextLabel="Demonstrated grades"
+        message={userFacingErrorMessage(error, "Demonstrated grades could not be loaded.")}
+        height={120}
+      />
     );
   }
   if (!data) {
     return (
-      <p className="py-4 text-center text-sm text-muted">No demonstrated grades in this period.</p>
+      <QueryStatePanel
+        variant="empty"
+        message="No demonstrated grades in this period."
+        height={120}
+      />
     );
   }
 
@@ -119,12 +127,19 @@ export function ClimbingDemonstratedGrade({
       </p>
       {qualifier ? <p className="mt-1 text-xs text-muted">{qualifier}</p> : null}
       {error ? (
-        <p role="alert" className="mt-2 text-sm text-danger">
-          {userFacingErrorMessage(error, "Demonstrated grades could not be loaded.")}
-        </p>
+        <QueryStatePanel
+          variant="error"
+          contextLabel="Demonstrated grades"
+          message={userFacingErrorMessage(error, "Demonstrated grades could not be loaded.")}
+          height={0}
+        />
       ) : null}
       {!hasAnyGrade ? (
-        <p className="mt-2 text-sm text-muted">No demonstrated grades in this period.</p>
+        <QueryStatePanel
+          variant="empty"
+          message="No demonstrated grades in this period."
+          height={0}
+        />
       ) : null}
 
       <table
