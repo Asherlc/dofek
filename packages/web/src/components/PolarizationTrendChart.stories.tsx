@@ -6,9 +6,9 @@ const method = {
   formula:
     "Polarization index = log10((easy-zone fraction / threshold-zone fraction) × high-zone fraction × 100).",
   zoneBasis:
-    "Easy zone (Zone 1) is below 80%, threshold zone (Zone 2) is 80–<90%, and high zone (Zone 3) is at least 90% of maximum heart rate.",
+    "Dofek uses profile maximum heart rate as a proxy for intensity. The easy zone is below 80%, the middle zone is 80–<90%, and the high zone is at least 90% of that value.",
   calculationChoice:
-    "Dofek requires recorded time in all three zones and does not calculate the polarization index when high-zone time exceeds easy-zone time.",
+    "Treff defines zero when there is coverage and no high-zone time. With zero middle-zone time, the high-zone share must exceed 1% for the adjustment.",
   interpretation: "The >2.00 comparison is Treff's descriptive training-distribution heuristic.",
   source: {
     title: "Treff et al. (2019), The Polarization-Index",
@@ -110,16 +110,16 @@ export const IncompleteZoneCoverage: Story = {
       ...weeks.slice(0, 2),
       {
         week: "2026-05-11",
-        z1Seconds: 19_800,
+        z1Seconds: 21_420,
         z2Seconds: 0,
-        z3Seconds: 1_800,
+        z3Seconds: 180,
         polarizationIndex: null,
         totalSeconds: 21_600,
-        zonePercentages: { z1: 91.7, z2: 0, z3: 8.3 },
+        zonePercentages: { z1: 99.2, z2: 0, z3: 0.8 },
         status: "insufficient_data",
         statusLabel: "Not calculated",
         explanation:
-          "The index is not calculated because Dofek requires recorded cycling time in all three Treff heart-rate zones.",
+          "With zero middle-zone time, Treff’s adjustment requires more than 1% high-zone time.",
       },
       ...weeks.slice(3),
     ],

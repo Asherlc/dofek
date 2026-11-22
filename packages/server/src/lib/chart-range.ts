@@ -2,7 +2,7 @@ import type { UnsetMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { SQL } from "drizzle-orm";
 import { z } from "zod";
 import type { AuthenticatedContext } from "../trpc.ts";
-import { cachedProtectedQuery } from "../trpc.ts";
+import { cachedProtectedQuery, protectedProcedure } from "../trpc.ts";
 import {
   clickHouseDateRangeLowerBound,
   clickHouseDateRangePredicate,
@@ -156,16 +156,21 @@ export function selectedChartRangeQuery<TResult>(
     expiresAt?: "localDayBoundary";
     outputSchema?: z.ZodType<TResult>;
     keyVersion?: string;
+    cache?: false;
     scopeByAccessWindow?: boolean;
   } = {},
 ) {
   assertSelectedChartInputKind(endpoint, "days");
-  return cachedProtectedQuery({
-    maxAge: ttlMs,
-    expiresAt: options.expiresAt,
-    keyVersion: options.keyVersion,
-    scopeByAccessWindow: options.scopeByAccessWindow,
-  })
+  const procedure =
+    options.cache === false
+      ? protectedProcedure
+      : cachedProtectedQuery({
+          maxAge: ttlMs,
+          expiresAt: options.expiresAt,
+          keyVersion: options.keyVersion,
+          scopeByAccessWindow: options.scopeByAccessWindow,
+        });
+  return procedure
     .input(selectedChartRangeInput(endpoint, options))
     .output(options.outputSchema ?? z.custom<TResult>())
     .query(({ ctx, input }) =>

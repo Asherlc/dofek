@@ -113,6 +113,7 @@ import { createMigration as createMigration0113 } from "./0113_activity_fit_reco
 import { createMigration as createMigration0114 } from "./0114_normalized_power_projection.ts";
 import { createMigration as createMigration0115 } from "./0115_restore_user_profile_ftp_mirror_column.ts";
 import { createMigration as createMigration0116 } from "./0116_exclude_catalog_only_daily_metrics.ts";
+import { createMigration as createMigration0117 } from "./0117_cycling_polarization_elapsed_seconds.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -231,6 +232,7 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0114,
   createMigration0115,
   createMigration0116,
+  createMigration0117,
 ];
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

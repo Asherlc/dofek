@@ -279,16 +279,17 @@ owns availability calculations and messages.
 
 ### Training distributions
 
-The Treff polarization summary uses recorded cycling time in three
-maximum-heart-rate zones and the published formula
-`log10((f1 / f2) × f3 × 100)`, where `f1`, `f2`, and `f3` are the fractions of
-total recorded cycling time in Zone 1, Zone 2, and Zone 3 respectively. Dofek
-requires recorded time in every zone instead of applying the paper's
-zero-Zone-2 substitution and follows the paper's rule that the index is invalid
-when Zone 3 exceeds Zone 1. The `> 2.00` comparison is presented as a
-descriptive training-distribution heuristic, not a physiological or medical
-assessment. See
-[Treff et al. (2019)](https://doi.org/10.3389/fphys.2019.00707).
+Dofek pools the selected cycling rides into weekly time distributions and uses
+[Treff's equation and zero-zone rules](../zones/README.md#polarization-index).
+Each valid reading covers time until the next observation, the ride end, or
+ten seconds after that reading, whichever comes first. Explicitly estimated
+heart rates do not supply zone time.
+The app uses profile maximum heart rate as a proxy for intensity. Easy is below
+80%, middle is at least 80% and below 90%, and high is at least 90% of HRmax.
+Treff describes physiological zones based on the first and second lactate or
+ventilatory thresholds. The app labels the pattern as polarized when the
+unrounded index exceeds 2.00 and time decreases from easy to high to middle.
+[Treff et al. (2019)](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2019.00707/full)
 
 ### Workout recommendations
 

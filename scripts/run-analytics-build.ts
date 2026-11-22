@@ -34,6 +34,18 @@ import {
 } from "../src/processing/processing-event-store.ts";
 import { AnalyticsBuildError, createAnalyticsBuildFailure } from "./analytics-build-error.ts";
 
+/** Only these models write a bounded batch and need a drain before publication. */
+const BOUNDED_MODEL_TABLES = {
+  activity_fit_heart_rate: "analytics.activity_fit_heart_rate",
+  activity_polarization_zones: "analytics.activity_cycling_polarization",
+} as const;
+
+type BoundedModelName = keyof typeof BOUNDED_MODEL_TABLES;
+
+function isBoundedModel(model: string): model is BoundedModelName {
+  return Object.hasOwn(BOUNDED_MODEL_TABLES, model);
+}
+
 interface RunAnalyticsBuildInput {
   selectedModels: readonly string[];
   artifactDirectory: string;
@@ -44,8 +56,8 @@ interface RunAnalyticsBuildInput {
   projectCyclingPower(asOf: Date): Promise<{
     pendingActivities: number;
   }>;
-  /** Fingerprint of the rows written by `activity_fit_heart_rate`; required when that model is selected. */
-  readFitHeartRateFingerprint?(): Promise<string>;
+  /** Fingerprint of the rows written by `model`; required when a bounded model is selected. */
+  readBoundedModelFingerprint?(model: BoundedModelName): Promise<string>;
   recordRun(input: {
     runId: string;
     pendingDatasets: readonly ProcessingOperationDataset[];
@@ -53,9 +65,8 @@ interface RunAnalyticsBuildInput {
   }): Promise<{ datasets: number; failed: number }>;
 }
 
-const fitHeartRateFingerprintSchema = z.object({ row_count: z.string(), checksum: z.string() });
-const FIT_HEART_RATE_MODEL = "activity_fit_heart_rate";
-const MAX_FIT_HEART_RATE_DRAIN_PASSES = 1_000;
+const boundedModelFingerprintSchema = z.object({ row_count: z.string(), checksum: z.string() });
+const MAX_BOUNDED_MODEL_DRAIN_PASSES = 1_000;
 
 function isMissingArtifactError(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
@@ -91,7 +102,7 @@ export async function runAnalyticsBuild({
   readArtifact,
   recordRun,
   projectCyclingPower,
-  readFitHeartRateFingerprint,
+  readBoundedModelFingerprint,
 }: RunAnalyticsBuildInput): Promise<{ datasets: number; failed: number }> {
   if (selectedModels.length === 0) {
     throw new Error("Analytics build requires at least one selected model");
@@ -101,6 +112,7 @@ export async function runAnalyticsBuild({
   const downstream = selectedModels.filter((model) => downstreamModels.has(model));
   const pendingDatasets = await loadPendingDatasets();
   const modelResults: ReturnType<typeof parseDbtRunArtifacts>["models"] = [];
+  const convergedBoundedModels = new Set<BoundedModelName>();
   let runId = "";
   let exitCode = 0;
   let succeeded = true;
@@ -151,41 +163,48 @@ export async function runAnalyticsBuild({
       );
     }
   }
-  if (exitCode === 0 && succeeded && inputs.includes(FIT_HEART_RATE_MODEL)) {
-    if (!readFitHeartRateFingerprint) {
-      throw new Error(`${FIT_HEART_RATE_MODEL} is selected but no fingerprint reader was provided`);
-    }
-    // The model processes a bounded batch per run; repeat until a run writes nothing new.
-    let fingerprint = await readFitHeartRateFingerprint();
-    for (let pass = 0; ; pass += 1) {
-      if (pass >= MAX_FIT_HEART_RATE_DRAIN_PASSES) {
-        throw new Error(
-          `${FIT_HEART_RATE_MODEL} still had pending activities after ${MAX_FIT_HEART_RATE_DRAIN_PASSES} extra passes`,
-        );
+  if (exitCode === 0 && succeeded) {
+    for (const model of inputs) {
+      if (!succeeded) break;
+      if (!isBoundedModel(model)) continue;
+      if (!readBoundedModelFingerprint) {
+        throw new Error(`${model} is selected but no fingerprint reader was provided`);
       }
-      const code = await runDbt(dbtArguments([FIT_HEART_RATE_MODEL]));
-      if (code !== 0) {
-        // Record this pass's failure like any other phase so affected imports show failed.
-        const failed = parseDbtRunArtifacts({
-          manifest: await readDbtArtifact(readArtifact, "manifest.json", code),
-          runResults: await readDbtArtifact(readArtifact, "run_results.json", code),
-          sources: sourceArtifact,
-          selectedModels: [FIT_HEART_RATE_MODEL],
-        });
-        modelResults.splice(
-          0,
-          modelResults.length,
-          ...modelResults.filter((model) => model.name !== FIT_HEART_RATE_MODEL),
-          ...failed.models,
-        );
-        runId = failed.invocationId;
-        exitCode = code;
-        succeeded = false;
-        break;
+      // Each model processes a bounded batch per run; repeat until a run writes nothing new.
+      let fingerprint = await readBoundedModelFingerprint(model);
+      for (let pass = 0; ; pass += 1) {
+        if (pass >= MAX_BOUNDED_MODEL_DRAIN_PASSES) {
+          throw new Error(
+            `${model} still had pending activities after ${MAX_BOUNDED_MODEL_DRAIN_PASSES} extra passes`,
+          );
+        }
+        const code = await runDbt(dbtArguments([model]));
+        if (code !== 0) {
+          // Record this pass's failure like any other phase so affected imports show failed.
+          const failed = parseDbtRunArtifacts({
+            manifest: await readDbtArtifact(readArtifact, "manifest.json", code),
+            runResults: await readDbtArtifact(readArtifact, "run_results.json", code),
+            sources: sourceArtifact,
+            selectedModels: [model],
+          });
+          modelResults.splice(
+            0,
+            modelResults.length,
+            ...modelResults.filter((result) => result.name !== model),
+            ...failed.models,
+          );
+          runId = failed.invocationId;
+          exitCode = code;
+          succeeded = false;
+          break;
+        }
+        const next = await readBoundedModelFingerprint(model);
+        if (next === fingerprint) {
+          convergedBoundedModels.add(model);
+          break;
+        }
+        fingerprint = next;
       }
-      const next = await readFitHeartRateFingerprint();
-      if (next === fingerprint) break;
-      fingerprint = next;
     }
   }
   if (exitCode === 0 && succeeded) {
@@ -203,6 +222,21 @@ export async function runAnalyticsBuild({
       previousPending = pending;
     }
     if (downstream.length > 0) await runPhase(downstream);
+  }
+  // The initial phase can report a bounded model as succeeded even when no drain ran (e.g. an
+  // unrelated input failed, or an earlier drain failed). Never publish that result as complete.
+  for (const [index, result] of modelResults.entries()) {
+    if (
+      result.status === "succeeded" &&
+      isBoundedModel(result.name) &&
+      !convergedBoundedModels.has(result.name)
+    ) {
+      modelResults[index] = {
+        ...result,
+        status: "skipped",
+        message: "Bounded refresh did not finish",
+      };
+    }
   }
   const artifacts = { invocationId: runId, succeeded, models: modelResults };
   const processingResult = await recordRun({
@@ -292,16 +326,17 @@ export async function runAnalyticsBuildFromEnvironment(
                 );
                 return projectCyclingPower(owner, cyclingPowerPolicy, asOf);
               },
-              readFitHeartRateFingerprint: async () => {
-                // A clock-independent fingerprint of every written row version.
+              readBoundedModelFingerprint: async (model) => {
+                // A clock-independent fingerprint of every written row version. FINAL folds
+                // background replacement merges so only new writes change the fingerprint.
                 const result = await owner.client.query({
                   query: `SELECT
                       toString(count()) AS row_count,
                       toString(sum(cityHash64(user_id, activity_id, refresh_version))) AS checksum
-                    FROM analytics.activity_fit_heart_rate`,
+                    FROM ${BOUNDED_MODEL_TABLES[model]} FINAL`,
                   format: "JSONEachRow",
                 });
-                const fingerprint = fitHeartRateFingerprintSchema.parse((await result.json())[0]);
+                const fingerprint = boundedModelFingerprintSchema.parse((await result.json())[0]);
                 return `${fingerprint.row_count}:${fingerprint.checksum}`;
               },
               recordRun: (run) => recordProcessingAnalyticsRun(database, run),

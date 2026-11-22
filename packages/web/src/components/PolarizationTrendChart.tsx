@@ -95,15 +95,20 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[], threshol
         const piStr = pi !== null ? formatNumber(pi, 3) : "N/A";
         const dateLabel = formatDateMedium(weekData.week);
         const status = `<span style="color:${chartColors.blue}">${escapeTooltipHtml(weekData.statusLabel)}</span>`;
+        const breakdown =
+          weekData.totalSeconds > 0
+            ? [
+                `Zone 1 (easy, &lt;80% max HR): ${formatMinutes(weekData.z1Seconds)} · ${weekData.zonePercentages.z1}%`,
+                `Zone 2 (middle, 80–&lt;90% max HR): ${formatMinutes(weekData.z2Seconds)} · ${weekData.zonePercentages.z2}%`,
+                `Zone 3 (high, ≥90% max HR): ${formatMinutes(weekData.z3Seconds)} · ${weekData.zonePercentages.z3}%`,
+              ]
+            : [];
         return [
           `<strong>Week of ${escapeTooltipHtml(dateLabel)}</strong>`,
           `${TRAINING_TERMINOLOGY.polarization.valueLabel}: ${piStr} ${status}`,
-          `Zone 1 (easy, <80% max HR): ${formatMinutes(weekData.z1Seconds)}`,
-          `Zone 2 (threshold, 80-90% max HR): ${formatMinutes(weekData.z2Seconds)}`,
-          `Zone 3 (high, ≥90% max HR): ${formatMinutes(weekData.z3Seconds)}`,
-        ]
-          .filter((line): line is string => typeof line === "string")
-          .join("<br/>");
+          ...breakdown,
+          ...(pi === null ? [escapeTooltipHtml(weekData.explanation)] : []),
+        ].join("<br/>");
       },
     }),
     xAxis: dofekAxis.time(),
@@ -189,7 +194,13 @@ export function PolarizationTrendChart({
         <MethodExplanation
           className="mt-2"
           technicalName={TRAINING_TERMINOLOGY.polarization.technicalName}
-          lines={[TRAINING_TERMINOLOGY.polarization.details, method.formula, method.zoneBasis]}
+          lines={[
+            TRAINING_TERMINOLOGY.polarization.details,
+            method.formula,
+            method.zoneBasis,
+            method.calculationChoice,
+            method.interpretation,
+          ]}
           source={method.source}
         />
       ) : null}

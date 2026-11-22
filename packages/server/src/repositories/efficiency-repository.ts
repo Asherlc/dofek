@@ -86,7 +86,7 @@ const POLARIZATION_RESULT_METADATA = {
   activityScope: "cycling" as const,
   threshold: 2 as const,
   explanation:
-    "The Treff three-zone polarization index is a descriptive summary of recorded cycling training.",
+    "The polarization index describes the weekly intensity distribution across all recorded cycling rides.",
 };
 
 function createPolarizationMethod(): PolarizationTrendResult["method"] {
@@ -94,10 +94,11 @@ function createPolarizationMethod(): PolarizationTrendResult["method"] {
     formula:
       "Polarization index = log10((easy-zone fraction / threshold-zone fraction) × high-zone fraction × 100).",
     zoneBasis:
-      "Easy zone (Zone 1) is below 80%, threshold zone (Zone 2) is 80–<90%, and high zone (Zone 3) is at least 90% of maximum heart rate.",
+      "Dofek uses profile maximum heart rate as a proxy for intensity. The easy zone is below 80%, the middle zone is 80–<90%, and the high zone is at least 90% of that value.",
     calculationChoice:
-      "Dofek requires recorded time in all three zones and does not calculate the polarization index when high-zone time exceeds easy-zone time.",
-    interpretation: "The >2.00 comparison is Treff's descriptive training-distribution heuristic.",
+      "A heart-rate reading contributes time until the next reading, the ride end, or ten seconds after recording, whichever comes first. Treff defines zero for recorded coverage with no high-zone time. With zero middle-zone time and a high-zone share above 1%, the calculation moves one percentage point from high to middle. The index is unavailable if high-zone time exceeds easy-zone time.",
+    interpretation:
+      "Treff's 2.00 reference describes training distribution. A polarized pattern has an unrounded index above 2.00 and progressively less time in the easy, high, and middle zones.",
     source: {
       title: "Treff et al. (2019), The Polarization-Index",
       url: "https://doi.org/10.3389/fphys.2019.00707",
@@ -625,7 +626,7 @@ export class EfficiencyRepository extends BaseRepository {
    * Polarization Index trend per week using Treff 3-zone model.
    * PI = log10((f1 / f2) * f3 * 100) where f = fraction of total training time.
    * PI > 2.0 matches Treff's descriptive polarized-distribution heuristic.
-   * Reads from the pre-computed activity_polarization_zones read model.
+   * Reads covered zone time from the activity_cycling_polarization model.
    */
   async getPolarizationTrend(range: ChartRange): Promise<PolarizationTrendResult> {
     const lowerBoundPredicate = range.clickHouseTimestampAfter("started_at");
@@ -636,13 +637,14 @@ export class EfficiencyRepository extends BaseRepository {
       `SELECT
         any(max_hr) AS max_hr,
         toString(toMonday(toTimeZone(started_at, {timezone:String}))) AS week,
-        toInt32(sum(z1_seconds)) AS z1_seconds,
-        toInt32(sum(z2_seconds)) AS z2_seconds,
-        toInt32(sum(z3_seconds)) AS z3_seconds
-      FROM analytics.activity_polarization_zones FINAL
+        sum(z1_microseconds) / 1000000.0 AS z1_seconds,
+        sum(z2_microseconds) / 1000000.0 AS z2_seconds,
+        sum(z3_microseconds) / 1000000.0 AS z3_seconds
+      FROM analytics.activity_cycling_polarization FINAL
       WHERE user_id = {userId:UUID}
         AND has({activityTypes:Array(String)}, canonical_type)
         ${lowerBoundPredicate}
+        ${clickHouseAccessPredicate(this.accessWindow, "started_at")}
         AND is_deleted = 0
       GROUP BY toMonday(toTimeZone(started_at, {timezone:String}))
       ORDER BY week`,
@@ -650,6 +652,7 @@ export class EfficiencyRepository extends BaseRepository {
         userId: this.userId,
         timezone: this.timezone,
         ...rangeParams,
+        ...clickHouseAccessParams(this.accessWindow, this.timezone),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -667,7 +670,12 @@ export class EfficiencyRepository extends BaseRepository {
         z1Seconds: z1,
         z2Seconds: z2,
         z3Seconds: z3,
-        polarizationIndex: computePolarizationIndex(z1, z2, z3),
+        // Recover the exact covered durations after converting for the wire representation.
+        polarizationIndex: computePolarizationIndex(
+          Math.round(z1 * 1_000_000),
+          Math.round(z2 * 1_000_000),
+          Math.round(z3 * 1_000_000),
+        ),
       });
     });
 

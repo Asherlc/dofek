@@ -576,17 +576,19 @@ activities Array(Tuple(UUID, DateTime64(6, 'UTC'), Float64, Nullable(Float64), N
 is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9, 'UTC')`,
-    activity_polarization_zones: `activity_id UUID,
+    activity_cycling_polarization: `activity_id UUID,
 user_id UUID,
 canonical_type String,
 started_at DateTime64(6, 'UTC'),
 max_hr Nullable(Int16),
-z1_seconds Int32,
-z2_seconds Int32,
-z3_seconds Int32,
+z1_microseconds UInt64,
+z2_microseconds UInt64,
+z3_microseconds UInt64,
 is_deleted UInt8,
 refresh_version UInt64,
-refreshed_at DateTime64(9)`,
+refreshed_at DateTime64(9),
+ended_at DateTime64(6, 'UTC'),
+source_sensor_version UInt64`,
   };
   const shortViewName = viewName.split(".").at(-1);
   if (!shortViewName) {
@@ -626,7 +628,7 @@ refreshed_at DateTime64(9)`,
     shortViewName === "activity_aerobic_efficiency" ||
     shortViewName === "cycling_activity" ||
     shortViewName === "daily_cycling" ||
-    shortViewName === "activity_polarization_zones"
+    shortViewName === "activity_cycling_polarization"
       ? "ReplacingMergeTree(refresh_version)"
       : "MergeTree";
   const orderBy =
@@ -660,7 +662,7 @@ refreshed_at DateTime64(9)`,
                           : shortViewName === "hiking_activity" ||
                               shortViewName === "activity_heart_rate_distribution" ||
                               shortViewName === "activity_aerobic_efficiency" ||
-                              shortViewName === "activity_polarization_zones"
+                              shortViewName === "activity_cycling_polarization"
                             ? "(user_id, activity_id)"
                             : shortViewName === "cycling_activity"
                               ? "(user_id, activity_id)"

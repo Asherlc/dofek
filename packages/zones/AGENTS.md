@@ -10,4 +10,3 @@
 ## Implementation Notes
 - **Zone Colors**: Standardized colors are imported from `@dofek/scoring/colors`. Use `HEART_RATE_ZONE_COLORS` for consistent chart rendering.
 - **Classification Fallback**: `classifyHeartRateZone` returns `0` for heart rates below Zone 1 (i.e., < 50% HRR).
-- **Polarization Index**: Requires time in all three zones to be greater than zero; otherwise, it returns `null`.

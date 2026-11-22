@@ -16,16 +16,16 @@ describe("clickHouseMigrations", () => {
     const migrationIds = migrations.map((migration) => migration.id);
     expect(new Set(migrationIds).size).toBe(migrationIds.length);
     expect(migrationIds.slice(-7)).toEqual([
-      "0110_remove_daily_scores",
       "0111_daily_health_sensor",
       "0112_remove_healthspan",
       "0113_activity_fit_recovery_error",
       "0114_normalized_power_projection",
       "0115_restore_user_profile_ftp_mirror_column",
       "0116_exclude_catalog_only_daily_metrics",
+      "0117_cycling_polarization_elapsed_seconds",
     ]);
     expect(migrations.at(-1)).toMatchObject({
-      id: "0116_exclude_catalog_only_daily_metrics",
+      id: "0117_cycling_polarization_elapsed_seconds",
     });
     const migrationNumbers = migrationIds.map((migrationId) => Number(migrationId.slice(0, 4)));
     expect(migrationNumbers).toEqual(

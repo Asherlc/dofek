@@ -142,8 +142,8 @@ describe("PolarizationTrendChart option builder", () => {
         seriesName: "Easy-to-hard balance",
       },
     ]);
-    expect(html).toContain("<80% max HR");
-    expect(html).toContain("80-90% max HR");
+    expect(html).toContain("&lt;80% max HR");
+    expect(html).toContain("80–&lt;90% max HR");
     expect(html).toContain("≥90% max HR");
     expect(html).not.toContain("HRR");
     expect(html).not.toContain("Karvonen");
@@ -291,7 +291,7 @@ describe("PolarizationTrendChart option builder", () => {
     expect(incompleteSeries).toBeUndefined();
   });
 
-  it("shows zone durations for insufficient-data weeks", () => {
+  it("shows zone durations and the server explanation when an index is unavailable", () => {
     const weeksWithGap = [
       makePolarizationWeek({
         week: "2024-01-01",
@@ -321,7 +321,8 @@ describe("PolarizationTrendChart option builder", () => {
       },
     ]);
     expect(html).toContain("Insufficient data");
-    expect(html).toContain("Zone 2 (threshold, 80-90% max HR): 0m");
+    expect(html).toContain("Zone 2 (middle, 80–&lt;90% max HR): 0m");
+    expect(html).toContain("Server explanation: Insufficient data");
   });
 });
 

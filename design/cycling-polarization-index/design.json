@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "title": "Cycling Polarization Index",
+  "kind": "prototype",
+  "description": "Endurance card showing one weekly Polarization Index across all cycling rides with illustrative data.",
+  "artboards": [
+    {
+      "id": "endurance-card",
+      "title": "Endurance card",
+      "file": "endurance-card.html",
+      "width": 800
+    }
+  ]
+}

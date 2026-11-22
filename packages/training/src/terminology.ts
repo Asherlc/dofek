@@ -46,10 +46,10 @@ export const TRAINING_TERMINOLOGY = {
   },
   polarization: {
     plainLabel: "Easy-to-hard training balance",
-    plainDescription: "Shows the balance of easy, threshold, and high-intensity cycling.",
+    plainDescription: "Shows the balance of easy, middle, and high-intensity cycling.",
     valueLabel: "Easy-to-hard balance",
-    technicalName: "Polarization Index (Treff three-zone model)",
-    details: "Summarizes the recorded distribution of easy, threshold, and high-intensity cycling.",
+    technicalName: "Polarization Index (Treff)",
+    details: "Summarizes the recorded distribution of easy, middle, and high-intensity cycling.",
   },
   monotony: {
     plainLabel: "Training variety and total load",

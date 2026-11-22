@@ -147,71 +147,209 @@ describe("runAnalyticsBuild", () => {
     );
   });
 
-  describe("activity_fit_heart_rate drain", () => {
-    const selected = ["activity_fit_heart_rate"];
-    function build(versions: string[], runDbt = vi.fn(async () => 0), reader = true) {
-      const recordRun = vi.fn(async () => ({ datasets: 1, failed: 0 }));
-      const readFitHeartRateFingerprint = vi.fn(async () => versions.shift() ?? "never");
-      return {
-        runDbt,
-        readFitHeartRateFingerprint,
-        recordRun,
-        run: () =>
-          runAnalyticsBuild({
-            selectedModels: selected,
-            artifactDirectory: "/tmp/fit-drain",
-            microbatchBounds: TEST_MICROBATCH_BOUNDS,
-            loadPendingDatasets: async () => [],
-            runDbt,
-            readArtifact: async (name) =>
-              createArtifactReader(
-                `fit-drain-${runDbt.mock.calls.length}`,
-                selected.map((model) => ({
-                  uniqueId: `model.dofek.${model}`,
-                  name: model,
-                  status: runDbt.mock.calls.length > 1 ? "error" : "success",
-                  executionTime: 1,
-                  message: runDbt.mock.calls.length > 1 ? "Batch failed" : null,
-                })),
-              )(name),
-            projectCyclingPower: async () => ({ pendingActivities: 0 }),
-            ...(reader && { readFitHeartRateFingerprint }),
-            recordRun,
+  describe.each(["activity_fit_heart_rate", "activity_polarization_zones"] as const)(
+    "%s bounded drain",
+    (model) => {
+      const selected = [model];
+      function build(versions: string[], runDbt = vi.fn(async () => 0), reader = true) {
+        const recordRun = vi.fn(async () => ({ datasets: 1, failed: 0 }));
+        const readBoundedModelFingerprint = vi.fn(async () => versions.shift() ?? "never");
+        return {
+          runDbt,
+          readBoundedModelFingerprint,
+          recordRun,
+          run: () =>
+            runAnalyticsBuild({
+              selectedModels: selected,
+              artifactDirectory: "/tmp/bounded-drain",
+              microbatchBounds: TEST_MICROBATCH_BOUNDS,
+              loadPendingDatasets: async () => [],
+              runDbt,
+              readArtifact: async (name) =>
+                createArtifactReader(
+                  `bounded-drain-${runDbt.mock.calls.length}`,
+                  selected.map((m) => ({
+                    uniqueId: `model.dofek.${m}`,
+                    name: m,
+                    status: runDbt.mock.calls.length > 1 ? "error" : "success",
+                    executionTime: 1,
+                    message: runDbt.mock.calls.length > 1 ? "Batch failed" : null,
+                  })),
+                )(name),
+              projectCyclingPower: async () => ({ pendingActivities: 0 }),
+              ...(reader && { readBoundedModelFingerprint }),
+              recordRun,
+            }),
+        };
+      }
+
+      it("reruns the model until a pass writes nothing new", async () => {
+        const { run, runDbt } = build(["1", "2", "3", "3"]);
+        await run();
+        // initial build + three drain passes (two productive, one empty)
+        expect(runDbt).toHaveBeenCalledTimes(4);
+      });
+
+      it("runs a single empty drain pass when already drained", async () => {
+        const { run, runDbt } = build(["1", "1"]);
+        await run();
+        expect(runDbt).toHaveBeenCalledTimes(2);
+      });
+
+      it("records a failed drain pass before failing the build", async () => {
+        let calls = 0;
+        const { run, recordRun } = build(
+          ["1"],
+          vi.fn(async () => (++calls === 1 ? 0 : 1)),
+        );
+        await expect(run()).rejects.toBeInstanceOf(AnalyticsBuildError);
+        expect(recordRun).toHaveBeenCalledWith(
+          expect.objectContaining({
+            modelResults: [expect.objectContaining({ name: model, status: "failed" })],
           }),
-      };
-    }
+        );
+      });
 
-    it("reruns the model until a pass writes nothing new", async () => {
-      const { run, runDbt } = build(["1", "2", "3", "3"]);
-      await run();
-      // initial build + three drain passes (two productive, one empty)
-      expect(runDbt).toHaveBeenCalledTimes(4);
-    });
+      it("requires a fingerprint reader when the model is selected", async () => {
+        const { run } = build([], undefined, false);
+        await expect(run()).rejects.toThrow("no fingerprint reader was provided");
+      });
+    },
+  );
 
-    it("runs a single empty drain pass when already drained", async () => {
-      const { run, runDbt } = build(["1", "1"]);
-      await run();
-      expect(runDbt).toHaveBeenCalledTimes(2);
+  it("drains both selected bounded models before recording publication", async () => {
+    const order: string[] = [];
+    const fingerprints: Record<string, string[]> = {
+      activity_fit_heart_rate: ["1", "2", "3", "3"],
+      activity_polarization_zones: ["a", "b", "c", "c"],
+    };
+    const selected = ["activity_fit_heart_rate", "activity_polarization_zones"] as const;
+    await runAnalyticsBuild({
+      selectedModels: selected,
+      artifactDirectory: "/tmp/bounded-drain-both",
+      microbatchBounds: TEST_MICROBATCH_BOUNDS,
+      loadPendingDatasets: async () => [],
+      runDbt: async (args) => {
+        order.push(`dbt:${args.at(-1)}`);
+        return 0;
+      },
+      readArtifact: async (name) =>
+        createArtifactReader(
+          "bounded-drain-both",
+          selected.map((m) => ({
+            uniqueId: `model.dofek.${m}`,
+            name: m,
+            status: "success",
+            executionTime: 1,
+            message: null,
+          })),
+        )(name),
+      projectCyclingPower: async () => ({ pendingActivities: 0 }),
+      readBoundedModelFingerprint: async (model) => fingerprints[model].shift() ?? "never",
+      recordRun: async () => {
+        order.push("record");
+        return { datasets: 1, failed: 0 };
+      },
     });
+    expect(order).toEqual([
+      "dbt:activity_fit_heart_rate activity_polarization_zones",
+      "dbt:activity_fit_heart_rate",
+      "dbt:activity_fit_heart_rate",
+      "dbt:activity_fit_heart_rate",
+      "dbt:activity_polarization_zones",
+      "dbt:activity_polarization_zones",
+      "dbt:activity_polarization_zones",
+      "record",
+    ]);
+  });
 
-    it("records a failed drain pass before failing the build", async () => {
-      let calls = 0;
-      const { run, recordRun } = build(
-        ["1"],
-        vi.fn(async () => (++calls === 1 ? 0 : 1)),
-      );
-      await expect(run()).rejects.toBeInstanceOf(AnalyticsBuildError);
-      expect(recordRun).toHaveBeenCalledWith(
-        expect.objectContaining({
-          modelResults: [expect.objectContaining({ name: selected[0], status: "failed" })],
-        }),
-      );
-    });
+  it("marks bounded models skipped when the input phase fails before any drain", async () => {
+    const selectedModels = [
+      "activity_fit_heart_rate",
+      "activity_polarization_zones",
+      "provider_stats",
+    ];
+    const recordRun = vi.fn(async () => ({ datasets: 1, failed: 1 }));
+    await expect(
+      runAnalyticsBuild({
+        selectedModels,
+        artifactDirectory: "/tmp/bounded-input-failure",
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
+        loadPendingDatasets: async () => [],
+        runDbt: async () => 1,
+        readArtifact: createArtifactReader(
+          "bounded-input-failure",
+          selectedModels.map((name) => ({
+            uniqueId: `model.dofek.${name}`,
+            name,
+            status: name === "provider_stats" ? "error" : "success",
+            executionTime: 1,
+            message: name === "provider_stats" ? "provider failed" : null,
+          })),
+        ),
+        projectCyclingPower: async () => ({ pendingActivities: 0 }),
+        readBoundedModelFingerprint: async () => "1",
+        recordRun,
+      }),
+    ).rejects.toBeInstanceOf(AnalyticsBuildError);
+    expect(recordRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelResults: [
+          expect.objectContaining({
+            name: "activity_fit_heart_rate",
+            status: "skipped",
+            message: "Bounded refresh did not finish",
+          }),
+          expect.objectContaining({
+            name: "activity_polarization_zones",
+            status: "skipped",
+            message: "Bounded refresh did not finish",
+          }),
+          expect.objectContaining({ name: "provider_stats", status: "failed" }),
+        ],
+      }),
+    );
+  });
 
-    it("requires a fingerprint reader when the model is selected", async () => {
-      const { run } = build([], undefined, false);
-      await expect(run()).rejects.toThrow("no fingerprint reader was provided");
-    });
+  it("keeps a failed drain result and skips a later bounded model that never drained", async () => {
+    const selected = ["activity_fit_heart_rate", "activity_polarization_zones"] as const;
+    let calls = 0;
+    const recordRun = vi.fn(async () => ({ datasets: 1, failed: 1 }));
+    await expect(
+      runAnalyticsBuild({
+        selectedModels: selected,
+        artifactDirectory: "/tmp/bounded-drain-failure",
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
+        loadPendingDatasets: async () => [],
+        runDbt: async () => (++calls === 2 ? 1 : 0),
+        readArtifact: async (name) =>
+          createArtifactReader(
+            `bounded-drain-${calls}`,
+            selected.map((m) => ({
+              uniqueId: `model.dofek.${m}`,
+              name: m,
+              status: calls === 2 && m === "activity_fit_heart_rate" ? "error" : "success",
+              executionTime: 1,
+              message: calls === 2 && m === "activity_fit_heart_rate" ? "drain failed" : null,
+            })),
+          )(name),
+        projectCyclingPower: async () => ({ pendingActivities: 0 }),
+        readBoundedModelFingerprint: async () => "1",
+        recordRun,
+      }),
+    ).rejects.toBeInstanceOf(AnalyticsBuildError);
+    expect(recordRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelResults: expect.arrayContaining([
+          expect.objectContaining({ name: "activity_fit_heart_rate", status: "failed" }),
+          expect.objectContaining({
+            name: "activity_polarization_zones",
+            status: "skipped",
+            message: "Bounded refresh did not finish",
+          }),
+        ]),
+      }),
+    );
   });
 
   it("records downstream failure without claiming the input phase completed the dataset", async () => {

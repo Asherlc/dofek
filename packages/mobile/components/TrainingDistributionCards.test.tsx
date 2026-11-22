@@ -90,7 +90,7 @@ describe("TrainingDistributionCards", () => {
 
     expect(screen.getByText("Easy-to-hard training balance")).toBeTruthy();
     expect(screen.getByText("Not polarized")).toBeTruthy();
-    expect(screen.getByText("80% easy · 10% threshold · 10% high")).toBeTruthy();
+    expect(screen.getByText("80% easy · 10% middle · 10% high")).toBeTruthy();
     expect(screen.getByText("Easy-to-hard balance 2.000")).toBeTruthy();
     expect(screen.queryByText("Server-provided Treff formula.")).toBeNull();
     fireEvent.click(
@@ -103,6 +103,8 @@ describe("TrainingDistributionCards", () => {
       expect.stringContaining("Technical name: Polarization Index"),
       [{ text: "Close" }],
     );
+    expect(alertSpy.mock.lastCall?.[1]).toContain("Server-provided calculation choice.");
+    expect(alertSpy.mock.lastCall?.[1]).toContain("Server-provided descriptive interpretation.");
     alertSpy.mockRestore();
   });
 
@@ -139,7 +141,7 @@ describe("TrainingDistributionCards", () => {
               zonePercentages: { z1: 85.7, z2: 0, z3: 14.3 },
               status: "insufficient_data",
               statusLabel: "Insufficient data",
-              explanation: "Polarization needs time in every Treff zone.",
+              explanation: "The adjustment requires more than 1% high-zone time.",
             },
           ],
         }}
@@ -147,6 +149,7 @@ describe("TrainingDistributionCards", () => {
     );
 
     expect(screen.getByText("Insufficient data")).toBeTruthy();
+    expect(screen.getByText("The adjustment requires more than 1% high-zone time.")).toBeTruthy();
     fireEvent.click(
       screen.getByRole("button", {
         name: "About How this is calculated for Easy-to-hard training balance",

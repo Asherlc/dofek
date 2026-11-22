@@ -628,15 +628,15 @@ export async function seedClickHouseActivityPolarizationZone(
   row: ClickHouseActivityPolarizationZoneSeedRow,
 ): Promise<void> {
   await getClickHouseTestClient(testContext).command({
-    query: `INSERT INTO analytics.activity_polarization_zones (
+    query: `INSERT INTO analytics.activity_cycling_polarization (
         activity_id,
         user_id,
         canonical_type,
         started_at,
         max_hr,
-        z1_seconds,
-        z2_seconds,
-        z3_seconds,
+        z1_microseconds,
+        z2_microseconds,
+        z3_microseconds,
         is_deleted,
         refresh_version,
         refreshed_at
@@ -647,9 +647,9 @@ export async function seedClickHouseActivityPolarizationZone(
         'cycling',
         parseDateTime64BestEffort({startedAt:String}, 6),
         toNullable(toInt16({maxHr:Int16})),
-        toInt32({z1Seconds:Int32}),
-        toInt32({z2Seconds:Int32}),
-        toInt32({z3Seconds:Int32}),
+        toUInt64(round({z1Seconds:Float64} * 1000000.0)),
+        toUInt64(round({z2Seconds:Float64} * 1000000.0)),
+        toUInt64(round({z3Seconds:Float64} * 1000000.0)),
         toUInt8(0),
         toUInt64(1),
         now64(9)`,
@@ -783,7 +783,7 @@ ${buildTestDailyBodyMeasurementSelectSql(defaultTestDatabases)}`,
     query: buildTestAnalyticsTableStatement("analytics.activity_aerobic_efficiency"),
   });
   await client.command({
-    query: buildTestAnalyticsTableStatement("analytics.activity_polarization_zones"),
+    query: buildTestAnalyticsTableStatement("analytics.activity_cycling_polarization"),
   });
   await client.command({
     query: buildTestAnalyticsTableStatement("analytics.cycling_activity"),

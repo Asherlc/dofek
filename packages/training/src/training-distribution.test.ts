@@ -56,9 +56,9 @@ describe("buildTreffPolarizationWeek", () => {
     expect(
       buildTreffPolarizationWeek({
         week: "2026-07-06",
-        z1Seconds: 1,
-        z2Seconds: 10,
-        z3Seconds: 10,
+        z1Seconds: 60,
+        z2Seconds: 15,
+        z3Seconds: 25,
         polarizationIndex: DEFAULT_POLARIZATION_THRESHOLD,
       }),
     ).toMatchObject({
@@ -69,33 +69,45 @@ describe("buildTreffPolarizationWeek", () => {
     expect(
       buildTreffPolarizationWeek({
         week: "2026-07-13",
-        z1Seconds: 1,
-        z2Seconds: 10,
-        z3Seconds: 10,
-        polarizationIndex: DEFAULT_POLARIZATION_THRESHOLD + 0.001,
+        z1Seconds: 60,
+        z2Seconds: 14.995,
+        z3Seconds: 25.005,
+        polarizationIndex: 2.0002316,
       }),
     ).toMatchObject({
       status: "polarized",
       statusLabel: "Matches polarized-pattern heuristic",
+      polarizationIndex: 2,
     });
+  });
+
+  it("returns a numeric index without labeling an easy and high tie polarized", () => {
+    expect(
+      buildTreffPolarizationWeek({
+        week: "2026-07-06",
+        z1Seconds: 49.5,
+        z2Seconds: 1,
+        z3Seconds: 49.5,
+        polarizationIndex: 3.3892104,
+      }),
+    ).toMatchObject({ polarizationIndex: 3.389, status: "not_polarized" });
   });
 
   it("returns an explicit insufficient-data status when the index cannot be computed", () => {
     const result = buildTreffPolarizationWeek({
       week: "2026-07-20",
-      z1Seconds: 3600,
+      z1Seconds: 99,
       z2Seconds: 0,
-      z3Seconds: 600,
+      z3Seconds: 1,
       polarizationIndex: null,
     });
 
     expect(result).toMatchObject({
-      totalSeconds: 4200,
-      zonePercentages: { z1: 85.7, z2: 0, z3: 14.3 },
+      totalSeconds: 100,
+      zonePercentages: { z1: 99, z2: 0, z3: 1 },
       status: "insufficient_data",
       statusLabel: "Not calculated",
-      explanation:
-        "The index is not calculated because Dofek requires recorded cycling time in all three Treff heart-rate zones.",
+      explanation: expect.stringContaining("more than 1%"),
     });
   });
 
@@ -116,18 +128,76 @@ describe("buildTreffPolarizationWeek", () => {
     });
   });
 
+  it("does not treat Zone 3 equal to Zone 1 as the invalid Zone 3 > Zone 1 case", () => {
+    expect(
+      buildTreffPolarizationWeek({
+        week: "2026-07-20",
+        z1Seconds: 50,
+        z2Seconds: 0,
+        z3Seconds: 50,
+        polarizationIndex: null,
+      }).explanation,
+    ).toBe("With zero middle-zone time, Treff's adjustment requires more than 1% high-zone time.");
+  });
+
+  it("explains an empty week", () => {
+    expect(
+      buildTreffPolarizationWeek({
+        week: "2026-07-20",
+        z1Seconds: 0,
+        z2Seconds: 0,
+        z3Seconds: 0,
+        polarizationIndex: null,
+      }).explanation,
+    ).toBe("This week has no recorded cycling heart-rate coverage in the selected dates.");
+  });
+
+  it("uses the generic explanation when the index is unavailable for other reasons", () => {
+    const base = { week: "2026-07-20", polarizationIndex: null };
+    const generic = "The index is unavailable for this distribution.";
+    expect(
+      buildTreffPolarizationWeek({ ...base, z1Seconds: 80, z2Seconds: 0, z3Seconds: 0 })
+        .explanation,
+    ).toBe(generic);
+    expect(
+      buildTreffPolarizationWeek({ ...base, z1Seconds: 80, z2Seconds: 10, z3Seconds: 10 })
+        .explanation,
+    ).toBe(generic);
+  });
+
+  it("requires strict easy > high > middle ordering to label a week polarized", () => {
+    const ordering =
+      "Treff's polarized pattern requires easy-zone time to exceed high-zone time, with the least time in the middle zone.";
+    const week = (z1Seconds: number, z2Seconds: number, z3Seconds: number) =>
+      buildTreffPolarizationWeek({
+        week: "2026-07-20",
+        z1Seconds,
+        z2Seconds,
+        z3Seconds,
+        polarizationIndex: 2.5,
+      });
+
+    // high == middle
+    expect(week(60, 20, 20)).toMatchObject({ status: "not_polarized", explanation: ordering });
+    // easy == high
+    expect(week(40, 20, 40)).toMatchObject({ status: "not_polarized", explanation: ordering });
+    // middle largest
+    expect(week(20, 60, 20)).toMatchObject({ status: "not_polarized", explanation: ordering });
+    expect(week(60, 10, 30)).toMatchObject({ status: "polarized" });
+  });
+
   it("returns layman-readable percentages and an explanation for a computed week", () => {
     const result = buildTreffPolarizationWeek({
       week: "2026-07-20",
       z1Seconds: 4800,
-      z2Seconds: 600,
-      z3Seconds: 600,
+      z2Seconds: 300,
+      z3Seconds: 900,
       polarizationIndex: 2.123,
     });
 
     expect(result).toMatchObject({
       totalSeconds: 6000,
-      zonePercentages: { z1: 80, z2: 10, z3: 10 },
+      zonePercentages: { z1: 80, z2: 5, z3: 15 },
       explanation:
         "This week's recorded cycling distribution is above Treff's descriptive 2.00 heuristic.",
     });

@@ -7,6 +7,7 @@ import { ChartRange } from "../lib/chart-range.ts";
 import {
   createClickHouseTestActivitySensorStore,
   getClickHouseTestClient,
+  seedClickHouseActivityPolarizationZone,
   seedClickHouseMetricStreamRows,
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -81,7 +82,7 @@ describe("EfficiencyRepository ClickHouse serving model", () => {
          FROM analytics.deduped_sensor
          WHERE user_id = {userId:UUID} AND is_deleted = 0) AS sensor_rows,
         (SELECT count()
-         FROM analytics.activity_polarization_zones FINAL
+         FROM analytics.activity_cycling_polarization FINAL
          WHERE user_id = {userId:UUID} AND is_deleted = 0) AS serving_rows`,
       { userId: TEST_USER_ID },
     );
@@ -95,10 +96,54 @@ describe("EfficiencyRepository ClickHouse serving model", () => {
     expect(result).toMatchObject({ maxHr: null, weeks: [] });
     expect(querySpy).toHaveBeenCalledTimes(1);
     const queryText = querySpy.mock.calls[0]?.[1];
-    expect(queryText).toContain("analytics.activity_polarization_zones");
+    expect(queryText).toContain("analytics.activity_cycling_polarization");
     expect(queryText).not.toContain("analytics.deduped_sensor");
     expect(queryText).not.toContain("analytics.activity_summary");
   });
+
+  it("pools fractional cycling durations inside the local access window", async () => {
+    const rides = [
+      ["2026-05-11T06:59:59Z", 0, 200],
+      ["2026-05-11T07:00:00Z", 42.5, 7.5],
+      ["2026-05-15T18:00:00Z", 37.9, 12.6],
+      ["2026-05-18T07:00:00Z", 0, 300],
+    ] as const;
+    for (const [index, [startedAt, z1Seconds, z3Seconds]] of rides.entries()) {
+      await seedClickHouseActivityPolarizationZone(testContext, {
+        activityId: `19970000-0000-4000-8000-00000000010${index}`,
+        userId: TEST_USER_ID,
+        startedAt,
+        maxHr: 190,
+        z1Seconds,
+        z2Seconds: 0,
+        z3Seconds,
+      });
+    }
+    const repository = new EfficiencyRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "America/Los_Angeles",
+      sensorStore,
+      {
+        kind: "limited",
+        paid: false,
+        reason: "free_recent_week",
+        startDate: "2026-05-11",
+        endDateExclusive: "2026-05-18",
+      },
+    );
+    const result = await repository.getPolarizationTrend(ChartRange.fromDays(null));
+    expect(result.weeks).toHaveLength(1);
+    expect(result.weeks[0]).toMatchObject({
+      week: "2026-05-11",
+      z1Seconds: 80.4,
+      z2Seconds: 0,
+      z3Seconds: 20.1,
+      totalSeconds: 100.5,
+      polarizationIndex: 3.182,
+      status: "polarized",
+    });
+  }, 120_000);
 
   it("computes aerobic efficiency from live samples when its serving table is empty", async () => {
     // Include both endpoints of the 300-second qualifying interval.
@@ -150,6 +195,37 @@ describe("EfficiencyRepository ClickHouse serving model", () => {
           z2Samples: 300,
         },
       ],
+    });
+  });
+
+  it("treats a weekly easy and high tie as equal across rides with fractional coverage", async () => {
+    for (const [index, z1Seconds, z3Seconds] of [
+      [0, 0.3, 0.1],
+      [1, 0, 0.2],
+    ] as const) {
+      await seedClickHouseActivityPolarizationZone(testContext, {
+        activityId: `19970000-0000-4000-8000-00000000011${index}`,
+        userId: TEST_USER_ID,
+        startedAt: "2026-04-27T18:00:00Z",
+        maxHr: 190,
+        z1Seconds,
+        z2Seconds: 0,
+        z3Seconds,
+      });
+    }
+    const repository = new EfficiencyRepository(testContext.db, TEST_USER_ID, "UTC", sensorStore, {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2026-04-27",
+      endDateExclusive: "2026-05-04",
+    });
+    const result = await repository.getPolarizationTrend(ChartRange.fromDays(null));
+    expect(result.weeks[0]).toMatchObject({
+      z1Seconds: 0.3,
+      z3Seconds: 0.3,
+      polarizationIndex: 3.389,
+      status: "not_polarized",
     });
   });
 });
