@@ -9,8 +9,8 @@ import { View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { trpc } from "../lib/trpc";
 import { ClimbingBestOnsight } from "./ClimbingBestOnsight";
-import { createClimbingRecordDetailLink } from "./climbing-best-onsight-story-helpers";
 import { climbingAttachmentSafeAreaMetrics } from "./climbing-log-attachment-test-helpers";
+import { createClimbingRecordDetailLink } from "./fixtures/climbing-best-onsight-story-helpers";
 
 function StoryFrame({ children }: { children: ReactNode }) {
   const { queryClient, client } = useMemo(() => {

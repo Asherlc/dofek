@@ -1,7 +1,7 @@
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { z } from "zod";
-import { climbingBestOnsightRecordFixture } from "../../../server/src/repositories/climbing-test-helpers.ts";
+import { climbingBestOnsightRecordFixture } from "../../../server/src/repositories/fixtures/climbing-best-onsight-record.ts";
 
 const recordDetailInputSchema = z.object({
   providerId: z.string().optional(),

@@ -15,7 +15,7 @@ import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
 } from "../../app-fixtures/(tabs)/processing-status-story-fixture";
-import { createClimbingRecordDetailLink } from "../../components/climbing-best-onsight-story-helpers";
+import { createClimbingRecordDetailLink } from "../../components/fixtures/climbing-best-onsight-story-helpers";
 import { climbingLocationMapFixture } from "../../components/climbing-location-map-fixtures";
 import {
   climbingAttachmentActivities,

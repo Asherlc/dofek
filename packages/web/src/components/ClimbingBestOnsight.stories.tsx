@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { ClimbingBestOnsight } from "./ClimbingBestOnsight.tsx";
-import { createClimbingRecordDetailLink } from "./climbing-best-onsight-story-helpers.ts";
+import { createClimbingRecordDetailLink } from "./fixtures/climbing-best-onsight-story-helpers.ts";
 
 function StoryFrame({ children }: { children: ReactNode }) {
   const queryClient = useMemo(() => new QueryClient(), []);
