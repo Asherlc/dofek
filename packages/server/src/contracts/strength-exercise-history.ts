@@ -36,7 +36,6 @@ export const estimatedOneRepMaxEntrySchema = z.object({
   provider: z.string(),
   fatigueMarker: z.literal("Failure"),
 });
-export type EstimatedOneRepMaxEntry = z.infer<typeof estimatedOneRepMaxEntrySchema>;
 
 export const estimatedMaxTrendEvidenceSchema = z.object({
   direction: z.enum(["increasing", "decreasing", "stable"]),
@@ -45,7 +44,6 @@ export const estimatedMaxTrendEvidenceSchema = z.object({
   firstDate: dateStringSchema,
   latestDate: dateStringSchema,
 });
-export type EstimatedMaxTrendEvidence = z.infer<typeof estimatedMaxTrendEvidenceSchema>;
 
 export const estimatedOneRepMaxRowSchema = z.object({
   exerciseName: z.string(),
@@ -53,7 +51,6 @@ export const estimatedOneRepMaxRowSchema = z.object({
   history: z.array(estimatedOneRepMaxEntrySchema),
   trend: estimatedMaxTrendEvidenceSchema,
 });
-export type EstimatedOneRepMaxRow = z.infer<typeof estimatedOneRepMaxRowSchema>;
 
 export const strengthExerciseHistoryRowSchema = z.object({
   exerciseName: z.string(),
