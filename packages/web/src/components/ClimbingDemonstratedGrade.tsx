@@ -85,6 +85,7 @@ export function ClimbingDemonstratedGrade({
     return (
       <QueryStatePanel
         variant="error"
+        error={error}
         contextLabel="Demonstrated grades"
         message={userFacingErrorMessage(error, "Demonstrated grades could not be loaded.")}
         height={120}
@@ -129,6 +130,7 @@ export function ClimbingDemonstratedGrade({
       {error ? (
         <QueryStatePanel
           variant="error"
+          error={error}
           contextLabel="Demonstrated grades"
           message={userFacingErrorMessage(error, "Demonstrated grades could not be loaded.")}
           height={0}

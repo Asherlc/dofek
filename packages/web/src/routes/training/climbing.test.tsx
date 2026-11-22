@@ -467,7 +467,7 @@ describe("ClimbingTab", () => {
     const section = screen.getByRole("heading", { name: "Grade Progression" }).closest("section");
     if (!section) throw new Error("Missing grade progression section");
     expect(within(section).getByRole("heading", { name: "Demonstrated grade" })).toBeVisible();
-    expect(within(section).getByText("Demonstrated grades unavailable")).toBeVisible();
+    expect(within(section).getByText(/Demonstrated grades unavailable/)).toBeVisible();
     expect(
       within(section).getByRole("button", { name: "Indoor bouldering, V5, 3 climbs" }),
     ).toBeVisible();
