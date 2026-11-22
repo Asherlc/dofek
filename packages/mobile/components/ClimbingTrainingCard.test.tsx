@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { captureException } from "../lib/telemetry";
 import { ClimbingTrainingCard } from "./ClimbingTrainingCard";
+import { demonstratedGradeFixture } from "./climbing-demonstrated-grade-fixture";
 import { climbingProgressionFixture } from "./climbing-progression-test-helpers";
 
 vi.mock("../lib/telemetry", () => ({ captureException: vi.fn() }));
@@ -74,6 +75,21 @@ describe("ClimbingTrainingCard", () => {
     expect(screen.getAllByText("V4").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("8 attempts")).toBeTruthy();
     expect(screen.getByText("5 sends")).toBeTruthy();
+  });
+
+  it("shows demonstrated grade alone when the dashboard payload is unavailable", () => {
+    render(
+      <ClimbingTrainingCard
+        data={undefined}
+        demonstratedGrade={demonstratedGradeFixture}
+        demonstratedGradeOnly
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Indoor bouldering, V5, 3 climbs" })).toBeTruthy();
+    expect(screen.queryByRole("image", { name: /^Grade progression/ })).toBeNull();
+    expect(screen.queryByText("Volume by Grade")).toBeNull();
+    expect(screen.queryByText("No Hangboarding sessions to display.")).toBeNull();
   });
 
   it("reports malformed climbing rows while rendering valid partial climbing data", async () => {

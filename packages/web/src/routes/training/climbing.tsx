@@ -9,6 +9,7 @@ import { keepPreviousData } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useId, useRef, useState } from "react";
 import { ClimbingBestOnsight } from "../../components/ClimbingBestOnsight.tsx";
+import { ClimbingDemonstratedGrade } from "../../components/ClimbingDemonstratedGrade.tsx";
 import { ClimbingFilters } from "../../components/ClimbingFilters.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
 import { ClimbingLocationMap } from "../../components/ClimbingLocationMap.tsx";
@@ -52,6 +53,10 @@ export function ClimbingTab() {
     previousEndDate.current = endDate;
     void refetchBestOnsight();
   }, [endDate, refetchBestOnsight]);
+  const demonstratedGrade = trpc.climbing.demonstratedGrade.useQuery(
+    { endDate, filters },
+    climbingQueryOptions,
+  );
   const volumeByGrade = trpc.climbing.volumeByGrade.useQuery(rangeInput, climbingQueryOptions);
   const increaseQueryOptions = { refetchOnWindowFocus: true };
   const volumeIncrease = trpc.climbing.volumeIncrease.useQuery(undefined, increaseQueryOptions);
@@ -83,7 +88,8 @@ export function ClimbingTab() {
         volumeByGrade.isFetching ||
         volumeOverTime.isFetching ||
         strengths.isFetching ||
-        locationMap.isFetching
+        locationMap.isFetching ||
+        demonstratedGrade.isFetching
           ? "Updating climbing…"
           : null}
       </p>
@@ -134,6 +140,11 @@ export function ClimbingTab() {
         </Section>
 
         <Section title="Grade Progression">
+          <ClimbingDemonstratedGrade
+            data={demonstratedGrade.data}
+            loading={demonstratedGrade.isLoading}
+            error={demonstratedGrade.error}
+          />
           {gradeProgression.error ? (
             <QueryStatePanel error={gradeProgression.error} height={0} />
           ) : null}

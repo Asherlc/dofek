@@ -15,6 +15,7 @@ import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
 } from "../../app-fixtures/(tabs)/processing-status-story-fixture";
+import { demonstratedGradeFixture } from "../../components/climbing-demonstrated-grade-fixture";
 import { climbingLocationMapFixture } from "../../components/climbing-location-map-fixtures";
 import {
   climbingAttachmentActivities,
@@ -34,6 +35,7 @@ const STRAIN_COMPANION_RESPONSES = {
   "climbing.locationMap": climbingLocationMapFixture,
   "climbing.strengths": climbingStrengthsFixture,
   "climbing.bestOnsight": climbingBestOnsightFixture(),
+  "climbing.demonstratedGrade": demonstratedGradeFixture,
   "climbing.volumeIncrease": {
     status: "increase",
     recentMinutes: 300,

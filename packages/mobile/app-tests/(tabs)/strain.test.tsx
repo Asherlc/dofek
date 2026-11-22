@@ -10,6 +10,7 @@ import {
   recentCyclingActivityFixture,
   sectionExpectations,
 } from "../../app-fixtures/(tabs)/strain-test-helpers";
+import { demonstratedGradeFixture } from "../../components/climbing-demonstrated-grade-fixture";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 import { intervalRun, runningData } from "../../components/running-training-test-helpers";
@@ -21,6 +22,8 @@ import {
   mockBestOnsightRefetch,
   mockCaptureException,
   mockCyclingPowerProfileQuery,
+  mockDemonstratedGradeInvalidate,
+  mockDemonstratedGradeQuery,
   mockHrZonesInvalidate,
   mockHrZonesState,
   mockLocationMapInvalidate,
@@ -338,6 +341,43 @@ describe("StrainScreen", () => {
     expect(screen.getByText("Climbing locations")).toBeTruthy();
   });
 
+  it("anchors demonstrated grade to the shared date and filters, not the chart range", async () => {
+    const { default: StrainScreen } = await import("../../app/strain");
+    render(<StrainScreen />);
+    expect(mockDemonstratedGradeQuery).toHaveBeenLastCalledWith(
+      { endDate: "2026-03-28", filters: {} },
+      expect.any(Object),
+    );
+
+    mockQueryState.timeRangePreference.days = 30;
+    fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
+    expect(mockDemonstratedGradeQuery).toHaveBeenLastCalledWith(
+      { endDate: "2026-03-28", filters: { types: ["lead"] } },
+      expect.any(Object),
+    );
+    expect(mockQueryState.rangeQueryCalls.training.at(-1)?.input.days).toBe(30);
+  });
+
+  it("shows demonstrated grade when trainingV2 fails without cached climbing data", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training unavailable");
+    mockDemonstratedGradeQuery.mockReturnValue({
+      data: demonstratedGradeFixture,
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
+    const { default: StrainScreen } = await import("../../app/strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByRole("button", { name: "Indoor bouldering, V5, 3 climbs" })).toBeTruthy();
+    expect(screen.queryByRole("image", { name: /^Grade progression/ })).toBeNull();
+    expect(screen.getByText("Could not load training data")).toBeTruthy();
+  });
+
   it("refreshes training, intensity, polarization, and processing status together", async () => {
     const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
@@ -347,6 +387,7 @@ describe("StrainScreen", () => {
 
     expect(mockTrainingInvalidate).toHaveBeenCalledOnce();
     expect(mockLocationMapInvalidate).toHaveBeenCalledOnce();
+    expect(mockDemonstratedGradeInvalidate).toHaveBeenCalledOnce();
     expect(mockHrZonesInvalidate).toHaveBeenCalledOnce();
     expect(mockPolarizationInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
@@ -650,7 +691,7 @@ describe("StrainScreen", () => {
     expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
     expect(screen.getAllByTestId("query-state-error")).toHaveLength(1);
     expect(screen.queryByText("Training Load")).toBeNull();
-    expect(screen.queryByText("Climbing")).toBeNull();
+    expect(screen.queryByRole("image", { name: /^Grade progression/ })).toBeNull();
     expect(screen.getByText("Weekly Volume")).toBeTruthy();
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error));
   });
@@ -812,7 +853,7 @@ describe("StrainScreen", () => {
     expect(screen.getByLabelText("5.11a, open Gym Lead send")).toBeTruthy();
   });
 
-  it("keeps the independent annual onsight matrix when trainingV2 fails without cache", async () => {
+  it("keeps both independent insights exactly once when trainingV2 fails without cache", async () => {
     mockTrainingState.data = undefined;
     mockTrainingState.isError = true;
     mockTrainingState.error = new Error("Training data failed to load");
@@ -821,14 +862,23 @@ describe("StrainScreen", () => {
       isLoading: false,
       error: null,
     });
+    mockDemonstratedGradeQuery.mockReturnValue({
+      data: demonstratedGradeFixture,
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
 
     const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
 
     expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
-    expect(screen.getByText("Best recorded onsight")).toBeTruthy();
+    expect(screen.getAllByText("Best recorded onsight")).toHaveLength(1);
     expect(screen.getByLabelText("5.11a, open Gym Lead send")).toBeTruthy();
-    expect(screen.queryByText("Climbing")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Indoor bouldering, V5, 3 climbs" })).toHaveLength(
+      1,
+    );
+    expect(screen.queryByRole("image", { name: /^Grade progression/ })).toBeNull();
     expect(screen.queryByText("Volume by Grade")).toBeNull();
   });
 
@@ -843,7 +893,7 @@ describe("StrainScreen", () => {
 
     expect(screen.getByTestId("query-state-loading")).toBeTruthy();
     expect(screen.getAllByTestId("query-state-loading")).toHaveLength(1);
-    expect(screen.queryByText("Climbing")).toBeNull();
+    expect(screen.queryByText("Volume by Grade")).toBeNull();
   });
 
   it("shows the standalone annual error once when trainingV2 fails without cache", async () => {
@@ -861,7 +911,7 @@ describe("StrainScreen", () => {
 
     expect(screen.getByText("Annual onsights unavailable")).toBeTruthy();
     expect(screen.getAllByText("Annual onsights unavailable")).toHaveLength(1);
-    expect(screen.queryByText("Climbing")).toBeNull();
+    expect(screen.queryByText("Volume by Grade")).toBeNull();
   });
 
   it("shows the standalone annual result once while trainingV2 is loading", async () => {

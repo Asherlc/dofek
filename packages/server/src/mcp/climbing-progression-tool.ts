@@ -6,8 +6,10 @@ import {
 } from "@dofek/training/climbing-log-response";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { getAccessWindowForUser } from "../billing/access-window-repository.ts";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
 import { dateSchema } from "../lib/date-schema.ts";
+import { ClimbingDemonstratedGradeRepository } from "../repositories/climbing-demonstrated-grade-repository.ts";
 import { ClimbingProgressionRepository } from "../repositories/climbing-progression-repository.ts";
 import { registerAuthorizedTool } from "./authorized-tool.ts";
 import { climbingProgressionOutputSchema } from "./climbing-progression-output.ts";
@@ -36,6 +38,12 @@ export function registerClimbingProgressionTool(server: McpServer, context: Dofe
         grade_systems: z.array(z.enum(FREE_ROCK_GRADE_SYSTEMS)).max(20).optional(),
         cursor: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(500).optional(),
+        include_demonstrated_grade: z
+          .boolean()
+          .optional()
+          .describe(
+            "Include 3:3:3 demonstrated grades and supporting sends for the three calendar months ending on end_date.",
+          ),
         response_version: climbingResponseVersionSchema.describe(
           "Defaults to 1 for scalar hold_type. Versions 2 and 3 return the complete hold_types collection.",
         ),
@@ -51,15 +59,17 @@ export function registerClimbingProgressionTool(server: McpServer, context: Dofe
       grade_systems,
       cursor,
       limit,
+      include_demonstrated_grade,
       response_version,
     }) => {
       requireMcpScope(context.scopes, "activity:read");
       assertDateRange(start_date, end_date);
+      const preference = await loadClimbingGradePreference(context.db, context.userId);
       const result = await new ClimbingProgressionRepository(
         context.db,
         context.userId,
         context.timezone,
-        await loadClimbingGradePreference(context.db, context.userId),
+        preference,
       ).listRange({
         startDate: start_date,
         endDate: end_date,
@@ -70,10 +80,28 @@ export function registerClimbingProgressionTool(server: McpServer, context: Dofe
         cursor: cursor ?? null,
         limit: limit ?? 100,
       });
-      if (response_version !== 1) return jsonToolResult(result);
+      const output = include_demonstrated_grade
+        ? {
+            ...result,
+            demonstrated_grade: await new ClimbingDemonstratedGradeRepository(
+              context.db,
+              context.userId,
+              context.timezone,
+              await getAccessWindowForUser(context.db, context.userId, context.timezone),
+              preference,
+            ).getDemonstratedGrade({
+              endDate: end_date,
+              filters,
+              sources: providers,
+              locations,
+              gradeSystems: grade_systems,
+            }),
+          }
+        : result;
+      if (response_version !== 1) return jsonToolResult(output);
       return jsonToolResult({
-        ...result,
-        sessions: result.sessions.map((session) => ({
+        ...output,
+        sessions: output.sessions.map((session) => ({
           ...session,
           climbing_log_entries: session.climbing_log_entries.map(({ hold_types, ...entry }) => ({
             ...entry,

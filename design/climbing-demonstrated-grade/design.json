@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "title": "Climbing · Demonstrated grade",
+  "kind": "prototype",
+  "description": "Web and iOS previews of the 3:3:3 demonstrated grade in the existing Grade Progression section, using sample sends.",
+  "artboards": [
+    {
+      "id": "web",
+      "title": "Web · Grade Progression",
+      "file": "web.html",
+      "width": 960,
+      "group": "Grade Progression"
+    },
+    {
+      "id": "ios",
+      "title": "iOS · Grade Progression",
+      "file": "ios.html",
+      "width": 390,
+      "group": "Grade Progression"
+    }
+  ]
+}

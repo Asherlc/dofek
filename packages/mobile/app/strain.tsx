@@ -164,6 +164,13 @@ export function TrainingAnalysis({
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
+  const climbingDemonstratedGradeQuery = trpc.climbing.demonstratedGrade.useQuery(
+    { endDate, filters: climbingFilters },
+    {
+      enabled: isHydrated && show("climbing"),
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
   const climbingIncreaseQueryOptions = {
     enabled: isHydrated && isFocused && show("climbing"),
     staleTime: 0,
@@ -244,6 +251,7 @@ export function TrainingAnalysis({
 
   useReportQueryError(trainingQuery);
   useReportQueryError(climbingLocationMapQuery);
+  useReportQueryError(climbingDemonstratedGradeQuery);
   useReportQueryError(climbingStrengthsQuery);
   useReportQueryError(hrZonesQuery);
   useReportQueryError(polarizationQuery);
@@ -299,6 +307,7 @@ export function TrainingAnalysis({
         utils.mobileDashboard.trainingV2.invalidate(),
         utils.running.dynamicsV2.invalidate(),
         utils.climbing.locationMap.invalidate(),
+        utils.climbing.demonstratedGrade.invalidate(),
         utils.climbing.strengths.invalidate(),
         utils.climbing.volumeIncrease.invalidate(),
         utils.climbing.attemptIncrease.invalidate(),
@@ -580,15 +589,19 @@ export function TrainingAnalysis({
           }}
         />
       ) : null}
-      {show("climbing") && shouldShowClimbingSection && !isLoading ? (
+      {show("climbing") && !isLoading ? (
         <ClimbingTrainingCard
-          data={trainingData?.climbing}
+          data={shouldShowClimbingSection ? trainingData?.climbing : undefined}
           loading={trainingQuery.isLoading && trainingData == null}
           bestOnsight={{
             data: bestOnsight.data,
             error: bestOnsight.error,
             loading: bestOnsight.isLoading,
           }}
+          demonstratedGrade={climbingDemonstratedGradeQuery.data}
+          demonstratedGradeLoading={climbingDemonstratedGradeQuery.isLoading}
+          demonstratedGradeError={climbingDemonstratedGradeQuery.error}
+          demonstratedGradeOnly={!shouldShowClimbingSection}
         />
       ) : show("climbing") ? (
         <View style={styles.card}>

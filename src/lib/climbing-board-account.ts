@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
 import { persistClimbingLogSnapshot } from "../db/climbing-log-snapshot.ts";
 import { persistClimbingLogEntries, type SourceClimbingLogEntry } from "../db/climbing-log-sync.ts";
@@ -9,6 +10,7 @@ import type { ProviderAuthSetup, SyncResult, SyncRun } from "../providers/types.
 import { captureException } from "./error-reporting.ts";
 import { shouldReportProviderError } from "./provider-error-reporting.ts";
 import { findProviderTransportError } from "./provider-transport-error.ts";
+import { executeWithSchema } from "./typed-sql.ts";
 
 export interface BoardLogbook {
   entries: SourceClimbingLogEntry[];
@@ -16,12 +18,16 @@ export interface BoardLogbook {
   authoritative: boolean;
 }
 
+/** Reads the stored raw record for each given log entry external ID. */
+export type StoredRawLoader = (externalIds: readonly string[]) => Promise<Map<string, unknown>>;
+
 export interface ClimbingBoardClient {
   login(username: string, password: string): Promise<TokenSet>;
   fetchLogbook(
     tokens: TokenSet,
     persistTokens: (tokens: TokenSet) => Promise<void>,
     signal?: AbortSignal,
+    storedRaw?: StoredRawLoader,
   ): Promise<BoardLogbook>;
 }
 
@@ -68,6 +74,17 @@ export class ClimbingBoardAccount {
             tokens,
             (refreshed) => saveTokens(run.db, this.id, refreshed, userId),
             run.options.signal,
+            async (externalIds) => {
+              if (externalIds.length === 0) return new Map();
+              const rows = await executeWithSchema(
+                run.db,
+                z.object({ external_id: z.string(), raw: z.unknown() }),
+                sql`SELECT external_id, raw FROM fitness.climbing_log_entry
+                  WHERE user_id = ${userId} AND provider_id = ${this.id}
+                    AND external_id = ANY(${sql.param(externalIds)}::text[])`,
+              );
+              return new Map(rows.map((row) => [row.external_id, row.raw]));
+            },
           );
           // Fetch and validate the complete upstream response before writing any graph rows.
           const persisted = await run.db.transaction(async (tx) => {

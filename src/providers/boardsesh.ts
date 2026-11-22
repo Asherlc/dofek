@@ -1,12 +1,226 @@
 import { isValidClimbingGrade } from "@dofek/training/climbing-grades";
 import type { GradeComponent } from "@dofek/training/climbing-log";
 import { z } from "zod";
-import type { BoardLogbook, ClimbingBoardClient } from "../lib/climbing-board-account.ts";
+import type {
+  BoardLogbook,
+  ClimbingBoardClient,
+  StoredRawLoader,
+} from "../lib/climbing-board-account.ts";
 import { ClimbingBoardAccount } from "../lib/climbing-board-account.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { ProviderAuthError } from "./auth-errors.ts";
 import type { ProviderAuthSetup, SyncProvider, SyncResult, SyncRun, TokenSet } from "./types.ts";
+
+const batchSize = 10;
+
+export interface ClimbLookupCandidate {
+  /** Original source board type and problem ID; never rewritten. */
+  sourceIdentity: string;
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: readonly number[];
+  angle: number;
+  climbUuid: string;
+}
+
+export interface ResolveClimbIdentitiesInput {
+  candidates: readonly ClimbLookupCandidate[];
+  fetchFn: typeof fetch;
+  accessToken: string;
+  accountId: string;
+  signal?: AbortSignal;
+}
+
+const responseSchema = z
+  .object({
+    data: z.record(z.string(), z.json()).nullable().optional(),
+    errors: z.array(z.object({ message: z.string() }).passthrough()).optional(),
+  })
+  .passthrough();
+const identitySchema = z.object({
+  uuid: z.string().trim().min(1),
+  boardType: z.string(),
+  layoutId: z.number().int(),
+});
+
+function report(message: string) {
+  captureException(new Error(message), {
+    tags: { provider: "boardsesh", operation: "climb-identity" },
+  });
+}
+
+function isAuthMessage(message: string) {
+  return /authentication required|unauthorized|invalid token|token expired/i.test(message);
+}
+
+function signature(candidate: ClimbLookupCandidate) {
+  return JSON.stringify([
+    candidate.boardName,
+    candidate.layoutId,
+    candidate.sizeId,
+    candidate.setIds,
+    candidate.angle,
+    candidate.climbUuid,
+  ]);
+}
+
+/** One primary and one alternate candidate per source, in first-seen order. */
+export function groupCandidates(candidates: readonly ClimbLookupCandidate[]) {
+  const bySource = new Map<string, ClimbLookupCandidate[]>();
+  for (const candidate of candidates) {
+    const group = bySource.get(candidate.sourceIdentity) ?? [];
+    if (!group.some((existing) => signature(existing) === signature(candidate)))
+      group.push(candidate);
+    bySource.set(candidate.sourceIdentity, group);
+  }
+  return bySource;
+}
+
+export function chunks<T>(items: readonly T[], size = batchSize): T[][] {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size)
+    result.push([...items.slice(index, index + size)]);
+  return result;
+}
+
+export function buildOperation(batch: readonly ClimbLookupCandidate[]) {
+  const declarations = batch.map(
+    (_, index) =>
+      `$b${index}: String!, $l${index}: Int!, $s${index}: Int!, $t${index}: String!, $a${index}: Int!, $u${index}: ID!`,
+  );
+  const fields = batch.map(
+    (_, index) =>
+      `c${index}: climb(boardName: $b${index}, layoutId: $l${index}, sizeId: $s${index}, setIds: $t${index}, angle: $a${index}, climbUuid: $u${index}) { uuid boardType layoutId }`,
+  );
+  const variables: Record<string, unknown> = {};
+  batch.forEach((candidate, index) => {
+    Object.assign(variables, {
+      [`b${index}`]: candidate.boardName,
+      [`l${index}`]: candidate.layoutId,
+      [`s${index}`]: candidate.sizeId,
+      [`t${index}`]: candidate.setIds.join(","),
+      [`a${index}`]: candidate.angle,
+      [`u${index}`]: candidate.climbUuid,
+    });
+  });
+  return {
+    query: `query BoardSeshClimbLookup(${declarations.join(", ")}) { authenticatedUserId ${fields.join(" ")} }`,
+    variables,
+  };
+}
+
+async function runBatch(
+  batch: readonly ClimbLookupCandidate[],
+  input: ResolveClimbIdentitiesInput,
+): Promise<Map<string, string | null>> {
+  const results = new Map<string, string | null>(
+    batch.map((candidate) => [candidate.sourceIdentity, null]),
+  );
+  const { query, variables } = buildOperation(batch);
+  let response: Response;
+  try {
+    response = await input.fetchFn(graphqlUrl, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${input.accessToken}`,
+      },
+      body: JSON.stringify({ query, variables }),
+      signal: input.signal,
+    });
+  } catch (error) {
+    if (input.signal?.aborted) throw error;
+    report("BoardSesh identity lookup could not reach the service.");
+    return results;
+  }
+  if ([401, 403].includes(response.status))
+    throw new Error(
+      "BoardSesh identity lookup authentication was rejected; reconnect before syncing.",
+    );
+  if (!response.ok) {
+    report(`BoardSesh identity lookup failed (HTTP ${response.status}).`);
+    return results;
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    report("BoardSesh returned an invalid identity response.");
+    return results;
+  }
+  const parsed = responseSchema.safeParse(payload);
+  if (!parsed.success) {
+    report("BoardSesh returned an invalid identity response.");
+    return results;
+  }
+  const messages = parsed.data.errors?.map(({ message }) => message) ?? [];
+  if (messages.some(isAuthMessage))
+    throw new Error(
+      "BoardSesh identity lookup authentication was rejected; reconnect before syncing.",
+    );
+  if (messages.length) report(`BoardSesh identity lookup reported errors: ${messages.join("; ")}.`);
+
+  const data = parsed.data.data;
+  if (data) {
+    const account = z
+      .union([z.string(), z.number()])
+      .transform(String)
+      .safeParse(data.authenticatedUserId);
+    if (!account.success || account.data !== input.accountId)
+      throw new Error(
+        "BoardSesh returned a different account than the connected account; reconnect before syncing.",
+      );
+    batch.forEach((candidate, index) => {
+      const field = identitySchema.safeParse(data[`c${index}`]);
+      if (!field.success) {
+        report(`BoardSesh returned an invalid identity for ${candidate.sourceIdentity}.`);
+        return;
+      }
+      if (
+        field.data.boardType !== candidate.boardName ||
+        field.data.layoutId !== candidate.layoutId
+      ) {
+        report(`BoardSesh returned a mismatched identity for ${candidate.sourceIdentity}.`);
+        return;
+      }
+      results.set(candidate.sourceIdentity, field.data.uuid);
+    });
+  }
+  return results;
+}
+
+/**
+ * Optional, bounded identity enrichment. Non-authentication failures are
+ * reported and leave identities unresolved so authoritative persistence can
+ * continue; authentication, account mismatch and cancellation stay fatal.
+ */
+export async function resolveClimbIdentities(
+  input: ResolveClimbIdentitiesInput,
+): Promise<Map<string, string>> {
+  const grouped = groupCandidates(input.candidates);
+  const verified = new Map<string, string>();
+  const primary = [...grouped.values()].flatMap((group) => group.slice(0, 1));
+  const unresolved = new Set<string>();
+  for (const batch of chunks(primary)) {
+    for (const [source, uuid] of await runBatch(batch, input)) {
+      if (uuid) verified.set(source, uuid);
+      else unresolved.add(source);
+    }
+  }
+  const alternates = [...unresolved].flatMap((source) => grouped.get(source)?.slice(1, 2) ?? []);
+  for (const batch of chunks(alternates)) {
+    for (const [source, uuid] of await runBatch(batch, input)) {
+      if (uuid) {
+        verified.set(source, uuid);
+        unresolved.delete(source);
+      }
+    }
+  }
+  return verified;
+}
 
 const authUrl = "https://ws.boardsesh.com/auth/native/credentials";
 const refreshUrl = "https://ws.boardsesh.com/auth/native/refresh";
@@ -23,6 +237,11 @@ const boardTypes = [
   "spray",
 ] as const;
 const identifier = z.string().trim().min(1);
+const ascentIdentity = z.object({ boardType: z.string(), climbUuid: z.string() });
+const storedAscent = z.object({
+  metadata: z.object({ ascent: ascentIdentity.extend({ canonicalClimbUuid: identifier }) }),
+});
+const currentAscent = z.object({ metadata: z.object({ ascent: ascentIdentity }) });
 const tokenResponseSchema = z.object({
   jwt: identifier,
   refreshToken: identifier,
@@ -47,6 +266,11 @@ const tickSchema = z
     layoutId: z.number().int().nullable().optional(),
   })
   .passthrough();
+const renderBoardSchema = z.object({
+  layoutId: z.number().int(),
+  sizeId: z.number().int(),
+  setIds: z.array(z.number().int()),
+});
 const ascentMetadataSchema = z.object({
   uuid: identifier,
   climbUuid: identifier,
@@ -60,6 +284,8 @@ const ascentMetadataSchema = z.object({
   consensusDifficultyName: z.string().nullable(),
   boardseshDifficulty: z.number().nullable(),
   boardseshConfidence: z.string().nullable(),
+  layoutId: z.number().int().nullable().optional(),
+  renderBoard: renderBoardSchema.nullable().optional(),
 });
 const boardIdentitySchema = z.object({ uuid: identifier, name: identifier, boardType: identifier });
 const boardMetadataSchema = boardIdentitySchema.extend({
@@ -218,6 +444,7 @@ class BoardSeshClient implements ClimbingBoardClient {
     tokens: TokenSet,
     persistTokens: (tokens: TokenSet) => Promise<void>,
     signal?: AbortSignal,
+    storedRaw?: StoredRawLoader,
   ): Promise<BoardLogbook> {
     let current = tokens;
     if (!current.providerAccountId) throw authError("connection has no verified account identity");
@@ -252,6 +479,8 @@ class BoardSeshClient implements ClimbingBoardClient {
     };
     const entries: BoardLogbook["entries"] = [];
     const allIds = new Set<string>();
+    const candidates: ClimbLookupCandidate[] = [];
+    const identityByEntry = new Map<BoardLogbook["entries"][number], string>();
     for (const boardType of boardTypes) {
       const tickData = await request(
         "query BoardSeshTicks($input: GetTicksInput!) { authenticatedUserId ticks(input: $input) { uuid userId boardType climbUuid climbRevision angle isMirror status attemptCount quality difficulty isBenchmark comment climbedAt createdAt updatedAt sessionId auroraType auroraId auroraSyncedAt layoutId boardId boardDisplayName } }",
@@ -341,7 +570,7 @@ class BoardSeshClient implements ClimbingBoardClient {
       let offset = 0;
       while (true) {
         const data = await request(
-          "query BoardSeshMetadata($userId: ID!, $input: AscentFeedInput!) { authenticatedUserId userAscentsFeed(userId: $userId, input: $input) { items { uuid climbUuid boardType isMirror angle climbName boardId boardDisplayName consensusDifficulty consensusDifficultyName boardseshDifficulty boardseshConfidence } hasMore } }",
+          "query BoardSeshMetadata($userId: ID!, $input: AscentFeedInput!) { authenticatedUserId userAscentsFeed(userId: $userId, input: $input) { items { uuid climbUuid boardType isMirror angle climbName boardId boardDisplayName consensusDifficulty consensusDifficultyName boardseshDifficulty boardseshConfidence layoutId renderBoard { layoutId sizeId setIds } } hasMore } }",
           { userId: current.providerAccountId, input: { limit: 50, offset, statusMode: "both" } },
         );
         const page = z
@@ -414,6 +643,38 @@ class BoardSeshClient implements ClimbingBoardClient {
                   },
                 ]
               : [];
+          const completedSend = entry.attempts.some(
+            (attempt) =>
+              attempt.sourceCompleted &&
+              (attempt.sourceResult === "flash" || attempt.sourceResult === "send"),
+          );
+          const hasConsensus = metadata.consensusDifficulty != null;
+          const renderBoard = metadata.renderBoard;
+          const climbConfig =
+            metadata.layoutId != null &&
+            metadata.layoutId > 0 &&
+            renderBoard != null &&
+            renderBoard.layoutId === metadata.layoutId &&
+            renderBoard.sizeId > 0
+              ? {
+                  layoutId: metadata.layoutId,
+                  sizeId: renderBoard.sizeId,
+                  setIds: renderBoard.setIds,
+                }
+              : null;
+          const sourceIdentity = `${metadata.boardType}:${metadata.climbUuid}`;
+          if (completedSend && hasConsensus && climbConfig) {
+            identityByEntry.set(entry, sourceIdentity);
+            candidates.push({
+              sourceIdentity,
+              boardName: metadata.boardType,
+              layoutId: climbConfig.layoutId,
+              sizeId: climbConfig.sizeId,
+              setIds: climbConfig.setIds,
+              angle: metadata.angle,
+              climbUuid: metadata.climbUuid,
+            });
+          }
           entry.raw = z.json().parse({
             ...z.record(z.string(), z.json()).parse(entry.raw),
             metadata: {
@@ -427,6 +688,51 @@ class BoardSeshClient implements ClimbingBoardClient {
         }
         if (!page.hasMore) break;
         offset += page.items.length;
+      }
+    }
+    const canonicalClimbIds = candidates.length
+      ? await resolveClimbIdentities({
+          candidates,
+          fetchFn: this.#fetch,
+          accessToken: current.accessToken,
+          accountId: current.providerAccountId,
+          signal,
+        })
+      : new Map<string, string>();
+    // A temporarily unresolved lookup can succeed on a later tick in this sync;
+    // attach the verified ID to every exactly matched tick after the feed is read.
+    const attachCanonical = (
+      entry: BoardLogbook["entries"][number],
+      canonicalClimbUuid: string,
+    ) => {
+      const raw = z.record(z.string(), z.json()).parse(entry.raw);
+      const metadata = z.record(z.string(), z.json()).parse(raw.metadata ?? {});
+      const ascent = z.record(z.string(), z.json()).parse(metadata.ascent ?? {});
+      entry.raw = z.json().parse({
+        ...raw,
+        metadata: { ...metadata, ascent: { ...ascent, canonicalClimbUuid } },
+      });
+    };
+    const unresolved: BoardLogbook["entries"] = [];
+    for (const [entry, sourceIdentity] of identityByEntry) {
+      const canonicalClimbUuid = canonicalClimbIds.get(sourceIdentity);
+      if (canonicalClimbUuid) attachCanonical(entry, canonicalClimbUuid);
+      else unresolved.push(entry);
+    }
+    // A failed or empty lookup must not erase an ID verified by an earlier sync:
+    // carry it forward only while the stored tick still names the same source climb.
+    if (storedRaw && unresolved.length > 0) {
+      const stored = await storedRaw(unresolved.map((entry) => entry.externalId));
+      for (const entry of unresolved) {
+        const previous = storedAscent.safeParse(stored.get(entry.externalId));
+        const current = currentAscent.safeParse(entry.raw);
+        if (
+          previous.success &&
+          current.success &&
+          previous.data.metadata.ascent.boardType === current.data.metadata.ascent.boardType &&
+          previous.data.metadata.ascent.climbUuid === current.data.metadata.ascent.climbUuid
+        )
+          attachCanonical(entry, previous.data.metadata.ascent.canonicalClimbUuid);
       }
     }
     return { entries, absentExternalIds: [], authoritative: true };

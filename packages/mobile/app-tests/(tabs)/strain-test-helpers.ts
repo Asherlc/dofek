@@ -27,6 +27,8 @@ export const mockRouteComparisonInvalidate = vi.fn();
 export const mockRouteComparisonQuery = vi.fn();
 export const mockVolumeIncreaseQuery = vi.fn();
 export const mockVolumeIncreaseInvalidate = vi.fn();
+export const mockDemonstratedGradeQuery = vi.fn();
+export const mockDemonstratedGradeInvalidate = vi.fn();
 export const mockAttemptIncreaseQuery = vi.fn();
 export const mockAttemptIncreaseInvalidate = vi.fn();
 export const mockBestOnsightQuery = vi.fn();
@@ -238,6 +240,7 @@ vi.mock("../../lib/trpc", () => ({
           return { ...mockLocationMapState };
         },
       },
+      demonstratedGrade: { useQuery: mockDemonstratedGradeQuery },
     },
     strength: {
       loggedSetComparison: {
@@ -322,6 +325,7 @@ vi.mock("../../lib/trpc", () => ({
         bestOnsight: { invalidate: mockBestOnsightInvalidate },
         volumeOverTime: { invalidate: vi.fn() },
         locationMap: { invalidate: mockLocationMapInvalidate },
+        demonstratedGrade: { invalidate: mockDemonstratedGradeInvalidate },
         strengths: { invalidate: vi.fn().mockResolvedValue(undefined) },
       },
       strength: {
@@ -388,6 +392,13 @@ export function resetStrainMocks() {
   mockQueryState.focused = true;
   mockVolumeIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
   mockVolumeIncreaseInvalidate.mockReset().mockResolvedValue(undefined);
+  mockDemonstratedGradeQuery.mockReset().mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isFetching: false,
+    error: null,
+  });
+  mockDemonstratedGradeInvalidate.mockReset().mockResolvedValue(undefined);
   mockAttemptIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
   mockAttemptIncreaseInvalidate.mockReset().mockResolvedValue(undefined);
   mockBestOnsightQuery.mockReset().mockReturnValue({
