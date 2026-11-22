@@ -95,8 +95,8 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("PROVIDER_ACCOUNT_TABLES", () => {
-  it("contains 16 child tables", () => {
-    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(16);
+  it("contains 17 child tables", () => {
+    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(17);
   });
 
   it("includes all required child tables", () => {
@@ -822,7 +822,7 @@ describe("ProviderDetailRepository", () => {
     });
 
     it("PROVIDER_ACCOUNT_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(16);
+      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(17);
       expect(PROVIDER_ACCOUNT_TABLES[0]).toBe("fitness.daily_metrics");
       expect(PROVIDER_ACCOUNT_TABLES.at(-1)).toBe("fitness.provider_connection");
     });

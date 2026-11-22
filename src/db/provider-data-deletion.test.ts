@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  bindProviderSourceAccount,
   createProviderDataDeletionRequest,
   getProviderDataGenerations,
   listPendingProviderDataDeletionRequests,
@@ -201,5 +202,33 @@ describe("provider data deletion persistence", () => {
     await markProviderDataDeletionFailed({ execute }, eventId, "ClickHouse unavailable");
 
     expect(execute).toHaveBeenCalledOnce();
+  });
+});
+
+describe("bindProviderSourceAccount", () => {
+  it("reports a fresh binding when the upsert returns a row", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      { source_account_digest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
+    ]);
+
+    await expect(
+      bindProviderSourceAccount({ execute }, userId, "intervals.icu", "athlete-1"),
+    ).resolves.toBe(true);
+  });
+
+  it("reports a rejected conflicting binding when the upsert returns no row", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+
+    await expect(
+      bindProviderSourceAccount({ execute }, userId, "intervals.icu", "athlete-2"),
+    ).resolves.toBe(false);
+  });
+
+  it("rejects a malformed source-account digest from the upsert", async () => {
+    const execute = vi.fn().mockResolvedValue([{ source_account_digest: 42 }]);
+
+    await expect(
+      bindProviderSourceAccount({ execute }, userId, "intervals.icu", "athlete-3"),
+    ).rejects.toThrow();
   });
 });
