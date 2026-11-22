@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "title": "Cycling · Planned vs. recorded intervals",
+  "kind": "prototype",
+  "description": "Activity detail mockup for comparing recorded cycling intervals with a structured workout, using fictional data.",
+  "artboards": [
+    {
+      "id": "activity-detail",
+      "title": "Activity detail",
+      "file": "activity-detail.html",
+      "width": 1160
+    }
+  ]
+}

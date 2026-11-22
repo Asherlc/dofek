@@ -867,6 +867,43 @@ describe("ActivityDetailScreen", () => {
     ).toBeNull();
   });
 
+  it("shows planned vs. recorded intervals only for cycling activities with eligible rows", async () => {
+    const plannedRow = {
+      intervalIndex: 0,
+      startOffsetSeconds: 0,
+      endOffsetSeconds: 180,
+      label: "Work 1",
+      target: { kind: "range" as const, minWatts: 250, maxWatts: 265 },
+      plannedDurationSeconds: 180,
+      recordedTimerDurationSeconds: 134,
+      timerDifferenceSeconds: -46,
+      averagePowerWatts: 256,
+    };
+    mocks.plannedIntervalsQuery.mockReturnValue(defaultObserver([plannedRow]));
+    mocks.byIdQuery.mockReturnValue(
+      defaultObserver({ ...baseCyclingActivity, activityType: "cycling" }),
+    );
+    const cycling = renderActivityDetail();
+    expect(screen.getByText("Planned vs. recorded intervals")).toBeTruthy();
+    expect(screen.getByText("0:46 short of 3:00")).toBeTruthy();
+    expect(getQueryEnabledFlag(mocks.plannedIntervalsQuery.mock.calls.at(-1)?.[1])).toBe(true);
+    cycling.unmount();
+
+    mocks.plannedIntervalsQuery.mockClear();
+    mocks.byIdQuery.mockReturnValue(defaultObserver(yogaActivity));
+    renderActivityDetail();
+    expect(screen.queryByText("Planned vs. recorded intervals")).toBeNull();
+    expect(getQueryEnabledFlag(mocks.plannedIntervalsQuery.mock.calls.at(-1)?.[1])).toBe(false);
+  });
+
+  it("omits the intervals section for cycling without eligible rows", async () => {
+    mocks.byIdQuery.mockReturnValue(
+      defaultObserver({ ...baseCyclingActivity, activityType: "cycling" }),
+    );
+    renderActivityDetail();
+    expect(screen.queryByText("Planned vs. recorded intervals")).toBeNull();
+  });
+
   it("renders without crashing for non-cycling workouts with heart rate data but no power", async () => {
     mocks.byIdQuery.mockReturnValue(defaultObserver(yogaActivity));
     mocks.streamQuery.mockReturnValue(defaultObserver(heartRateOnlyStreamPoints));

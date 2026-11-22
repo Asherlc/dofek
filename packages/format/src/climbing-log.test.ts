@@ -1,10 +1,14 @@
 import type { ClimbingAttempt } from "@dofek/training/climbing-log";
+import type { ClimbingProjectHistory } from "@dofek/training/climbing-project-history";
 import { describe, expect, it } from "vitest";
 import {
   climbingAttemptDetailFields,
   climbingAttemptStyleLabels,
   formatClimbingGradeComponents,
+  formatClimbingProjectDay,
+  formatClimbingProjectHistory,
   formatClimbingRecordedResult,
+  formatClimbingResultOutcome,
 } from "./climbing-log.ts";
 
 function attempt(overrides: Partial<ClimbingAttempt> = {}): ClimbingAttempt {
@@ -201,4 +205,117 @@ describe("climbing log formatting", () => {
 it.each(["Onsight", "Flash"])("omits the redundant attempts count for %s", (label) => {
   expect(formatClimbingRecordedResult(null, "completed", 1, ["sent", label])).toBeNull();
   expect(formatClimbingRecordedResult("Pitch 1", "completed", 1, [label])).toBe("Pitch 1");
+});
+
+function history(overrides: Partial<ClimbingProjectHistory> = {}): ClimbingProjectHistory {
+  return {
+    throughDate: "2026-11-13",
+    sessionCount: 3,
+    unsuccessfulSessionCount: 2,
+    unknownSessionCount: 1,
+    firstSend: null,
+    methodFirstSend: null,
+    repeatBeforeFirstSend: false,
+    earlierSessionsUnknown: false,
+    days: [],
+    ...overrides,
+  };
+}
+
+describe("formatClimbingProjectHistory", () => {
+  it("summarizes an unconfirmed project with singular and plural counts", () => {
+    expect(formatClimbingProjectHistory(history())).toEqual({
+      summary: "3 logged sessions · Send unconfirmed",
+      detail: "2 unsuccessful · 1 result unknown",
+      methodDetail: null,
+    });
+    expect(
+      formatClimbingProjectHistory(
+        history({ sessionCount: 1, unknownSessionCount: 2, unsuccessfulSessionCount: 0 }),
+      ),
+    ).toEqual({
+      summary: "1 logged session · Send unconfirmed",
+      detail: "0 unsuccessful · 2 results unknown",
+      methodDetail: null,
+    });
+  });
+
+  it("says the first send date is unknown when only repeats were logged", () => {
+    expect(formatClimbingProjectHistory(history({ repeatBeforeFirstSend: true })).summary).toBe(
+      "3 logged sessions · First send date unknown",
+    );
+  });
+
+  it("describes a first send with its method, date and unknown earlier sessions", () => {
+    const firstSend = { date: "2026-11-09", sessionCount: 2, method: "top_rope" as const };
+    const result = formatClimbingProjectHistory(history({ firstSend }));
+    expect(result.summary).toBe("2 logged sessions to first recorded send");
+    expect(result.detail).toBe("Top rope · Nov 9");
+    expect(result.methodDetail).toBeNull();
+    expect(
+      formatClimbingProjectHistory(
+        history({
+          firstSend: { ...firstSend, sessionCount: 1, method: null },
+          earlierSessionsUnknown: true,
+        }),
+      ),
+    ).toMatchObject({
+      summary: "1 logged session to first recorded send",
+      detail: "Nov 9 · Earlier sessions unknown",
+    });
+  });
+
+  it("omits method detail when the method send is the same milestone", () => {
+    const firstSend = { date: "2026-11-09", sessionCount: 2, method: "lead" as const };
+    expect(
+      formatClimbingProjectHistory(history({ firstSend, methodFirstSend: { ...firstSend } }))
+        .methodDetail,
+    ).toBeNull();
+  });
+
+  it.each([
+    ["date", { date: "2026-11-13" }],
+    ["session count", { sessionCount: 3 }],
+    ["method", { method: "top_rope" as const }],
+  ])("shows a separate method milestone when its %s differs", (_name, change) => {
+    const firstSend = { date: "2026-11-09", sessionCount: 1, method: "lead" as const };
+    expect(
+      formatClimbingProjectHistory(
+        history({ firstSend, methodFirstSend: { ...firstSend, ...change } }),
+      ).methodDetail,
+    ).toMatch(/^First recorded .+ send after \d .+ sessions? · Nov \d+$/);
+  });
+
+  it("shows a method milestone when no overall send exists", () => {
+    expect(
+      formatClimbingProjectHistory(
+        history({ methodFirstSend: { date: "2026-11-13", sessionCount: 1, method: "lead" } }),
+      ).methodDetail,
+    ).toBe("First recorded lead send after 1 lead session · Nov 13");
+  });
+});
+
+describe("formatClimbingProjectDay", () => {
+  it.each([
+    [{ date: "2026-11-09", outcome: "send", method: "lead" }, "Lead · Sent"],
+    [{ date: "2026-11-09", outcome: "unsuccessful", method: null }, "Unsuccessful"],
+    [{ date: "2026-11-09", outcome: "unknown", method: "top_rope" }, "Top rope · Result unknown"],
+  ] as const)("formats %j", (day, expected) => {
+    expect(formatClimbingProjectDay(day)).toBe(expected);
+  });
+});
+
+describe("formatClimbingResultOutcome", () => {
+  it("labels failed and plain completed outcomes", () => {
+    expect(formatClimbingResultOutcome("failed")).toBe("Attempted");
+    expect(formatClimbingResultOutcome("failed", ["Flash"], true)).toBe("Attempted");
+    expect(formatClimbingResultOutcome("completed")).toBe("Completed");
+    expect(formatClimbingResultOutcome("completed", [], false)).toBe("Completed");
+  });
+
+  it("leaves outcomes that other labels already describe unlabelled", () => {
+    expect(formatClimbingResultOutcome("completed", [], true)).toBeNull();
+    expect(formatClimbingResultOutcome("completed", ["Redpoint"])).toBeNull();
+    expect(formatClimbingResultOutcome(null)).toBeNull();
+  });
 });

@@ -1,5 +1,5 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
-import { formatDateYmdInTimeZone } from "@dofek/format/format";
+import { formatDateYmdInTimeZone, shiftDateYmd } from "@dofek/format/format";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -7,6 +7,7 @@ import {
   cyclingDurabilityResultSchema,
   cyclingDurabilitySelectionSchema,
 } from "../contracts/cycling-durability.ts";
+import { cyclingPowerProfileSchema } from "../contracts/cycling-power-profile.ts";
 import { trainingChartAvailabilitySchema } from "../contracts/training-chart-availability.ts";
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
@@ -16,6 +17,7 @@ import {
   cyclingDecouplingOutputSchema,
 } from "../repositories/cycling-decoupling-repository.ts";
 import { CyclingDurabilityRepository } from "../repositories/cycling-durability-repository.ts";
+import { CyclingPowerProfileRepository } from "../repositories/cycling-power-profile-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
 
 const powerModelSchema = z.object({
@@ -205,6 +207,28 @@ export const cyclingRouter = router({
     {
       expiresAt: "localDayBoundary",
       outputSchema: cyclingDecouplingOutputSchema,
+      scopeByAccessWindow: true,
+    },
+  ),
+  powerProfile: selectedChartRangeQuery(
+    "cycling.powerProfile",
+    CacheTTL.LONG,
+    ({ ctx, range }) => {
+      const endDate = formatDateYmdInTimeZone(new Date(), ctx.timezone);
+      return new CyclingPowerProfileRepository(
+        ctx.db,
+        requireSensorStore(ctx.sensorStore),
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).read({
+        startDate: range.days === null ? null : shiftDateYmd(endDate, 1 - range.days),
+        endDate,
+      });
+    },
+    {
+      expiresAt: "localDayBoundary",
+      outputSchema: cyclingPowerProfileSchema,
       scopeByAccessWindow: true,
     },
   ),

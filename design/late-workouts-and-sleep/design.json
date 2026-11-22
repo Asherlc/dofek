@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "title": "Late workouts & sleep",
+  "kind": "prototype",
+  "description": "Interactive evidence preview using sample workouts and sleep. Select a night to inspect timing, load coverage, and source records.",
+  "artboards": [
+    {
+      "id": "evidence",
+      "title": "Workout and sleep evidence",
+      "file": "evidence.html",
+      "width": 780
+    }
+  ]
+}

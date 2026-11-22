@@ -1,6 +1,10 @@
 import type { PowerCoveragePolicy } from "@dofek/cycling-power/power";
 import { resampleSignal } from "@dofek/cycling-power/resample-signal";
-import { pairedEfficiency, round, summarizeCyclingDecoupling } from "./cycling-decoupling.ts";
+import { pairedEfficiency, summarizeCyclingDecoupling } from "./cycling-decoupling.ts";
+import { selectIntervalSamples, summarizeIntervalPower } from "./cycling-interval-power.ts";
+import { average, round } from "./cycling-sample-math.ts";
+
+export { selectIntervalSamples, summarizeIntervalPower };
 
 export interface CyclingWorkoutSample {
   elapsedSeconds: number;
@@ -135,17 +139,6 @@ interface ResampledStream {
   coverage: StreamCoverage;
 }
 
-function average(values: Array<number | null>): number | null {
-  let total = 0;
-  let count = 0;
-  for (const value of values) {
-    if (value == null) continue;
-    total += value;
-    count++;
-  }
-  return count === 0 ? null : total / count;
-}
-
 function resampleCyclingBuckets<T extends CyclingWorkoutSample>(
   samples: T[],
   durationSeconds: number,
@@ -278,10 +271,12 @@ function intervalMetrics(
   cadence: Array<number | null>,
   computedPower: CyclingWorkoutPowerMetrics,
 ) {
-  const start = Math.max(0, Math.floor(interval.startOffsetSeconds));
-  const end = Math.min(power.length, Math.ceil(interval.endOffsetSeconds));
-  const powerSlice = power.slice(start, end);
-  const averagePower = average(powerSlice);
+  const {
+    startOffsetSeconds: start,
+    endOffsetSeconds: end,
+    meanPowerWatts: averagePower,
+    averagePowerWatts,
+  } = summarizeIntervalPower(power, interval);
   const targetPower = interval.targetPowerWatts ?? null;
   return {
     index: interval.index,
@@ -291,7 +286,7 @@ function intervalMetrics(
     startOffsetSeconds: start,
     endOffsetSeconds: end,
     durationSeconds: Math.max(0, end - start),
-    averagePowerWatts: averagePower == null ? null : round(averagePower),
+    averagePowerWatts,
     normalizedPowerWatts: computedPower.normalizedPowerWatts,
     averageHeartRateBpm: (() => {
       const value = average(heartRate.slice(start, end));
@@ -445,8 +440,10 @@ export function prepareCyclingWorkoutMetrics(
             minimumWorkSeconds: 30,
           },
     powerWindows: intervalInputs.map((interval) => {
-      const start = Math.max(0, Math.floor(interval.startOffsetSeconds));
-      const end = Math.min(durationSeconds, Math.ceil(interval.endOffsetSeconds));
+      const { startOffsetSeconds: start, endOffsetSeconds: end } = selectIntervalSamples(
+        durationSeconds,
+        interval,
+      );
       return {
         samples: power.values
           .slice(start, end)

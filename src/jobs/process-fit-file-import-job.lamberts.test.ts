@@ -33,6 +33,9 @@ vi.mock("../db/activity-device-observations.ts", () => ({
   replaceActivityDeviceObservations: (...args: unknown[]) =>
     mockReplaceActivityDeviceObservations(...args),
 }));
+vi.mock("../db/fit-workout-intervals.ts", () => ({
+  replaceFitWorkoutIntervals: vi.fn(),
+}));
 vi.mock("../fit/stream-decoder.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../fit/stream-decoder.ts")>();
   return {

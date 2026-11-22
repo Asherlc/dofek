@@ -109,6 +109,12 @@ vi.mock("../../lib/trpc.ts", () => ({
           data: { workoutName: null, rides: [] },
         }),
       },
+      powerProfile: {
+        useQuery: (input: unknown) => ({
+          ...recordQuery("cycling.powerProfile")(input),
+          data: undefined,
+        }),
+      },
       performance: {
         useQuery: (input: { days: number | null }) => {
           const period = (watts: number, cp: number) => ({
@@ -405,6 +411,7 @@ describe("CyclingTab", () => {
 
     expect(state.queryCalls).toEqual([
       { name: "cycling.decoupling", input: { days: 365 } },
+      { name: "cycling.powerProfile", input: { days: 365 } },
       { name: "cycling.performance", input: { days: 365 } },
       {
         name: "cycling.activities",
@@ -426,6 +433,7 @@ describe("CyclingTab", () => {
 
     expect(state.queryCalls).toEqual([
       { name: "cycling.decoupling", input: { days: null } },
+      { name: "cycling.powerProfile", input: { days: null } },
       { name: "cycling.performance", input: { days: null } },
       {
         name: "cycling.activities",
@@ -448,6 +456,7 @@ describe("CyclingTab", () => {
 
     expect(state.queryCalls).toEqual([
       { name: "cycling.decoupling", input: { days: null } },
+      { name: "cycling.powerProfile", input: { days: null } },
       { name: "cycling.performance", input: { days: null } },
       {
         name: "cycling.activities",

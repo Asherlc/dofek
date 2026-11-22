@@ -6,11 +6,11 @@ ${buildSleepSelectSql(false)}`;
 }
 
 /** Reuse the sleep priority and stage rules for a bounded, episode-level analysis. */
-export function buildSleepEpisodeAnalysisSelectSql(): string {
-  return buildSleepSelectSql(true);
+export function buildSleepEpisodeAnalysisSelectSql(preferDetectedOnset = false): string {
+  return buildSleepSelectSql(true, preferDetectedOnset);
 }
 
-function buildSleepSelectSql(episodeAnalysis: boolean): string {
+function buildSleepSelectSql(episodeAnalysis: boolean, preferDetectedOnset = false): string {
   const explicitMain = "('sleep', 'long_sleep', 'main')";
   const explicitNap = "('nap', 'late_nap', 'rest')";
   const materialized = episodeAnalysis ? "MATERIALIZED " : "";
@@ -25,6 +25,12 @@ active_sleep AS ${materialized}(
       ? `AND user_id = {userId:UUID}
     AND started_at < addDays(toDateTime({endDate:String}, 'UTC'), 2)
     AND coalesce(ended_at, started_at) >= subtractDays(toDateTime({startDate:String}, 'UTC'), 2)`
+      : ""
+  }
+  ${
+    preferDetectedOnset
+      ? `AND formatDateTime(coalesce(ended_at, started_at), '%F', {analysisTimezone:String})
+          BETWEEN {accessStartDate:String} AND {accessEndDate:String}`
       : ""
   }
 ),
@@ -226,7 +232,11 @@ best AS (
       ranked.is_nap AS is_nap,
       row_number() OVER (
         PARTITION BY final_groups.group_id
-        ORDER BY ranked.priority ASC, toString(ranked.id) ASC
+        ORDER BY ${
+          preferDetectedOnset
+            ? "if(ranked.provider_id = 'polar' AND ranked.ended_at > ranked.started_at AND NOT ranked.is_nap, 0, 1), "
+            : ""
+        }ranked.priority ASC, toString(ranked.id) ASC
       ) AS row_number
     FROM final_groups
     INNER JOIN ranked

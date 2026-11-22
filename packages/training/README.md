@@ -63,6 +63,7 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `climbing-strengths` | [Success-by-style response contract](src/climbing-strengths.ts): per-grade and pooled All grades profiles plus server-computed grade-adjusted strength differences, with rates from known results, total distinct-climb and unknown-result counts, baselines, nullable source outcomes, exclusion coverage, clipped monthly outcomes, and shared result/rate/count labels for web and mobile views |
 | `climbing-strengths-views` | [Shared Styles / Progress navigation and chart format definitions](src/climbing-strengths-views.ts), with fixed Styles radar and Progress views |
 | `cycling-decoupling` | Elapsed-half paired power-to-heart-rate decoupling and its paired-sample ratio |
+| `cycling-interval-power` | [Gap-aware interval power sampling](src/cycling-interval-power.ts): ceil-bounded, clamped 1 Hz index selection with mean and rounded power per interval |
 | `cycling-workout-metrics` | Coverage-aware per-activity power, heart-rate, cadence, drift, zone, load, and interval calculations |
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |
 | `endurance-types` | Endurance and indoor-cycling type guards |

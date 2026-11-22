@@ -1,7 +1,4 @@
-export function round(value: number, decimals = 1): number {
-  const multiplier = 10 ** decimals;
-  return Math.round(value * multiplier) / multiplier;
-}
+import { round } from "./cycling-sample-math.ts";
 
 export function pairedEfficiency(
   power: Array<number | null>,
