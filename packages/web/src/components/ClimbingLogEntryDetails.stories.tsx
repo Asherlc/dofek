@@ -3,6 +3,7 @@ import {
   climbingAttemptFixture,
   climbingClimbFixture,
   climbingLogEntryFixture,
+  climbingProjectHistoryFixture,
 } from "../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryDetails } from "./ClimbingLogEntryDetails.tsx";
 
@@ -37,6 +38,29 @@ const meta = {
 } satisfies Meta<typeof ClimbingLogEntryDetails>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+export const ProjectInProgress: Story = {
+  args: { projectHistory: { data: climbingProjectHistoryFixture() } },
+};
+
+export const FirstRecordedSend: Story = {
+  args: {
+    projectHistory: {
+      data: climbingProjectHistoryFixture({
+        sessionCount: 4,
+        unsuccessfulSessionCount: 2,
+        unknownSessionCount: 0,
+        firstSend: { date: "2026-11-09", sessionCount: 2, method: "top_rope" },
+        methodFirstSend: { date: "2026-11-17", sessionCount: 3, method: "lead" },
+        days: [
+          { date: "2026-11-04", outcome: "unsuccessful", method: "lead" },
+          { date: "2026-11-09", outcome: "send", method: "top_rope" },
+          { date: "2026-11-12", outcome: "unsuccessful", method: "lead" },
+          { date: "2026-11-17", outcome: "send", method: "lead" },
+        ],
+      }),
+    },
+  },
+};
 export const RecordedAidCompletion: Story = {};
 export const CategoricalWallAndMultipleGrips: Story = {
   args: { entry: { ...entry, wallAngle: { category: "slab" }, holdTypes: ["crimp", "jug"] } },

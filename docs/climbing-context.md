@@ -213,6 +213,16 @@ Category names follow the same latest-observation rule in the
 
 ## Browsing, attachment, and analytics
 
+Climb **Record Detail** shows recorded project history when an imported log
+identifies a whole climb and its climb day. The server counts one observed
+session per climb and calendar day through the selected record, within the
+account’s available history. A clean send takes precedence over failed tries
+that day. Unconfirmed outcomes remain visible separately. The first recorded
+send and the first recorded send in the selected rope method can have different
+counts. A repeat with missing earlier history leaves the first send date
+unknown. See the [implementation plan](superpowers/plans/2026-11-21-climbing-sessions-to-send.md)
+and the [study’s session definition](https://doi.org/10.1515/jqas-2026-0040).
+
 Both clients render concise cards and expose full facts through details. Provider record details fetch the selected log's full owned graph. The provider record list projects `recorded_at` from the log's observation Activity `started_at` at query time, then sorts and filters on it before `climbed_on`; observed board logs such as Kilter have no source date. See the [provider detail repository](../packages/server/src/repositories/provider-detail-repository.ts) and the [observation writer](../src/db/climbing-log-activity.ts). Cached records remain visible during refresh errors. Source date stays independent of Activity: attaching or deleting the Activity preserves it. The server suggests active, unattached logs with a matching known day for climbing or hiking Activities; attachment is explicit. See the [association service](../packages/server/src/repositories/climbing-log-entry-associator.ts) and [paired details](../packages/web/src/components/ClimbingLogEntryDetails.tsx).
 
 Climb names link to verified route destinations; additional route destinations remain separately accessible. Provider names link to their tick history using the supplied `sourceLinks`; a provider without a verified tick destination remains plain text. See the [source-link builder](../packages/server/src/repositories/climbing-source-links.ts) and the [web](../packages/web/src/pages/activity-detail/components/ClimbingLogEntrySources.tsx) and [mobile](../packages/mobile/components/ClimbingLogEntrySources.tsx) renderers.
