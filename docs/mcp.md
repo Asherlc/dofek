@@ -182,6 +182,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type, ISO week, modality, or purpose, including unclassified and power coverage. |
 | `get_running_race_forecast` | `activity:read` | Estimates a 10K or half-marathon finish from a shorter imported race and returns the source evidence. |
 | `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
+| `get_cycling_training_metrics` | `activity:read` | Returns per-ride cycling metrics or compares recorded Lamberts tests when given a test protocol. |
 | `get_training_load` | `activity:read`; also `nutrition:read` when requested | Returns daily load and rolling windows; analytical detail preserves modality channels and can include aligned nutrition. |
 | `get_recovery_training_series` | Scope depends on selected fields and grain: `health:read`, `activity:read`, and/or `nutrition:read` | Aligns selected observations by local day or main sleep, with workout timing and coverage evidence. |
 | `compare_performances` | `activity:read` | Compares only explicitly or strongly evidenced equivalent workouts, routes, climbs, strength exercises, or standardized tests with contextual deltas and provenance. |
@@ -790,6 +791,20 @@ discovery nor the report fetches provider history or refreshes models.
 Operators can generate the same analysis using the
 [TypeScript report command](../scripts/README.md#verification--tooling), which
 retains the full comparison/trend responses and their provenance.
+
+### Lamberts Submaximal Cycle Test
+
+Call `get_cycling_training_metrics` with `test_protocol: "lamberts_submaximal_cycle_test"`
+and an inclusive local date range. The result lists eligible recorded FIT tests newest first.
+Use `next_cursor` with the same dates and filters to see earlier tests. The range comparison
+reports stage 2 and stage 3 power changes between the earliest and latest eligible tests when
+both observations are available.
+
+Use the returned equipment and indoor/outdoor information as context. The response includes
+eligible tests across trainers and reports the maximum heart rate measurement method as `unknown`.
+Keep missing stage data, exertion ratings, and recovery posture unknown in the interpretation.
+Previously imported files need a fresh FIT import to capture the workout structure used for
+eligibility. [LSCT protocol and evidence](../packages/server/README.md#mcp-activity-and-cycling-analytics).
 
 ### Historical verification record — 2026-09-10
 

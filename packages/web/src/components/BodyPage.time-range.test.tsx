@@ -24,6 +24,7 @@ describe("BodyPage time range", () => {
     expectCallsContaining([
       { name: "dailyMetrics.trends", input: { days: 7, endDate: "2026-07-08" } },
       { name: "dailyMetrics.list", input: { days: 7, endDate: "2026-07-08" } },
+      { name: "dailyMetrics.recorded", input: { days: 7, endDate: "2026-07-08", group: "body" } },
       { name: "dailyMetrics.hrvBaseline", input: { days: 7, endDate: "2026-07-08" } },
       { name: "stress.scores", input: { days: 7, endDate: "2026-07-08" } },
       { name: "bodyAnalytics.weightOverview", input: { days: 7, endDate: "2026-07-08" } },
@@ -37,6 +38,10 @@ describe("BodyPage time range", () => {
     expectCallsContaining([
       { name: "dailyMetrics.trends", input: { days: null, endDate: "2026-07-08" } },
       { name: "dailyMetrics.list", input: { days: null, endDate: "2026-07-08" } },
+      {
+        name: "dailyMetrics.recorded",
+        input: { days: null, endDate: "2026-07-08", group: "body" },
+      },
       { name: "dailyMetrics.hrvBaseline", input: { days: null, endDate: "2026-07-08" } },
       { name: "stress.scores", input: { days: null, endDate: "2026-07-08" } },
       { name: "bodyAnalytics.weightOverview", input: { days: null, endDate: "2026-07-08" } },

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "title": "Lamberts cycling test comparison",
+  "kind": "prototype",
+  "description": "Fictional rides showing how Dofek could compare recorded Lamberts Submaximal Cycle Tests and explain which evidence supports each result.",
+  "artboards": [
+    {
+      "id": "comparison",
+      "title": "Cycling analysis",
+      "file": "comparison.html",
+      "width": 1060
+    }
+  ]
+}

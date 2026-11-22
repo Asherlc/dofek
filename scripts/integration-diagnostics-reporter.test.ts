@@ -21,8 +21,10 @@ function captureUntilHardStop(
     );
     let output = "";
     let stderrBytes = 0;
+    let stderrTail = "";
     let checkpointObserved = false;
     let stopRequested = false;
+    let deadlineExpired = false;
     let spawnError: Error | undefined;
     const stop = () => {
       if (!child.pid || stopRequested) return;
@@ -35,6 +37,13 @@ function captureUntilHardStop(
       }
     };
     signal.addEventListener("abort", stop, { once: true });
+    // Fire before the 15s test timeout so a stalled nested runner reports its output.
+    const deadline = setTimeout(() => {
+      if (!checkpointObserved) {
+        deadlineExpired = true;
+        stop();
+      }
+    }, 12_000);
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
       output += chunk;
       if (!stopRequested && reachedCheckpoint(output)) {
@@ -44,6 +53,7 @@ function captureUntilHardStop(
     });
     child.stderr.on("data", (chunk: Buffer) => {
       stderrBytes += chunk.length;
+      stderrTail = (stderrTail + chunk.toString()).slice(-2000);
     });
     child.once("error", (error) => {
       spawnError = error;
@@ -51,10 +61,17 @@ function captureUntilHardStop(
     });
     child.once("exit", stop);
     child.once("close", (code, exitSignal) => {
+      clearTimeout(deadline);
       signal.removeEventListener("abort", stop);
       if (spawnError) reject(spawnError);
-      else if (signal.aborted) reject(signal.reason);
-      else if (!checkpointObserved || exitSignal !== "SIGKILL") {
+      else if (signal.aborted || deadlineExpired) {
+        reject(
+          new Error(
+            `Runner did not reach the checkpoint before abort. stdout tail: ${output.slice(-2000)} stderr tail: ${stderrTail}`,
+            { cause: signal.reason },
+          ),
+        );
+      } else if (!checkpointObserved || exitSignal !== "SIGKILL") {
         reject(
           new Error(
             `Unexpected runner exit (code ${code}, signal ${exitSignal}, checkpoint observed ${checkpointObserved}, stderr bytes ${stderrBytes})`,

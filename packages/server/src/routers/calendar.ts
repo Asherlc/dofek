@@ -1,5 +1,6 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { activityOverviewComparisonSchema } from "@dofek/format/activity-overview";
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import {
   ACTIVITY_HEATMAP_BAND_IDS,
   type ActivityHeatmapBandId,
@@ -21,6 +22,10 @@ import { ActivityOverviewRepository } from "../repositories/activity-overview-re
 import { activitySearchCursorSchema } from "../repositories/activity-search-pagination.ts";
 import { searchActivityTitles } from "../repositories/activity-title-search.ts";
 import { CalendarRepository } from "../repositories/calendar-repository.ts";
+import {
+  PlannedWorkoutRepository,
+  plannedWorkoutDaySchema,
+} from "../repositories/planned-workout-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
@@ -148,6 +153,20 @@ export const calendarRouter = router({
         ctx.accessWindow,
       );
       return repo.getPage(input);
+    }),
+
+  upcomingWorkouts: protectedProcedure
+    .input(z.object({ providerId: z.string().min(1).optional() }).optional())
+    .output(z.array(plannedWorkoutDaySchema))
+    .query(({ ctx, input }) => {
+      const today = formatDateYmdInTimeZone(new Date(), ctx.timezone);
+      return new PlannedWorkoutRepository(
+        ctx.db,
+        ctx.userId,
+        today,
+        input?.providerId,
+        ctx.accessWindow,
+      ).upcoming();
     }),
 
   searchActivities: protectedProcedure

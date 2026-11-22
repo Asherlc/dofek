@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "drizzle-orm";
 import { expect, it } from "vitest";
 import yauzl from "yauzl";
 import { seedOwnedClimbingGraph } from "./db/climbing-lifecycle-test-helpers.ts";
 import { setupTestDatabase } from "./db/test-helpers.ts";
+import { ensureProvider } from "./db/tokens.ts";
 import { generateExport } from "./export.ts";
 
 function zipContents(path: string): Promise<Map<string, string>> {
@@ -88,5 +90,84 @@ it("exports the complete owned climbing graph with native points, unknown dates 
   } finally {
     await context.cleanup();
     await rm(directory, { recursive: true, force: true });
+  }
+}, 120000);
+
+it("exports only the owner's date-only daily metric catalog values with provider, unit and date", async () => {
+  const context = await setupTestDatabase();
+  const directory = await mkdtemp(join(tmpdir(), "daily-metric-values-export-test-"));
+  try {
+    const owner = randomUUID();
+    const otherOwner = randomUUID();
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES (${owner}::uuid, 'Export Owner'), (${otherOwner}::uuid, 'Export Other')`,
+    );
+    await ensureProvider(context.db, "intervals.icu", "Intervals.icu", "https://intervals.icu");
+    for (const [user, weight] of [
+      [owner, 70.5],
+      [otherOwner, 123.4],
+    ] as const) {
+      await context.db.execute(
+        sql`WITH parent AS (
+              INSERT INTO fitness.daily_metrics (date, provider_id, user_id)
+              VALUES ('2026-03-01', 'intervals.icu', ${user}::uuid) RETURNING id
+            )
+            INSERT INTO fitness.daily_metric_value (daily_metrics_id, metric_type_id, value)
+            SELECT id, 'weight', ${weight} FROM parent`,
+      );
+    }
+    const archive = join(directory, "values.zip");
+    await generateExport(context.db, owner, archive, () => {});
+    const csv = (await zipContents(archive)).get("daily-metric-values.csv");
+
+    expect(csv).toContain("intervals.icu");
+    expect(csv).toContain("2026-03-01");
+    expect(csv).toContain("weight");
+    expect(csv).toContain("kg");
+    expect(csv).toContain("70.5");
+    expect(csv).not.toContain("123.4");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await context.cleanup();
+  }
+});
+
+it("exports only the owner's planned workouts with their native workout document", async () => {
+  const context = await setupTestDatabase();
+  const directory = await mkdtemp(join(tmpdir(), "planned-workout-export-test-"));
+  try {
+    const owner = randomUUID();
+    const otherOwner = randomUUID();
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES (${owner}::uuid, 'Planned Export Owner'), (${otherOwner}::uuid, 'Planned Export Other')`,
+    );
+    await ensureProvider(context.db, "intervals.icu", "Intervals.icu", "https://intervals.icu");
+    for (const [user, externalId, title, doc] of [
+      [owner, "own-session", "Owner Ramp", { steps: [{ duration: 600 }] }],
+      [otherOwner, "other-session", "Other Ramp", { steps: [{ duration: 300 }] }],
+    ] as const) {
+      await context.db.execute(
+        sql`INSERT INTO fitness.planned_workout
+              (user_id, provider_id, external_id, start_date, start_time, title, sport_type, workout_doc)
+            VALUES (${user}::uuid, 'intervals.icu', ${externalId}, '2026-03-10', '06:30:00',
+              ${title}, 'Ride', ${JSON.stringify(doc)}::jsonb)`,
+      );
+    }
+    const archive = join(directory, "planned.zip");
+    await generateExport(context.db, owner, archive, () => {});
+    const csv = (await zipContents(archive)).get("planned-workouts.csv");
+
+    expect(csv).toContain("intervals.icu");
+    expect(csv).toContain("own-session");
+    expect(csv).toContain("Owner Ramp");
+    expect(csv).toContain('"{""steps"":[{""duration"":600}]}"');
+    expect(csv).not.toContain("other-session");
+    expect(csv).not.toContain("Other Ramp");
+    expect(csv).not.toContain('"{""steps"":[{""duration"":300}]}"');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await context.cleanup();
   }
 }, 120000);
