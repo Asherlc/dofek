@@ -5,17 +5,23 @@ import {
 import {
   climbingAttemptDetailFields,
   formatClimbingGradeComponents,
+  formatClimbingProjectDay,
+  formatClimbingProjectHistory,
 } from "@dofek/format/climbing-log";
+import { formatDateMedium } from "@dofek/format/format";
 import { providerLabel } from "@dofek/providers/providers";
 import { climbingLogEntryAreaPath, climbingLogEntryName } from "@dofek/training/climbing-log";
+import type { ClimbingProjectHistoryState } from "@dofek/training/climbing-project-history";
 import { climbingTagGroups } from "@dofek/training/climbing-tag-presentation";
-import { StyleSheet, Text, View } from "react-native";
+import { useId, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
 import { ClimbingCatalogueContext } from "./ClimbingCatalogueContext";
 import { ClimbingLogEntryContext } from "./ClimbingLogEntryContext";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources";
 import { ClimbingPhotos } from "./ClimbingPhotos";
+import { getQueryErrorMessage } from "./QueryStatePanel";
 
 function Fields({ values }: { values: Array<{ label: string; value: string }> }) {
   if (values.length === 0) return null;
@@ -31,7 +37,69 @@ function Fields({ values }: { values: Array<{ label: string; value: string }> })
   );
 }
 
-export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDetail }) {
+function ProjectHistory({ data, error, isLoading }: ClimbingProjectHistoryState) {
+  const [open, setOpen] = useState(false);
+  const visitsId = useId();
+  if (!data && !error && !isLoading) return null;
+  const copy = data ? formatClimbingProjectHistory(data) : null;
+  return (
+    <View style={styles.history}>
+      <Text accessibilityRole="header" style={styles.heading}>
+        Project history
+      </Text>
+      {error && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {getQueryErrorMessage(error)}
+        </Text>
+      )}
+      {isLoading && !data && (
+        <Text accessibilityLiveRegion="polite" style={styles.label}>
+          Loading project history…
+        </Text>
+      )}
+      {copy && (
+        <>
+          <Text style={styles.historyMetric}>{copy.summary}</Text>
+          <Text style={styles.label}>{copy.detail}</Text>
+          {copy.methodDetail && <Text style={styles.label}>{copy.methodDetail}</Text>}
+        </>
+      )}
+      {data && (
+        <>
+          <Pressable
+            accessibilityRole="button"
+            aria-expanded={open}
+            aria-controls={visitsId}
+            onPress={() => setOpen(!open)}
+            style={styles.historyButton}
+          >
+            <Text style={styles.historyLink}>View sessions</Text>
+          </Pressable>
+          {open && (
+            <View nativeID={visitsId}>
+              {data.days.map((day) => (
+                <View key={day.date} style={styles.historyDay}>
+                  <Text style={styles.label}>
+                    {formatDateMedium(day.date, { timeZone: "UTC" })}
+                  </Text>
+                  <Text style={styles.value}>{formatClimbingProjectDay(day)}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </>
+      )}
+    </View>
+  );
+}
+
+export function ClimbingLogEntryDetails({
+  entry,
+  projectHistory,
+}: {
+  entry: ClimbingLogEntryDetail;
+  projectHistory?: ClimbingProjectHistoryState;
+}) {
   const climb = entry.climb;
   const path = formatClimbingLocationPath(climbingLogEntryAreaPath(entry));
   const holds = formatClimbingHoldTypes(entry.holdTypes);
@@ -114,6 +182,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
           <Text style={styles.value}>{formatClimbingGradeComponents(entry.reportedGrades)}</Text>
         </View>
       )}
+      {projectHistory && <ProjectHistory key={entry.id} {...projectHistory} />}
       {entry.attempts.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.heading}>
@@ -164,6 +233,19 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
   );
 }
 const styles = StyleSheet.create({
+  history: { padding: 12, gap: 6, backgroundColor: colors.surface, borderRadius: 12 },
+  historyMetric: { color: colors.text, fontSize: 15, fontWeight: "600" },
+  historyButton: { minHeight: 44, justifyContent: "center" },
+  historyLink: { color: colors.accent, fontSize: 13, fontWeight: "600" },
+  historyDay: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingVertical: 8,
+  },
+  error: { fontSize: 12, color: colors.negative },
   container: { gap: 16 },
   section: { gap: 8 },
   fields: { gap: 6 },

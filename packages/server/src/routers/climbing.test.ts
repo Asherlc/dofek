@@ -120,6 +120,19 @@ function makeCallerWithResponses(responses: Record<string, unknown>[][]) {
 
 const groupId = "00000000-0000-4000-8000-000000000701";
 describe("climbingRouter", () => {
+  it("exposes a visible climb record without a session date as unavailable", async () => {
+    const { caller } = makeCaller([{ throughDate: null, date: null }]);
+    await expect(caller.projectHistory({ logEntryId: groupId })).resolves.toBeNull();
+  });
+
+  it("reports a missing or inaccessible climb record as not found", async () => {
+    const { caller } = makeCaller([]);
+    await expect(caller.projectHistory({ logEntryId: groupId })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Climbing log not found",
+    });
+  });
+
   it("serves an increase in recorded climbing attempts through its own query", async () => {
     const { caller, execute } = makeCaller([
       { daysAgo: 0, attempts: 20 },

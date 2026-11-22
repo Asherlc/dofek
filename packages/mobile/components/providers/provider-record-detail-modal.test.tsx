@@ -7,6 +7,30 @@ import {
 } from "../../../server/src/repositories/climbing-test-helpers.ts";
 import { ProviderRecordDetailModal } from "./provider-record-detail-modal";
 
+const useProjectHistory = vi.hoisted(() =>
+  vi.fn((_input: { logEntryId: string }) => ({ data: null })),
+);
+vi.mock("../../lib/trpc", () => ({
+  trpc: { climbing: { projectHistory: { useQuery: useProjectHistory } } },
+}));
+
+it("loads project history for the selected log and updates when the selection changes", () => {
+  const climb = climbingClimbFixture();
+  const first = climbingLogEntryFixture({ climb, climbId: climb.id, discipline: "rock_climbing" });
+  const second = { ...first, id: "20000000-0000-4000-8000-000000000009" };
+  const detail = (entry: typeof first) => (
+    <ProviderRecordDetailModal
+      dataType="climbingLogEntries"
+      state={{ data: entry, error: null, isLoading: false }}
+      onClose={() => {}}
+    />
+  );
+  const view = render(detail(first));
+  expect(useProjectHistory.mock.lastCall?.[0]).toEqual({ logEntryId: first.id });
+  view.rerender(detail(second));
+  expect(useProjectHistory.mock.lastCall?.[0]).toEqual({ logEntryId: second.id });
+});
+
 vi.mock("expo-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 it("renders a supported old-server scalar grip and numeric angle", () => {
   const { holdTypes: _holdTypes, ...entry } = climbingLogEntryFixture({

@@ -2,6 +2,7 @@
   "version": 1,
   "agents": {
     "whoop-battery-status": "7882f4e8-4c8c-4046-bde8-fe969e33e90a",
+    "climbing-sessions-to-send": "e3952a05-dadc-4063-9ea6-dc4417210009",
     "late-workouts-and-sleep": "b653b310-4771-4979-a67d-c43235fe9b21",
     "cycling-durability": "feba7e47-6c63-4f01-847b-9098c4680e2d",
     "cycling-interval-target-comparison": "d86e5fd1-8450-4782-a1b4-1ff48b305507",

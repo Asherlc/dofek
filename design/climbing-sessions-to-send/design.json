@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "title": "Climbing · Sessions to send",
+  "kind": "prototype",
+  "description": "Two fictional examples of project history inside Dofek’s existing climbing Record Detail sheet.",
+  "artboards": [
+    {
+      "id": "first-send",
+      "title": "Record Detail · First send",
+      "file": "first-send.html",
+      "group": "record-detail",
+      "width": 390
+    },
+    {
+      "id": "in-progress",
+      "title": "Record Detail · In progress",
+      "file": "in-progress.html",
+      "group": "record-detail",
+      "width": 390
+    }
+  ]
+}
