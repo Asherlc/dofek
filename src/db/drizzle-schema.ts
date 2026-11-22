@@ -10,6 +10,7 @@ import * as eventSchema from "./schema/events.ts";
 import * as externalSchema from "./schema/external.ts";
 import * as mcpSchema from "./schema/mcp.ts";
 import * as nutritionSchema from "./schema/nutrition.ts";
+import * as plannedWorkoutSchema from "./schema/planned-workout.ts";
 import * as processingSchema from "./schema/processing.ts";
 import * as recordModificationsSchema from "./schema/record-modifications.ts";
 import * as referenceSchema from "./schema/reference.ts";
@@ -27,6 +28,7 @@ export const drizzleSchema = {
   ...clinicalSchema,
   ...accountSchema,
   ...eventSchema,
+  ...plannedWorkoutSchema,
   ...externalSchema,
   ...processingSchema,
   ...recordModificationsSchema,

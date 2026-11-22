@@ -3,7 +3,7 @@ import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildAccountErasureFenceTableSql } from "../metric-stream/clickhouse-table.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
-import { createMigration as createPolarizationMigration } from "./clickhouse-migrations/0116_cycling_polarization_elapsed_seconds.ts";
+import { createMigration as createPolarizationMigration } from "./clickhouse-migrations/0117_cycling_polarization_elapsed_seconds.ts";
 import { cyclingPowerSchemaStatements } from "./cycling-power-schema.ts";
 import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 

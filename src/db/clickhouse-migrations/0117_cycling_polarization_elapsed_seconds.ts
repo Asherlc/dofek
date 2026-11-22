@@ -2,7 +2,7 @@ import type { ClickHouseMigration } from "./types.ts";
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0116_cycling_polarization_elapsed_seconds",
+    id: "0117_cycling_polarization_elapsed_seconds",
     statements: [
       `CREATE TABLE IF NOT EXISTS analytics.activity_cycling_polarization (
         activity_id UUID,

@@ -30,6 +30,7 @@ import { PageLayout } from "../components/PageLayout.tsx";
 import { PaginationControls } from "../components/PaginationControls.tsx";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { UpcomingWorkouts } from "../components/UpcomingWorkouts.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -140,6 +141,9 @@ export function ActivitiesPage() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  const upcomingQuery = trpc.calendar.upcomingWorkouts.useQuery(undefined, {
+    placeholderData: (previousData) => previousData,
+  });
   useEffect(() => {
     if (query.data && !query.isPlaceholderData && !query.isError) {
       lastSuccessfulInput.current = { rangeKey, input: pageInput };
@@ -152,6 +156,15 @@ export function ActivitiesPage() {
       ? trpcUtils.calendar.weekListV2.getData(previousInput.input)
       : undefined);
   const processingStatus = useProcessingStatus({ datasets: ["activity"] });
+  const previousProcessingStatus = useRef(processingStatus.data?.overallStatus);
+  useEffect(() => {
+    const status = processingStatus.data?.overallStatus;
+    const previous = previousProcessingStatus.current;
+    previousProcessingStatus.current = status;
+    if (previous !== undefined && previous !== "ready" && status === "ready") {
+      void trpcUtils.calendar.upcomingWorkouts.invalidate();
+    }
+  }, [processingStatus.data?.overallStatus, trpcUtils]);
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await Promise.all([
@@ -159,6 +172,7 @@ export function ActivitiesPage() {
         trpcUtils.calendar.searchActivities.invalidate(),
         trpcUtils.activityLocation.search.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.calendar.upcomingWorkouts.invalidate(),
         trpcUtils.activity.list.invalidate(),
       ]);
       setSelectedActivities(new Map());
@@ -183,6 +197,7 @@ export function ActivitiesPage() {
         trpcUtils.activityLocation.search.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.calendar.calendarData.invalidate(),
+        trpcUtils.calendar.upcomingWorkouts.invalidate(),
         trpcUtils.activity.list.invalidate(),
       ]);
       setSelectedActivities(new Map());
@@ -197,6 +212,7 @@ export function ActivitiesPage() {
         trpcUtils.calendar.searchActivities.invalidate(),
         trpcUtils.activityLocation.search.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.calendar.upcomingWorkouts.invalidate(),
         trpcUtils.activity.list.invalidate(),
       ]);
       setSelectedActivities(new Map());
@@ -389,6 +405,14 @@ export function ActivitiesPage() {
           retrying={retryingConnectionFailures}
         />
       ) : null}
+      <UpcomingWorkouts
+        days={upcomingQuery.data}
+        isLoading={upcomingQuery.isLoading}
+        isError={upcomingQuery.isError}
+        error={upcomingQuery.error}
+        onRetry={() => void upcomingQuery.refetch()}
+        retrying={upcomingQuery.isFetching}
+      />
       {listQuery.isLoading && !hasListData ? (
         <QueryStatePanel variant="loading" height={400} />
       ) : listQuery.isError &&

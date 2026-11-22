@@ -1,12 +1,17 @@
 import { execFile } from "node:child_process";
 import { waitForAuthCode } from "./auth/callback-server.ts";
-import { buildAuthorizationUrl } from "./auth/oauth.ts";
+import {
+  buildAuthorizationUrl,
+  generateCodeChallenge,
+  generateCodeVerifier,
+} from "./auth/oauth.ts";
 import { parseSinceDays, resolveCliUserId } from "./cli.ts";
 import { handleSyncCommand } from "./cli-sync.ts";
 
 export { handleSyncCommand };
 
 import { createDatabaseFromEnv } from "./db/index.ts";
+import { withProviderOperationFence } from "./db/provider-operation-fence.ts";
 import { runWithTokenUser } from "./db/token-user-context.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
 import { ensureProvidersRegistered } from "./jobs/provider-registration.ts";
@@ -109,8 +114,15 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
       return 1;
     }
     const { oauthConfig, exchangeCode } = setup;
-    // Browser-based OAuth 2.0 flow
-    const authUrl = setup.authUrl ?? buildAuthorizationUrl(oauthConfig);
+    // Preserve provider-supplied URLs; their contents are the provider's responsibility.
+    const codeVerifier = oauthConfig.usePkce && !setup.authUrl ? generateCodeVerifier() : undefined;
+    const authUrl =
+      setup.authUrl ??
+      (codeVerifier
+        ? buildAuthorizationUrl(oauthConfig, {
+            codeChallenge: generateCodeChallenge(codeVerifier),
+          })
+        : buildAuthorizationUrl(oauthConfig));
     logger.info(`[auth] Opening browser...\n\n  ${authUrl}\n`);
     execFile("open", [authUrl]);
     logger.info("[auth] Waiting for callback...");
@@ -123,7 +135,7 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
     });
     try {
       logger.info("[auth] Received authorization code. Exchanging for tokens...");
-      tokens = await exchangeCode(code);
+      tokens = codeVerifier ? await exchangeCode(code, codeVerifier) : await exchangeCode(code);
     } finally {
       cleanupServer();
     }
@@ -133,8 +145,18 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
 
   const db = createDatabaseFromEnv();
   const userId = await resolveCliUserId(db);
-  await ensureProvider(db, provider.id, provider.name, apiBaseUrl, userId);
-  await saveTokens(db, provider.id, tokens, userId);
+  if (setup.reconnectStrategy === "replace" || setup.assertCanConnect) {
+    await withProviderOperationFence(db, userId, provider.id, (operationDb) =>
+      operationDb.transaction(async (transaction) => {
+        await setup.assertCanConnect?.(transaction, userId, tokens);
+        await ensureProvider(transaction, provider.id, provider.name, apiBaseUrl, userId);
+        await saveTokens(transaction, provider.id, tokens, userId);
+      }),
+    );
+  } else {
+    await ensureProvider(db, provider.id, provider.name, apiBaseUrl, userId);
+    await saveTokens(db, provider.id, tokens, userId);
+  }
   logger.info("[auth] Tokens saved to database.");
 
   return 0;

@@ -309,6 +309,30 @@ describe("dataset contracts", () => {
     ]);
   });
 
+  it("keeps Intervals.icu calendar data in the existing relational provider scope", () => {
+    expect(processingDatasetKeysForProvider("intervals.icu")).toEqual([
+      "activity",
+      "hiking",
+      "cycling",
+      "recovery",
+      "training",
+      "body",
+      "providers",
+    ]);
+    expect(processingDatasetKeysForProvider("intervals.icu")).not.toContain("calendar");
+    expect(PRODUCTION_DBT_MODELS).not.toContain("planned_workout");
+    const activity = DATASET_CONTRACTS.find((contract) => contract.key === "activity");
+    expect(activity?.cacheQueryFamilies).toEqual([
+      "activity",
+      "running",
+      "dashboard",
+      "providerDetail",
+    ]);
+    expect(requiredCdcEvidence(activity ?? DATASET_CONTRACTS[0], ["relational"])).toEqual([
+      { kind: "peerdb_marker", flowName: "dofek_fitness_raw_analytics" },
+    ]);
+  });
+
   it("includes BoardSesh in climbing processing scopes", () => {
     expect(processingDatasetKeysForProvider("boardsesh")).toEqual([
       "activity",

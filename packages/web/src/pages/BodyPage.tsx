@@ -19,6 +19,7 @@ import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { RecordedDailyMetrics } from "../components/RecordedDailyMetrics.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
@@ -101,6 +102,11 @@ export function BodyPage() {
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({
     ...selectedRangeQueryInput(days),
     endDate,
+  });
+  const recorded = trpc.dailyMetrics.recorded.useQuery({
+    ...selectedRangeQueryInput(days),
+    endDate,
+    group: "body",
   });
   const stressData = trpc.stress.scores.useQuery({ ...selectedRangeQueryInput(days), endDate });
   const weightOverview = trpc.bodyAnalytics.weightOverview.useQuery({
@@ -204,6 +210,12 @@ export function BodyPage() {
       label: "Body composition",
       query: weightOverview,
       retry: () => weightOverview.refetch(),
+    },
+    {
+      id: "recorded",
+      label: "Provider-reported weight and resting heart rate",
+      query: recorded,
+      retry: () => recorded.refetch(),
     },
     {
       id: "insights",
@@ -318,6 +330,8 @@ export function BodyPage() {
           )}
         </PageSection>
       )}
+
+      <RecordedDailyMetrics rows={recorded.data} />
 
       {/* Body Composition */}
       <PageSection title="Body Composition" card={false}>

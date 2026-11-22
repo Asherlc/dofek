@@ -40,9 +40,14 @@ export const mockRunQueuedUserWorkUnlessAccountErasing = vi.fn(
   ) => work(),
 );
 export const mockDbExecute = vi.fn(async () => [{ id: "test-user" }]);
-export const mockCreateDatabaseFromEnv = vi.fn(() => ({
+export const mockDatabaseTransaction = vi.fn(
+  async (work: (transaction: unknown) => Promise<unknown>) => work(mockDatabase),
+);
+const mockDatabase = {
   execute: mockDbExecute,
-}));
+  transaction: mockDatabaseTransaction,
+};
+export const mockCreateDatabaseFromEnv = vi.fn(() => mockDatabase);
 export const mockRedisConnection = { host: "localhost" };
 export const mockCreateSyncQueue = vi.fn(() => ({
   add: mockAdd,
@@ -119,8 +124,24 @@ vi.mock("../auth/callback-server.ts", () => ({
 }));
 
 export const mockBuildAuthorizationUrl = vi.fn(() => "https://auth.example.com/authorize");
+export const mockGenerateCodeVerifier = vi.fn(() => "test-code-verifier");
+export const mockGenerateCodeChallenge = vi.fn(() => "test-code-challenge");
 vi.mock("../auth/oauth.ts", () => ({
   buildAuthorizationUrl: mockBuildAuthorizationUrl,
+  generateCodeVerifier: mockGenerateCodeVerifier,
+  generateCodeChallenge: mockGenerateCodeChallenge,
+}));
+
+export const mockWithProviderOperationFence = vi.fn(
+  async (
+    _database: unknown,
+    _userId: string,
+    _providerId: string,
+    work: (database: unknown) => Promise<unknown>,
+  ) => work(mockDatabase),
+);
+vi.mock("../db/provider-operation-fence.ts", () => ({
+  withProviderOperationFence: mockWithProviderOperationFence,
 }));
 
 export const mockEnsureProvider = vi.fn(() => Promise.resolve());

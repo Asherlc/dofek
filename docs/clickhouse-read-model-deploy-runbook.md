@@ -1053,7 +1053,7 @@ writes integer microseconds to `analytics.activity_cycling_polarization`.
 The legacy release uses its own sample-count table. Prepare the new table
 before API activation, following the [candidate-image procedure](#overview-oxygen-and-temperature-cutover).
 
-1. Apply schema-only ClickHouse migration `0116_cycling_polarization_elapsed_seconds`
+1. Apply schema-only ClickHouse migration `0117_cycling_polarization_elapsed_seconds`
    in the authorized operator runtime.
 2. Run the candidate's normal incremental `activity_polarization_zones` build
    under the existing serialized analytics owner and production resource limits.

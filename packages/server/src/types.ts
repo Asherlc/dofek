@@ -78,6 +78,7 @@ export type {
   MuscleGroupVolumeRow,
   MuscleGroupWeek,
   ProgressiveOverloadRow,
+  StrengthExerciseHistoryRow,
   VolumeOverTimeRow,
   WorkoutSummaryRow,
 } from "./routers/strength.ts";
