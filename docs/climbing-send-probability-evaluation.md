@@ -72,3 +72,35 @@ Dofek’s imported records still need validation with grades captured before the
 cutoff, including separate results for supported gym and outdoor contexts.
 The pilot scores describe the recorded climb-days. Sends-only logs and
 unrecorded failures provide no estimate of the frequency of unsuccessful days.
+
+## Dofek owner history: Kaya indoor V-scale bouldering
+
+On 2026-11-22, a retrospective evaluation used the owner's imported history,
+restored from the newest production backup into a throwaway local database with
+`infisical run --env=prod -- pnpm climbing:export-from-backup`. Only one
+context has eligible climb-days: 163 Kaya indoor bouldering days (125 distinct
+climbs, 30 logged on more than one day), 2026-07-06 to 2026-11-22, V0–V5, 49
+sends. Grades are current catalogue values (`current_assigned`), so this is
+retrospective evidence. No gym sport lead, outdoor, or trad day passed the
+eligibility rules. Those contexts remain unavailable.
+
+July and August contain 72 climb-days and no sends; September has 5 of 11. The
+cutoffs of 2026-08-01 and 2026-09-01 had no training sends and the model
+reported them as unavailable. Whether the earlier days are true failures or
+unlabeled sessions has not been established, and the earlier send rate used as
+the baseline is biased by them (6% at the October cutoff).
+
+Four-chain CmdStan fits (seed 1234) had maximum R-hat 1.0038 and no divergences.
+
+| Cutoff | Cohort | Days | Observed send rate | Mean model probability | Brier, model / baseline | Log loss, model / baseline |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 2026-10-01 | Familiar | 6 | 66.7% | 22.8% | 0.358 / 0.590 | 0.946 / 1.894 |
+| 2026-10-01 | Unfamiliar | 34 | 61.8% | 29.1% | 0.269 / 0.547 | 0.759 / 1.759 |
+| 2026-11-01 | Familiar | 5 | 80.0% | 53.3% | 0.238 / 0.469 | 0.632 / 1.185 |
+| 2026-11-01 | Unfamiliar | 35 | 42.9% | 40.2% | 0.164 / 0.279 | 0.492 / 0.764 |
+
+The model scored better than the earlier-rate baseline in every cohort, but the
+baseline was weak. At the October cutoff the model under-predicted sends by
+about 33 percentage points, which is poor calibration. By November it was within
+about 3 points for unfamiliar climbs. Counts are small (5–35 days) and the
+intervals are wide, so this does not support exposing probabilities yet.

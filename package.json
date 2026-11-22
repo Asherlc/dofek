@@ -171,6 +171,7 @@
     "compose:env": "tsx scripts/compose-env.ts",
     "compose:up": "tsx scripts/compose-env.ts --up",
     "dev:environment": "tsx scripts/dev-environment.ts",
+    "climbing:export-from-backup": "tsx scripts/export-climbing-forecast-from-backup.ts",
     "migrate": "tsx scripts/with-env.ts -- drizzle-kit migrate && tsx scripts/generate-schema-diagram.ts",
     "setup-db": "tsx scripts/with-env.ts -- tsx src/db/run-migrate.ts",
     "analytics:build": "pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/run-local-analytics-build.ts",

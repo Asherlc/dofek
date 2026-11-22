@@ -31,6 +31,11 @@ dofek-export --output-dir /tmp/unused
 From the repository root, with a read-only `DATABASE_URL` for the authorized
 database, export one owner's climb-days with the existing TypeScript runtime.
 
+To export from the newest production backup without a production connection,
+run `infisical run --env=prod -- pnpm climbing:export-from-backup <owner> <timezone> <start> <end>`.
+It needs `DATABASUS_SECRET_KEY` in Infisical, restores into a throwaway database in
+the workspace Compose Postgres, and drops it afterward.
+
 ```bash
 rtk proxy pnpm tsx scripts/export-climbing-forecast-observations.ts \
   "$climbing_owner_id" America/Los_Angeles 2025-01-01 2025-12-31 > climb-days.json
