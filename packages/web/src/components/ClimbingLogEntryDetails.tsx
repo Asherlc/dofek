@@ -5,9 +5,13 @@ import {
 import {
   climbingAttemptDetailFields,
   formatClimbingGradeComponents,
+  formatClimbingProjectDay,
+  formatClimbingProjectHistory,
 } from "@dofek/format/climbing-log";
+import { formatDateMedium } from "@dofek/format/format";
 import { providerLabel } from "@dofek/providers/providers";
 import { climbingLogEntryAreaPath, climbingLogEntryName } from "@dofek/training/climbing-log";
+import type { ClimbingProjectHistoryState } from "@dofek/training/climbing-project-history";
 import { climbingTagGroups } from "@dofek/training/climbing-tag-presentation";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ClimbingLogEntryContext } from "../pages/activity-detail/components/ClimbingLogEntryContext.tsx";
@@ -15,6 +19,7 @@ import { ClimbingLogEntrySources } from "../pages/activity-detail/components/Cli
 
 import { ClimbingCatalogueContext } from "./ClimbingCatalogueContext";
 import { ClimbingPhotos } from "./ClimbingPhotos";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 function Fields({ values }: { values: Array<{ label: string; value: string }> }) {
   if (values.length === 0) return null;
@@ -30,7 +35,51 @@ function Fields({ values }: { values: Array<{ label: string; value: string }> })
   );
 }
 
-export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDetail }) {
+function ProjectHistory({ data, error, isLoading }: ClimbingProjectHistoryState) {
+  if (!data && !error && !isLoading) return null;
+  const copy = data ? formatClimbingProjectHistory(data) : null;
+  return (
+    <section aria-label="Project history" className="space-y-2 rounded-lg border border-border p-3">
+      <h4 className="font-medium">Project history</h4>
+      {error && <QueryStatePanel error={error} height={0} />}
+      {isLoading && !data && (
+        <p role="status" className="text-xs text-subtle">
+          Loading project history…
+        </p>
+      )}
+      {copy && (
+        <>
+          <p className="font-semibold">{copy.summary}</p>
+          <p className="text-xs text-subtle">{copy.detail}</p>
+          {copy.methodDetail && <p className="text-xs text-subtle">{copy.methodDetail}</p>}
+        </>
+      )}
+      {data && (
+        <details>
+          <summary className="min-h-11 w-fit content-center text-accent">View sessions</summary>
+          <ul className="divide-y divide-border text-xs">
+            {data.days.map((day) => (
+              <li key={day.date} className="flex flex-wrap gap-x-3 gap-y-1 py-2">
+                <time dateTime={day.date} className="text-subtle">
+                  {formatDateMedium(day.date, { timeZone: "UTC" })}
+                </time>
+                <span>{formatClimbingProjectDay(day)}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
+
+export function ClimbingLogEntryDetails({
+  entry,
+  projectHistory,
+}: {
+  entry: ClimbingLogEntryDetail;
+  projectHistory?: ClimbingProjectHistoryState;
+}) {
   const climb = entry.climb;
   const path = formatClimbingLocationPath(climbingLogEntryAreaPath(entry));
   const holds = formatClimbingHoldTypes(entry.holdTypes);
@@ -111,6 +160,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
           <p className="text-xs">{formatClimbingGradeComponents(entry.reportedGrades)}</p>
         </section>
       )}
+      {projectHistory && <ProjectHistory key={entry.id} {...projectHistory} />}
       {entry.attempts.length > 0 && (
         <section className="space-y-3">
           <h4 className="font-medium">

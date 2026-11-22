@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "nextNumber": 3,
+  "comments": [
+    {
+      "id": "c-dfa3bdfdabf9",
+      "number": 1,
+      "body": "wjhat is power coveage",
+      "anchor": {
+        "artboardId": "activity-detail",
+        "dcId": "table-heading",
+        "path": "body > main:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+        "tag": "div",
+        "text": "Interval Power 230 W 255 W 280 W Timer duration Power coverage",
+        "html": "<div class=\"grid table-head\" data-dc-id=\"table-heading\" role=\"row\">\n        <div role=\"columnheader\">Interval</div>\n        <div role=\"columnheader\">Power <div class=\"axis\" aria-hidden=\"true\"><span>230 W</span><span>255 W</span><span>280 W</span></div></div>\n        <div role=\"columnheader\">Timer duration</div>\n        <div role=\"columnheader\">Power coverage</div>\n      </div>",
+        "rect": {
+          "x": 71,
+          "y": 281.1015625,
+          "width": 1018,
+          "height": 56.640625
+        }
+      },
+      "status": "resolved",
+      "createdAt": 1795277671573,
+      "sentAt": 1795277688204,
+      "resolvedAt": 1795277738172,
+      "resolution": "Renamed the column to “Time with power data” and explained that 2:41 of 3:00 means 2 minutes 41 seconds of the lap had usable power data."
+    },
+    {
+      "id": "c-5e7eeb35c68d",
+      "number": 2,
+      "body": "get rid of the itme with power data column",
+      "anchor": {
+        "artboardId": "activity-detail",
+        "dcId": "table-heading",
+        "path": "body > main:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+        "tag": "div",
+        "text": "Interval Power 230 W 255 W 280 W Timer duration Time with power data",
+        "html": "<div class=\"grid table-head\" data-dc-id=\"table-heading\" role=\"row\">\n        <div role=\"columnheader\">Interval</div>\n        <div role=\"columnheader\">Power <div class=\"axis\" aria-hidden=\"true\"><span>230 W</span><span>255 W</span><span>280 W</span></div></div>\n        <div role=\"columnheader\">Timer duration</div>\n        <div role=\"columnheader\">Time with power data</div>\n      </div>",
+        "rect": {
+          "x": 71,
+          "y": 281.1015625,
+          "width": 1018,
+          "height": 56.640625
+        }
+      },
+      "status": "resolved",
+      "createdAt": 1795278477921,
+      "sentAt": 1795278480381,
+      "resolvedAt": 1795278529370,
+      "resolution": "Removed the Time with power data column from both layouts and kept its comment anchors on the corresponding power cells."
+    }
+  ]
+}

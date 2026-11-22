@@ -29,6 +29,7 @@ export class ClimbingForecastRepository extends BaseRepository {
     const activityAlias = sql`recorded_activity`;
     const date = sql`COALESCE(entry.climbed_on, CASE
       WHEN ${postgresActivityDateIsAuthoritative(activityAlias)}
+        AND ${activityAlias}.provider_id = entry.provider_id
       THEN ${postgresActivityCalendarDate(activityAlias, this.timezone)} END)`;
     const rows = await this.query(
       observationSchema,
@@ -59,8 +60,7 @@ export class ClimbingForecastRepository extends BaseRepository {
           JOIN fitness.climb AS target ON target.id = entry.climb_id
             AND target.user_id = entry.user_id AND target.provider_id = entry.provider_id
           LEFT JOIN fitness.activity AS recorded_activity ON recorded_activity.id = entry.activity_id
-            AND recorded_activity.user_id = entry.user_id AND recorded_activity.provider_id = entry.provider_id
-            AND recorded_activity.provider_absent_at IS NULL
+            AND recorded_activity.user_id = entry.user_id
           JOIN fitness.climbing_attempt AS attempt ON attempt.climbing_log_entry_id = entry.id
           CROSS JOIN LATERAL (
             SELECT CASE
@@ -77,6 +77,8 @@ export class ClimbingForecastRepository extends BaseRepository {
             GROUP BY grade.system HAVING COUNT(DISTINCT grade.value) = 1
           ) AS assigned ON TRUE
           WHERE entry.user_id = ${this.userId} AND entry.provider_absent_at IS NULL
+            AND (entry.activity_id IS NULL OR (recorded_activity.id IS NOT NULL
+              AND recorded_activity.deleted_at IS NULL AND recorded_activity.provider_absent_at IS NULL))
             AND entry.discipline = 'rock_climbing' AND target.setting IS NOT NULL
             AND NULLIF(BTRIM(target.external_id), '') IS NOT NULL
             AND attempt.scope = 'climb' AND attempt.solo IS DISTINCT FROM TRUE

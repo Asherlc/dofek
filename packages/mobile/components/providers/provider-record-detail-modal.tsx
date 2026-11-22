@@ -2,10 +2,19 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { decodeClimbingLogEntryDetailResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
+import {
+  type ClimbingLogEntryDetail,
+  decodeClimbingLogEntryDetailResponse,
+} from "../../../server/src/contracts/climbing-log-contracts.ts";
+import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 import { ClimbingLogEntryDetails } from "../ClimbingLogEntryDetails";
 import { formatCellValue, formatColumnName } from "./provider-detail-record-format";
+
+function ClimbingRecordWithHistory({ entry }: { entry: ClimbingLogEntryDetail }) {
+  const history = trpc.climbing.projectHistory.useQuery({ logEntryId: entry.id });
+  return <ClimbingLogEntryDetails entry={entry} projectHistory={history} />;
+}
 
 export function ProviderRecordDetailModal({
   state,
@@ -80,7 +89,11 @@ export function ProviderRecordDetailModal({
 
           {record &&
             (climbingLog ? (
-              <ClimbingLogEntryDetails entry={climbingLog} />
+              climbingLog.discipline === "rock_climbing" && climbingLog.climb?.externalId ? (
+                <ClimbingRecordWithHistory key={climbingLog.id} entry={climbingLog} />
+              ) : (
+                <ClimbingLogEntryDetails entry={climbingLog} />
+              )
             ) : (
               <>
                 <Text style={styles.sectionTitle}>Fields</Text>

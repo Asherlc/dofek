@@ -39676,7 +39676,10 @@ Local qualification and CI are separate from production throughput acceptance. T
   regression assertion. `pg_stat_activity` showed `CREATE EXTENSION IF NOT
   EXISTS postgis` waiting on `DataFileExtend`. A Docker stats snapshot showed
   about 670 threads per running ClickHouse instance across multiple worktrees.
-  The source of the shared storage delay remains unresolved.
+  The source of the shared storage delay remains unresolved. On 2026-11-22,
+  the normal integration wrapper passed both climbing forecast cases after
+  the workspace services recovered. If the delay recurs, profile PostgreSQL
+  and Docker I/O while it is present.
   [Test database setup](../src/db/test-helpers.ts) ·
   [Shared Docker resource runbook](testing.md#shared-docker-vm-resource-pressure)
 - Stopped the unused services in the forecast worktree and kept its PostgreSQL
@@ -39693,6 +39696,15 @@ Local qualification and CI are separate from production throughput acceptance. T
   assertions. The focused PostgreSQL diagnostic is the successful local
   evidence for the query behavior.
   [Local test wrapper](testing.md#integration-dependencies)
+
+## 2026-11-21 — Local late-workouts integration baseline blocked by Docker AIO capacity
+
+- **Impact.** The workspace integration wrapper stopped before Vitest. The existing sleep and pre-sleep matching unit baseline passed all 73 tests. Production was outside the affected workspace.
+- **Evidence and cause.** `rtk pnpm test:integration -- packages/server/src/repositories/recovery-training-series-repository.integration.test.ts` stopped during `compose:up` with `container insights-late-workouts-and-sleep-redpanda-1 is unhealthy`. The broker's first fatal log line reported `Could not setup Async I/O` at `aio-max-nr 65536`. Both `/proc/sys/fs/aio-nr` and `/proc/sys/fs/aio-max-nr` read `65536` inside the healthy workspace Postgres container, establishing that the Docker VM had exhausted its shared allocation. Postgres, ClickHouse, and Redis were healthy. [Linux AIO counters](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+- **Mitigation and follow-up.** Stopped this workspace's restarting broker with `rtk pnpm compose -- stop redpanda`, preserving its volume. Integration validation remains pending capacity recovery. Measure the VM's allocation and rerun the original integration command after capacity is available. [Shared Docker VM resource procedure](testing.md#shared-docker-vm-resource-pressure).
+- **Direct fixture results.** A direct, workspace-local Vitest run separated the database fixtures from the broker requirement. The PostgreSQL and ClickHouse timing suite timed out during its normal 60-second setup before issuing any ClickHouse requests. The ClickHouse container also failed repeated native `SELECT 1` health checks. Its log reported 99% CPU busy for at least 600 seconds when the Docker VM had 75 running containers on 10 CPUs. The intermittent health recovery allowed the isolated FIT model suite to reach and diagnose a SQL identifier error, then pass four lifecycle tests after the query was corrected. No other workspace services, test deadlines, or VM settings changed. Re-run the normal caller and timing fixtures after the workspace services stay healthy.
+- **Broker restart after capacity recovered.** The VM later reported `aio-nr=142718` against `aio-max-nr=1048576`. The wrapper still stopped at broker startup. This time Redpanda reported `Node property 'advertised_kafka_api' validation error` and the container command advertised `external://127.0.0.1:0`. The generated workspace environment contained `REDPANDA_PORT=0`. Stopped and removed only the exited workspace broker container, preserved its named volume, and passed an available loopback port to the existing wrapper. Compose then reported all four workspace services healthy and Vitest started. No source configuration or readiness settings changed.
+- **Final validation.** The normal wrapper passed five FIT model cases and three real Sleep API and timing cases in focused runs. The shared timing and API fixture mirrors only the three raw tables required for episode reconciliation. It completed with 31 ClickHouse requests and zero transport errors. The broad unit and mobile run passed 25,498 tests and timed out twice in unchanged test files. Both files passed in isolation with the original deadlines. A future troubleshooting update could check for a zero advertised broker port after AIO capacity is available and recommend narrowing fixtures to the tables used by their readers.
 
 ## 2026-11-21 — Docker VM AIO exhaustion during cycling durability validation
 
@@ -39743,3 +39755,8 @@ Local qualification and CI are separate from production throughput acceptance. T
 - When local Redpanda logs report AIO exhaustion, record both counters and check
   the workspace service status before retrying. Keep the full integration suite
   as a GitHub CI gate. [Shared Docker VM resource pressure](testing.md#shared-docker-vm-resource-pressure)
+
+## 2026-11-21 — Late-workout PR coverage and spelling gates
+
+- The shared unit assertions passed on PR #3444. The changed-line coverage step reported `Failure. Coverage is below 80%.` Its test project did not exercise the new Sleep response schema, leaving seven of 22 applicable changed lines uncovered and the total at 68%. Seven colocated tests now exercise valid evidence, unavailable load, empty access, and invalid input. The focused shared run covered all seven schema lines. [Shared unit job](https://github.com/Asherlc/dofek/actions/runs/44957479605/job/137009557871).
+- The spell check rejected `massagetherapy`, the normalized activity key, and `Leota`, the study author's surname. Both terms belong in the existing dictionary. The coverage threshold and spell-check scope are unchanged. The failures delayed PR validation. Production was unaffected. [Spell check job](https://github.com/Asherlc/dofek/actions/runs/44957479605/job/137008857843).

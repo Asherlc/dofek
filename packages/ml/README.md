@@ -28,13 +28,15 @@ dofek-export --output-dir /tmp/unused
 
 ## Offline climbing send forecasts
 
-From the repository root, with a read-only `DATABASE_URL` for the authorized
-database, export one owner's climb-days with the existing TypeScript runtime.
+From the repository root, export one owner's climb-days with the existing
+TypeScript runtime. Point `DATABASE_URL` at an authorized database using a
+read-only role.
 
-To export from the newest production backup without a production connection,
-run `infisical run --env=prod -- pnpm climbing:export-from-backup <owner> <timezone> <start> <end>`.
-It needs `DATABASUS_SECRET_KEY` in Infisical, restores into a throwaway database in
-the workspace Compose Postgres, and drops it afterward.
+To work from a production backup without a production connection, restore it to
+an isolated scratch database by following
+[Prove the Backup Can Restore](../../docs/database-backup-recovery-runbook.md#prove-the-backup-can-restore),
+which also covers destroying the scratch database and decrypted temporary files.
+Set `DATABASE_URL` for that restored database and use the export below.
 
 ```bash
 rtk proxy pnpm tsx scripts/export-climbing-forecast-observations.ts \

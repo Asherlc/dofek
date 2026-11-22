@@ -1,9 +1,11 @@
+import math
 from datetime import date
 
 import pytest
 
 from dofek_ml.climbing_forecast import (
     ClimbDay,
+    Holdout,
     build_model_data,
     score_holdout,
     score_probabilities,
@@ -107,3 +109,60 @@ def test_scores_familiar_and_unfamiliar_climbs_on_the_same_baseline() -> None:
     assert report.unfamiliar.model == report.familiar.model
     assert report.unfamiliar.mean_probability_interval == (0.5, 0.5)
     assert report.unavailable_count == 1
+
+
+def _saturated_split() -> Holdout:
+    """A familiar observed failure and an unfamiliar observed send, both vs log odds +40."""
+    return split_holdout(
+        [
+            ClimbDay("prior-send", date(2026, 9, 5), 20, True, date(2026, 9, 1)),
+            ClimbDay("prior-fail", date(2026, 9, 5), 20, False, date(2026, 9, 1)),
+            ClimbDay("prior-send", date(2026, 9, 10), 20, False, date(2026, 9, 1)),
+            ClimbDay("new-send", date(2026, 9, 10), 20, True, date(2026, 9, 1)),
+        ],
+        date(2026, 9, 10),
+    )
+
+
+def test_posterior_predictive_loss_is_finite_for_saturated_predictions() -> None:
+    report = score_holdout(_saturated_split(), slopes=[1.0, 1.0], abilities=[[60.0], [60.0]])
+    familiar = report.familiar.model
+    unfamiliar = report.unfamiliar.model
+    assert familiar is not None
+    assert unfamiliar is not None
+
+    # An observed failure against log odds +40 stays finite at ~40 with Brier 1.
+    assert math.isfinite(familiar.log_loss)
+    assert familiar.log_loss == pytest.approx(40.0, abs=1e-6)
+    assert familiar.brier == pytest.approx(1.0)
+
+    # An observed send against log odds +40 has tiny finite loss with Brier 0.
+    assert math.isfinite(unfamiliar.log_loss)
+    assert 0.0 < unfamiliar.log_loss < 1e-12
+    assert unfamiliar.brier == pytest.approx(0.0)
+
+    # Intervals and the unchanged training baseline are retained.
+    assert report.familiar.mean_probability_interval == (1.0, 1.0)
+    assert report.unfamiliar.mean_probability_interval == (1.0, 1.0)
+    assert report.familiar.baseline is not None
+    assert report.unfamiliar.baseline is not None
+    assert report.familiar.baseline.mean_probability == pytest.approx(0.5)
+    assert report.familiar.baseline.log_loss == pytest.approx(math.log(2))
+    assert report.unfamiliar.baseline.mean_probability == pytest.approx(0.5)
+    assert report.unfamiliar.baseline.log_loss == pytest.approx(math.log(2))
+
+
+def test_posterior_predictive_loss_averages_probabilities_not_per_draw_losses() -> None:
+    report = score_holdout(_saturated_split(), slopes=[1.0, 1.0], abilities=[[60.0], [-20.0]])
+    unfamiliar = report.unfamiliar.model
+    assert unfamiliar is not None
+
+    # The two draws average to an outcome probability of 0.5, yielding log(2).
+    assert unfamiliar.mean_probability == pytest.approx(0.5)
+    assert unfamiliar.brier == pytest.approx(0.25)
+    assert unfamiliar.log_loss == pytest.approx(math.log(2), abs=1e-6)
+
+
+def test_direct_score_probabilities_still_rejects_saturated_probabilities() -> None:
+    with pytest.raises(ValueError, match="strictly between zero and one"):
+        score_probabilities([True], [1.0])

@@ -76,13 +76,12 @@ unrecorded failures provide no estimate of the frequency of unsuccessful days.
 ## Dofek owner history: Kaya indoor V-scale bouldering
 
 On 2026-11-22, a retrospective evaluation used the owner's imported history,
-restored from the newest production backup into a throwaway local database with
-`infisical run --env=prod -- pnpm climbing:export-from-backup`. Only one
-context has eligible climb-days: 163 Kaya indoor bouldering days (125 distinct
-climbs, 30 logged on more than one day), 2026-07-06 to 2026-11-22, V0–V5, 49
-sends. Grades are current catalogue values (`current_assigned`), so this is
-retrospective evidence. No gym sport lead, outdoor, or trad day passed the
-eligibility rules. Those contexts remain unavailable.
+restored from the newest production backup into a local scratch database. For future exports, follow the [backup recovery runbook](database-backup-recovery-runbook.md#prove-the-backup-can-restore).
+Only one context has eligible climb-days: 163 Kaya indoor bouldering days (125
+distinct climbs, 30 logged on more than one day), 2026-07-06 to 2026-11-22,
+V0–V5, 49 sends. Grades are current catalogue values (`current_assigned`), so
+this is retrospective evidence. No gym sport lead, outdoor, or trad day passed
+the eligibility rules. Those contexts remain unavailable.
 
 July and August contain 72 climb-days and no sends; September has 5 of 11. The
 cutoffs of 2026-08-01 and 2026-09-01 had no training sends and the model

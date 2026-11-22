@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { average, maxVal, summarizeSegment } from "../repositories/intervals-repository.ts";
 
 describe("average", () => {
@@ -197,6 +197,34 @@ function makeSensorStore(rows: unknown[] = []): SensorStore {
   };
 }
 
+const plannedMocks = vi.hoisted(() => ({
+  findSensorWindow: vi.fn(),
+  constructed: vi.fn(),
+  getPlannedIntervalComparisons: vi.fn(),
+}));
+
+vi.mock("../repositories/activity-repository.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../repositories/activity-repository.ts")>();
+  return {
+    ...original,
+    ActivityRepository: class {
+      constructor(...args: unknown[]) {
+        plannedMocks.constructed(...args);
+      }
+      findSensorWindow = plannedMocks.findSensorWindow;
+    },
+  };
+});
+
+vi.mock("../repositories/planned-interval-comparison.ts", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../repositories/planned-interval-comparison.ts")>();
+  return {
+    ...original,
+    getPlannedIntervalComparisons: plannedMocks.getPlannedIntervalComparisons,
+  };
+});
+
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
   return {
@@ -282,6 +310,72 @@ describe("intervalsRouter", () => {
         sensorStore: makeSensorStore([]),
       });
       await expect(caller.byActivity({ activityId: "not-a-uuid" })).rejects.toThrow();
+    });
+  });
+
+  describe("plannedByActivity", () => {
+    const activityId = "00000000-0000-0000-0000-000000000001";
+    const accessWindow = { startDate: "2026-01-01", endDate: null };
+
+    beforeEach(() => {
+      plannedMocks.findSensorWindow.mockReset();
+      plannedMocks.constructed.mockReset();
+      plannedMocks.getPlannedIntervalComparisons.mockReset();
+    });
+
+    it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+      const caller = createCaller({ db: {}, userId: "user-1" });
+
+      await expect(caller.plannedByActivity({ activityId })).rejects.toThrow(
+        "intervals.plannedByActivity requires the ClickHouse activity analytics store",
+      );
+      expect(plannedMocks.constructed).not.toHaveBeenCalled();
+    });
+
+    it("returns nothing for an activity outside the caller's visible window", async () => {
+      plannedMocks.findSensorWindow.mockResolvedValue(null);
+      const db = {};
+      const sensorStore = makeSensorStore();
+      const caller = createCaller({
+        db,
+        userId: "user-1",
+        timezone: "America/New_York",
+        accessWindow,
+        sensorStore,
+      });
+
+      await expect(caller.plannedByActivity({ activityId })).resolves.toEqual([]);
+      expect(plannedMocks.constructed).toHaveBeenCalledWith(
+        db,
+        "user-1",
+        "America/New_York",
+        accessWindow,
+        sensorStore,
+      );
+      expect(plannedMocks.findSensorWindow).toHaveBeenCalledWith(activityId);
+      expect(plannedMocks.getPlannedIntervalComparisons).not.toHaveBeenCalled();
+    });
+
+    it("compares the resolved canonical window for the caller", async () => {
+      const window = { activityIds: [activityId], startedAt: "2026-03-01T10:00:00Z" };
+      plannedMocks.findSensorWindow.mockResolvedValue(window);
+      plannedMocks.getPlannedIntervalComparisons.mockResolvedValue([]);
+      const db = {};
+      const sensorStore = makeSensorStore();
+      const caller = createCaller({ db, userId: "user-1", sensorStore });
+
+      await expect(caller.plannedByActivity({ activityId })).resolves.toEqual([]);
+      expect(plannedMocks.getPlannedIntervalComparisons).toHaveBeenCalledWith(
+        db,
+        sensorStore,
+        "user-1",
+        window,
+      );
+    });
+
+    it("rejects invalid UUID", async () => {
+      const caller = createCaller({ db: {}, userId: "user-1", sensorStore: makeSensorStore() });
+      await expect(caller.plannedByActivity({ activityId: "not-a-uuid" })).rejects.toThrow();
     });
   });
 

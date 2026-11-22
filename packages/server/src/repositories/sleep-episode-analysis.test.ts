@@ -1,3 +1,4 @@
+import { buildSleepEpisodeAnalysisSelectSql } from "dofek/db/clickhouse-sleep-episodes";
 import { describe, expect, it, vi } from "vitest";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import {
@@ -80,6 +81,72 @@ describe("listSleepEpisodes", () => {
       includeNaps: false,
     });
     expect(episodes).toHaveLength(1);
+  });
+
+  it("binds access scope and analyzes in the access timezone when detected onset access is given", async () => {
+    const store = makeMockSensorStore([]);
+    await listSleepEpisodes(store, {
+      userId: "user-1",
+      startDate: "2026-03-09",
+      endDate: "2026-03-11",
+      profileTimezone: "UTC",
+      detectedOnsetAccess: {
+        startDate: "2026-03-01",
+        endDate: "2026-03-31",
+        timezone: "Asia/Tokyo",
+      },
+    });
+    const [, , params] = vi.mocked(store.query).mock.calls[0] ?? [];
+    expect(params).toEqual({
+      userId: "user-1",
+      startDate: "2026-03-09",
+      endDate: "2026-03-11",
+      providers: [],
+      includeNaps: false,
+      analysisTimezone: "Asia/Tokyo",
+      accessStartDate: "2026-03-01",
+      accessEndDate: "2026-03-31",
+    });
+  });
+
+  it("maps episodes using the access timezone over the input timezone", async () => {
+    const store = makeMockSensorStore([row({ timezone: null, local_time_source: "unknown" })]);
+    const [episode] = await listSleepEpisodes(store, {
+      userId: "user-1",
+      startDate: "2026-03-10",
+      endDate: "2026-03-11",
+      profileTimezone: "UTC",
+      alignToProfileTimezone: true,
+      detectedOnsetAccess: {
+        startDate: "2026-03-01",
+        endDate: "2026-03-31",
+        timezone: "Asia/Tokyo",
+      },
+    });
+    expect(episode?.timing.display_timezone).toBe("Asia/Tokyo");
+    expect(episode?.timing.local_start_date).toBe("2026-03-10");
+  });
+
+  it("selects detected-onset SQL only when access is provided", async () => {
+    const base = {
+      userId: "u",
+      startDate: "2026-03-09",
+      endDate: "2026-03-11",
+      profileTimezone: "UTC",
+    };
+    const without = makeMockSensorStore([]);
+    await listSleepEpisodes(without, base);
+    const withAccess = makeMockSensorStore([]);
+    await listSleepEpisodes(withAccess, {
+      ...base,
+      detectedOnsetAccess: { startDate: "2026-03-01", endDate: "2026-03-31", timezone: "UTC" },
+    });
+    const sqlOf = (store: typeof without) => String(vi.mocked(store.query).mock.calls[0]?.[1]);
+    expect(buildSleepEpisodeAnalysisSelectSql(false)).not.toBe(
+      buildSleepEpisodeAnalysisSelectSql(true),
+    );
+    expect(sqlOf(without)).toContain(buildSleepEpisodeAnalysisSelectSql(false));
+    expect(sqlOf(withAccess)).toContain(buildSleepEpisodeAnalysisSelectSql(true));
   });
 
   it("passes copied provider bindings and explicit nap inclusion", async () => {

@@ -80,6 +80,24 @@ class ProbabilityScores:
     log_loss: float
 
 
+def _probability_scores(
+    outcomes: Sequence[bool], probabilities: Sequence[float], losses: Sequence[float]
+) -> ProbabilityScores:
+    """Assemble one score summary from per-observation log losses."""
+    count = len(outcomes)
+    return ProbabilityScores(
+        count=count,
+        observed_send_rate=sum(outcomes) / count,
+        mean_probability=sum(probabilities) / count,
+        brier=sum(
+            (prediction - sent) ** 2
+            for sent, prediction in zip(outcomes, probabilities, strict=True)
+        )
+        / count,
+        log_loss=sum(losses) / count,
+    )
+
+
 def score_probabilities(
     outcomes: Sequence[bool], probabilities: Sequence[float]
 ) -> ProbabilityScores | None:
@@ -89,18 +107,11 @@ def score_probabilities(
         return None
     if any(not 0 < prediction < 1 for prediction in probabilities):
         raise ValueError("Log-loss evaluation requires probabilities strictly between zero and one")
-    observations = list(zip(outcomes, probabilities, strict=True))
-    return ProbabilityScores(
-        count=len(outcomes),
-        observed_send_rate=sum(outcomes) / len(outcomes),
-        mean_probability=sum(probabilities) / len(probabilities),
-        brier=sum((prediction - sent) ** 2 for sent, prediction in observations) / len(outcomes),
-        log_loss=-sum(
-            math.log(prediction) if sent else math.log1p(-prediction)
-            for sent, prediction in observations
-        )
-        / len(outcomes),
-    )
+    losses = [
+        -math.log(prediction) if sent else -math.log1p(-prediction)
+        for sent, prediction in zip(outcomes, probabilities, strict=True)
+    ]
+    return _probability_scores(outcomes, probabilities, losses)
 
 
 class ModelData(TypedDict):
@@ -149,6 +160,18 @@ class HoldoutScores:
     unavailable_count: int
 
 
+def _observed_log_probability(log_odds: float, sent: bool) -> float:
+    """Stable log P(observed outcome) via the logistic/softplus identity."""
+    signed = log_odds if sent else -log_odds
+    return min(signed, 0.0) - math.log1p(math.exp(-abs(signed)))
+
+
+def _log_mean_exp(values: Sequence[float]) -> float:
+    """Compute the log of the mean exponential with a max shift."""
+    largest = max(values)
+    return largest + math.log(mean(math.exp(value - largest) for value in values))
+
+
 def score_holdout(
     split: Holdout, *, slopes: Sequence[float], abilities: Sequence[Sequence[float]]
 ) -> HoldoutScores:
@@ -176,8 +199,20 @@ def score_holdout(
         intervals = quantiles(
             (mean(draw) for draw in zip(*probabilities, strict=True)), n=20, method="inclusive"
         )
+        # Compute posterior predictive loss in log space to handle saturated draws.
+        losses = []
+        for row in cohort:
+            index = _month_index(first, row.day) - 1
+            losses.append(
+                -_log_mean_exp(
+                    [
+                        _observed_log_probability(slope * (ability[index] - row.grade), row.sent)
+                        for slope, ability in draws
+                    ]
+                )
+            )
         return CohortScores(
-            score_probabilities(outcomes, [mean(target) for target in probabilities]),
+            _probability_scores(outcomes, [mean(target) for target in probabilities], losses),
             score_probabilities(outcomes, [baseline] * len(outcomes)),
             (intervals[0], intervals[-1]),
         )

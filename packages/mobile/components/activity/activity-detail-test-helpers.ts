@@ -154,6 +154,7 @@ export const routeMocks = {
   hrZonesQuery: vi.fn(),
   powerZonesQuery: vi.fn(),
   powerWorkQuery: vi.fn(),
+  plannedIntervalsQuery: vi.fn(),
   strengthExercisesQuery: vi.fn(),
   climbingEntriesQuery: vi.fn(),
   hangboardDetailsQuery: vi.fn(),
@@ -459,6 +460,14 @@ export function resetActivityDetailMocks(options: {
   });
   mocks.hrZonesQuery.mockReset();
   mocks.powerZonesQuery.mockReset();
+  mocks.plannedIntervalsQuery.mockReset();
+  mocks.plannedIntervalsQuery.mockReturnValue({
+    data: [],
+    isLoading: false,
+    isFetching: false,
+    isPlaceholderData: false,
+    error: null,
+  });
   mocks.powerWorkQuery.mockReset();
   mocks.powerWorkQuery.mockReturnValue({
     data: { workKilojoules: null, coverage: { coveredSeconds: 0, coveragePct: 0 } },
@@ -510,6 +519,11 @@ export function makeTrpcMock() {
   const mocks = routeMocks;
   return {
     trpc: {
+      intervals: {
+        plannedByActivity: {
+          useQuery: (...args: unknown[]) => mocks.plannedIntervalsQuery(...args),
+        },
+      },
       activity: {
         images: { useQuery: (...args: unknown[]) => mocks.imagesQuery(...args) },
         byId: { useQuery: (...args: unknown[]) => mocks.byIdQuery(...args) },

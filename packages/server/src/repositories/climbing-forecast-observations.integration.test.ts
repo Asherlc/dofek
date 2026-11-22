@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import {
   persistClimbingLogEntries,
   type SourceClimbingLogEntry,
 } from "../../../../src/db/climbing-log-sync.ts";
+import { activity } from "../../../../src/db/schema/activity.ts";
 import { userProfile } from "../../../../src/db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
@@ -120,4 +122,69 @@ it("rolls up explicit labels while preserving scope, identity, and ownership", a
     endDateExclusive: "2026-10-14",
   });
   expect(await restricted.listClimbDays(range)).toEqual([rows[2]]);
+});
+
+it("excludes entries whose attached activity is soft-deleted or absent from the provider", async () => {
+  const activeId = randomUUID();
+  const deletedId = randomUUID();
+  const absentId = randomUUID();
+  for (const [id, providerId] of [
+    [activeId, "openbeta"],
+    [deletedId, "kaya"],
+    [absentId, "kaya"],
+  ] as const) {
+    await context.db.insert(activity).values({
+      id,
+      userId: otherOwner,
+      providerId,
+      externalId: randomUUID(),
+      canonicalType: "climbing",
+      providerType: "climbing",
+      startedAt: new Date("2026-10-12T12:00:00Z"),
+      endedAt: new Date("2026-10-12T13:00:00Z"),
+    });
+  }
+  await context.db
+    .update(activity)
+    .set({ deletedAt: new Date() })
+    .where(eq(activity.id, deletedId));
+  await context.db
+    .update(activity)
+    .set({ providerAbsentAt: new Date() })
+    .where(eq(activity.id, absentId));
+
+  await persistClimbingLogEntries(context.db, {
+    userId: otherOwner,
+    providerId: "kaya",
+    entries: [
+      entry("visibility-standalone", "visibility-standalone", [
+        { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
+      ]),
+      {
+        ...entry("visibility-active", "visibility-active", [
+          { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
+        ]),
+        activityId: activeId,
+      },
+      {
+        ...entry("visibility-deleted", "visibility-deleted", [
+          { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
+        ]),
+        activityId: deletedId,
+      },
+      {
+        ...entry("visibility-absent", "visibility-absent", [
+          { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
+        ]),
+        activityId: absentId,
+      },
+    ],
+  });
+
+  const rows = await new ClimbingForecastRepository(context.db, otherOwner).listClimbDays(range);
+  expect(
+    rows
+      .map(({ climb_external_id }) => climb_external_id)
+      .filter((id) => id.startsWith("visibility-")),
+  ).toEqual(["visibility-active", "visibility-standalone"]);
 });

@@ -95,6 +95,7 @@ interface SleepEpisodeRange {
   alignToProfileTimezone?: boolean;
   providers?: readonly string[];
   includeNaps?: boolean;
+  detectedOnsetAccess?: { startDate: string; endDate: string; timezone: string };
 }
 
 function mapSleepEpisode(row: z.infer<typeof sleepEpisodeRowSchema>, input: SleepEpisodeRange) {
@@ -173,6 +174,7 @@ export async function listSleepEpisodes(
   store: Pick<ActivitySensorStore, "query">,
   input: SleepEpisodeRange,
 ): Promise<SleepEpisode[]> {
+  const access = input.detectedOnsetAccess;
   const rows = await store.query(
     sleepEpisodeRowSchema,
     `SELECT
@@ -184,7 +186,7 @@ export async function listSleepEpisodes(
       toBool(is_nap) AS is_nap, toBool(sleep_kind_recorded) AS sleep_kind_recorded,
       duration_minutes, efficiency_pct, staging_available,
       deep_minutes, rem_minutes, light_minutes, awake_minutes
-    FROM (${buildSleepEpisodeAnalysisSelectSql()})
+    FROM (${buildSleepEpisodeAnalysisSelectSql(access !== undefined)})
     WHERE {includeNaps:Bool} OR NOT is_nap
     SETTINGS enable_materialized_cte = 1`,
     {
@@ -193,10 +195,17 @@ export async function listSleepEpisodes(
       endDate: input.endDate,
       providers: [...(input.providers ?? [])],
       includeNaps: input.includeNaps ?? false,
+      ...(access && {
+        analysisTimezone: access.timezone,
+        accessStartDate: access.startDate,
+        accessEndDate: access.endDate,
+      }),
     },
   );
   return rows
-    .map((row) => mapSleepEpisode(row, input))
+    .map((row) =>
+      mapSleepEpisode(row, access ? { ...input, analysisTimezone: access.timezone } : input),
+    )
     .filter(({ date }) => date >= input.startDate && date <= input.endDate)
     .sort(
       (a, b) =>

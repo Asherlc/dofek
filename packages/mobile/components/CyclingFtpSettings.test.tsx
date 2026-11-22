@@ -139,6 +139,7 @@ vi.mock("../lib/trpc", () => ({
       },
       activity: { powerZones: { invalidate: mocks.invalidations.zones } },
       calendar: { weekListV2: { invalidate: mocks.invalidations.calendarWeekList } },
+      cycling: { powerProfile: { invalidate: vi.fn() } },
     }),
     sportSettings: {
       getBySport: { useQuery: mocks.settingsQuery },
