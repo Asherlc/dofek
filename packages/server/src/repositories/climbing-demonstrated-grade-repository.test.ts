@@ -229,6 +229,87 @@ describe("ClimbingDemonstratedGradeRepository BoardSesh consensus", () => {
   });
 });
 
+describe("ClimbingDemonstratedGradeRepository BoardSesh eligibility", () => {
+  const valid = (index: number) =>
+    boardSeshRow({ target: `ok-${index}`, difficulty: 18, label: "6b/V4" });
+  const third = boardSeshRow({ target: "third", difficulty: 18, label: "6b/V4" });
+  const withAscent = (override: Record<string, unknown>) => ({
+    ...third,
+    log_raw: {
+      metadata: {
+        ...third.log_raw.metadata,
+        ascent: { ...third.log_raw.metadata.ascent, ...override },
+      },
+    },
+  });
+  const withoutCanonical = () => {
+    const { canonicalClimbUuid: _omitted, ...ascent } = third.log_raw.metadata.ascent;
+    return { ...third, log_raw: { metadata: { ...third.log_raw.metadata, ascent } } };
+  };
+  const count = async (row: unknown) =>
+    (await boardSeshBoulder([valid(0), valid(1), row]))?.grades[0]?.count;
+
+  it("counts a fully valid third send", async () => {
+    expect(await count(third)).toBe(3);
+  });
+
+  it.each([
+    ["no provider metadata", { ...third, log_raw: {} }],
+    ["no ascent metadata", { ...third, log_raw: { metadata: {} } }],
+    ["a null consensus difficulty", withAscent({ consensusDifficulty: null })],
+    ["a missing canonical ID", withoutCanonical()],
+    ["a blank canonical ID", withAscent({ canonicalClimbUuid: "   " })],
+    ["a different ascent angle", withAscent({ angle: 45 })],
+    ["no recorded wall angle", { ...third, wall_angle: null }],
+    [
+      "a blank consensus label with no catalogue",
+      {
+        ...boardSeshRow({
+          target: "t",
+          difficulty: 18,
+          label: "6b/V4",
+          ascentLabel: "  ",
+          catalogueLabel: null,
+        }),
+      },
+    ],
+    ["a different provider", { ...third, provider_id: "kaya" }],
+    ["no native climb ID", { ...third, climb_external_id: null }],
+  ])("does not count a third send with %s", async (_name, row) => {
+    expect(await count(row)).toBeUndefined();
+  });
+
+  it("falls back to the other label when one is blank", async () => {
+    const blankCatalogue = boardSeshRow({
+      target: "bc",
+      difficulty: 18,
+      label: "6b/V4",
+      ascentLabel: "6b/V4",
+      catalogueLabel: "   ",
+    });
+    const blankAscent = boardSeshRow({
+      target: "ba",
+      difficulty: 18,
+      label: "6b/V4",
+      ascentLabel: "   ",
+      catalogueLabel: "6b/V4",
+    });
+    expect(await count(blankCatalogue)).toBe(3);
+    expect(await count(blankAscent)).toBe(3);
+  });
+
+  it("ranks on the Font component even when the label lists V-scale first", async () => {
+    const rows = Array.from({ length: 3 }, (_, index) =>
+      boardSeshRow({ target: `rev-${index}`, difficulty: 18, label: "V4 / 6b" }),
+    );
+    expect((await boardSeshBoulder(rows))?.grades[0]).toMatchObject({
+      grade: "6b",
+      publishedLabel: "V4 / 6b",
+      count: 3,
+    });
+  });
+});
+
 describe("ClimbingDemonstratedGradeRepository published grades", () => {
   it.each([
     ["V4 PG13", ["V4"]],
