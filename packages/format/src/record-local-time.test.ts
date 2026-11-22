@@ -9,6 +9,7 @@ import {
   resolveProviderTimezoneLocalTimeContext,
   resolveRecordLocalTimeContext,
   resolveTimestampOffsetLocalTimeContext,
+  resolveUniqueWallClockInTimezone,
 } from "./record-local-time.ts";
 
 describe("resolveNaiveWallClockInTimezone", () => {
@@ -523,5 +524,18 @@ describe("recordLocalHour", () => {
         source: "provider_timezone",
       }),
     ).toBeNull();
+  });
+});
+
+describe("resolveUniqueWallClockInTimezone", () => {
+  it.each([
+    ["2026-03-08T02:30:00Z", null],
+    ["2026-11-01T01:30:00Z", null],
+    ["2026-11-01T02:30:00.250Z", "2026-11-01T10:30:00.250Z"],
+  ])("resolves only unique Los Angeles wall times at %s", (wallClock, expected) => {
+    expect(
+      resolveUniqueWallClockInTimezone(new Date(wallClock), "America/Los_Angeles")?.toISOString() ??
+        null,
+    ).toBe(expected);
   });
 });

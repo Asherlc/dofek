@@ -157,6 +157,7 @@ export function selectedChartRangeQuery<TResult>(
     outputSchema?: z.ZodType<TResult>;
     keyVersion?: string;
     cache?: false;
+    scopeByAccessWindow?: boolean;
   } = {},
 ) {
   assertSelectedChartInputKind(endpoint, "days");
@@ -167,6 +168,7 @@ export function selectedChartRangeQuery<TResult>(
           maxAge: ttlMs,
           expiresAt: options.expiresAt,
           keyVersion: options.keyVersion,
+          scopeByAccessWindow: options.scopeByAccessWindow,
         });
   return procedure
     .input(selectedChartRangeInput(endpoint, options))
@@ -229,6 +231,7 @@ export function selectedChartDateRangeQuery<TResult>(
     expiresAt?: "localDayBoundary";
     outputSchema?: z.ZodType<TResult>;
     keyVersion?: string;
+    scopeByAccessWindow?: boolean;
   } = {},
 ) {
   assertSelectedChartInputKind(endpoint, "dateRange");
@@ -236,6 +239,7 @@ export function selectedChartDateRangeQuery<TResult>(
     maxAge: ttlMs,
     expiresAt: options.expiresAt,
     keyVersion: options.keyVersion,
+    scopeByAccessWindow: options.scopeByAccessWindow,
   })
     .input(selectedChartDateRangeInput(endpoint, options))
     .output(options.outputSchema ?? z.custom<TResult>())

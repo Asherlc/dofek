@@ -237,7 +237,7 @@ describe("activity sensor consumers before background merges", () => {
       });
     const storedCoverage = async () => {
       const result = await client.query({
-        query: `SELECT is_deleted,
+        query: `SELECT is_deleted, canonical_type, max_hr,
           (z1_microseconds + z2_microseconds + z3_microseconds) / 1000000.0 AS total_seconds
           FROM ${database}.activity_cycling_polarization FINAL
           WHERE activity_id = toUUID('${rideId}')`,
@@ -246,7 +246,9 @@ describe("activity sensor consumers before background merges", () => {
       return result.json();
     };
     await refresh();
-    expect(await storedCoverage()).toEqual([{ is_deleted: 0, total_seconds: 0 }]);
+    expect(await storedCoverage()).toEqual([
+      { is_deleted: 0, canonical_type: "cycling", max_hr: 189, total_seconds: 0 },
+    ]);
     await client.command({
       query: `INSERT INTO ${database}.activity_summary_rows
         (activity_id,user_id,canonical_type,name,started_at,ended_at,refresh_version,is_deleted,refreshed_at)
@@ -254,6 +256,8 @@ describe("activity sensor consumers before background merges", () => {
         FROM ${database}.activity_summary_rows FINAL WHERE activity_id = toUUID('${rideId}')`,
     });
     await refresh();
-    expect(await storedCoverage()).toEqual([{ is_deleted: 1, total_seconds: 0 }]);
+    expect(await storedCoverage()).toEqual([
+      { is_deleted: 1, canonical_type: "cycling", max_hr: null, total_seconds: 0 },
+    ]);
   }, 120_000);
 });

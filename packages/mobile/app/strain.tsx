@@ -20,6 +20,7 @@ import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
 } from "@dofek/training/training";
+import { cyclingPowerProfileSchema } from "dofek-server/cycling-power-profile";
 import { useIsFocused } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -29,6 +30,7 @@ import { ClimbingLocationMapCard } from "../components/ClimbingLocationMapCard";
 import { ClimbingStrengths } from "../components/ClimbingStrengths";
 import { ClimbingTrainingCard } from "../components/ClimbingTrainingCard";
 import { CyclingDurability } from "../components/CyclingDurability";
+import { CyclingPowerProfile } from "../components/CyclingPowerProfile";
 import { VerticalAscentChart } from "../components/charts/VerticalAscentChart";
 import { DaySelector } from "../components/DaySelector";
 import { EstimatedStrengthCard } from "../components/EstimatedStrengthCard";
@@ -114,6 +116,25 @@ export function TrainingAnalysis({
     },
   );
   useReportQueryError(runningQuery);
+  const cyclingPowerProfile = trpc.cycling.powerProfile.useQuery(
+    { days },
+    {
+      enabled: isHydrated && section === "cycling",
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  useReportQueryError(cyclingPowerProfile);
+  const parsedCyclingPowerProfile = useMemo(
+    () =>
+      cyclingPowerProfile.data === undefined
+        ? { data: undefined, error: null }
+        : safeParseData(
+            cyclingPowerProfileSchema,
+            cyclingPowerProfile.data,
+            "Cycling power profile",
+          ),
+    [cyclingPowerProfile.data],
+  );
   const climbingStrengthsQuery = trpc.climbing.strengths.useQuery(
     {
       days: strengthsAllTime ? null : days,
@@ -272,6 +293,7 @@ export function TrainingAnalysis({
         utils.strength.loggedSetComparison.invalidate(),
         utils.training.hrZones.invalidate(),
         utils.training.sportVolume.invalidate(),
+        ...(section === "cycling" ? [utils.cycling.powerProfile.invalidate()] : []),
         utils.hiking.activityComparison.invalidate(),
         utils.efficiency.polarizationTrend.invalidate(),
         utils.processing.status.invalidate(),
@@ -398,6 +420,14 @@ export function TrainingAnalysis({
               ? section
               : undefined
           }
+        />
+      ) : null}
+      {section === "cycling" ? (
+        <CyclingPowerProfile
+          units={units}
+          profile={parsedCyclingPowerProfile.data}
+          error={cyclingPowerProfile.error ?? parsedCyclingPowerProfile.error}
+          loading={cyclingPowerProfile.isLoading}
         />
       ) : null}
       {show("hiking") ? <RouteComparisonCard days={days} enabled={isHydrated} /> : null}

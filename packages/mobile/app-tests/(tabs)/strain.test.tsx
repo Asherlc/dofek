@@ -16,6 +16,7 @@ import { trainingSections } from "../../lib/training-sections";
 import {
   mockAttemptIncreaseQuery,
   mockCaptureException,
+  mockCyclingPowerProfileQuery,
   mockHrZonesInvalidate,
   mockHrZonesState,
   mockLocationMapInvalidate,
@@ -35,6 +36,32 @@ import {
 } from "./strain-test-helpers";
 
 describe("StrainScreen", () => {
+  it("requests the power profile for the selected Cycling range", async () => {
+    mockQueryState.timeRangePreference.days = 30;
+    const { TrainingAnalysis } = await import("../../app/strain");
+    render(<TrainingAnalysis section="cycling" isFocused />);
+    expect(mockCyclingPowerProfileQuery).toHaveBeenLastCalledWith(
+      { days: 30 },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(screen.getByText("Cycling power profile")).toBeTruthy();
+  });
+  it("shows an explicit error when the power profile response is malformed", async () => {
+    mockCyclingPowerProfileQuery.mockReturnValue({
+      data: { range: "invalid" },
+      isLoading: false,
+      error: null,
+    });
+    const { TrainingAnalysis } = await import("../../app/strain");
+    render(<TrainingAnalysis section="cycling" isFocused />);
+    expect(screen.getByTestId("query-state-error")).toBeTruthy();
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("Cycling power profile: Zod parse failed"),
+      }),
+      expect.objectContaining({ context: "Cycling power profile" }),
+    );
+  });
   it("requests current running response for the selected range", async () => {
     mockQueryState.timeRangePreference.days = 30;
     const { default: StrainScreen } = await import("../../app/strain");

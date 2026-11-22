@@ -8,6 +8,7 @@ import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
 } from "../app-fixtures/(tabs)/processing-status-story-fixture";
+import { matchedLateWorkoutSleep } from "../components/late-workout-sleep-fixtures";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
 import type { SleepNightlyRow } from "../types/api";
@@ -121,6 +122,7 @@ function MockProviders({ children }: { children: React.ReactNode }) {
       trpcClient: trpc.createClient({
         links: [
           createProcessingStatusStoryLink(processingStatus, {
+            "sleep.lateWorkouts": () => matchedLateWorkoutSleep,
             "sleep.stagesByDate": (input) => {
               const date = readString(input, "date") ?? dates.date(0);
               return { date, stages: createStages(date) };

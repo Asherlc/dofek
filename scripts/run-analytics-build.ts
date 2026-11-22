@@ -3,6 +3,7 @@ import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 import type { ActivitySearchIndex } from "../src/activity-search/opensearch.ts";
 import { ACTIVITY_SEARCH_PUBLICATION_OWNER } from "../src/activity-search/publication.ts";
 import {
@@ -43,12 +44,18 @@ interface RunAnalyticsBuildInput {
   projectCyclingPower(asOf: Date): Promise<{
     pendingActivities: number;
   }>;
+  /** Fingerprint of the rows written by `activity_fit_heart_rate`; required when that model is selected. */
+  readFitHeartRateFingerprint?(): Promise<string>;
   recordRun(input: {
     runId: string;
     pendingDatasets: readonly ProcessingOperationDataset[];
     modelResults: ReturnType<typeof parseDbtRunArtifacts>["models"];
   }): Promise<{ datasets: number; failed: number }>;
 }
+
+const fitHeartRateFingerprintSchema = z.object({ row_count: z.string(), checksum: z.string() });
+const FIT_HEART_RATE_MODEL = "activity_fit_heart_rate";
+const MAX_FIT_HEART_RATE_DRAIN_PASSES = 1_000;
 
 function isMissingArtifactError(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
@@ -84,6 +91,7 @@ export async function runAnalyticsBuild({
   readArtifact,
   recordRun,
   projectCyclingPower,
+  readFitHeartRateFingerprint,
 }: RunAnalyticsBuildInput): Promise<{ datasets: number; failed: number }> {
   if (selectedModels.length === 0) {
     throw new Error("Analytics build requires at least one selected model");
@@ -100,22 +108,23 @@ export async function runAnalyticsBuild({
     metadata: { dbt_schema_version: "https://schemas.getdbt.com/dbt/sources/v3.json" },
     results: [],
   };
+  const dbtArguments = (models: readonly string[]) => [
+    "build",
+    "--project-dir",
+    "analytics",
+    "--profiles-dir",
+    "analytics",
+    "--threads",
+    "1",
+    "--target-path",
+    artifactDirectory,
+    "--vars",
+    JSON.stringify(microbatchBounds),
+    "--select",
+    models.join(" "),
+  ];
   const runPhase = async (models: readonly string[]) => {
-    const code = await runDbt([
-      "build",
-      "--project-dir",
-      "analytics",
-      "--profiles-dir",
-      "analytics",
-      "--threads",
-      "1",
-      "--target-path",
-      artifactDirectory,
-      "--vars",
-      JSON.stringify(microbatchBounds),
-      "--select",
-      models.join(" "),
-    ]);
+    const code = await runDbt(dbtArguments(models));
     const manifest = await readDbtArtifact(readArtifact, "manifest.json", code);
     const runResults = await readDbtArtifact(readArtifact, "run_results.json", code);
     const phase = parseDbtRunArtifacts({
@@ -140,6 +149,43 @@ export async function runAnalyticsBuild({
           selectedModels: downstream,
         }).models,
       );
+    }
+  }
+  if (exitCode === 0 && succeeded && inputs.includes(FIT_HEART_RATE_MODEL)) {
+    if (!readFitHeartRateFingerprint) {
+      throw new Error(`${FIT_HEART_RATE_MODEL} is selected but no fingerprint reader was provided`);
+    }
+    // The model processes a bounded batch per run; repeat until a run writes nothing new.
+    let fingerprint = await readFitHeartRateFingerprint();
+    for (let pass = 0; ; pass += 1) {
+      if (pass >= MAX_FIT_HEART_RATE_DRAIN_PASSES) {
+        throw new Error(
+          `${FIT_HEART_RATE_MODEL} still had pending activities after ${MAX_FIT_HEART_RATE_DRAIN_PASSES} extra passes`,
+        );
+      }
+      const code = await runDbt(dbtArguments([FIT_HEART_RATE_MODEL]));
+      if (code !== 0) {
+        // Record this pass's failure like any other phase so affected imports show failed.
+        const failed = parseDbtRunArtifacts({
+          manifest: await readDbtArtifact(readArtifact, "manifest.json", code),
+          runResults: await readDbtArtifact(readArtifact, "run_results.json", code),
+          sources: sourceArtifact,
+          selectedModels: [FIT_HEART_RATE_MODEL],
+        });
+        modelResults.splice(
+          0,
+          modelResults.length,
+          ...modelResults.filter((model) => model.name !== FIT_HEART_RATE_MODEL),
+          ...failed.models,
+        );
+        runId = failed.invocationId;
+        exitCode = code;
+        succeeded = false;
+        break;
+      }
+      const next = await readFitHeartRateFingerprint();
+      if (next === fingerprint) break;
+      fingerprint = next;
     }
   }
   if (exitCode === 0 && succeeded) {
@@ -245,6 +291,18 @@ export async function runAnalyticsBuildFromEnvironment(
                   "../src/analytics/cycling-power-policy.ts"
                 );
                 return projectCyclingPower(owner, cyclingPowerPolicy, asOf);
+              },
+              readFitHeartRateFingerprint: async () => {
+                // A clock-independent fingerprint of every written row version.
+                const result = await owner.client.query({
+                  query: `SELECT
+                      toString(count()) AS row_count,
+                      toString(sum(cityHash64(user_id, activity_id, refresh_version))) AS checksum
+                    FROM analytics.activity_fit_heart_rate`,
+                  format: "JSONEachRow",
+                });
+                const fingerprint = fitHeartRateFingerprintSchema.parse((await result.json())[0]);
+                return `${fingerprint.row_count}:${fingerprint.checksum}`;
               },
               recordRun: (run) => recordProcessingAnalyticsRun(database, run),
             });

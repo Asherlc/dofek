@@ -5,6 +5,7 @@ const cachedQueryOptions = vi.hoisted(
     maxAge: number;
     expiresAt?: string;
     keyVersion?: string;
+    scopeByAccessWindow?: boolean;
   }> => [],
 );
 
@@ -25,6 +26,7 @@ vi.mock("../trpc.ts", async () => {
       maxAge: number;
       expiresAt?: string;
       keyVersion?: string;
+      scopeByAccessWindow?: boolean;
     }) => {
       cachedQueryOptions.push(options);
       return trpc.procedure;
@@ -52,6 +54,40 @@ function makeContext() {
 }
 
 describe("cyclingRouter", () => {
+  it("uses the selected number of local dates for the power profile", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-01T00:30:00Z"));
+    try {
+      const caller = createCaller(makeContext());
+      await expect(caller.powerProfile({ days: 7 })).resolves.toMatchObject({
+        range: {
+          start_date: "2026-10-25",
+          end_date: "2026-10-31",
+          timezone: "America/Los_Angeles",
+        },
+        efforts: [
+          { duration_seconds: 5, effort: null },
+          { duration_seconds: 60, effort: null },
+          { duration_seconds: 300, effort: null },
+        ],
+        threshold: { watts: null },
+      });
+      await expect(caller.powerProfile({ days: null })).resolves.toMatchObject({
+        range: { start_date: null, end_date: "2026-10-31" },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("scopes the power profile cache to the access window", () => {
+    expect(cachedQueryOptions).toContainEqual({
+      maxAge: 3_600_000,
+      expiresAt: "localDayBoundary",
+      scopeByAccessWindow: true,
+    });
+  });
+
   it("serves the approved selections on the selected chart range", async () => {
     const comparison = {
       status: "no_eligible_power_and_weight" as const,

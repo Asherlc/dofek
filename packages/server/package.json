@@ -7,6 +7,7 @@
     "./router": "./src/router.ts",
     "./types": "./src/types.ts",
     "./activity-location": "./src/contracts/activity-location.ts",
+    "./cycling-power-profile": "./src/contracts/cycling-power-profile.ts",
     "./baseline-relative-metrics": "./src/contracts/baseline-relative-metrics.ts",
     "./mobile-dashboard-contracts": "./src/contracts/mobile-dashboard-contracts.ts"
   },
