@@ -1,11 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  PlannedWorkoutRepository,
-  plannedWorkoutDaySchema,
-  plannedWorkoutStepSchema,
-  plannedWorkoutTargetSchema,
-  projectWorkoutSteps,
-} from "./planned-workout-repository.ts";
+import { PlannedWorkoutRepository, projectWorkoutSteps } from "./planned-workout-repository.ts";
 
 describe("projectWorkoutSteps", () => {
   it("bounds deep nesting and never emits raw vendor JSON", () => {
@@ -129,7 +123,9 @@ describe("projectWorkoutSteps", () => {
         kind: "repeat",
         repetitions: 3,
         text: "Repeat",
-        steps: [{ kind: "step", text: "Inner", durationSeconds: 60, distanceMeters: null, targets: [] }],
+        steps: [
+          { kind: "step", text: "Inner", durationSeconds: 60, distanceMeters: null, targets: [] },
+        ],
       },
       { kind: "step", text: "Reps only", durationSeconds: null, distanceMeters: null, targets: [] },
       { kind: "repeat", repetitions: 0, text: null, steps: [] },
@@ -223,12 +219,7 @@ describe("PlannedWorkoutRepository.upcoming", () => {
       },
     ]);
 
-    const repo = new PlannedWorkoutRepository(
-      { execute },
-      "user-1",
-      "2026-03-10",
-      "intervals.icu",
-    );
+    const repo = new PlannedWorkoutRepository({ execute }, "user-1", "2026-03-10", "intervals.icu");
 
     expect(await repo.upcoming()).toEqual([
       {

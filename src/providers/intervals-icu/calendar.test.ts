@@ -14,7 +14,7 @@ const server = setupServer();
 // MSW patches global fetch on listen, so build the client afterwards.
 let client: IntervalsIcuClient;
 
-const event = (id: number, day: string, extra: Record<string, unknown> = {}) => ({
+const event = (id: number | string, day: string, extra: Record<string, unknown> = {}) => ({
   id,
   category: "WORKOUT" as const,
   start_date_local: `${day}T06:30:00`,

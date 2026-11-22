@@ -208,7 +208,9 @@ describe("provider data deletion persistence", () => {
 describe("bindProviderSourceAccount", () => {
   it("reports a fresh binding when the upsert returns a row", async () => {
     const execute = vi.fn().mockResolvedValue([
-      { source_account_digest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
+      {
+        source_account_digest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      },
     ]);
 
     await expect(
