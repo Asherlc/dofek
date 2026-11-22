@@ -133,7 +133,7 @@ refresh_clock AS (
 SELECT
     activity_keys.activity_id AS activity_id,
     activity_keys.user_id AS user_id,
-    coalesce(activity_meta.canonical_type, '') AS canonical_type,
+    coalesce(activity_meta.canonical_type, null) AS canonical_type,
     coalesce(activity_meta.started_at, toDateTime64(0, 6, 'UTC')) AS started_at,
     toNullable(toInt16(activity_meta.max_hr)) AS max_hr,
     coalesce(zone_times.z1_microseconds, toUInt64(0)) AS z1_microseconds,

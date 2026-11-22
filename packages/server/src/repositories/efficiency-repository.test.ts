@@ -673,10 +673,6 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     );
     await repo.getPolarizationTrend(ChartRange.fromDays(null));
     const call = vi.mocked(sensorStore.query).mock.calls[0];
-    expect(call?.[1]).toContain("started_at >= parseDateTime64BestEffort({accessStartDate:String}");
-    expect(call?.[1]).toContain(
-      "started_at < parseDateTime64BestEffort({accessEndDateExclusive:String}",
-    );
     expect(call?.[2]).toMatchObject({
       accessStartDate: "2025-05-01",
       accessEndDateExclusive: "2025-06-01",

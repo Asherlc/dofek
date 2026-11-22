@@ -137,24 +137,24 @@
     function drawChart() {
       const width = plot.getBoundingClientRect().width;
       if (width < 100) return;
-      const x = (i) => 29 + i * (width - 49) / (weeks.length - 1);
-      const y = (value) => 132 - value * 38;
+      const weekX = (weekIndex) => 29 + weekIndex * (width - 49) / (weeks.length - 1);
+      const indexY = (indexValue) => 132 - indexValue * 38;
       plot.setAttribute("viewBox", `0 0 ${width} 150`);
-      const grid = [0, 1, 2, 3].map((value) => {
-        const lineClass = value === 2 ? "reference" : "gridline";
-        return `<line class="${lineClass}" x1="24" x2="${width - 8}" y1="${y(value)}" y2="${y(value)}"/><text x="0" y="${y(value) + 4}">${value === 2 ? "2.00" : value}</text>`;
+      const grid = [0, 1, 2, 3].map((indexValue) => {
+        const lineClass = indexValue === 2 ? "reference" : "gridline";
+        return `<line class="${lineClass}" x1="24" x2="${width - 8}" y1="${indexY(indexValue)}" y2="${indexY(indexValue)}"/><text x="0" y="${indexY(indexValue) + 4}">${indexValue === 2 ? "2.00" : indexValue}</text>`;
       });
-      const highlight = `<line class="highlight" x1="${x(active)}" x2="${x(active)}" y1="18" y2="132"/>`;
-      const traces = weeks.flatMap((week, i) => {
+      const highlight = `<line class="highlight" x1="${weekX(active)}" x2="${weekX(active)}" y1="18" y2="132"/>`;
+      const traces = weeks.flatMap((week, weekIndex) => {
         const value = week.index;
         if (value === null) return [];
-        const previous = weeks[i - 1]?.index ?? null;
-        const line = previous === null ? "" : `<line class="index-trace" x1="${x(i - 1)}" x2="${x(i)}" y1="${y(previous)}" y2="${y(value)}" stroke-width="2"/>`;
-        const point = `<circle class="index-mark" cx="${x(i)}" cy="${y(value)}" r="4.5"><title>${week.date} · ${value.toFixed(2)}</title></circle>`;
+        const previous = weeks[weekIndex - 1]?.index ?? null;
+        const line = previous === null ? "" : `<line class="index-trace" x1="${weekX(weekIndex - 1)}" x2="${weekX(weekIndex)}" y1="${indexY(previous)}" y2="${indexY(value)}" stroke-width="2"/>`;
+        const point = `<circle class="index-mark" cx="${weekX(weekIndex)}" cy="${indexY(value)}" r="4.5"><title>${week.date} · ${value.toFixed(2)}</title></circle>`;
         return [line, point];
       });
       plot.innerHTML = [...grid, highlight, ...traces].join("");
-      buttons.forEach((button, i) => { button.style.left = `${x(i)}px`; });
+      buttons.forEach((button, buttonIndex) => { button.style.left = `${weekX(buttonIndex)}px`; });
     }
 
     function selectWeek(i) {
