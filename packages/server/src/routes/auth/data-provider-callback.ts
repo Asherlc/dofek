@@ -16,6 +16,7 @@ import {
   ProviderAuthorizationAccountMismatchError,
   ProviderAuthorizationAlreadyOwnedError,
   ProviderConnectionError,
+  ProviderPartialGrantError,
 } from "dofek/providers/auth-errors";
 import type { Request, Response } from "express";
 import {
@@ -643,7 +644,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
         throw callbackError;
       }
     };
-    if (knownUserId && provider.pushOnly) {
+    if (knownUserId && (provider.pushOnly || setup.reconnectStrategy === "replace")) {
       await withProviderOperationFence(db, knownUserId, providerId, (operationDb) =>
         finalizeConnection(() =>
           operationDb.transaction((transaction) =>
@@ -666,6 +667,10 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       err instanceof ProviderAuthorizationAccountMismatchError
     ) {
       res.status(409).type("text/plain").send(err.message);
+      return;
+    }
+    if (err instanceof ProviderPartialGrantError) {
+      res.status(400).set("Content-Type", "text/plain; charset=utf-8").send(err.message);
       return;
     }
     if (

@@ -964,6 +964,7 @@ describe("createMcpRouter", () => {
         "get_cycling_training_metrics",
         "find_repeated_efforts",
         "get_cycling_power_curve",
+        "get_running_race_forecast",
         "get_activity_details",
         "get_climbing_sessions",
       ],
@@ -993,6 +994,9 @@ describe("createMcpRouter", () => {
       { type: "oauth2", scopes: ["activity:read", "nutrition:read"] },
     ];
     expectedSchemes.get_recovery_training_series = [
+      { type: "oauth2", scopes: ["health:read", "activity:read", "nutrition:read"] },
+    ];
+    expectedSchemes.get_overview_insights = [
       { type: "oauth2", scopes: ["health:read", "activity:read", "nutrition:read"] },
     ];
     expect(
@@ -1296,6 +1300,7 @@ describe("createMcpRouter", () => {
       "get_effort_trend",
       "get_cycling_performance",
       "get_cycling_power_curve",
+      "get_running_race_forecast",
       "get_cycling_training_metrics",
       "get_sleep_summary",
       "search_activities",
@@ -1311,6 +1316,7 @@ describe("createMcpRouter", () => {
       "get_strength_sessions",
       "get_strength_progression",
       "get_nutrition_summary",
+      "get_overview_insights",
       "get_body_metrics",
       "list_providers",
       "render_health_explorer",
@@ -1387,6 +1393,7 @@ describe("createMcpRouter", () => {
         name: "get_cycling_training_metrics",
         path: ["result", "activities", "[]", "metrics", "coverage", "power", "missing_seconds"],
       },
+      { name: "get_running_race_forecast", path: ["result", "source", "distance_meters"] },
       { name: "render_health_explorer", path: ["coverage", "by_metric"] },
       {
         name: "get_sleep_summary",
@@ -1411,6 +1418,10 @@ describe("createMcpRouter", () => {
       {
         name: "get_nutrition_summary",
         path: ["result", "[]", "excluded_providers"],
+      },
+      {
+        name: "get_overview_insights",
+        path: ["result", "insights", "[]", "effect_size"],
       },
       {
         name: "get_body_metrics",

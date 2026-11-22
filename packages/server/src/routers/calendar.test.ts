@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const repositoryResultMock = vi.hoisted(() => vi.fn());
@@ -10,6 +10,8 @@ const searchIndexMock = vi.hoisted(() => vi.fn());
 const titleSearchMock = vi.hoisted(() => vi.fn());
 const searchHydrationMock = vi.hoisted(() => vi.fn());
 const captureSearchErrorMock = vi.hoisted(() => vi.fn());
+const plannedRepoMock = vi.hoisted(() => vi.fn());
+const plannedUpcomingMock = vi.hoisted(() => vi.fn());
 
 vi.mock("dofek/activity-search/config", () => ({
   createActivitySearchIndexFromEnv: searchIndexMock,
@@ -79,6 +81,18 @@ vi.mock("../repositories/activity-overview-repository.ts", () => ({
   },
 }));
 
+vi.mock("../repositories/planned-workout-repository.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../repositories/planned-workout-repository.ts")>()),
+  PlannedWorkoutRepository: class {
+    constructor(...args: unknown[]) {
+      plannedRepoMock(...args);
+    }
+    upcoming() {
+      return plannedUpcomingMock();
+    }
+  },
+}));
+
 import { calendarRouter } from "./calendar.ts";
 
 const createCaller = createTestCallerFactory(calendarRouter);
@@ -92,6 +106,53 @@ describe("calendarRouter", () => {
     titleSearchMock.mockReset();
     searchHydrationMock.mockReset();
     captureSearchErrorMock.mockReset();
+    plannedRepoMock.mockReset();
+    plannedUpcomingMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  describe("upcomingWorkouts", () => {
+    const context = {
+      db: {},
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      accessWindow: {
+        kind: "limited" as const,
+        startDate: "2026-03-01",
+        endDateExclusive: "2026-03-08",
+      },
+    };
+
+    it("passes the timezone-derived day, access window and optional provider filter", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-08T05:30:00.000Z")); // 2026-03-07 in Los Angeles
+      plannedUpcomingMock.mockResolvedValueOnce([]);
+      await expect(
+        createCaller(context).upcomingWorkouts({ providerId: "intervals.icu" }),
+      ).resolves.toEqual([]);
+      expect(plannedRepoMock).toHaveBeenCalledWith(
+        context.db,
+        "user-1",
+        "2026-03-07",
+        "intervals.icu",
+        context.accessWindow,
+      );
+    });
+
+    it("allows an omitted input and leaves the provider filter unset", async () => {
+      plannedUpcomingMock.mockResolvedValueOnce([]);
+      await expect(createCaller(context).upcomingWorkouts()).resolves.toEqual([]);
+      expect(plannedRepoMock).toHaveBeenCalledWith(
+        context.db,
+        "user-1",
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        undefined,
+        context.accessWindow,
+      );
+    });
   });
 
   describe("searchActivities", () => {

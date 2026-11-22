@@ -83,6 +83,8 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["kaya", frequentProvider(1)],
   ["oura", frequentProvider()],
   ["peloton", frequentProvider()],
+  // Intervals.icu: app-scoped budget paced by the shared fetch's 429/Retry-After handling.
+  ["intervals.icu", { concurrency: 1, syncTier: "frequent" }],
   ["ultrahuman", frequentProvider()],
   ["amazfit-zepp", frequentProvider()],
   ["trainerroad", frequentProvider()],
@@ -98,6 +100,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["thecrag", { concurrency: 1, syncTier: "daily" }],
 
   // ── On-demand tier ──
+  ["runalyze", { concurrency: 1, syncTier: "on-demand" }],
   ["garmin", { concurrency: 3, syncTier: "on-demand" }],
   ["bodyspec", { concurrency: 1, syncTier: "on-demand" }],
 ]);

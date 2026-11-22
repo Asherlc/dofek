@@ -10,6 +10,7 @@
     "./climbing-context": "./src/climbing-context.ts",
     "./climbing-log": "./src/climbing-log.ts",
     "./climbing-volume": "./src/climbing-volume.ts",
+    "./cycling-durability": "./src/cycling-durability.ts",
     "./data-quality": "./src/data-quality.ts",
     "./body-decision-context": "./src/body-decision-context.ts",
     "./format": "./src/format.ts",
@@ -20,6 +21,8 @@
     "./summary-date-context": "./src/summary-date-context.ts",
     "./sleep-data-state": "./src/sleep-data-state.ts",
     "./user-facing-error": "./src/user-facing-error.ts",
+    "./recorded-daily-metrics": "./src/recorded-daily-metrics.ts",
+    "./planned-workout-targets": "./src/planned-workout-targets.ts",
     "./units": "./src/units.ts"
   },
   "dependencies": {

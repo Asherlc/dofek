@@ -24,6 +24,15 @@ export const activityMocks: {
     | undefined;
   mockCalendarQuery: MockQuery;
   mockOverviewQuery: MockOverviewQuery;
+  mockUpcomingQuery: {
+    data: unknown;
+    isLoading: boolean;
+    isError: boolean;
+    error: Error | null;
+    isFetching: boolean;
+    refetch: CallableVitestMock;
+  };
+  upcomingQueryInput: unknown;
   weekListInput: unknown;
   weekListOptions: WeekListQueryOptions | undefined;
   calendarDataInput: unknown;
@@ -35,6 +44,7 @@ export const activityMocks: {
   mockMergeShouldFail: boolean;
   invalidateWeekList: CallableVitestMock;
   invalidateActivityOverview: CallableVitestMock;
+  invalidateUpcoming: CallableVitestMock;
   invalidateCalendarData: CallableVitestMock;
   invalidateActivityList: CallableVitestMock;
   invalidateDataHealth: CallableVitestMock;
@@ -51,6 +61,15 @@ export const activityMocks: {
   livePageFetch: undefined,
   mockCalendarQuery: { data: [], isLoading: false, isError: false, error: null },
   mockOverviewQuery: emptyActivityOverviewQuery(),
+  mockUpcomingQuery: {
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    isFetching: false,
+    refetch: vi.fn(),
+  },
+  upcomingQueryInput: undefined,
   weekListInput: undefined,
   weekListOptions: undefined,
   calendarDataInput: undefined,
@@ -62,6 +81,7 @@ export const activityMocks: {
   mockMergeShouldFail: false,
   invalidateWeekList: vi.fn(),
   invalidateActivityOverview: vi.fn(),
+  invalidateUpcoming: vi.fn(),
   invalidateCalendarData: vi.fn(),
   invalidateActivityList: vi.fn(),
   invalidateDataHealth: vi.fn(),
@@ -153,6 +173,12 @@ vi.mock("../../lib/trpc", () => ({
           return activityMocks.mockCalendarQuery;
         },
       },
+      upcomingWorkouts: {
+        useQuery: (input: unknown) => {
+          activityMocks.upcomingQueryInput = input;
+          return activityMocks.mockUpcomingQuery;
+        },
+      },
     },
     activity: {
       images: { useQuery: mockImagesQuery },
@@ -198,6 +224,7 @@ vi.mock("../../lib/trpc", () => ({
             activityMocks.liveQueryClient?.getQueryData(["activities", input]),
         },
         activityOverview: { invalidate: activityMocks.invalidateActivityOverview },
+        upcomingWorkouts: { invalidate: activityMocks.invalidateUpcoming },
         searchActivities: { invalidate: vi.fn() },
         calendarData: { invalidate: activityMocks.invalidateCalendarData },
       },
@@ -259,6 +286,16 @@ beforeEach(() => {
   locationSearchQuery.mockReturnValue({});
   activityMocks.mockCalendarQuery = { data: [], isLoading: false, isError: false, error: null };
   activityMocks.mockOverviewQuery = emptyActivityOverviewQuery();
+  activityMocks.mockUpcomingQuery = {
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    isFetching: false,
+    refetch: vi.fn(),
+  };
+  activityMocks.upcomingQueryInput = undefined;
+  activityMocks.invalidateUpcoming = vi.fn();
   activityMocks.weekListInput = undefined;
   activityMocks.calendarDataInput = undefined;
   activityMocks.calendarDataOptions = undefined;

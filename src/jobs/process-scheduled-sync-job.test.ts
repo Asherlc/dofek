@@ -65,13 +65,17 @@ vi.mock("../logger.ts", () => ({
 
 vi.mock("../providers/index.ts", () => ({
   getProvider: (providerId: string) => {
+    const configuredProvider = { id: providerId, validate: () => null };
     if (providerId === "strong-csv") return { id: providerId, importOnly: true as const };
-    if (providerId === "whoop") return { id: providerId, scheduledSyncLookbackDays: 30 };
+    if (providerId === "whoop") return { ...configuredProvider, scheduledSyncLookbackDays: 30 };
     if (providerId === "unknown-provider") return undefined;
-    if (["strava", "wahoo", "whoop", "ziva"].includes(providerId)) {
-      return { id: providerId, authSetup: () => ({}) };
+    if (providerId === "intervals.icu") {
+      return { id: providerId, validate: () => "Missing Intervals.icu client credentials" };
     }
-    return { id: providerId };
+    if (["strava", "wahoo", "whoop", "ziva"].includes(providerId)) {
+      return { ...configuredProvider, authSetup: () => ({}) };
+    }
+    return configuredProvider;
   },
   isSyncEligibleProvider: (provider: { importOnly?: boolean }) => !provider.importOnly,
 }));
@@ -148,6 +152,22 @@ describe("processScheduledSyncJob", () => {
     await processScheduledSyncJob(createScheduledSyncJob(cadence), db);
 
     expect([...providerQueues.keys()]).toEqual(expected);
+  });
+
+  it("skips an unconfigured provider with a saved connection and token", async () => {
+    const db = createScheduledSyncDatabase([
+      { user_id: "user-1", provider_id: "intervals.icu", has_tokens: true },
+      { user_id: "user-1", provider_id: "strava", has_tokens: true },
+    ]);
+    const job = createScheduledSyncJob();
+
+    await processScheduledSyncJob(job, db);
+
+    expect([...providerQueues.keys()]).toEqual(["strava"]);
+    expect(job.updateProgress).toHaveBeenLastCalledWith({
+      percentage: 100,
+      message: "Scheduled 1 sync jobs, skipped 1, for 1 users.",
+    });
   });
 
   it("enqueues sync jobs into per-provider queues for non-CSV providers only", async () => {

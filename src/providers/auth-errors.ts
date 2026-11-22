@@ -106,9 +106,11 @@ export class ProviderAuthorizationAlreadyOwnedError extends Error {
 }
 
 export class ProviderAuthorizationAccountMismatchError extends Error {
-  constructor(providerName: string) {
+  constructor(providerName: string, recovery?: string) {
     super(
-      `Reconnect using the currently connected ${providerName} account. Disconnect ${providerName} first to connect a different account.`,
+      `Reconnect using the currently connected ${providerName} account. ${
+        recovery ?? `Disconnect ${providerName} first to connect a different account.`
+      }`,
     );
     this.name = "ProviderAuthorizationAccountMismatchError";
   }
@@ -143,4 +145,14 @@ export function authFailureReasonFromError(error: unknown): ProviderAuthFailureR
   }
 
   return undefined;
+}
+
+/** The provider granted fewer permissions than required. Scope names are trusted constants. */
+export class ProviderPartialGrantError extends Error {
+  constructor(providerName: string, missingScopes: readonly string[]) {
+    super(
+      `${providerName} did not grant all required permissions. Missing: ${missingScopes.join(", ")}. Authorize ${providerName} again and grant every requested permission.`,
+    );
+    this.name = "ProviderPartialGrantError";
+  }
 }

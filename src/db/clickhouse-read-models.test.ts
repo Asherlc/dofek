@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildActivityOriginReadModelRefreshStatements,
   buildActivityReadModelRefreshStatements,
@@ -77,10 +77,23 @@ describe("buildActivityReadModelRefreshStatements", () => {
 
 describe("buildDailyMetricsReadModelRefreshStatements", () => {
   it("drops and recreates the daily metrics read model", () => {
-    expect(buildDailyMetricsReadModelRefreshStatements()).toEqual([
+    const statements = buildDailyMetricsReadModelRefreshStatements();
+    expect(statements).toEqual([
       "DROP VIEW IF EXISTS analytics.v_daily_metrics",
       expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.v_daily_metrics"),
     ]);
+    // A catalog-only parent projects nothing; the projection guard must list
+    // every projected column so date-only rows are filtered out.
+    expect(statements[1]).toContain("AND (hrv IS NOT NULL");
+    expect(statements[1]).toContain("OR skin_temp_c IS NOT NULL)");
+  });
+
+  it("rebuilds the projection guard from the full projected-column catalog", async () => {
+    vi.resetModules();
+    const { buildDailyMetricsReadModelRefreshStatements: refresh } = await import(
+      "./clickhouse-read-models.ts"
+    );
+    expect(refresh()[1]).toContain("AND (hrv IS NOT NULL");
   });
 });
 

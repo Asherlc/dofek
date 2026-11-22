@@ -52,7 +52,8 @@ describe("PerformanceComparisonRepository database semantics", () => {
       INSERT INTO fitness.provider (id, name, user_id)
       VALUES
         (${workoutProvider}, 'Peloton comparison fixture', ${userId}::uuid),
-        (${mirrorProvider}, 'Mirror comparison fixture', ${userId}::uuid)
+        (${mirrorProvider}, 'Mirror comparison fixture', ${userId}::uuid), ('strong-csv', 'Strong', NULL)
+      ON CONFLICT (id) DO NOTHING
     `);
     await postgres.db.execute(sql`
       INSERT INTO fitness.activity (
@@ -123,7 +124,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
           'climbing', 'rock_climbing', 'indoor', '2026-09-15T17:00:00Z',
           '2026-09-15T18:00:00Z', 'Lead route session', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${strengthBaselineIds[0]}::uuid, ${strengthBaselineIds[0]}::uuid, ${workoutProvider}, ${userId}::uuid, 'strength-base-a',
+        (${strengthBaselineIds[0]}::uuid, ${strengthBaselineIds[0]}::uuid, 'strong-csv', ${userId}::uuid, 'strength-base-a',
           'strength', 'strength_training', 'indoor', '2026-09-20T17:00:00Z',
           '2026-09-20T18:00:00Z', 'Bench baseline', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
@@ -131,7 +132,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
           'strength', 'strength_training', 'indoor', '2026-09-20T17:00:00Z',
           '2026-09-20T18:00:00Z', 'Bench baseline mirror', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
-        (${strengthLatestIds[0]}::uuid, ${strengthLatestIds[0]}::uuid, ${workoutProvider}, ${userId}::uuid, 'strength-latest-a',
+        (${strengthLatestIds[0]}::uuid, ${strengthLatestIds[0]}::uuid, 'strong-csv', ${userId}::uuid, 'strength-latest-a',
           'strength', 'strength_training', 'indoor', '2026-09-27T17:00:00Z',
           '2026-09-27T18:00:00Z', 'Bench latest', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone'),
@@ -200,16 +201,16 @@ describe("PerformanceComparisonRepository database semantics", () => {
     }
     await postgres.db.execute(sql`
       INSERT INTO fitness.exercise (id, name, equipment)
-      VALUES (${exerciseId}::uuid, 'Performance comparison bench', 'barbell')
+      VALUES (${exerciseId}::uuid, 'Bench Press', 'barbell')
     `);
     await postgres.db.execute(sql`
       INSERT INTO fitness.strength_set (
-        activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps, rpe
+        activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps, rpe, raw
       ) VALUES
-        (${strengthBaselineIds[0]}::uuid, ${exerciseId}::uuid, 0, 0, 'working', 100, 5, 8),
-        (${strengthBaselineIds[1]}::uuid, ${exerciseId}::uuid, 0, 0, 'working', 100, 5, 8),
-        (${strengthLatestIds[0]}::uuid, ${exerciseId}::uuid, 0, 0, 'working', 110, 5, 9),
-        (${strengthLatestIds[1]}::uuid, ${exerciseId}::uuid, 0, 0, 'working', 110, 8, 9)
+        (${strengthBaselineIds[0]}::uuid, ${exerciseId}::uuid, 0, 0, 'working', 100, 5, 8, '{"setTag":"Failure","weight":100,"reps":5,"exerciseName":"Bench Press (Barbell)","weightUnit":"kg","reportedWeightUnit":"kg"}'::jsonb),
+        (${strengthBaselineIds[1]}::uuid, ${exerciseId}::uuid, 0, 0, 'working', 100, 5, 8, '{"setTag":"Failure","weight":100,"reps":5,"exerciseName":"Bench Press (Barbell)","weightUnit":"kg","reportedWeightUnit":"kg"}'::jsonb),
+        (${strengthLatestIds[0]}::uuid, ${exerciseId}::uuid, 0, 0, 'working', 110, 5, 9, '{"setTag":"Failure","weight":110,"reps":5,"exerciseName":"Bench Press (Barbell)","weightUnit":"kg","reportedWeightUnit":"kg"}'::jsonb),
+        (${strengthLatestIds[1]}::uuid, ${exerciseId}::uuid, 0, 0, 'working', 110, 8, 9, '{"setTag":"Failure","weight":110,"reps":8,"exerciseName":"Bench Press (Barbell)","weightUnit":"kg","reportedWeightUnit":"kg"}'::jsonb)
     `);
     const canonicalRows = await postgres.db.execute(sql`
       SELECT id::text AS id, started_at::text AS started_at, source_providers
@@ -918,6 +919,8 @@ describe("PerformanceComparisonRepository database semantics", () => {
       sets: 1,
       valid_volume_kg_reps: 500,
       volume_status: "complete",
+      best_estimated_one_rep_max_kg: 116.65,
+      estimated_one_rep_max_status: "complete",
     });
     expect(result.performances[1]).toMatchObject({
       metrics: {
@@ -933,6 +936,37 @@ describe("PerformanceComparisonRepository database semantics", () => {
         strength_volume_kg_reps: null,
         strength_estimated_one_rep_max_kg: null,
       },
+    });
+  });
+  it("keeps volume available when the reference alone implies an exact strength scope", async () => {
+    const result = await new PerformanceComparisonRepository(
+      postgres.db,
+      store,
+      userId,
+      "UTC",
+    ).compare({
+      startDate: "2026-09-20",
+      endDate: "2026-09-27",
+      referenceActivityId: strengthBaselineIds[0] ?? null,
+      equivalence: null,
+      providers: [],
+      modalities: [],
+      cursor: null,
+      limit: 25,
+    });
+    expect(result.equivalence.key).toEqual({
+      kind: "strength_exercise_id",
+      exercise_id: exerciseId,
+    });
+    expect(result.performances[0]?.metrics.strength).toMatchObject({
+      valid_volume_kg_reps: 500,
+      volume_status: "complete",
+      best_estimated_one_rep_max_kg: null,
+      estimated_one_rep_max_status: "unavailable",
+    });
+    expect(result.performances[0]?.delta_to_baseline).toMatchObject({
+      strength_volume_kg_reps: 0,
+      strength_estimated_one_rep_max_kg: null,
     });
   });
 });

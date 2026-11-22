@@ -47,10 +47,12 @@ import {
   assertNutritionSummaryDateRange,
   toNutritionSummaryOutput,
 } from "./nutrition-summary-output.ts";
+import { registerOverviewInsightsTool } from "./overview-insights-tool.ts";
 import { registerPerformanceComparisonTool } from "./performance-comparison-tool.ts";
 import { listProviderStatuses } from "./provider-status.ts";
 import { registerRecoveryTrainingSeriesTool } from "./recovery-training-series-tool.ts";
 import { registerRepeatedEffortsTool } from "./repeated-efforts-tool.ts";
+import { registerRunningRaceForecastTool } from "./running-race-forecast-tool.ts";
 import { registerStrengthProgressionTool } from "./strength-progression-tool.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { requireMcpScope } from "./token-repository.ts";
@@ -272,12 +274,14 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
   );
   registerTrainingLoadTool(server, context);
+  registerOverviewInsightsTool(server, context);
   registerRecoveryTrainingSeriesTool(server, context);
   registerRepeatedEffortsTool(server, context);
   registerPerformanceComparisonTool(server, context);
   registerEffortTrendTool(server, context);
   registerCyclingPerformanceTool(server, context);
   registerCyclingPowerCurveTool(server, context);
+  registerRunningRaceForecastTool(server, context);
   registerCyclingTrainingMetricsTool(server, context);
   registerActivityStreamsTool(server, context);
   registerActivityTimeseriesTool(server, context);

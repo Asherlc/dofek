@@ -334,6 +334,18 @@ entity "finger_loading_entry" {
   created_at : timestamp
 }
 
+entity "running_race_result" {
+  * user_id : uuid <<PK>>
+  * provider_id : text <<PK>>
+  * source_activity_id : text <<PK>>
+  --
+  source_name : text
+  source_sport : text
+  source_date_time : text
+  distance_meters : double precision
+  finish_seconds : double precision
+}
+
 entity "sleep_session" {
   * id : uuid <<PK>>
   --
@@ -1074,6 +1086,8 @@ entity "provider_data_generation" {
   * provider_id : text <<PK>>
   --
   current_generation : bigint
+  source_account_digest : text
+  source_account_generation : bigint
   updated_at : timestamp
 }
 
@@ -1091,6 +1105,21 @@ entity "sync_log" {
   degradation_kind : text
   duration_ms : integer
   synced_at : timestamp
+}
+
+entity "planned_workout" {
+  * user_id : uuid <<PK>>
+  * provider_id : text <<PK>>
+  * external_id : text <<PK>>
+  --
+  start_date : date
+  start_time : time
+  title : text
+  description : text
+  sport_type : text
+  workout_doc : jsonb
+  created_at : timestamp
+  updated_at : timestamp
 }
 
 entity "external_client" {
@@ -1365,6 +1394,8 @@ user_profile ||--o{ effort_equivalence_group_member
 effort_equivalence_group ||--o{ effort_equivalence_group_member
 activity_group ||--o{ effort_equivalence_group_member
 activity ||--o{ finger_loading_entry
+user_profile ||--o{ running_race_result
+provider ||--o{ running_race_result
 provider ||--o{ sleep_session
 user_profile ||--o{ sleep_session
 sleep_session ||--o{ sleep_stage
@@ -1438,6 +1469,8 @@ user_profile ||--o{ provider_data_deletion_outbox
 user_profile ||--o{ provider_data_generation
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
+user_profile ||--o{ planned_workout
+provider ||--o{ planned_workout
 user_profile ||--o{ external_client
 external_client ||--o{ external_client_audit
 user_profile ||--o{ external_client_audit

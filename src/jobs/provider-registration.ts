@@ -80,6 +80,10 @@ async function doRegisterProviders() {
       () => import("../providers/trainerroad.ts").then((m) => new m.TrainerRoadProvider()),
     ],
     [
+      "runalyze",
+      () => import("../providers/runalyze.ts").then((module) => new module.RunalyzeProvider()),
+    ],
+    [
       "ultrahuman",
       () => import("../providers/ultrahuman.ts").then((m) => new m.UltrahumanProvider()),
     ],
@@ -117,6 +121,11 @@ async function doRegisterProviders() {
     [
       "zos-app",
       () => import("../providers/zos-app/provider.ts").then((m) => new m.ZosAppProvider()),
+    ],
+    [
+      "intervals.icu",
+      () =>
+        import("../providers/intervals-icu/provider.ts").then((m) => new m.IntervalsIcuProvider()),
     ],
   ] as const;
 

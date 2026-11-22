@@ -3506,8 +3506,8 @@ exports[`computeStrengthComparisonMetrics > excludes conflicting rows that reuse
 
 exports[`computeStrengthComparisonMetrics > flags every invalid strength boundary without contaminating valid volume 1`] = `
 {
-  "best_estimated_one_rep_max_kg": 112,
-  "estimated_one_rep_max_status": "partial",
+  "best_estimated_one_rep_max_kg": null,
+  "estimated_one_rep_max_status": "unavailable",
   "excluded_sets": 3,
   "missing_volume_sets": 0,
   "sets": 6,
@@ -3522,8 +3522,8 @@ exports[`computeStrengthComparisonMetrics > flags every invalid strength boundar
 
 exports[`computeStrengthComparisonMetrics > labels a subtotal partial when a working set is missing load or reps 1`] = `
 {
-  "best_estimated_one_rep_max_kg": 116.67,
-  "estimated_one_rep_max_status": "partial",
+  "best_estimated_one_rep_max_kg": null,
+  "estimated_one_rep_max_status": "unavailable",
   "excluded_sets": 1,
   "missing_volume_sets": 1,
   "sets": 2,
@@ -3538,8 +3538,8 @@ exports[`computeStrengthComparisonMetrics > labels a subtotal partial when a wor
 
 exports[`computeStrengthComparisonMetrics > merges exact duplicates from distinct source activities 1`] = `
 {
-  "best_estimated_one_rep_max_kg": 116.67,
-  "estimated_one_rep_max_status": "complete",
+  "best_estimated_one_rep_max_kg": null,
+  "estimated_one_rep_max_status": "unavailable",
   "excluded_sets": 0,
   "missing_volume_sets": 0,
   "sets": 1,
@@ -3554,8 +3554,8 @@ exports[`computeStrengthComparisonMetrics > merges exact duplicates from distinc
 
 exports[`computeStrengthComparisonMetrics > preserves repeated sets recorded by one source 1`] = `
 {
-  "best_estimated_one_rep_max_kg": 116.67,
-  "estimated_one_rep_max_status": "complete",
+  "best_estimated_one_rep_max_kg": null,
+  "estimated_one_rep_max_status": "unavailable",
   "excluded_sets": 0,
   "missing_volume_sets": 0,
   "sets": 2,

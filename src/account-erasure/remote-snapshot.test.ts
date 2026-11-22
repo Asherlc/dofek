@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
+import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 import {
   type AccountErasureRemoteSnapshot,
   accountErasureRemoteSnapshotSchema,
+  createEncryptedAccountErasureSnapshot,
   decryptAccountErasureSnapshot,
+  ProviderRevocationPrerequisiteError,
 } from "./remote-snapshot.ts";
 import { AccountErasureSnapshotBudgetError } from "./snapshot-budget.ts";
 
@@ -16,6 +21,55 @@ vi.mock("../security/credential-encryption.ts", () => ({
 }));
 
 const snapshotBudgetError = /Account deletion snapshot exceeds.*(?:limit|budget).*Contact support/;
+
+it("requires manual Runalyze revocation for an active connection before snapshotting credentials", async () => {
+  const dialect = new PgDialect();
+  const db = makeTransactionalTestDatabase({
+    execute: vi.fn().mockImplementation(async (query: SQL) => {
+      const { sql: statement } = dialect.sqlToQuery(query);
+      if (statement.includes("WITH connections AS MATERIALIZED")) {
+        return [
+          {
+            row_counts: [1],
+            local_item_bytes: 0,
+            local_list_bytes: 0,
+            credential_item_bytes: 0,
+            credential_bytes: 0,
+            source_bytes: 0,
+          },
+        ];
+      }
+      if (statement.includes("FROM fitness.provider_connection"))
+        return [{ provider_id: "runalyze" }];
+      if (statement.includes("AS credential_count"))
+        return [{ total_count: 0, credential_count: 0 }];
+      return [];
+    }),
+    select: vi.fn(),
+    insert: vi.fn(),
+    delete: vi.fn(),
+  });
+  const revokeTokensForAccountErasure = vi.fn();
+  const authSetup = vi.fn(() => ({ revokeTokensForAccountErasure }));
+  await expect(
+    createEncryptedAccountErasureSnapshot(db, randomUUID(), [
+      {
+        id: "runalyze",
+        name: "Runalyze",
+        validate: () => null,
+        sync: vi.fn(),
+        authSetup,
+      },
+    ]),
+  ).rejects.toThrow(
+    new ProviderRevocationPrerequisiteError(
+      "Revoke your Personal API token in Runalyze Account Settings, then disconnect Runalyze in Dofek before deleting your account.",
+    ),
+  );
+  expect(authSetup).not.toHaveBeenCalled();
+  expect(revokeTokensForAccountErasure).not.toHaveBeenCalled();
+  expect(db.select).not.toHaveBeenCalled();
+});
 
 function revocationConnection(overrides: {
   accessToken: string;

@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { strengthExerciseIdentityKey } from "@dofek/training/training";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { StrengthExerciseOrderRepository } from "../repositories/strength-exercise-order-repository.ts";
+import { EstimatedOneRepMax, StrengthRepository } from "../repositories/strength-repository.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
@@ -68,42 +71,11 @@ describe("strengthRouter", () => {
   });
 
   describe("estimatedOneRepMax", () => {
-    it("groups entries by exercise", async () => {
-      const rows = [
-        {
-          exercise_name: "Bench Press",
-          equipment: null,
-          workout_date: "2024-01-15",
-          estimated_max: 100,
-          actual_weight: 80,
-          actual_reps: 8,
-        },
-        {
-          exercise_name: "Bench Press",
-          equipment: null,
-          workout_date: "2024-01-22",
-          estimated_max: 105,
-          actual_weight: 85,
-          actual_reps: 7,
-        },
-        {
-          exercise_name: "Squat",
-          equipment: null,
-          workout_date: "2024-01-15",
-          estimated_max: 140,
-          actual_weight: 120,
-          actual_reps: 5,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.estimatedOneRepMax({ days: 90 });
-
-      expect(result).toHaveLength(2);
-      const bench = result.find((r) => r.exerciseName === "Bench Press");
-      expect(bench?.history).toHaveLength(2);
+    it("uses the fatigue-qualified estimate cache key", async () => {
+      await makeCaller([]).estimatedOneRepMax({ days: 90 });
       expect(cachedQueryOptions).toContainEqual({
         maxAge: 3_600_000,
-        keyVersion: "estimated-max-trend-v2",
+        keyVersion: "estimated-max-trend-v3",
       });
     });
 
@@ -111,6 +83,91 @@ describe("strengthRouter", () => {
       const caller = makeCaller([]);
       const result = await caller.estimatedOneRepMax({ days: 90 });
       expect(result).toEqual([]);
+    });
+  });
+
+  describe("exerciseHistory", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    const entry = {
+      date: "2026-05-01",
+      estimatedMax: 100,
+      actualWeight: 90,
+      actualReps: 5,
+      sourceSetId: "00000000-0000-4000-8000-000000000001",
+      provider: "strong-csv",
+      fatigueMarker: "Failure" as const,
+    };
+    const orderSession = {
+      activityId: "11111111-1111-4111-8111-111111111111",
+      date: "2026-05-01",
+      position: 1,
+      sets: [{ position: 1, resistance: 60, unit: "KG" as const, reps: 5 }],
+    };
+
+    it("pairs estimates with order, keeps estimate-only rows, and appends order-only lifts", async () => {
+      vi.spyOn(StrengthRepository.prototype, "getEstimatedOneRepMax").mockResolvedValue([
+        new EstimatedOneRepMax({ exerciseName: "Bench Press", equipment: "barbell" }, [entry]),
+        new EstimatedOneRepMax({ exerciseName: "Back Squat", equipment: "barbell" }, [entry]),
+      ]);
+      vi.spyOn(StrengthExerciseOrderRepository.prototype, "getExerciseOrders").mockResolvedValue(
+        new Map([
+          [
+            strengthExerciseIdentityKey({ exerciseName: "Bench Press", equipment: "barbell" }),
+            {
+              exerciseName: "Bench Press",
+              equipment: "barbell",
+              evidence: { source: "Crimpd", baseline: orderSession, earlier: null },
+            },
+          ],
+          [
+            strengthExerciseIdentityKey({ exerciseName: "Pull Up", equipment: null }),
+            {
+              exerciseName: "Pull Up",
+              equipment: null,
+              evidence: { source: "Crimpd", baseline: orderSession, earlier: null },
+            },
+          ],
+        ]),
+      );
+
+      const caller = makeCaller([]);
+      const result = await caller.exerciseHistory({ days: 90 });
+
+      expect(result).toEqual([
+        {
+          exerciseName: "Bench Press",
+          equipment: "barbell",
+          estimatedStrength: expect.objectContaining({
+            exerciseName: "Bench Press",
+            equipment: "barbell",
+            history: [entry],
+          }),
+          exerciseOrder: { source: "Crimpd", baseline: orderSession, earlier: null },
+        },
+        {
+          exerciseName: "Back Squat",
+          equipment: "barbell",
+          estimatedStrength: expect.objectContaining({
+            exerciseName: "Back Squat",
+            equipment: "barbell",
+            history: [entry],
+          }),
+          exerciseOrder: null,
+        },
+        {
+          exerciseName: "Pull Up",
+          equipment: null,
+          estimatedStrength: null,
+          exerciseOrder: { source: "Crimpd", baseline: orderSession, earlier: null },
+        },
+      ]);
+      expect(cachedQueryOptions).toContainEqual({
+        maxAge: 3_600_000,
+        keyVersion: "strength-exercise-history-v1",
+      });
     });
   });
 

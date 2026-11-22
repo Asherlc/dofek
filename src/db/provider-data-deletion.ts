@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { metricStreamOperationRevisionSchema } from "../metric-stream/events.ts";
+import { deriveProviderAccountKey } from "./tokens.ts";
 import { type Database, executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
 const providerDataGenerationRowSchema = z.object({
@@ -208,10 +209,49 @@ export async function markProviderDataDeletionCompleted(
   eventId: string,
 ): Promise<void> {
   await database.execute(
-    sql`UPDATE fitness.provider_data_deletion_outbox
-        SET status = 'completed', completed_at = now(), failure_reason = NULL, failed_at = NULL
-        WHERE event_id = ${eventId}::uuid AND status <> 'completed'`,
+    sql`WITH completed AS (
+          UPDATE fitness.provider_data_deletion_outbox
+          SET status = 'completed', completed_at = now(), failure_reason = NULL, failed_at = NULL
+          WHERE event_id = ${eventId}::uuid AND status <> 'completed'
+          RETURNING user_id, provider_id, generation
+        )
+        UPDATE fitness.provider_data_generation AS generation
+        SET source_account_digest = NULL, source_account_generation = NULL, updated_at = now()
+        FROM completed
+        WHERE generation.user_id = completed.user_id
+          AND generation.provider_id = completed.provider_id
+          AND generation.source_account_generation < completed.generation`,
   );
+}
+
+/**
+ * Binds the provider's source account to the user until its data deletion completes.
+ * Callers must hold the provider lock. Rejects a different account while the binding remains.
+ */
+export async function bindProviderSourceAccount(
+  database: Database,
+  userId: string,
+  providerId: string,
+  sourceAccountId: string,
+): Promise<boolean> {
+  const digest = deriveProviderAccountKey(providerId, sourceAccountId, userId);
+  const rows = await executeWithSchema(
+    database,
+    z.object({ source_account_digest: z.string() }),
+    sql`INSERT INTO fitness.provider_data_generation (
+          user_id, provider_id, current_generation, source_account_digest,
+          source_account_generation, updated_at
+        )
+        VALUES (${userId}::uuid, ${providerId}, 0, ${digest}, 0, now())
+        ON CONFLICT (user_id, provider_id) DO UPDATE SET
+          source_account_digest = EXCLUDED.source_account_digest,
+          source_account_generation = fitness.provider_data_generation.current_generation,
+          updated_at = now()
+        WHERE fitness.provider_data_generation.source_account_digest IS NULL
+          OR fitness.provider_data_generation.source_account_digest = EXCLUDED.source_account_digest
+        RETURNING source_account_digest`,
+  );
+  return rows.length > 0;
 }
 
 export async function markProviderDataDeletionFailed(

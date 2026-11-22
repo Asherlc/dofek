@@ -1396,6 +1396,7 @@ describe("PerformanceComparisonRepository", () => {
     const db = database(first, [first, second]);
     db.execute.mockImplementation((query: unknown) => {
       const text = queryText(query);
+      if (text.includes("performance-comparison:reference")) return Promise.resolve([first]);
       if (text.includes("performance-comparison:baseline")) return Promise.resolve([first]);
       if (text.includes("performance-comparison:candidates"))
         return Promise.resolve([first, second]);
@@ -1406,7 +1407,20 @@ describe("PerformanceComparisonRepository", () => {
             activity_id: FIRST_ID,
             set_id: "00000000-0000-4000-8000-000000000101",
             set_activity_id: FIRST_ID,
-            set_provider: "hevy",
+            set_provider: "strong-csv",
+            exercise_name: "Bench Press",
+            equipment: "barbell",
+            raw: {
+              exerciseName: "Bench Press (Barbell)",
+              setTag: "Failure",
+              weight: 100,
+              reps: 5,
+              weightUnit: "kg",
+              reportedWeightUnit: "kg",
+            },
+            distance_meters: null,
+            duration_seconds: null,
+            notes: null,
             exercise_id: exerciseId,
             exercise_index: 0,
             set_index: 0,
@@ -1419,7 +1433,20 @@ describe("PerformanceComparisonRepository", () => {
             activity_id: SECOND_ID,
             set_id: "00000000-0000-4000-8000-000000000102",
             set_activity_id: SECOND_ID,
-            set_provider: "hevy",
+            set_provider: "strong-csv",
+            exercise_name: "Bench Press",
+            equipment: "barbell",
+            raw: {
+              exerciseName: "Bench Press (Barbell)",
+              setTag: "Failure",
+              weight: 110,
+              reps: 5,
+              weightUnit: "kg",
+              reportedWeightUnit: "kg",
+            },
+            distance_meters: null,
+            duration_seconds: null,
+            notes: null,
             exercise_id: exerciseId,
             exercise_index: 0,
             set_index: 0,
@@ -1433,6 +1460,12 @@ describe("PerformanceComparisonRepository", () => {
             set_id: "00000000-0000-4000-8000-000000000103",
             set_activity_id: FIRST_ID,
             set_provider: "hevy",
+            exercise_name: "Bench Press",
+            equipment: "barbell",
+            raw: {},
+            distance_meters: null,
+            duration_seconds: null,
+            notes: null,
             exercise_id: exerciseId,
             exercise_index: 0,
             set_index: 1,
@@ -1446,20 +1479,24 @@ describe("PerformanceComparisonRepository", () => {
       throw new Error(`Unexpected query: ${text}`);
     });
 
-    const result = await new PerformanceComparisonRepository(
+    const repository = new PerformanceComparisonRepository(
       db,
       { query: vi.fn().mockResolvedValue([]) },
       USER_ID,
       "UTC",
-    ).compare({
+    );
+    const comparisonRange = {
       startDate: "2026-06-01",
       endDate: "2026-07-31",
       referenceActivityId: null,
-      equivalence: { kind: "strength_exercise_id", exerciseId },
       providers: [],
       modalities: [],
       cursor: null,
       limit: 10,
+    };
+    const result = await repository.compare({
+      ...comparisonRange,
+      equivalence: { kind: "strength_exercise_id", exerciseId },
     });
 
     expect(result).toMatchSnapshot();
@@ -1467,11 +1504,11 @@ describe("PerformanceComparisonRepository", () => {
     expect(result.performances[0]?.metrics.strength).toMatchObject({
       valid_volume_kg_reps: 500,
       volume_status: "partial",
-      estimated_one_rep_max_status: "partial",
+      estimated_one_rep_max_status: "complete",
       suspicious_sets: 1,
     });
     expect(result.performances[1]?.metrics.strength).toMatchObject({
-      best_estimated_one_rep_max_kg: expect.closeTo(128.33, 2),
+      best_estimated_one_rep_max_kg: 128.32,
       valid_volume_kg_reps: 550,
       volume_status: "complete",
       estimated_one_rep_max_status: "complete",
@@ -1479,8 +1516,23 @@ describe("PerformanceComparisonRepository", () => {
     });
     expect(result.performances[1]?.delta_to_baseline).toMatchObject({
       strength_volume_kg_reps: null,
-      strength_estimated_one_rep_max_kg: null,
+      strength_estimated_one_rep_max_kg: 11.67,
     });
+    const inferred = await repository.compare({
+      ...comparisonRange,
+      referenceActivityId: FIRST_ID,
+      equivalence: null,
+    });
+    expect(inferred.equivalence.key).toMatchObject({ kind: "strength_exercise_id" });
+    expect(inferred.performances[1]?.metrics.strength).toMatchObject({
+      best_estimated_one_rep_max_kg: null,
+      valid_volume_kg_reps: 550,
+      volume_status: "complete",
+      estimated_one_rep_max_status: "unavailable",
+    });
+    expect(
+      inferred.performances[1]?.delta_to_baseline.strength_estimated_one_rep_max_kg,
+    ).toBeNull();
   });
 
   it("compares recorded climb counts while gating deltas on unknown outcomes", async () => {
