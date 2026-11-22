@@ -22,6 +22,8 @@ import {
   mockBestOnsightRefetch,
   mockCaptureException,
   mockCyclingPowerProfileQuery,
+  mockDecouplingInvalidate,
+  mockDecouplingQuery,
   mockDemonstratedGradeInvalidate,
   mockDemonstratedGradeQuery,
   mockHrZonesInvalidate,
@@ -385,6 +387,7 @@ describe("StrainScreen", () => {
     expect(mockQueryState.refreshInvalidate).toBeTypeOf("function");
     await mockQueryState.refreshInvalidate?.();
 
+    expect(mockDecouplingInvalidate).toHaveBeenCalled();
     expect(mockTrainingInvalidate).toHaveBeenCalledOnce();
     expect(mockLocationMapInvalidate).toHaveBeenCalledOnce();
     expect(mockDemonstratedGradeInvalidate).toHaveBeenCalledOnce();
@@ -943,4 +946,66 @@ describe("StrainScreen", () => {
     expect(screen.getAllByText("Best recorded onsight")).toHaveLength(1);
     expect(screen.getByLabelText("5.11a, open Gym Lead send")).toBeTruthy();
   });
+});
+
+it("requests decoupling for the selected Cycling range and shows the empty state", async () => {
+  mockQueryState.timeRangePreference.days = 30;
+  const { TrainingAnalysis } = await import("../../app/strain");
+  render(<TrainingAnalysis section="cycling" isFocused />);
+  expect(mockDecouplingQuery).toHaveBeenLastCalledWith(
+    { days: 30 },
+    expect.objectContaining({ enabled: true }),
+  );
+  expect(screen.getByText("No repeat rides in this date range")).toBeTruthy();
+});
+
+it("selects a repeat ride from chart data and opens that activity", async () => {
+  mockDecouplingQuery.mockReturnValue({
+    data: {
+      workoutName: "Endurance",
+      rides: [
+        {
+          activityId: "ride-1",
+          name: "Endurance",
+          date: "2026-03-15T12:00:00Z",
+          elapsedSeconds: 3600,
+          modality: null,
+          percent: 4,
+          method: "equal_elapsed_time_halves_power_to_heart_rate",
+          powerMeasurementKind: "direct",
+          heartRateMeasurementKind: "unknown",
+          firstHalf: { meanWatts: 200, meanBpm: 130, coveragePct: 99, pairedSeconds: 1782 },
+          secondHalf: { meanWatts: 195, meanBpm: 135, coveragePct: 98, pairedSeconds: 1764 },
+        },
+        {
+          activityId: "ride-2",
+          name: "Endurance",
+          date: "2026-03-15T12:00:00Z",
+          elapsedSeconds: 3600,
+          modality: null,
+          percent: 4,
+          method: "equal_elapsed_time_halves_power_to_heart_rate",
+          powerMeasurementKind: "direct",
+          heartRateMeasurementKind: "unknown",
+          firstHalf: { meanWatts: 200, meanBpm: 130, coveragePct: 99, pairedSeconds: 1782 },
+          secondHalf: { meanWatts: 195, meanBpm: 135, coveragePct: 98, pairedSeconds: 1764 },
+        },
+      ],
+    },
+  });
+  try {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    render(<TrainingAnalysis section="cycling" isFocused />);
+    expect(screen.queryByText(/200 W.*130 bpm/)).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: /View Power-to-heart-rate decoupling data/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Endurance.*Ride 2.*4.0%/ }));
+    expect(screen.getByText(/200 W.*130 bpm.*99%/)).toBeTruthy();
+    expect(screen.getByText(/195 W.*135 bpm.*98%/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: "Endurance" }));
+    expect(mockRouterPush).toHaveBeenCalledWith("/activity/ride-2");
+  } finally {
+    mockDecouplingQuery.mockReset();
+  }
 });

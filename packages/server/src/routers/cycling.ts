@@ -12,6 +12,10 @@ import { trainingChartAvailabilitySchema } from "../contracts/training-chart-ava
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
+import {
+  CyclingDecouplingRepository,
+  cyclingDecouplingOutputSchema,
+} from "../repositories/cycling-decoupling-repository.ts";
 import { CyclingDurabilityRepository } from "../repositories/cycling-durability-repository.ts";
 import { CyclingPowerProfileRepository } from "../repositories/cycling-power-profile-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
@@ -190,6 +194,22 @@ function requireRepository(ctx: {
 }
 
 export const cyclingRouter = router({
+  decoupling: selectedChartRangeQuery(
+    "cycling.decoupling",
+    CacheTTL.LONG,
+    ({ ctx, range }) =>
+      new CyclingDecouplingRepository(
+        requireSensorStore(ctx.sensorStore),
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).getTrend(range),
+    {
+      expiresAt: "localDayBoundary",
+      outputSchema: cyclingDecouplingOutputSchema,
+      scopeByAccessWindow: true,
+    },
+  ),
   powerProfile: selectedChartRangeQuery(
     "cycling.powerProfile",
     CacheTTL.LONG,

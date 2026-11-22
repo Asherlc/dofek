@@ -5,6 +5,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { ComponentProps } from "react";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
+import { CyclingDecouplingChart } from "../../components/CyclingDecouplingChart.tsx";
 import { CyclingDurability } from "../../components/CyclingDurability.tsx";
 import { CyclingPowerProfile } from "../../components/CyclingPowerProfile.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
@@ -57,16 +58,30 @@ interface PeriodEstimateEvidence {
 
 function CyclingTab() {
   const { days } = useTrainingDays();
+  const decoupling = trpc.cycling.decoupling.useQuery(
+    { days },
+    {
+      ...TRAINING_SLOW_QUERY_OPTIONS,
+      placeholderData: (previousData) => previousData,
+    },
+  );
   const profile = trpc.cycling.powerProfile.useQuery(
     { days },
     { ...TRAINING_SLOW_QUERY_OPTIONS, placeholderData: keepPreviousData },
   );
   return (
-    <CyclingContent
-      key={days ?? "all"}
-      days={days}
-      profile={{ profile: profile.data, error: profile.error, loading: profile.isLoading }}
-    />
+    <>
+      <CyclingContent
+        key={days ?? "all"}
+        days={days}
+        profile={{ profile: profile.data, error: profile.error, loading: profile.isLoading }}
+      />
+      <CyclingDecouplingChart
+        data={decoupling.data}
+        error={decoupling.error}
+        loading={decoupling.isLoading}
+      />
+    </>
   );
 }
 
