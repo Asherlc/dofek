@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { projectWorkoutSteps } from "./planned-workout-repository.ts";
+import { describe, expect, it, vi } from "vitest";
+import {
+  PlannedWorkoutRepository,
+  plannedWorkoutDaySchema,
+  plannedWorkoutStepSchema,
+  plannedWorkoutTargetSchema,
+  projectWorkoutSteps,
+} from "./planned-workout-repository.ts";
 
 describe("projectWorkoutSteps", () => {
   it("bounds deep nesting and never emits raw vendor JSON", () => {
@@ -19,5 +25,257 @@ describe("projectWorkoutSteps", () => {
 
     expect(steps).toHaveLength(501);
     expect(JSON.stringify(steps)).not.toContain("secret");
+  });
+
+  it("projects authored targets of every type with values, ranges, and units", () => {
+    const steps = projectWorkoutSteps({
+      steps: [
+        {
+          text: "Ramp",
+          duration: 600,
+          distance: 5000,
+          power: { value: 250, units: "W" },
+          hr: { start: 120, end: 150 },
+          pace: { value: 300 },
+          cadence: { value: 90 },
+        },
+      ],
+    });
+
+    expect(steps).toEqual([
+      {
+        kind: "step",
+        text: "Ramp",
+        durationSeconds: 600,
+        distanceMeters: 5000,
+        targets: [
+          { type: "power", value: 250, start: null, end: null, unit: "W" },
+          { type: "heart_rate", value: null, start: 120, end: 150, unit: null },
+          { type: "pace", value: 300, start: null, end: null, unit: null },
+          { type: "cadence", value: 90, start: null, end: null, unit: null },
+        ],
+      },
+    ]);
+  });
+
+  it("skips invalid target shapes, all-nullish targets, and non-finite authored values", () => {
+    const steps = projectWorkoutSteps({
+      steps: [
+        { power: "not-an-object", hr: {} },
+        { power: { value: Number.NaN }, hr: { value: Number.POSITIVE_INFINITY } },
+        { cadence: { value: 0 } },
+      ],
+    });
+
+    expect(steps).toEqual([
+      { kind: "unsupported" },
+      { kind: "unsupported" },
+      {
+        kind: "step",
+        text: null,
+        durationSeconds: null,
+        distanceMeters: null,
+        targets: [{ type: "cadence", value: 0, start: null, end: null, unit: null }],
+      },
+    ]);
+  });
+
+  it("normalizes blank text, non-string text, and non-finite numbers to null", () => {
+    const steps = projectWorkoutSteps({
+      steps: [
+        { text: "   ", duration: Number.NaN, distance: Number.POSITIVE_INFINITY },
+        { text: 42, duration: "600", distance: null },
+        { text: "Keep", duration: 0, distance: 0 },
+      ],
+    });
+
+    expect(steps).toEqual([
+      { kind: "unsupported" },
+      { kind: "unsupported" },
+      {
+        kind: "step",
+        text: "Keep",
+        durationSeconds: 0,
+        distanceMeters: 0,
+        targets: [],
+      },
+    ]);
+  });
+
+  it("skips nullish nodes and marks non-object nodes unsupported", () => {
+    const steps = projectWorkoutSteps({
+      steps: [null, undefined, 42, "text-node", [], { text: "ok" }],
+    });
+
+    expect(steps).toEqual([
+      { kind: "unsupported" },
+      { kind: "unsupported" },
+      { kind: "unsupported" },
+      { kind: "step", text: "ok", durationSeconds: null, distanceMeters: null, targets: [] },
+    ]);
+  });
+
+  it("projects repeat nodes with nested steps and keeps a reps node without steps as a step", () => {
+    const steps = projectWorkoutSteps({
+      steps: [
+        { text: "Repeat", reps: 3, steps: [{ text: "Inner", duration: 60 }] },
+        { text: "Reps only", reps: 4 },
+        { reps: 0, steps: [] },
+      ],
+    });
+
+    expect(steps).toEqual([
+      {
+        kind: "repeat",
+        repetitions: 3,
+        text: "Repeat",
+        steps: [{ kind: "step", text: "Inner", durationSeconds: 60, distanceMeters: null, targets: [] }],
+      },
+      { kind: "step", text: "Reps only", durationSeconds: null, distanceMeters: null, targets: [] },
+      { kind: "repeat", repetitions: 0, text: null, steps: [] },
+    ]);
+  });
+
+  it("returns nothing for documents without a steps array", () => {
+    expect(projectWorkoutSteps(null)).toEqual([]);
+    expect(projectWorkoutSteps({})).toEqual([]);
+    expect(projectWorkoutSteps({ steps: "not-an-array" })).toEqual([]);
+    expect(projectWorkoutSteps([])).toEqual([]);
+  });
+});
+
+describe("planned workout schemas (fresh module)", () => {
+  it("validates targets, steps, and a full day through the exported schemas", async () => {
+    vi.resetModules();
+    const {
+      plannedWorkoutTargetSchema: target,
+      plannedWorkoutStepSchema: step,
+      plannedWorkoutDaySchema: day,
+    } = await import("./planned-workout-repository.ts");
+
+    expect(
+      target.parse({ type: "power", value: 250, start: null, end: null, unit: "W" }),
+    ).toMatchObject({ type: "power", value: 250 });
+    expect(() => target.parse({ type: "unknown", value: 1 })).toThrow();
+
+    expect(step.parse({ kind: "unsupported" })).toEqual({ kind: "unsupported" });
+    expect(
+      step.parse({
+        kind: "repeat",
+        repetitions: 2,
+        text: null,
+        steps: [{ kind: "unsupported" }],
+      }),
+    ).toMatchObject({ kind: "repeat", repetitions: 2 });
+    expect(() => step.parse({ kind: "mystery" })).toThrow();
+
+    expect(
+      day.parse({
+        date: "2026-03-10",
+        workouts: [
+          {
+            id: "w1",
+            providerId: "intervals.icu",
+            title: null,
+            description: null,
+            sportType: null,
+            startTime: null,
+            steps: [{ kind: "unsupported" }],
+          },
+        ],
+      }),
+    ).toMatchObject({ date: "2026-03-10" });
+  });
+});
+
+describe("PlannedWorkoutRepository.upcoming", () => {
+  it("groups rows by day and projects each workout's steps", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        id: "w1",
+        provider_id: "intervals.icu",
+        start_date: "2026-03-10",
+        start_time: "06:30",
+        title: "Session",
+        description: "notes",
+        sport_type: "Ride",
+        workout_doc: { steps: [{ duration: 600 }] },
+      },
+      {
+        id: "w2",
+        provider_id: "intervals.icu",
+        start_date: "2026-03-10",
+        start_time: null,
+        title: null,
+        description: null,
+        sport_type: null,
+        workout_doc: null,
+      },
+      {
+        id: "w3",
+        provider_id: "intervals.icu",
+        start_date: "2026-03-11",
+        start_time: null,
+        title: null,
+        description: null,
+        sport_type: null,
+        workout_doc: { steps: [{ kind: "unsupported" }] },
+      },
+    ]);
+
+    const repo = new PlannedWorkoutRepository(
+      { execute },
+      "user-1",
+      "2026-03-10",
+      "intervals.icu",
+    );
+
+    expect(await repo.upcoming()).toEqual([
+      {
+        date: "2026-03-10",
+        workouts: [
+          {
+            id: "w1",
+            providerId: "intervals.icu",
+            title: "Session",
+            description: "notes",
+            sportType: "Ride",
+            startTime: "06:30",
+            steps: [
+              {
+                kind: "step",
+                text: null,
+                durationSeconds: 600,
+                distanceMeters: null,
+                targets: [],
+              },
+            ],
+          },
+          {
+            id: "w2",
+            providerId: "intervals.icu",
+            title: null,
+            description: null,
+            sportType: null,
+            startTime: null,
+            steps: [],
+          },
+        ],
+      },
+      {
+        date: "2026-03-11",
+        workouts: [
+          {
+            id: "w3",
+            providerId: "intervals.icu",
+            title: null,
+            description: null,
+            sportType: null,
+            startTime: null,
+            steps: [{ kind: "unsupported" }],
+          },
+        ],
+      },
+    ]);
   });
 });
