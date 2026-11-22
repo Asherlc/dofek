@@ -80,6 +80,10 @@ async function doRegisterProviders() {
       () => import("../providers/trainerroad.ts").then((m) => new m.TrainerRoadProvider()),
     ],
     [
+      "runalyze",
+      () => import("../providers/runalyze.ts").then((module) => new module.RunalyzeProvider()),
+    ],
+    [
       "ultrahuman",
       () => import("../providers/ultrahuman.ts").then((m) => new m.UltrahumanProvider()),
     ],

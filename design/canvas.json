@@ -2,6 +2,7 @@
   "version": 1,
   "agents": {
     "whoop-battery-status": "7882f4e8-4c8c-4046-bde8-fe969e33e90a",
-    "cycling-polarization-index": "eabeb7df-6021-41a4-aa5f-c1f149e65084"
+    "cycling-polarization-index": "eabeb7df-6021-41a4-aa5f-c1f149e65084",
+    "cycling-durability": "feba7e47-6c63-4f01-847b-9098c4680e2d"
   }
 }

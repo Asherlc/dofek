@@ -195,10 +195,14 @@ export function selectedChartCustomRangeQuery<TInput extends { days: RangeDays }
     args: SelectedChartRangeResolveArgs<ParsedChartRangeInput<TInput>>,
   ) => MaybePromise<TResult>,
   outputSchema: z.ZodType<TResult> = z.custom<TResult>(),
-  options: { keyVersion?: string } = {},
+  options: {
+    keyVersion?: string;
+    expiresAt?: "localDayBoundary";
+    scopeByAccessWindow?: boolean;
+  } = {},
 ) {
   assertSelectedChartInputKind(endpoint, "custom");
-  return cachedProtectedQuery({ maxAge: ttlMs, keyVersion: options.keyVersion })
+  return cachedProtectedQuery({ maxAge: ttlMs, ...options })
     .input(inputSchema)
     .output(outputSchema)
     .query(({ ctx, input }) => {

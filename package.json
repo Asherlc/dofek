@@ -106,6 +106,7 @@
     "./providers/eight-sleep": "./src/providers/eight-sleep.ts",
     "./providers/zwift": "./src/providers/zwift.ts",
     "./providers/trainerroad": "./src/providers/trainerroad.ts",
+    "./providers/runalyze": "./src/providers/runalyze.ts",
     "./providers/ultrahuman": "./src/providers/ultrahuman.ts",
     "./providers/mapmyfitness": "./src/providers/mapmyfitness.ts",
     "./providers/suunto": "./src/providers/suunto.ts",
