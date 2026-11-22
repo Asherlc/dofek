@@ -62,6 +62,42 @@ export const FirstRecordedSend: Story = {
     },
   },
 };
+export const HistoryLoading: Story = {
+  args: { projectHistory: { isLoading: true } },
+};
+
+export const HistoryUnavailable: Story = {
+  args: { projectHistory: { data: null } },
+};
+
+export const HistoryError: Story = {
+  args: { projectHistory: { error: { message: "Project history is temporarily unavailable." } } },
+};
+
+export const CachedHistoryWithError: Story = {
+  args: {
+    projectHistory: {
+      data: climbingProjectHistoryFixture(),
+      error: { message: "Project history could not be refreshed." },
+    },
+  },
+};
+
+export const RepeatOnlyHistory: Story = {
+  args: {
+    projectHistory: {
+      data: climbingProjectHistoryFixture({
+        sessionCount: 1,
+        unsuccessfulSessionCount: 0,
+        unknownSessionCount: 0,
+        firstSend: null,
+        repeatBeforeFirstSend: true,
+        days: [{ date: "2026-11-17", outcome: "send", method: null }],
+      }),
+    },
+  },
+};
+
 export const RecordedAidCompletion: Story = {};
 export const CategoricalWallAndMultipleGrips: Story = {
   args: { entry: { ...entry, wallAngle: { category: "slab" }, holdTypes: ["crimp", "jug"] } },

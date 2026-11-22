@@ -1,7 +1,5 @@
 # Climbing Sessions to Send Implementation Plan
 
-> **For agentic workers** — Use the Paseo Implementer profile for approved implementation tasks. Use superpowers:subagent-driven-development for the test-first workflow. Report unresolved architecture or source semantics to the lead before changing the approach.
-
 **Goal** — Show the recorded route-days toward a first confirmed clean send in Dofek’s existing climb Record Detail. Show an expected session count where the shared climbing model supports one.
 
 **Architecture** — Query the history for the selected log when its Record Detail opens. The server resolves the climb and returns observed days, first-send milestones, and any applicable estimate. The existing web dialog and iOS sheet render the same contract.

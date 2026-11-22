@@ -17,6 +17,10 @@ const historyRow = z.object({
 });
 
 const isBoard = sql`(entry.board IS NOT NULL OR entry.provider_id = 'boardsesh')`;
+// Every board provider built on AuroraBoardClient stores named ascents without aid/fall/dab flags.
+const isAuroraBoardSource = sql`entry.provider_id IN (
+  'aurora-board', 'tension', 'touchstone', 'grasshopper', 'soill', 'decoy'
+)`;
 const boardSeshTimestamp = sql`CASE
   WHEN entry.raw ->> 'climbedAt' ~* '(Z|[+-][0-9]{2}:?[0-9]{2})$'
     THEN entry.raw ->> 'climbedAt'
@@ -44,6 +48,7 @@ export class ClimbingProjectHistoryRepository extends BaseRepository {
           SELECT entry.id, entry.climb_id, entry.provider_id, entry.wall_angle,
             entry.raw ->> 'climbRevision' AS board_revision,
             entry.raw ->> 'layoutId' AS board_layout,
+            entry.raw ->> 'is_mirror' AS board_mirror,
             calendar.day, ${isBoard} AS is_board,
             entry.discipline = 'rock_climbing' AND definition.kind IN ('boulder', 'route')
               AND definition.external_id IS NOT NULL
@@ -62,7 +67,7 @@ export class ClimbingProjectHistoryRepository extends BaseRepository {
               AS earlier_attempts,
             (source_label.value IS NOT NULL OR attempt.source_completed IS NOT NULL
               OR attempt.fell_or_hung IS NOT NULL OR attempt.used_aid IS NOT NULL
-              OR attempt.dabbed IS NOT NULL) AS described,
+              OR attempt.dabbed IS NOT NULL OR attempt.rope_method IS NOT NULL) AS described,
             CASE
               WHEN attempt.source_completed IS FALSE OR attempt.fell_or_hung IS TRUE
                 OR attempt.used_aid IS TRUE OR (definition.kind = 'boulder' AND attempt.dabbed IS TRUE)
@@ -71,6 +76,9 @@ export class ClimbingProjectHistoryRepository extends BaseRepository {
                 THEN 'unsuccessful'
               WHEN (entry.provider_id = 'boardsesh' AND attempt.source_completed IS TRUE
                   AND source_label.value IN ('flash', 'send'))
+                OR (${isAuroraBoardSource} AND attempt.source_completed IS TRUE
+                  AND definition.kind = 'boulder'
+                  AND source_label.value IN ('flash', 'redpoint'))
                 OR ((attempt.source_completed IS TRUE OR
                     fitness.climbing_attempt_outcome(source_label.value) = 'completed')
                   AND attempt.used_aid IS FALSE AND attempt.fell_or_hung IS FALSE
@@ -97,6 +105,7 @@ export class ClimbingProjectHistoryRepository extends BaseRepository {
               entry.wall_angle = anchor.wall_angle
               AND (entry.raw ->> 'climbRevision') IS NOT DISTINCT FROM anchor.board_revision
               AND (entry.raw ->> 'layoutId') IS NOT DISTINCT FROM anchor.board_layout
+              AND (entry.raw ->> 'is_mirror') IS NOT DISTINCT FROM anchor.board_mirror
             ))
             ${this.dateAccessPredicate(sql`calendar.day`)}
         )

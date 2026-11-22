@@ -1,11 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { SourceClimbingLogEntry } from "../../../../src/db/climbing-log-sync.ts";
 import { climbingLogEntry } from "../../../../src/db/schema/climbing.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
+import { AuroraBoardClient } from "../../../../src/lib/aurora-board-client.ts";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
+import { failOnUnhandledExternalRequest } from "../../../../src/test/msw.ts";
 import {
   seedClimbingActivity,
   seedClimbingLog,
@@ -15,6 +19,14 @@ import { climbingRouter } from "./climbing.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const createCaller = createTestCallerFactory(climbingRouter);
+const mswServer = createIntegrationMswFixture();
+const auroraTokens = {
+  accessToken: "session",
+  refreshToken: null,
+  expiresAt: new Date("2099-12-31T00:00:00Z"),
+  scopes: null,
+  providerAccountId: "42",
+};
 const route = { kind: "route", setting: "indoor", name: "Juniper Wall" } as const;
 const boulder = { kind: "boulder", setting: "outdoor", name: "Chalk Line" } as const;
 const failedLead = { scope: "climb", ropeMethod: "lead", sourceResult: "Attempt" } as const;
@@ -40,8 +52,15 @@ describe("climbing project history", () => {
       TEST_USER_ID,
     );
     await ensureProvider(context.db, "openbeta", "OpenBeta", undefined, TEST_USER_ID);
+    await ensureProvider(context.db, "aurora-board", "Aurora Board", undefined, TEST_USER_ID);
+    await ensureProvider(context.db, "tension", "Tension Board", undefined, TEST_USER_ID);
+    mswServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
-  afterAll(async () => context?.cleanup());
+  afterEach(() => mswServer.resetHandlers());
+  afterAll(async () => {
+    mswServer.deactivate();
+    await context?.cleanup();
+  });
 
   function api(options: Partial<Context> = {}) {
     return createCaller({ db: context.db, userId: TEST_USER_ID, timezone: "UTC", ...options });
@@ -272,6 +291,155 @@ describe("climbing project history", () => {
       firstSend: null,
       methodFirstSend: null,
       unknownSessionCount: 1,
+    });
+  });
+
+  it("qualifies named Aurora boulder sends and leaves generic completions and other providers unknown", async () => {
+    const climbUuid = "aurora:climb:clean";
+    const ascent = (uuid: string, day: string, attemptId: number | null) => ({
+      uuid,
+      user_id: 42,
+      climb_uuid: climbUuid,
+      climbed_at: `${day} 12:00:00`,
+      angle: 40,
+      wall_uuid: "aurora-wall",
+      attempt_id: attemptId,
+      is_mirror: false,
+    });
+    mswServer.use(
+      http.post("https://auroraboardapp.com/sync", () =>
+        HttpResponse.json({
+          ascents: [
+            ascent("flash", "2026-11-04", 1),
+            ascent("redpoint", "2026-11-06", 2),
+            ascent("generic", "2026-11-08", null),
+            ascent("completed", "2026-11-10", 3),
+            ascent("aid-flash", "2026-11-12", 4),
+          ],
+          attempts: [
+            { id: 1, name: "Flash" },
+            { id: 2, name: "Redpoint" },
+            { id: 3, name: "Completed" },
+            { id: 4, name: "Aid Flash" },
+          ],
+          _complete: true,
+        }),
+      ),
+    );
+    const client = new AuroraBoardClient(
+      "aurora-board",
+      "Aurora Board",
+      "https://auroraboardapp.com",
+    );
+    const { entries } = await client.fetchLogbook(auroraTokens, async () => {});
+    expect(entries).toHaveLength(5);
+    const seeded = [];
+    for (const entry of entries) {
+      seeded.push(await seedClimbingLog(context.db, "aurora-board", entry));
+    }
+    const selected = seeded[seeded.length - 1];
+    if (!selected) throw new Error("Expected the imported Aid Flash log");
+    expect(await api().projectHistory({ logEntryId: selected })).toMatchObject({
+      days: [
+        { date: "2026-11-04", outcome: "send" },
+        { date: "2026-11-06", outcome: "send" },
+        { date: "2026-11-08", outcome: "unknown" },
+        { date: "2026-11-10", outcome: "unknown" },
+        { date: "2026-11-12", outcome: "unknown" },
+      ],
+      firstSend: { date: "2026-11-04", sessionCount: 1 },
+    });
+
+    const target = { ...boulder, setting: "indoor", externalId: climbUuid } as const;
+    const atAngle = () => ({
+      board: { name: "Aurora Board", externalId: "aurora-wall" },
+      wallAngle: { value: 40, unit: "degrees" as const },
+      raw: { is_mirror: false },
+    });
+    const tension = await seed(
+      target,
+      "2026-11-04",
+      [{ scope: "climb", sourceCompleted: true, sourceResult: "Redpoint" }],
+      atAngle(),
+      "tension",
+    );
+    expect(await api().projectHistory({ logEntryId: tension })).toMatchObject({
+      firstSend: { date: "2026-11-04", sessionCount: 1 },
+      earlierSessionsUnknown: true,
+    });
+
+    const kilter = await seed(
+      target,
+      "2026-11-04",
+      [{ scope: "climb", sourceCompleted: true, sourceResult: "Flash" }],
+      atAngle(),
+      "kilter",
+    );
+    expect(await api().projectHistory({ logEntryId: kilter })).toMatchObject({
+      days: [{ date: "2026-11-04", outcome: "unknown" }],
+      firstSend: null,
+    });
+  });
+
+  it("keeps opposite Aurora mirrors with the same climb UUID and angle separate", async () => {
+    const target = {
+      ...boulder,
+      setting: "indoor",
+      externalId: "aurora:climb:mirror-pair",
+    } as const;
+    const atMirror = (isMirror: boolean) => ({
+      board: { name: "Aurora Board", externalId: "aurora-wall" },
+      wallAngle: { value: 40, unit: "degrees" as const },
+      raw: { is_mirror: isMirror },
+    });
+    await seed(
+      target,
+      "2026-11-04",
+      [{ scope: "climb", sourceCompleted: false }],
+      atMirror(false),
+      "aurora-board",
+    );
+    const mirrored = await seed(
+      target,
+      "2026-11-06",
+      [{ scope: "climb", sourceCompleted: false }],
+      atMirror(true),
+      "aurora-board",
+    );
+    expect(await api().projectHistory({ logEntryId: mirrored })).toMatchObject({
+      days: [{ date: "2026-11-06", outcome: "unsuccessful" }],
+      sessionCount: 1,
+    });
+  });
+
+  it("leaves an unlabeled OpenBeta top-rope tick unknown while retaining its method", async () => {
+    const target = { ...route, setting: "outdoor", externalId: "openbeta:top-rope-unlabeled" };
+    const topRope = await seed(
+      target,
+      "2026-11-04",
+      [{ scope: "climb", ropeMethod: "top_rope" }],
+      { raw: { attemptType: null } },
+      "openbeta",
+    );
+    expect(await api().projectHistory({ logEntryId: topRope })).toMatchObject({
+      firstSend: null,
+      unknownSessionCount: 1,
+      days: [{ date: "2026-11-04", outcome: "unknown", method: "top_rope" }],
+    });
+
+    // A same-day failed lead must not hide the explicit unknown top-rope result.
+    await seed(
+      target,
+      "2026-11-04",
+      [{ scope: "climb", ropeMethod: "lead", sourceResult: "Attempt" }],
+      {},
+      "openbeta",
+    );
+    expect(await api().projectHistory({ logEntryId: topRope })).toMatchObject({
+      firstSend: null,
+      unsuccessfulSessionCount: 0,
+      unknownSessionCount: 1,
+      days: [{ date: "2026-11-04", outcome: "unknown" }],
     });
   });
 });
