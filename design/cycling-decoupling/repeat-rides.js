@@ -1,6 +1,9 @@
 (() => {
   const root = document.getElementById("cycling-decoupling-preview");
   const get = (name) => root.querySelector(`[data-${name}]`);
+  const setText = (name, value) => {
+    get(`dc-value-${name}`).textContent = value;
+  };
   const now = Date.parse("2026-11-21T12:00:00Z");
   const day = 86400000;
   const formatDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
@@ -30,18 +33,16 @@
     for (const button of get("markers").children) {
       button.setAttribute("aria-pressed", String(button.dataset.date === current));
     }
-    const details = get("details");
-    details.innerHTML = `
-      <div class="ride-heading" data-dc-id="ride-heading">
-        <div><h3>${workout} · ${dateLabel(point.time)}</h3>
-        <p>60 min · Trainer + chest strap</p></div>
-        <strong class="ride-reading" data-dc-id="decoupling-value">${point.percent.toFixed(1)}%</strong>
-      </div>
-      <dl class="samples">
-        <div data-dc-id="first-half"><dt>First half</dt><dd>${point.first[0]} W · ${point.first[1]} bpm<span class="coverage">${point.first[2]}% paired coverage</span></dd></div>
-        <div data-dc-id="second-half"><dt>Second half</dt><dd>${point.second[0]} W · ${point.second[1]} bpm<span class="coverage">${point.second[2]}% paired coverage</span></dd></div>
-      </dl>`;
-    details.hidden = false;
+    setText("workout", workout);
+    setText("date", dateLabel(point.time));
+    setText("percent", `${point.percent.toFixed(1)}%`);
+    setText("first-watts", String(point.first[0]));
+    setText("first-bpm", String(point.first[1]));
+    setText("first-coverage", String(point.first[2]));
+    setText("second-watts", String(point.second[0]));
+    setText("second-bpm", String(point.second[1]));
+    setText("second-coverage", String(point.second[2]));
+    get("details").hidden = false;
   }
 
   function render() {

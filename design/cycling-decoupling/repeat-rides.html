@@ -36,7 +36,17 @@
             <div class="axis-x" data-ticks aria-hidden="true"></div>
           </div>
           <p class="chart-note" data-dc-id="chart-sign">Positive values mean power was lower relative to heart rate in the second half.</p>
-          <section class="ride-details" data-details aria-live="polite" aria-label="Selected workout" data-dc-id="ride-details" hidden></section>
+          <section class="ride-details" data-details aria-live="polite" aria-label="Selected workout" data-dc-id="ride-details" hidden>
+            <div class="ride-heading" data-dc-id="ride-heading">
+              <div><h3><span data-dc-value-workout></span> · <span data-dc-value-date></span></h3>
+              <p>60 min · Trainer + chest strap</p></div>
+              <strong class="ride-reading" data-dc-id="decoupling-value" data-dc-value-percent></strong>
+            </div>
+            <dl class="samples">
+              <div data-dc-id="first-half"><dt>First half</dt><dd><span data-dc-value-first-watts></span> W · <span data-dc-value-first-bpm></span> bpm<span class="coverage"><span data-dc-value-first-coverage></span>% paired coverage</span></dd></div>
+              <div data-dc-id="second-half"><dt>Second half</dt><dd><span data-dc-value-second-watts></span> W · <span data-dc-value-second-bpm></span> bpm<span class="coverage"><span data-dc-value-second-coverage></span>% paired coverage</span></dd></div>
+            </dl>
+          </section>
         </div>
 
         <div class="empty-state" data-empty role="status" data-dc-id="no-repeat-rides" hidden>
