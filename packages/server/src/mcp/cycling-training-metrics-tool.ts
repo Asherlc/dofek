@@ -2,9 +2,13 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { CyclingTrainingMetricsRepository } from "../repositories/cycling-training-metrics-repository.ts";
+import { LambertsTestRepository } from "../repositories/lamberts-test-repository.ts";
 import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
-import { cyclingTrainingMetricsOutputSchema } from "./cycling-training-metrics-output.ts";
+import {
+  cyclingTrainingMetricsToolOutputSchema,
+  lambertsTestProtocol,
+} from "./cycling-training-metrics-output.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { jsonToolResult } from "./tool-result.ts";
 import { assertDateRange } from "./tool-utils.ts";
@@ -32,7 +36,7 @@ export function registerCyclingTrainingMetricsTool(
     {
       title: "Get Cycling Training Metrics",
       description:
-        "Return paginated per-ride normalized power, variability, work, historical FTP-dependent load, power and heart-rate zones, aerobic efficiency, cardiac drift, best powers, and recorded or explicitly inferred intervals. Results preserve merged-activity, sample, device, timezone, coverage, and availability evidence; raw streams remain server-side.",
+        "Return paginated per-ride normalized power, variability, work, historical FTP-dependent load, power and heart-rate zones, aerobic efficiency, cardiac drift, best powers, and recorded or explicitly inferred intervals. Results preserve merged-activity, sample, device, timezone, coverage, and availability evidence; raw streams remain server-side. Use test_protocol lamberts_submaximal_cycle_test for recorded Lamberts comparisons.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: z.object({
         start_date: dateSchema,
@@ -40,10 +44,11 @@ export function registerCyclingTrainingMetricsTool(
         modalities: z.array(z.string().min(1)).max(20).optional(),
         providers: z.array(z.string().min(1)).max(50).optional(),
         best_power_durations_seconds: z.array(durationSchema).min(1).max(17).optional(),
+        test_protocol: z.literal(lambertsTestProtocol).optional(),
         cursor: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(25).optional(),
       }),
-      outputSchema: cyclingTrainingMetricsOutputSchema,
+      outputSchema: cyclingTrainingMetricsToolOutputSchema,
     },
     async ({
       start_date,
@@ -51,6 +56,7 @@ export function registerCyclingTrainingMetricsTool(
       modalities,
       providers,
       best_power_durations_seconds,
+      test_protocol,
       cursor,
       limit,
     }) => {
@@ -58,6 +64,23 @@ export function registerCyclingTrainingMetricsTool(
       assertDateRange(start_date, end_date);
       if (!context.sensorStore) {
         throw new Error("get_cycling_training_metrics requires the ClickHouse analytics store");
+      }
+      if (test_protocol === lambertsTestProtocol) {
+        return jsonToolResult(
+          await new LambertsTestRepository(
+            context.db,
+            context.sensorStore,
+            context.userId,
+            context.timezone,
+          ).listRange({
+            startDate: start_date,
+            endDate: end_date,
+            modalities: modalities ?? [],
+            providers: providers ?? [],
+            cursor: cursor ?? null,
+            limit: limit ?? 10,
+          }),
+        );
       }
       const durations = best_power_durations_seconds ?? [...STANDARD_DURATIONS_SECONDS];
       if (new Set(durations).size !== durations.length) {

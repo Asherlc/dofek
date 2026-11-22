@@ -139,7 +139,8 @@ summary; recovery does not invent a missing session.
    corresponding database writes.
 3. The decoder makes a second pass and emits newline-delimited JSON batches bounded to 250
    messages and 512 KiB. Raw `device_info` messages stream as `devices` batches, preserving repeated
-   observations and their order alongside record/weight batches.
+   observations and their order alongside record and weight batches. Structured activities can also
+   stream raw workout, step, lap and zone-target observations as `workout-structure` batches.
 4. Node validates and persists one batch, then writes `continue` to the child process. The decoder
    does not resume until it receives that acknowledgement.
 
@@ -148,12 +149,31 @@ records in a file. Node's standard child-process streams provide the process bou
 see the official [`child_process.spawn()` documentation](https://nodejs.org/api/child_process.html#child_processspawncommand-args-options).
 
 Consumers receive the raw `file_id` through `FitStreamMetadata.fileId` and raw device observations
-through the required asynchronous `onDeviceInfoBatch(messages)` callback. These raw fields retain
-the SDK's snake-case names and numeric enums. The final `messageCount` includes devices plus
-records/weights. The adapter waits for every callback before acknowledging its batch; see the
+through the required asynchronous `onDeviceInfoBatch(messages)` callback. The optional
+`onWorkoutStructureBatch(messages)` callback receives the tagged workout observations. These raw fields
+retain the SDK's snake-case names and numeric enums. The final `messageCount` includes entries in
+every batch. The adapter waits for each installed callback before acknowledging its batch. See the
 [adapter implementation](stream-decoder.ts) and [native protocol](../../native/fit-decoder/README.md#protocol).
 Garmin distinguishes the file creator from device observations in its
 [activity file specification](https://developer.garmin.com/fit/articles/file-types/activity.html).
+
+### Recorded Lamberts Submaximal Cycle Test intervals
+
+The activity importer preserves the original FIT workout, step, lap and zone-target evidence in
+provider-recorded activity intervals when one cycling workout names the test and its five recorded
+laps match the prescribed 17-minute protocol. It checks the three custom targets of 60%, 80% and
+90% of maximum heart rate, with the 30-second calibration interval and 90-second recovery. Each lap
+must link to its workout step, match the prescribed elapsed and timer time, and be contiguous with
+the other test laps. The test may sit within a longer ride. A configured maximum from FIT
+`zones_target` keeps its original provenance. The recording alone may leave how the maximum was
+measured and whether the athlete sat upright during recovery unknown.
+
+Only complete FIT activity files with unambiguous workout evidence can supply these intervals.
+Each successful reimport replaces the previous FIT test intervals for that source. The original
+archive supplies this evidence when a retained file is reimported. See the
+[original study](https://pubmed.ncbi.nlm.nih.gov/19622525/),
+[Garmin FIT Activity](https://developer.garmin.com/fit/file-types/activity/) and
+[Garmin FIT Workout](https://developer.garmin.com/fit/file-types/workout/) specifications.
 
 ## Key files
 
