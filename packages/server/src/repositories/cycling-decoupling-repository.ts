@@ -1,8 +1,6 @@
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
-import {
-  resampleCyclingStream,
-  summarizeCyclingDecoupling,
-} from "@dofek/training/cycling-workout-metrics";
+import { summarizeCyclingDecoupling } from "@dofek/training/cycling-decoupling";
+import { resampleCyclingStream } from "@dofek/training/cycling-workout-metrics";
 import { cyclingPowerCoveragePolicy } from "dofek/analytics/cycling-power-policy";
 import { z } from "zod";
 import {
