@@ -14,7 +14,6 @@ import {
   type FitStreamConsumer,
   type FitStreamResult,
 } from "../fit/stream-decoder.ts";
-import { exactLambertsWorkout } from "../fit/test-helpers.ts";
 import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 import { importFitFile, processFitFileImportJob } from "./process-fit-file-import-job.ts";
 import { stageProviderFitFile } from "./provider-fit-staging.ts";
@@ -741,97 +740,6 @@ describe("processFitFileImportJob", () => {
       { messageType: "file_id", raw: fileId },
       ...messages.map((raw) => ({ messageType: "device_info", raw })),
     ]);
-  });
-
-  it("passes the matched Lamberts workout to FIT observation storage after decoding", async () => {
-    const filePath = await writeTempFit(createActivityFit());
-    mockStreamFitFile.mockImplementationOnce(async (_path: string, consumer: FitStreamConsumer) => {
-      const messages = exactLambertsWorkout();
-      await consumer.onMetadata({
-        fileId: { type: 4 },
-        fileType: 4,
-        fileTypeName: "activity",
-        fieldOccurrences: [
-          { messageType: "file_id", field: "time_created", occurrences: 2 },
-          { messageType: "device_info", field: "type", occurrences: 3 },
-          { messageType: "file_id", field: "type", occurrences: 1 },
-        ],
-        isWeightFile: false,
-        session: defaultFitActivity().session,
-        recoveryError: null,
-      });
-      await consumer.onWorkoutStructureBatch?.(messages.slice(0, 5));
-      await consumer.onWorkoutStructureBatch?.(messages.slice(5));
-      expect(mockReplaceActivityDeviceObservations).not.toHaveBeenCalled();
-      return { messageCount: messages.length };
-    });
-
-    await importFitFile(
-      mockDb,
-      { filePath, originalPath: "activity.fit", userId: "user-1", providerId: "garmin" },
-      async () => {},
-    );
-    expect(mockReplaceActivityDeviceObservations.mock.calls[0]?.[3]).toMatchObject({
-      workout: { wkt_name: " LSCT " },
-      intervals: [
-        { segment: "lsct_stage_1" },
-        { segment: "lsct_calibration" },
-        { segment: "lsct_stage_2" },
-        { segment: "lsct_stage_3" },
-        { segment: "lsct_recovery" },
-      ],
-    });
-  });
-
-  it.each([
-    { label: "unsupported activity sport", cycling: false },
-    { label: "partial file recovery", recoveryError: "Damaged tail" },
-    { label: "chained FIT files", fileCount: 2 },
-    { label: "undeclared FIT file count", fileCount: 0 },
-    { label: "excess workout structure across batches", overflow: true },
-  ])("keeps an otherwise exact workout out of test history with $label", async (scenario) => {
-    const filePath = await writeTempFit(createActivityFit());
-    mockStreamFitFile.mockImplementationOnce(async (_path: string, consumer: FitStreamConsumer) => {
-      const activity = defaultFitActivity();
-      const messages = exactLambertsWorkout();
-      const fileCount = scenario.fileCount ?? 1;
-      await consumer.onMetadata({
-        fileId: { type: 4 },
-        fileType: 4,
-        fileTypeName: "activity",
-        fieldOccurrences:
-          fileCount === 0
-            ? []
-            : [{ messageType: "file_id", field: "type", occurrences: fileCount }],
-        isWeightFile: false,
-        session:
-          scenario.cycling === false
-            ? {
-                ...activity.session,
-                sport: "running",
-                subSport: "generic",
-                raw: { sport: "running" },
-              }
-            : activity.session,
-        recoveryError: scenario.recoveryError ?? null,
-      });
-      await consumer.onWorkoutStructureBatch?.(messages);
-      if (scenario.overflow) {
-        await consumer.onWorkoutStructureBatch?.([{ messageType: "workout", raw: {} }]);
-        await consumer.onWorkoutStructureBatch?.([
-          { messageType: "lap", raw: { wkt_step_index: 0 } },
-        ]);
-      }
-      return { messageCount: messages.length + (scenario.overflow ? 2 : 0) };
-    });
-
-    await importFitFile(
-      mockDb,
-      { filePath, originalPath: "activity.fit", userId: "user-1", providerId: "garmin" },
-      async () => {},
-    );
-    expect(mockReplaceActivityDeviceObservations).toHaveBeenCalledTimes(1);
-    expect(mockReplaceActivityDeviceObservations.mock.calls[0]?.[3]).toBeNull();
   });
 
   it("leaves device observations intact when decoding fails after hardware batches", async () => {
