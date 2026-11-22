@@ -962,4 +962,142 @@ describe("summarizeCyclingDecoupling", () => {
       .fill(null, start, start + 66);
     expect(summarizeCyclingDecoupling(power, Array<number>(1200).fill(100)).percent).toBeNull();
   });
+
+  it.each([
+    ["negative power", (power: Array<number | null>) => (power[0] = -1)],
+    ["infinite power", (power: Array<number | null>) => (power[0] = Number.POSITIVE_INFINITY)],
+    ["missing power", (power: Array<number | null>) => (power[0] = null)],
+  ])("excludes %s from the paired samples", (_name, mutate) => {
+    const power = Array<number | null>(1200).fill(200);
+    mutate(power);
+    expect(
+      summarizeCyclingDecoupling(power, Array<number>(1200).fill(100)).firstHalf.pairedSeconds,
+    ).toBe(599);
+  });
+
+  it.each([
+    ["zero heart rate", 0],
+    ["negative heart rate", -5],
+    ["infinite heart rate", Number.POSITIVE_INFINITY],
+    ["missing heart rate", null],
+  ])("excludes %s from the paired samples", (_name, bpm) => {
+    const heartRate = Array<number | null>(1200).fill(100);
+    heartRate[0] = bpm;
+    expect(
+      summarizeCyclingDecoupling(Array<number>(1200).fill(200), heartRate).firstHalf.pairedSeconds,
+    ).toBe(599);
+  });
+
+  it("requires at least 1,200 elapsed seconds", () => {
+    const heartRate = (length: number) =>
+      Array<number>(length)
+        .fill(100)
+        .fill(125, length / 2);
+    expect(
+      summarizeCyclingDecoupling(Array<number>(1198).fill(200), heartRate(1198)).percent,
+    ).toBeNull();
+    expect(summarizeCyclingDecoupling(Array<number>(1200).fill(200), heartRate(1200)).percent).toBe(
+      20,
+    );
+  });
+
+  it("accepts coverage of exactly 90% in each half and rejects less", () => {
+    const heartRate = Array<number>(1200).fill(100);
+    const withGap = (start: number, count: number) =>
+      Array<number | null>(1200)
+        .fill(200)
+        .fill(null, start, start + count);
+    expect(summarizeCyclingDecoupling(withGap(0, 60), heartRate).percent).toBe(0);
+    expect(summarizeCyclingDecoupling(withGap(600, 60), heartRate).percent).toBe(0);
+    expect(summarizeCyclingDecoupling(withGap(0, 61), heartRate).percent).toBeNull();
+    expect(summarizeCyclingDecoupling(withGap(600, 61), heartRate).percent).toBeNull();
+  });
+
+  it("gives the extra elapsed second of an odd-length ride to the second half", () => {
+    const result = summarizeCyclingDecoupling(
+      Array<number>(1201).fill(200),
+      Array<number>(1201).fill(100),
+    );
+    expect(result.firstHalf.pairedSeconds).toBe(600);
+    expect(result.secondHalf.pairedSeconds).toBe(601);
+    expect(result.secondHalf.coveragePct).toBe(100);
+  });
+
+  it("reports empty halves as unknown rather than zero", () => {
+    const result = summarizeCyclingDecoupling([], []);
+    expect(result.percent).toBeNull();
+    expect(result.firstHalf).toEqual({
+      ratio: null,
+      pairedSeconds: 0,
+      meanWatts: null,
+      meanBpm: null,
+      coveragePct: 0,
+    });
+  });
+});
+
+describe("cardiac drift availability", () => {
+  const drift = (
+    durationSeconds: number,
+    mutate: (samples: CyclingWorkoutSample[]) => void = () => {},
+  ) => {
+    const samples = constantSamples(durationSeconds, { powerWatts: 200, heartRateBpm: 100 });
+    mutate(samples);
+    const result = computeWorkoutFixture({
+      durationSeconds,
+      samples,
+      settings: null,
+      intervals: [],
+    });
+    return {
+      cardiacDrift: result.cardiacDrift,
+      reason: result.unavailableReasons.find((entry) => entry.metric === "cardiac_drift")?.reason,
+    };
+  };
+
+  it("explains a ride shorter than 20 minutes and clears the half values", () => {
+    expect(drift(1_199)).toEqual({
+      cardiacDrift: {
+        percent: null,
+        firstHalfPowerToHeartRate: null,
+        secondHalfPowerToHeartRate: null,
+        pairedSeconds: 0,
+        method: "equal_elapsed_time_halves_power_to_heart_rate",
+      },
+      reason: "activity is shorter than 20 minutes",
+    });
+  });
+
+  it.each([
+    ["first", 0],
+    ["second", 700],
+  ])("explains insufficient paired coverage in the %s half", (_half, start) => {
+    const result = drift(1_200, (samples) => {
+      for (let index = start; index < start + 61; index++)
+        samples[index] = { elapsedSeconds: index, powerWatts: 200 };
+    });
+    expect(result.cardiacDrift.percent).toBeNull();
+    expect(result.reason).toBe(
+      "paired power and heart-rate coverage is below 90% in one or both halves",
+    );
+  });
+
+  it("explains non-comparable ratios when the first half has no power", () => {
+    const result = drift(1_200, (samples) => {
+      for (let index = 0; index < 600; index++)
+        samples[index] = { elapsedSeconds: index, powerWatts: 0, heartRateBpm: 100 };
+    });
+    expect(result.reason).toBe("paired power-to-heart-rate ratios cannot be compared");
+  });
+
+  it("reports no reason when the decoupling is available", () => {
+    const result = drift(1_200);
+    expect(result.reason).toBeUndefined();
+    expect(result.cardiacDrift).toMatchObject({
+      percent: 0,
+      firstHalfPowerToHeartRate: 2,
+      secondHalfPowerToHeartRate: 2,
+      pairedSeconds: 1_200,
+    });
+  });
 });
