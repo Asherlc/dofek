@@ -35,6 +35,14 @@ if(BUILD_TESTING)
       -DFIXTURE_WRITER=$<TARGET_FILE:fit-decoder-hardware-fixture>
       -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/VerifyHardware.cmake
   )
+  add_test(
+    NAME fit-decoder-workout-structure
+    COMMAND
+      ${CMAKE_COMMAND}
+      -DDECODER=$<TARGET_FILE:dofek-fit-decoder>
+      -DFIXTURE_WRITER=$<TARGET_FILE:fit-decoder-hardware-fixture>
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/VerifyWorkoutStructure.cmake
+  )
   add_executable(fit-decoder-field-json-test tests/FieldJsonTest.cpp)
   target_compile_features(fit-decoder-field-json-test PRIVATE cxx_std_17)
   target_link_libraries(fit-decoder-field-json-test PRIVATE fit-decoder-field-json)
