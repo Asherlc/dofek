@@ -43,12 +43,17 @@ interface RunAnalyticsBuildInput {
   projectCyclingPower(asOf: Date): Promise<{
     pendingActivities: number;
   }>;
+  /** Latest `refresh_version` written by `activity_fit_heart_rate`; required when that model is selected. */
+  readFitHeartRateVersion?(): Promise<string>;
   recordRun(input: {
     runId: string;
     pendingDatasets: readonly ProcessingOperationDataset[];
     modelResults: ReturnType<typeof parseDbtRunArtifacts>["models"];
   }): Promise<{ datasets: number; failed: number }>;
 }
+
+const FIT_HEART_RATE_MODEL = "activity_fit_heart_rate";
+const MAX_FIT_HEART_RATE_DRAIN_PASSES = 1_000;
 
 function isMissingArtifactError(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
@@ -84,6 +89,7 @@ export async function runAnalyticsBuild({
   readArtifact,
   recordRun,
   projectCyclingPower,
+  readFitHeartRateVersion,
 }: RunAnalyticsBuildInput): Promise<{ datasets: number; failed: number }> {
   if (selectedModels.length === 0) {
     throw new Error("Analytics build requires at least one selected model");
@@ -100,22 +106,23 @@ export async function runAnalyticsBuild({
     metadata: { dbt_schema_version: "https://schemas.getdbt.com/dbt/sources/v3.json" },
     results: [],
   };
+  const dbtArguments = (models: readonly string[]) => [
+    "build",
+    "--project-dir",
+    "analytics",
+    "--profiles-dir",
+    "analytics",
+    "--threads",
+    "1",
+    "--target-path",
+    artifactDirectory,
+    "--vars",
+    JSON.stringify(microbatchBounds),
+    "--select",
+    models.join(" "),
+  ];
   const runPhase = async (models: readonly string[]) => {
-    const code = await runDbt([
-      "build",
-      "--project-dir",
-      "analytics",
-      "--profiles-dir",
-      "analytics",
-      "--threads",
-      "1",
-      "--target-path",
-      artifactDirectory,
-      "--vars",
-      JSON.stringify(microbatchBounds),
-      "--select",
-      models.join(" "),
-    ]);
+    const code = await runDbt(dbtArguments(models));
     const manifest = await readDbtArtifact(readArtifact, "manifest.json", code);
     const runResults = await readDbtArtifact(readArtifact, "run_results.json", code);
     const phase = parseDbtRunArtifacts({
@@ -140,6 +147,27 @@ export async function runAnalyticsBuild({
           selectedModels: downstream,
         }).models,
       );
+    }
+  }
+  if (exitCode === 0 && succeeded && inputs.includes(FIT_HEART_RATE_MODEL)) {
+    if (!readFitHeartRateVersion) {
+      throw new Error(`${FIT_HEART_RATE_MODEL} is selected but no version reader was provided`);
+    }
+    // The model processes a bounded batch per run; repeat until a run writes nothing new.
+    let version = await readFitHeartRateVersion();
+    for (let pass = 0; ; pass += 1) {
+      if (pass >= MAX_FIT_HEART_RATE_DRAIN_PASSES) {
+        throw new Error(
+          `${FIT_HEART_RATE_MODEL} still had pending activities after ${MAX_FIT_HEART_RATE_DRAIN_PASSES} extra passes`,
+        );
+      }
+      const code = await runDbt(dbtArguments([FIT_HEART_RATE_MODEL]));
+      if (code !== 0) {
+        throw new Error(`${FIT_HEART_RATE_MODEL} drain pass failed with exit code ${code}`);
+      }
+      const next = await readFitHeartRateVersion();
+      if (next === version) break;
+      version = next;
     }
   }
   if (exitCode === 0 && succeeded) {
@@ -245,6 +273,15 @@ export async function runAnalyticsBuildFromEnvironment(
                   "../src/analytics/cycling-power-policy.ts"
                 );
                 return projectCyclingPower(owner, cyclingPowerPolicy, asOf);
+              },
+              readFitHeartRateVersion: async () => {
+                const result = await owner.client.query<{ version: string }>({
+                  query:
+                    "SELECT toString(max(refresh_version)) AS version FROM analytics.activity_fit_heart_rate",
+                  format: "JSONEachRow",
+                });
+                const [row] = await result.json();
+                return row?.version ?? "0";
               },
               recordRun: (run) => recordProcessingAnalyticsRun(database, run),
             });
