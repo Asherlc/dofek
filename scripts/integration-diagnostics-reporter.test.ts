@@ -49,8 +49,14 @@ function captureUntilHardStop(
     child.once("close", (code, exitSignal) => {
       signal.removeEventListener("abort", stop);
       if (spawnError) reject(spawnError);
-      else if (signal.aborted) reject(signal.reason);
-      else if (!checkpointObserved || exitSignal !== "SIGKILL") {
+      else if (signal.aborted) {
+        reject(
+          new Error(
+            `Runner aborted before checkpoint (checkpoint observed ${checkpointObserved}, stderr bytes ${stderrBytes}); stdout tail: ${output.slice(-2000)}`,
+            { cause: signal.reason },
+          ),
+        );
+      } else if (!checkpointObserved || exitSignal !== "SIGKILL") {
         reject(
           new Error(
             `Unexpected runner exit (code ${code}, signal ${exitSignal}, checkpoint observed ${checkpointObserved}, stderr bytes ${stderrBytes})`,
