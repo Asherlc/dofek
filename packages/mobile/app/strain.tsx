@@ -31,6 +31,7 @@ import { ClimbingStrengths } from "../components/ClimbingStrengths";
 import { ClimbingTrainingCard } from "../components/ClimbingTrainingCard";
 import { CyclingDurability } from "../components/CyclingDurability";
 import { CyclingPowerProfile } from "../components/CyclingPowerProfile";
+import { CyclingDecouplingChart } from "../components/charts/CyclingDecouplingChart";
 import { VerticalAscentChart } from "../components/charts/VerticalAscentChart";
 import { DaySelector } from "../components/DaySelector";
 import { EstimatedStrengthCard } from "../components/EstimatedStrengthCard";
@@ -101,6 +102,15 @@ export function TrainingAnalysis({
     hasCommittedHydratedRange.current = isHydrated;
   }, [isHydrated]);
 
+  const decouplingQuery = trpc.cycling.decoupling.useQuery(
+    { days },
+    {
+      enabled: isHydrated && show("cycling"),
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  useReportQueryError(decouplingQuery);
+
   const trainingQuery = trpc.mobileDashboard.trainingV2.useQuery(
     { days, endDate, ...(Object.keys(climbingFilters).length ? { climbingFilters } : {}) },
     {
@@ -158,6 +168,13 @@ export function TrainingAnalysis({
   );
   const climbingLocationMapQuery = trpc.climbing.locationMap.useQuery(
     { days, ...climbingFilters },
+    {
+      enabled: isHydrated && show("climbing"),
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  const climbingDemonstratedGradeQuery = trpc.climbing.demonstratedGrade.useQuery(
+    { endDate, filters: climbingFilters },
     {
       enabled: isHydrated && show("climbing"),
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
@@ -229,6 +246,7 @@ export function TrainingAnalysis({
 
   useReportQueryError(trainingQuery);
   useReportQueryError(climbingLocationMapQuery);
+  useReportQueryError(climbingDemonstratedGradeQuery);
   useReportQueryError(climbingStrengthsQuery);
   useReportQueryError(hrZonesQuery);
   useReportQueryError(polarizationQuery);
@@ -282,8 +300,10 @@ export function TrainingAnalysis({
     invalidate: () =>
       Promise.all([
         utils.mobileDashboard.trainingV2.invalidate(),
+        utils.cycling.decoupling.invalidate(),
         utils.running.dynamicsV2.invalidate(),
         utils.climbing.locationMap.invalidate(),
+        utils.climbing.demonstratedGrade.invalidate(),
         utils.climbing.strengths.invalidate(),
         utils.climbing.volumeIncrease.invalidate(),
         utils.climbing.attemptIncrease.invalidate(),
@@ -430,6 +450,13 @@ export function TrainingAnalysis({
           loading={cyclingPowerProfile.isLoading}
         />
       ) : null}
+      {show("cycling") ? (
+        <CyclingDecouplingChart
+          data={decouplingQuery.data}
+          loading={decouplingQuery.isLoading}
+          error={decouplingQuery.error}
+        />
+      ) : null}
       {show("hiking") ? <RouteComparisonCard days={days} enabled={isHydrated} /> : null}
       {show("climbing") ? (
         <>
@@ -564,10 +591,14 @@ export function TrainingAnalysis({
           }}
         />
       ) : null}
-      {show("climbing") && shouldShowClimbingSection && !isLoading ? (
+      {show("climbing") && !isLoading ? (
         <ClimbingTrainingCard
-          data={trainingData?.climbing}
+          data={shouldShowClimbingSection ? trainingData?.climbing : undefined}
           loading={trainingQuery.isLoading && trainingData == null}
+          demonstratedGrade={climbingDemonstratedGradeQuery.data}
+          demonstratedGradeLoading={climbingDemonstratedGradeQuery.isLoading}
+          demonstratedGradeError={climbingDemonstratedGradeQuery.error}
+          demonstratedGradeOnly={!shouldShowClimbingSection}
         />
       ) : null}
 

@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 const HEALTH_SYNC_INITIAL_FETCH_PATHS = new Set([
   "activity.byId",
+  "cycling.decoupling",
   "climbing.volumeIncrease",
   "climbing.attemptIncrease",
 ]);

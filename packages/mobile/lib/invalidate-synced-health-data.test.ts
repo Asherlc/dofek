@@ -7,6 +7,7 @@ describe("invalidateSyncedHealthData", () => {
     ["climbing", "volumeIncrease"],
     ["climbing", "attemptIncrease"],
     ["activity", "byId"],
+    ["cycling", "decoupling"],
   ])(
     "refreshes %s.%s when its first fetch overlaps a completed sync",
     async (router, procedure) => {
@@ -38,6 +39,7 @@ describe("invalidateSyncedHealthData", () => {
       [["mobileDashboard", "dashboardV2"], { type: "query" }],
       [["mobileDashboard", "recovery"], { type: "query" }],
       [["mobileDashboard", "trainingV2"], { type: "query" }],
+      [["cycling", "decoupling"], { type: "query" }],
       [["climbing", "volumeIncrease"], { type: "query" }],
       [["climbing", "attemptIncrease"], { type: "query" }],
       [["calendar", "weekListV2"], { type: "query" }],

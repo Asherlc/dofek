@@ -9,6 +9,7 @@ import {
   recentCyclingActivityFixture,
   sectionExpectations,
 } from "../../app-fixtures/(tabs)/strain-test-helpers";
+import { demonstratedGradeFixture } from "../../components/climbing-demonstrated-grade-fixture";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 import { intervalRun, runningData } from "../../components/running-training-test-helpers";
@@ -17,6 +18,10 @@ import {
   mockAttemptIncreaseQuery,
   mockCaptureException,
   mockCyclingPowerProfileQuery,
+  mockDecouplingInvalidate,
+  mockDecouplingQuery,
+  mockDemonstratedGradeInvalidate,
+  mockDemonstratedGradeQuery,
   mockHrZonesInvalidate,
   mockHrZonesState,
   mockLocationMapInvalidate,
@@ -333,6 +338,43 @@ describe("StrainScreen", () => {
     expect(screen.getByText("Climbing locations")).toBeTruthy();
   });
 
+  it("anchors demonstrated grade to the shared date and filters, not the chart range", async () => {
+    const { default: StrainScreen } = await import("../../app/strain");
+    render(<StrainScreen />);
+    expect(mockDemonstratedGradeQuery).toHaveBeenLastCalledWith(
+      { endDate: "2026-03-28", filters: {} },
+      expect.any(Object),
+    );
+
+    mockQueryState.timeRangePreference.days = 30;
+    fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
+    expect(mockDemonstratedGradeQuery).toHaveBeenLastCalledWith(
+      { endDate: "2026-03-28", filters: { types: ["lead"] } },
+      expect.any(Object),
+    );
+    expect(mockQueryState.rangeQueryCalls.training.at(-1)?.input.days).toBe(30);
+  });
+
+  it("shows demonstrated grade when trainingV2 fails without cached climbing data", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training unavailable");
+    mockDemonstratedGradeQuery.mockReturnValue({
+      data: demonstratedGradeFixture,
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
+    const { default: StrainScreen } = await import("../../app/strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByRole("button", { name: "Indoor bouldering, V5, 3 climbs" })).toBeTruthy();
+    expect(screen.queryByRole("image", { name: /^Grade progression/ })).toBeNull();
+    expect(screen.getByText("Could not load training data")).toBeTruthy();
+  });
+
   it("refreshes training, intensity, polarization, and processing status together", async () => {
     const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
@@ -340,8 +382,10 @@ describe("StrainScreen", () => {
     expect(mockQueryState.refreshInvalidate).toBeTypeOf("function");
     await mockQueryState.refreshInvalidate?.();
 
+    expect(mockDecouplingInvalidate).toHaveBeenCalled();
     expect(mockTrainingInvalidate).toHaveBeenCalledOnce();
     expect(mockLocationMapInvalidate).toHaveBeenCalledOnce();
+    expect(mockDemonstratedGradeInvalidate).toHaveBeenCalledOnce();
     expect(mockHrZonesInvalidate).toHaveBeenCalledOnce();
     expect(mockPolarizationInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
@@ -644,7 +688,7 @@ describe("StrainScreen", () => {
     expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
     expect(screen.getAllByTestId("query-state-error")).toHaveLength(1);
     expect(screen.queryByText("Training Load")).toBeNull();
-    expect(screen.queryByText("Climbing")).toBeNull();
+    expect(screen.queryByRole("image", { name: /^Grade progression/ })).toBeNull();
     expect(screen.getByText("Weekly Volume")).toBeTruthy();
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error));
   });
@@ -727,4 +771,66 @@ describe("StrainScreen", () => {
     expect(mockCaptureException).toHaveBeenCalledTimes(1);
     expect(mockCaptureException).toHaveBeenCalledWith(cachedError);
   });
+});
+
+it("requests decoupling for the selected Cycling range and shows the empty state", async () => {
+  mockQueryState.timeRangePreference.days = 30;
+  const { TrainingAnalysis } = await import("../../app/strain");
+  render(<TrainingAnalysis section="cycling" isFocused />);
+  expect(mockDecouplingQuery).toHaveBeenLastCalledWith(
+    { days: 30 },
+    expect.objectContaining({ enabled: true }),
+  );
+  expect(screen.getByText("No repeat rides in this date range")).toBeTruthy();
+});
+
+it("selects a repeat ride from chart data and opens that activity", async () => {
+  mockDecouplingQuery.mockReturnValue({
+    data: {
+      workoutName: "Endurance",
+      rides: [
+        {
+          activityId: "ride-1",
+          name: "Endurance",
+          date: "2026-03-15T12:00:00Z",
+          elapsedSeconds: 3600,
+          modality: null,
+          percent: 4,
+          method: "equal_elapsed_time_halves_power_to_heart_rate",
+          powerMeasurementKind: "direct",
+          heartRateMeasurementKind: "unknown",
+          firstHalf: { meanWatts: 200, meanBpm: 130, coveragePct: 99, pairedSeconds: 1782 },
+          secondHalf: { meanWatts: 195, meanBpm: 135, coveragePct: 98, pairedSeconds: 1764 },
+        },
+        {
+          activityId: "ride-2",
+          name: "Endurance",
+          date: "2026-03-15T12:00:00Z",
+          elapsedSeconds: 3600,
+          modality: null,
+          percent: 4,
+          method: "equal_elapsed_time_halves_power_to_heart_rate",
+          powerMeasurementKind: "direct",
+          heartRateMeasurementKind: "unknown",
+          firstHalf: { meanWatts: 200, meanBpm: 130, coveragePct: 99, pairedSeconds: 1782 },
+          secondHalf: { meanWatts: 195, meanBpm: 135, coveragePct: 98, pairedSeconds: 1764 },
+        },
+      ],
+    },
+  });
+  try {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    render(<TrainingAnalysis section="cycling" isFocused />);
+    expect(screen.queryByText(/200 W.*130 bpm/)).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: /View Power-to-heart-rate decoupling data/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Endurance.*Ride 2.*4.0%/ }));
+    expect(screen.getByText(/200 W.*130 bpm.*99%/)).toBeTruthy();
+    expect(screen.getByText(/195 W.*135 bpm.*98%/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: "Endurance" }));
+    expect(mockRouterPush).toHaveBeenCalledWith("/activity/ride-2");
+  } finally {
+    mockDecouplingQuery.mockReset();
+  }
 });

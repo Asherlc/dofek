@@ -56,6 +56,10 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@dofek/training/training", () => ({
   CYCLING_ACTIVITY_TYPES: ["cycling"],
 }));
+vi.mock("../../components/DofekChart.tsx", () => ({
+  ChartRangeProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  DofekChart: ({ dataDisclosure }: { dataDisclosure: ReactNode }) => <>{dataDisclosure}</>,
+}));
 vi.mock("../../components/AerobicEfficiencyChart.tsx", () => ({
   AerobicEfficiencyChart: ({ activities }: { activities: unknown[] }) => {
     state.capturedAerobicEfficiencyActivities = activities;
@@ -99,6 +103,12 @@ const emptyQuery = { data: [], isLoading: false, error: null };
 vi.mock("../../lib/trpc.ts", () => ({
   trpc: {
     cycling: {
+      decoupling: {
+        useQuery: (input: unknown) => ({
+          ...recordQuery("cycling.decoupling")(input),
+          data: { workoutName: null, rides: [] },
+        }),
+      },
       powerProfile: {
         useQuery: (input: unknown) => ({
           ...recordQuery("cycling.powerProfile")(input),
@@ -400,6 +410,7 @@ describe("CyclingTab", () => {
     await renderCyclingTab();
 
     expect(state.queryCalls).toEqual([
+      { name: "cycling.decoupling", input: { days: 365 } },
       { name: "cycling.powerProfile", input: { days: 365 } },
       { name: "cycling.performance", input: { days: 365 } },
       {
@@ -421,6 +432,7 @@ describe("CyclingTab", () => {
     await renderCyclingTab();
 
     expect(state.queryCalls).toEqual([
+      { name: "cycling.decoupling", input: { days: null } },
       { name: "cycling.powerProfile", input: { days: null } },
       { name: "cycling.performance", input: { days: null } },
       {
@@ -443,6 +455,7 @@ describe("CyclingTab", () => {
     fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expect(state.queryCalls).toEqual([
+      { name: "cycling.decoupling", input: { days: null } },
       { name: "cycling.powerProfile", input: { days: null } },
       { name: "cycling.performance", input: { days: null } },
       {

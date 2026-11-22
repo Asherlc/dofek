@@ -15,6 +15,29 @@ describe("activity sensor consumers before background merges", () => {
   const database = `activity_sensor_consumers_${randomBytes(6).toString("hex")}`;
   let client: ReturnType<typeof createClient>;
 
+  const refreshPolarization = (isIncremental = true) => {
+    const sql = renderDbtModelSql(readModelSql("activity_polarization_zones.sql"), {
+      isIncremental,
+    })
+      .replace(/\{\{ ref\('([^']+)'\) \}\}/g, `${database}.$1`)
+      .replace(/\{\{ source\('[^']+', '([^']+)'\) \}\}/g, `${database}.$1`)
+      .replaceAll("{{ this }}", `${database}.activity_cycling_polarization`);
+    return client.command({
+      query: `INSERT INTO ${database}.activity_cycling_polarization ${sql}
+        SETTINGS join_use_nulls = 1, max_threads = 1, enable_materialized_cte = 1`,
+    });
+  };
+
+  const polarizationRowCount = async () => {
+    const result = await client.query({
+      query: `SELECT toUInt32(count()) AS rows FROM ${database}.activity_cycling_polarization`,
+      format: "JSONEachRow",
+    });
+    const [row] = await result.json<{ rows: number }>();
+    if (!row) throw new Error("Expected a polarization row count");
+    return row.rows;
+  };
+
   beforeAll(async () => {
     const url = process.env.CLICKHOUSE_URL?.trim();
     if (!url) throw new Error("CLICKHOUSE_URL is required for sensor consumer tests");
@@ -26,6 +49,10 @@ describe("activity sensor consumers before background merges", () => {
       ...cyclingPowerSchemaStatements().map((query) =>
         query.replaceAll("analytics.", `${database}.`).replaceAll("ingest.", `${database}.`),
       ),
+      ...createPolarizationMigration().statements.map((query) =>
+        query.replaceAll("analytics.", `${database}.`),
+      ),
+      `SYSTEM STOP MERGES ${database}.activity_cycling_polarization`,
       `INSERT INTO ${database}.activity_summary_rows
         (activity_id,user_id,canonical_type,name,started_at,ended_at,power_sample_count,refresh_version,is_deleted,refreshed_at)
         SELECT toUUID(tupleElement(activity, 1)), toUUID('${userId}'),
@@ -162,7 +189,7 @@ describe("activity sensor consumers before background merges", () => {
       const result = await client.query({
         query: `SELECT toString(activity_id) AS activity_id, ${columns}
         FROM (${sql}) ORDER BY activity_id
-        SETTINGS join_use_nulls = 1, max_threads = 1`,
+        SETTINGS join_use_nulls = 1, max_threads = 1, enable_materialized_cte = 1`,
         format: "JSONEachRow",
       });
       expect(await result.json()).toEqual(expected);
@@ -176,7 +203,7 @@ describe("activity sensor consumers before background merges", () => {
     const rideId = randomUUID();
     const riderId = randomUUID();
     await client.command({
-      query: `INSERT INTO ${database}.user_profile_current VALUES ('${riderId}', 189, 60, now64(9))`,
+      query: `INSERT INTO ${database}.user_profile_current VALUES ('${riderId}', 190, 60, now64(9))`,
     });
     await client.command({
       query: `INSERT INTO ${database}.activity_summary_rows
@@ -187,31 +214,15 @@ describe("activity sensor consumers before background merges", () => {
     await client.command({
       query: `INSERT INTO ${database}.activity_sensor_sample
         SELECT activity_id, user_id, addMicroseconds(started_at, reading.1),
-          toDate(started_at), 'heart_rate', reading.2, 4, 0, now64(9), reading.3
+          toDate(started_at), 'heart_rate', toFloat32(reading.2), 4, 0, now64(9), reading.3
         FROM ${database}.activity_summary_rows
-        ARRAY JOIN [(400000000, 149.0, 'direct'), (402500000, 151.2, 'direct'),
-          (407000000, 170.1, 'direct'), (410000000, 150.0, 'estimated'),
+        ARRAY JOIN [(400000000, 149.0, 'direct'), (402500000, 152, 'direct'),
+          (407000000, 171, 'direct'), (410000000, 150.0, 'estimated'),
           (439000000, 185.0, 'unknown'), (599000000, 160.0, 'direct'),
           (600000000, 190, 'direct')] AS reading
         WHERE activity_id = toUUID('${rideId}')`,
     });
-    const modelSql = (isIncremental: boolean) =>
-      renderDbtModelSql(readModelSql("activity_polarization_zones.sql"), {
-        isIncremental,
-        activityRefreshScoped: false,
-      })
-        .replace(/\{\{ ref\('([^']+)'\) \}\}/g, `${database}.$1`)
-        .replace(/\{\{ source\('[^']+', '([^']+)'\) \}\}/g, `${database}.$1`)
-        .replaceAll("{{ this }}", `${database}.activity_cycling_polarization`);
-    for (const statement of createPolarizationMigration().statements) {
-      await client.command({ query: statement.replaceAll("analytics.", `${database}.`) });
-    }
-    await client.command({
-      query: `INSERT INTO ${database}.activity_cycling_polarization
-        SELECT * FROM (${modelSql(false)})
-        WHERE activity_id = toUUID('${rideId}')
-        SETTINGS join_use_nulls = 1, max_threads = 1`,
-    });
+    await refreshPolarization(false);
     const result = await client.query({
       query: `SELECT
         z1_microseconds / 1000000.0 AS z1_seconds,
@@ -223,41 +234,118 @@ describe("activity sensor consumers before background merges", () => {
     });
     expect(await result.json()).toEqual([{ z1_seconds: 2.5, z2_seconds: 5.5, z3_seconds: 13 }]);
 
-    await client.command({
-      query: `INSERT INTO ${database}.activity_sensor_sample
-        SELECT activity_id, user_id, recorded_at, recorded_date, channel, scalar,
-          5, 1, now64(9), measurement_kind
-        FROM ${database}.activity_sensor_sample FINAL
-        WHERE activity_id = toUUID('${rideId}') AND channel = 'heart_rate' AND is_deleted = 0`,
-    });
-    const refresh = () =>
-      client.command({
-        query: `INSERT INTO ${database}.activity_cycling_polarization
-        ${modelSql(true)} SETTINGS join_use_nulls = 1, max_threads = 1`,
-      });
+    const initializedRows = await polarizationRowCount();
+    await refreshPolarization();
+    expect(await polarizationRowCount()).toBe(initializedRows);
+
     const storedCoverage = async () => {
-      const result = await client.query({
+      const coverage = await client.query({
         query: `SELECT is_deleted, canonical_type, max_hr,
+          z3_microseconds / 1000000.0 AS high_seconds,
           (z1_microseconds + z2_microseconds + z3_microseconds) / 1000000.0 AS total_seconds
           FROM ${database}.activity_cycling_polarization FINAL
           WHERE activity_id = toUUID('${rideId}')`,
         format: "JSONEachRow",
       });
-      return result.json();
+      return coverage.json();
     };
-    await refresh();
+    const setRideBoundsAndType = (canonicalType: "cycling" | "running") =>
+      client.command({
+        query: `INSERT INTO ${database}.activity_summary_rows
+          (activity_id,user_id,canonical_type,name,started_at,ended_at,refresh_version,is_deleted,refreshed_at)
+          SELECT activity_id,user_id,'${canonicalType}',name,started_at,
+            addSeconds(started_at, 440),refresh_version + 1,0,now64(9)
+          FROM ${database}.activity_summary_rows FINAL WHERE activity_id = toUUID('${rideId}')`,
+      });
+    await client.command({
+      query: `ALTER TABLE ${database}.user_profile_current UPDATE max_hr = 200
+        WHERE id = toUUID('${riderId}') SETTINGS mutations_sync = 2`,
+    });
+    await refreshPolarization();
     expect(await storedCoverage()).toEqual([
-      { is_deleted: 0, canonical_type: "cycling", max_hr: 189, total_seconds: 0 },
+      {
+        is_deleted: 0,
+        canonical_type: "cycling",
+        max_hr: 200,
+        high_seconds: 10,
+        total_seconds: 21,
+      },
     ]);
+
+    await setRideBoundsAndType("cycling");
+    await refreshPolarization();
+    expect(await storedCoverage()).toEqual([
+      { is_deleted: 0, canonical_type: "cycling", max_hr: 200, high_seconds: 1, total_seconds: 11 },
+    ]);
+
+    await client.command({
+      query: `INSERT INTO ${database}.activity_sensor_sample
+        SELECT activity_id, user_id, recorded_at, recorded_date, channel, toFloat32(190),
+          5, 0, now64(9), measurement_kind
+        FROM ${database}.activity_sensor_sample FINAL
+        WHERE activity_id = toUUID('${rideId}') AND channel = 'heart_rate'
+        ORDER BY recorded_at LIMIT 1`,
+    });
+    await refreshPolarization();
+    expect(await storedCoverage()).toEqual([
+      {
+        is_deleted: 0,
+        canonical_type: "cycling",
+        max_hr: 200,
+        high_seconds: 3.5,
+        total_seconds: 11,
+      },
+    ]);
+
+    await client.command({
+      query: `INSERT INTO ${database}.activity_sensor_sample
+        SELECT activity_id, user_id, recorded_at, recorded_date, channel, scalar,
+          6, 1, now64(9), measurement_kind
+        FROM ${database}.activity_sensor_sample FINAL
+        WHERE activity_id = toUUID('${rideId}') AND channel = 'heart_rate' AND is_deleted = 0`,
+    });
+    await refreshPolarization();
+    expect(await storedCoverage()).toEqual([
+      { is_deleted: 0, canonical_type: "cycling", max_hr: 200, high_seconds: 0, total_seconds: 0 },
+    ]);
+    await setRideBoundsAndType("running");
+    await refreshPolarization();
+    expect(await storedCoverage()).toEqual([
+      { is_deleted: 1, canonical_type: "cycling", max_hr: null, high_seconds: 0, total_seconds: 0 },
+    ]);
+    const retiredRows = await polarizationRowCount();
+    await refreshPolarization();
+    expect(await polarizationRowCount()).toBe(retiredRows);
+
+    await setRideBoundsAndType("cycling");
+    await refreshPolarization();
+    expect(await storedCoverage()).toEqual([
+      { is_deleted: 0, canonical_type: "cycling", max_hr: 200, high_seconds: 0, total_seconds: 0 },
+    ]);
+  }, 120_000);
+
+  it("drains at most 32 eligible rides per refresh", async () => {
+    await refreshPolarization();
+    const initialRows = await polarizationRowCount();
+    const zeroMaxHrRider = randomUUID();
+    await client.command({
+      query: `INSERT INTO ${database}.user_profile_current
+        VALUES ('${zeroMaxHrRider}', 0, 60, now64(9))`,
+    });
     await client.command({
       query: `INSERT INTO ${database}.activity_summary_rows
         (activity_id,user_id,canonical_type,name,started_at,ended_at,refresh_version,is_deleted,refreshed_at)
-        SELECT activity_id,user_id,'running',name,started_at,ended_at,refresh_version + 1,0,now64(9)
-        FROM ${database}.activity_summary_rows FINAL WHERE activity_id = toUUID('${rideId}')`,
+        SELECT generateUUIDv4(), if(rides.number < 33, source.user_id, toUUID('${zeroMaxHrRider}')),
+          'cycling', source.name, source.started_at, source.ended_at, rides.number + 2, 0, now64(9)
+        FROM ${database}.activity_summary_rows AS source FINAL
+        CROSS JOIN numbers(34) AS rides
+        WHERE source.activity_id = toUUID('${cyclingId}')`,
     });
-    await refresh();
-    expect(await storedCoverage()).toEqual([
-      { is_deleted: 1, canonical_type: "cycling", max_hr: null, total_seconds: 0 },
-    ]);
+    await refreshPolarization();
+    expect(await polarizationRowCount()).toBe(initialRows + 32);
+    await refreshPolarization();
+    expect(await polarizationRowCount()).toBe(initialRows + 33);
+    await refreshPolarization();
+    expect(await polarizationRowCount()).toBe(initialRows + 33);
   }, 120_000);
 });

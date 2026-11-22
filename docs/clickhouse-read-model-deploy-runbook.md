@@ -1055,8 +1055,14 @@ before API activation, following the [candidate-image procedure](#overview-oxyge
 
 1. Apply schema-only ClickHouse migration `0117_cycling_polarization_elapsed_seconds`
    in the authorized operator runtime.
-2. Run the candidate's normal incremental `activity_polarization_zones` build
-   under the existing serialized analytics owner and production resource limits.
+2. Run the candidate image's normal `analytics` command under the existing
+   serialized analytics owner and production resource limits. The worker
+   drains `activity_polarization_zones` in batches of up to 32 changed rides and
+   finishes when a pass writes no rows. The model processes new rides and
+   recalculates rides whose sensor version, ride bounds, or profile HRmax
+   changed. A previously served ride that loses eligibility is retired in the
+   same process.
+   [dbt incremental models](https://docs.getdbt.com/docs/build/incremental-models)
 3. Compare eligible activity keys to live rows in the new table. Require
    zero missing keys before enabling the new reader. A cycling activity with
    a completed positive-duration ride and positive profile HRmax has a live

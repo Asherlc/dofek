@@ -17,6 +17,14 @@ export const mockLocationMapInvalidate = vi.fn();
 export const mockHrZonesInvalidate = vi.fn();
 export const mockPolarizationInvalidate = vi.fn();
 export const mockProcessingStatusInvalidate = vi.fn();
+export const mockDecouplingInvalidate = vi.fn();
+const emptyDecoupling = () => ({
+  data: { workoutName: null, rides: [] },
+  isLoading: false,
+  isError: false,
+  error: null,
+});
+export const mockDecouplingQuery = vi.fn<(...args: unknown[]) => unknown>(emptyDecoupling);
 export const mockRunningInvalidate = vi.fn();
 const emptyCyclingPowerProfileQuery = { data: undefined, isLoading: false, error: null };
 export const mockCyclingPowerProfileQuery = vi
@@ -26,6 +34,8 @@ export const mockRouteComparisonInvalidate = vi.fn();
 export const mockRouteComparisonQuery = vi.fn();
 export const mockVolumeIncreaseQuery = vi.fn();
 export const mockVolumeIncreaseInvalidate = vi.fn();
+export const mockDemonstratedGradeQuery = vi.fn();
+export const mockDemonstratedGradeInvalidate = vi.fn();
 export const mockAttemptIncreaseQuery = vi.fn();
 export const mockAttemptIncreaseInvalidate = vi.fn();
 type MockRangeQueryOptions = {
@@ -173,6 +183,7 @@ vi.mock("expo-router", () => ({
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     cycling: {
+      decoupling: { useQuery: mockDecouplingQuery },
       durability: {
         useQuery: (input: { days: number | null }, options: MockRangeQueryOptions) => {
           mockQueryState.rangeQueryCalls.durability.push({ input, options });
@@ -217,6 +228,7 @@ vi.mock("../../lib/trpc", () => ({
           return { ...mockLocationMapState };
         },
       },
+      demonstratedGrade: { useQuery: mockDemonstratedGradeQuery },
     },
     strength: {
       loggedSetComparison: {
@@ -292,7 +304,10 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     useUtils: () => ({
-      cycling: { powerProfile: { invalidate: vi.fn() } },
+      cycling: {
+        decoupling: { invalidate: mockDecouplingInvalidate },
+        powerProfile: { invalidate: vi.fn() },
+      },
       running: { dynamicsV2: { invalidate: mockRunningInvalidate } },
       hiking: { activityComparison: { invalidate: mockRouteComparisonInvalidate } },
       climbing: {
@@ -300,6 +315,7 @@ vi.mock("../../lib/trpc", () => ({
         volumeIncrease: { invalidate: mockVolumeIncreaseInvalidate },
         volumeOverTime: { invalidate: vi.fn() },
         locationMap: { invalidate: mockLocationMapInvalidate },
+        demonstratedGrade: { invalidate: mockDemonstratedGradeInvalidate },
         strengths: { invalidate: vi.fn().mockResolvedValue(undefined) },
       },
       strength: {
@@ -362,10 +378,18 @@ vi.mock("../../lib/units", () => ({
 }));
 
 export function resetStrainMocks() {
+  mockDecouplingQuery.mockReset();
   mockCyclingPowerProfileQuery.mockReset().mockReturnValue(emptyCyclingPowerProfileQuery);
   mockQueryState.focused = true;
   mockVolumeIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
   mockVolumeIncreaseInvalidate.mockReset().mockResolvedValue(undefined);
+  mockDemonstratedGradeQuery.mockReset().mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isFetching: false,
+    error: null,
+  });
+  mockDemonstratedGradeInvalidate.mockReset().mockResolvedValue(undefined);
   mockAttemptIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
   mockAttemptIncreaseInvalidate.mockReset().mockResolvedValue(undefined);
   mockQueryState.runningData = { ...runningData, data: [] };

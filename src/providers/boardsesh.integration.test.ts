@@ -41,6 +41,50 @@ const tick = (overrides: Record<string, unknown> = {}) => ({
   boardId: null,
   ...overrides,
 });
+type IdentityMode =
+  | "identity"
+  | "identity-unavailable"
+  | "identity-lookup-failed"
+  | "identity-late-success"
+  | "identity-layout-mismatch";
+const isIdentityMode = (mode: string): mode is IdentityMode => mode.startsWith("identity");
+const identityPairs = (
+  mode: IdentityMode,
+): Array<{ uuid: string; climbUuid: string; angle?: number }> => {
+  if (mode === "identity" || mode === "identity-lookup-failed")
+    return [
+      { uuid: "tick-1", climbUuid: "climb-1" },
+      { uuid: "tick-alias", climbUuid: "alias-1" },
+      { uuid: "tick-duplicate", climbUuid: "alias-1" },
+    ];
+  if (mode === "identity-unavailable")
+    return [
+      { uuid: "tick-1", climbUuid: "unresolved-1", angle: 40 },
+      { uuid: "tick-2", climbUuid: "unresolved-1", angle: 45 },
+    ];
+  if (mode === "identity-late-success")
+    return [
+      { uuid: "tick-1", climbUuid: "climb-1", angle: 40 },
+      { uuid: "tick-2", climbUuid: "climb-1", angle: 45 },
+    ];
+  return [{ uuid: "tick-1", climbUuid: "climb-1" }];
+};
+const identityAscent = (uuid: string, climbUuid: string, renderBoardLayout = 11, angle = 40) => ({
+  uuid,
+  climbUuid,
+  boardType: "kilter",
+  isMirror: false,
+  angle,
+  climbName: "Moon Dust",
+  boardId: 42,
+  boardDisplayName: "Training Kilter",
+  consensusDifficulty: 20,
+  consensusDifficultyName: "6c/V5",
+  boardseshDifficulty: null,
+  boardseshConfidence: null,
+  layoutId: 11,
+  renderBoard: { layoutId: renderBoardLayout, sizeId: 3, setIds: [1, 2, 3] },
+});
 const server = createIntegrationMswFixture();
 
 describe("BoardSesh snapshot persistence", () => {
@@ -66,8 +110,14 @@ describe("BoardSesh snapshot persistence", () => {
     | "malformed-json"
     | "malformed-refresh-json"
     | "auth-reject"
-    | "auth-reject-always";
+    | "auth-reject-always"
+    | "identity"
+    | "identity-unavailable"
+    | "identity-lookup-failed"
+    | "identity-late-success"
+    | "identity-layout-mismatch";
   let requestOrder: string[];
+  let climbRequests: string[];
   let provider: BoardSeshProvider;
 
   beforeAll(async () => {
@@ -98,30 +148,39 @@ describe("BoardSesh snapshot persistence", () => {
             .input.offset;
           if (mode === "metadata-error")
             return HttpResponse.json({ data: null, errors: [{ message: "metadata unavailable" }] });
-          const withMetadata = mode.startsWith("metadata");
+          const withMetadata = mode.startsWith("metadata") || isIdentityMode(mode);
           return HttpResponse.json({
             data: {
               authenticatedUserId: "owner-1",
               userAscentsFeed: {
                 items: withMetadata
-                  ? [
-                      {
-                        uuid: offset === 0 ? "unrelated-tick" : "tick-1",
-                        climbUuid: mode === "metadata-mismatch" ? "another-climb" : "climb-1",
-                        boardType: "kilter",
-                        isMirror: false,
-                        angle: 40,
-                        climbName: "Moon Dust",
-                        boardId: 42,
-                        boardDisplayName: "Training Kilter",
-                        consensusDifficulty: 20,
-                        consensusDifficultyName: "6c/V5",
-                        boardseshDifficulty: null,
-                        boardseshConfidence: null,
-                      },
-                    ]
+                  ? isIdentityMode(mode)
+                    ? identityPairs(mode).map(({ uuid, climbUuid, angle }) =>
+                        identityAscent(
+                          uuid,
+                          climbUuid,
+                          mode === "identity-layout-mismatch" ? 12 : 11,
+                          angle,
+                        ),
+                      )
+                    : [
+                        {
+                          uuid: offset === 0 ? "unrelated-tick" : "tick-1",
+                          climbUuid: mode === "metadata-mismatch" ? "another-climb" : "climb-1",
+                          boardType: "kilter",
+                          isMirror: false,
+                          angle: 40,
+                          climbName: "Moon Dust",
+                          boardId: 42,
+                          boardDisplayName: "Training Kilter",
+                          consensusDifficulty: 20,
+                          consensusDifficultyName: "6c/V5",
+                          boardseshDifficulty: null,
+                          boardseshConfidence: null,
+                        },
+                      ]
                   : [],
-                hasMore: withMetadata && offset === 0,
+                hasMore: withMetadata && offset === 0 && !isIdentityMode(mode),
               },
             },
           });
@@ -153,6 +212,22 @@ describe("BoardSesh snapshot persistence", () => {
               },
             },
           });
+        if (body.query.includes("BoardSeshClimbLookup")) {
+          const data: Record<string, unknown> = { authenticatedUserId: "owner-1" };
+          for (const match of body.query.matchAll(/\bc(\d+): climb\(/g)) {
+            const index = Number(match[1]);
+            const climbUuid = String(body.variables?.[`u${index}`]);
+            climbRequests.push(climbUuid);
+            const firstLookup = climbRequests.filter((entry) => entry === climbUuid).length === 1;
+            data[`c${index}`] =
+              mode === "identity-unavailable" ||
+              mode === "identity-lookup-failed" ||
+              (mode === "identity-late-success" && firstLookup)
+                ? null
+                : { uuid: "canonical-1", boardType: "kilter", layoutId: 11 };
+          }
+          return HttpResponse.json({ data });
+        }
         if (body.query.includes("grades")) {
           requestOrder.push("grades");
           return HttpResponse.json({
@@ -176,7 +251,12 @@ describe("BoardSesh snapshot persistence", () => {
           return HttpResponse.text("PRIVATE7", {
             headers: { "Content-Type": "application/json" },
           });
-        let rows = input.input?.boardType === "kilter" ? [tick()] : [];
+        let rows =
+          input.input?.boardType === "kilter"
+            ? isIdentityMode(mode)
+              ? identityPairs(mode).map((pair) => tick(pair))
+              : [tick()]
+            : [];
         if (input.input?.boardType === "kilter" && mode === "variants")
           rows = [
             tick(),
@@ -215,6 +295,7 @@ describe("BoardSesh snapshot persistence", () => {
   beforeEach(async () => {
     mode = "complete";
     requestOrder = [];
+    climbRequests = [];
     provider = new BoardSeshProvider();
     await ensureProvider(
       context.db,
@@ -727,5 +808,105 @@ describe("BoardSesh snapshot persistence", () => {
     await context.db.execute(
       sql`DELETE FROM fitness.provider_connection WHERE user_id = ${otherUserId}::uuid AND provider_id = 'boardsesh'`,
     );
+  });
+
+  it("enriches an existing raw tick with a verified canonical ID and resolves aliases together", async () => {
+    expect((await run()).errors).toEqual([]);
+    const original = (await rows())[0];
+    mode = "identity";
+    expect(await run()).toMatchObject({ errors: [], recordsSynced: 3 });
+    const current = await rows();
+    expect(current[0]).toMatchObject({
+      id: original?.id,
+      external_id: "boardsesh:tick:tick-1",
+      raw: {
+        uuid: "tick-1",
+        climbUuid: "climb-1",
+        metadata: { ascent: { canonicalClimbUuid: "canonical-1" } },
+      },
+    });
+    const canonicalIds = current.map(
+      (row) =>
+        z
+          .object({
+            raw: z.object({
+              metadata: z.object({ ascent: z.object({ canonicalClimbUuid: z.string() }) }),
+            }),
+          })
+          .parse(row).raw.metadata.ascent.canonicalClimbUuid,
+    );
+    expect(canonicalIds).toEqual(["canonical-1", "canonical-1", "canonical-1"]);
+    expect(climbRequests.sort()).toEqual(["alias-1", "climb-1"]);
+  });
+
+  it("keeps a previously verified canonical ID when a later lookup fails", async () => {
+    mode = "identity";
+    expect(await run()).toMatchObject({ errors: [], recordsSynced: 3 });
+    mode = "identity-lookup-failed";
+    expect(await run()).toMatchObject({ errors: [], recordsSynced: 3 });
+    const canonicalIds = (await rows()).map(
+      (row) =>
+        z
+          .object({
+            raw: z.object({
+              metadata: z.object({ ascent: z.object({ canonicalClimbUuid: z.string() }) }),
+            }),
+          })
+          .parse(row).raw.metadata.ascent.canonicalClimbUuid,
+    );
+    expect(canonicalIds).toEqual(["canonical-1", "canonical-1", "canonical-1"]);
+  });
+
+  it("leaves unavailable identity unresolved without caching the null result", async () => {
+    mode = "identity-unavailable";
+    expect(await run()).toMatchObject({ errors: [], recordsSynced: 2 });
+    const current = await rows();
+    expect(current.map((row) => row.external_id).sort()).toEqual([
+      "boardsesh:tick:tick-1",
+      "boardsesh:tick:tick-2",
+    ]);
+    for (const row of current) {
+      expect(
+        z
+          .object({
+            raw: z.object({ metadata: z.object({ ascent: z.record(z.string(), z.unknown()) }) }),
+          })
+          .parse(row).raw.metadata.ascent,
+      ).not.toHaveProperty("canonicalClimbUuid");
+    }
+    expect(climbRequests).toEqual(["unresolved-1", "unresolved-1"]);
+  });
+
+  it("lets a later successful lookup resolve an earlier temporarily unavailable tick", async () => {
+    mode = "identity-late-success";
+    expect(await run()).toMatchObject({ errors: [], recordsSynced: 2 });
+    const current = await rows();
+    const canonicalIds = current.map(
+      (row) =>
+        z
+          .object({
+            raw: z.object({
+              metadata: z.object({ ascent: z.object({ canonicalClimbUuid: z.string() }) }),
+            }),
+          })
+          .parse(row).raw.metadata.ascent.canonicalClimbUuid,
+    );
+    expect(canonicalIds).toEqual(["canonical-1", "canonical-1"]);
+    expect(climbRequests).toEqual(["climb-1", "climb-1"]);
+  });
+
+  it("does not look up or attach canonical identity when the render layout differs", async () => {
+    mode = "identity-layout-mismatch";
+    expect(await run()).toMatchObject({ errors: [], recordsSynced: 1 });
+    expect(climbRequests).toEqual([]);
+    for (const row of await rows()) {
+      expect(
+        z
+          .object({
+            raw: z.object({ metadata: z.object({ ascent: z.record(z.string(), z.unknown()) }) }),
+          })
+          .parse(row).raw.metadata.ascent,
+      ).not.toHaveProperty("canonicalClimbUuid");
+    }
   });
 });

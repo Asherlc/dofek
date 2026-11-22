@@ -15,7 +15,9 @@ export function createMigration(): ClickHouseMigration {
         z3_microseconds UInt64,
         is_deleted UInt8,
         refresh_version UInt64,
-        refreshed_at DateTime64(9)
+        refreshed_at DateTime64(9),
+        ended_at DateTime64(6, 'UTC'),
+        source_sensor_version UInt64
       ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (user_id, activity_id)`,
     ],

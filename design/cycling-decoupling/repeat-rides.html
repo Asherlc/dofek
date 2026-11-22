@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cycling · Power-to-heart-rate decoupling · Repeat-ride adaptation</title>
+<link rel="stylesheet" href="cycling.css">
+<script src="repeat-rides.js" defer></script>
+</head>
+<body>
+  <main id="cycling-decoupling-preview" data-dc-id="cycling-page">
+    <div class="cycling-page">
+      <header class="page-heading" data-dc-id="page-heading">
+        <div><p class="crumb">Training <span aria-hidden="true">/</span> Cycling</p><h1>Cycling</h1></div>
+        <label class="picker" data-dc-id="date-range">Date range
+          <select data-range><option value="90">90 days</option><option value="30">30 days</option><option value="7">7 days</option></select>
+        </label>
+      </header>
+
+      <article class="trend-panel" aria-labelledby="cycling-trend-title" data-dc-id="trend-panel">
+        <header class="trend-heading">
+          <div data-dc-id="metric-heading">
+            <h2 id="cycling-trend-title">Power-to-heart-rate decoupling</h2>
+            <p>How power relative to heart rate changed between halves of a ride.</p>
+          </div>
+        </header>
+
+        <div data-results>
+          <p class="cohort" data-dc-id="workout-cohort"><strong data-cohort></strong><span data-count></span></p>
+          <div class="chart" role="group" aria-label="Decoupling percent by workout date. Select a ride for details." data-dc-id="trend-chart">
+            <div class="axis-y" aria-hidden="true"><span>8%</span><span>4%</span><span>0%</span><span>−4%</span></div>
+            <div class="plot">
+              <div class="gridlines" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+              <div class="markers" data-markers></div>
+            </div>
+            <div class="axis-x" data-ticks aria-hidden="true"></div>
+          </div>
+          <p class="chart-note" data-dc-id="chart-sign">Positive values mean power was lower relative to heart rate in the second half.</p>
+          <section class="ride-details" data-details aria-live="polite" aria-label="Selected workout" data-dc-id="ride-details" hidden>
+            <div class="ride-heading" data-dc-id="ride-heading">
+              <div><h3><span data-dc-value-workout></span> · <span data-dc-value-date></span></h3>
+              <p>60 min · Trainer + chest strap</p></div>
+              <strong class="ride-reading" data-dc-id="decoupling-value" data-dc-value-percent></strong>
+            </div>
+            <dl class="samples">
+              <div data-dc-id="first-half"><dt>First half</dt><dd><span data-dc-value-first-watts></span> W · <span data-dc-value-first-bpm></span> bpm<span class="coverage"><span data-dc-value-first-coverage></span>% paired coverage</span></dd></div>
+              <div data-dc-id="second-half"><dt>Second half</dt><dd><span data-dc-value-second-watts></span> W · <span data-dc-value-second-bpm></span> bpm<span class="coverage"><span data-dc-value-second-coverage></span>% paired coverage</span></dd></div>
+            </dl>
+          </section>
+        </div>
+
+        <div class="empty-state" data-empty role="status" data-dc-id="no-repeat-rides" hidden>
+          <h3>No repeat rides in this date range</h3>
+          <p>No matching workouts have paired power and heart-rate data in the selected dates.</p>
+        </div>
+      </article>
+      <p class="preview-note" data-dc-id="sample-data">Mockup · Sample data</p>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,5 +1,10 @@
 import type { PowerCoveragePolicy } from "@dofek/cycling-power/power";
 import { resampleSignal } from "@dofek/cycling-power/resample-signal";
+import { pairedEfficiency, summarizeCyclingDecoupling } from "./cycling-decoupling.ts";
+import { selectIntervalSamples, summarizeIntervalPower } from "./cycling-interval-power.ts";
+import { average, round } from "./cycling-sample-math.ts";
+
+export { selectIntervalSamples, summarizeIntervalPower };
 
 export interface CyclingWorkoutSample {
   elapsedSeconds: number;
@@ -134,22 +139,6 @@ interface ResampledStream {
   coverage: StreamCoverage;
 }
 
-function round(value: number, decimals = 1): number {
-  const multiplier = 10 ** decimals;
-  return Math.round(value * multiplier) / multiplier;
-}
-
-function average(values: Array<number | null>): number | null {
-  let total = 0;
-  let count = 0;
-  for (const value of values) {
-    if (value == null) continue;
-    total += value;
-    count++;
-  }
-  return count === 0 ? null : total / count;
-}
-
 function resampleCyclingBuckets<T extends CyclingWorkoutSample>(
   samples: T[],
   durationSeconds: number,
@@ -271,62 +260,6 @@ function zoneDistribution(
       seconds,
       percent: total > 0 ? round((seconds / total) * 100) : 0,
     })),
-  };
-}
-
-function pairedEfficiency(
-  power: Array<number | null>,
-  heartRate: Array<number | null>,
-  start = 0,
-  end = power.length,
-): { ratio: number | null; seconds: number } {
-  let powerTotal = 0;
-  let heartRateTotal = 0;
-  let seconds = 0;
-  for (let index = start; index < end; index++) {
-    const watts = power[index];
-    const bpm = heartRate[index];
-    if (watts == null || bpm == null || bpm <= 0) continue;
-    powerTotal += watts;
-    heartRateTotal += bpm;
-    seconds++;
-  }
-  return {
-    ratio: seconds > 0 && heartRateTotal > 0 ? powerTotal / heartRateTotal : null,
-    seconds,
-  };
-}
-
-/**
- * Indexes of the 1 Hz timestamps `t` with `start <= t < end`: `ceil` of each exact bound, clamped
- * into the stream. A window with no timestamp is empty; it is never sliced from the end.
- */
-export function selectIntervalSamples(
-  length: number,
-  interval: Pick<CyclingWorkoutIntervalInput, "startOffsetSeconds" | "endOffsetSeconds">,
-) {
-  const startOffsetSeconds = Math.min(length, Math.max(0, Math.ceil(interval.startOffsetSeconds)));
-  const endOffsetSeconds = Math.max(
-    startOffsetSeconds,
-    Math.min(length, Math.ceil(interval.endOffsetSeconds)),
-  );
-  return { startOffsetSeconds, endOffsetSeconds };
-}
-
-/**
- * Gap-aware mean over the selected 1 Hz timestamps of a resampled power stream. Missing seconds
- * are skipped, a measured zero stays zero, and no measured sample is null.
- */
-export function summarizeIntervalPower(
-  powerValues: ReadonlyArray<number | null>,
-  interval: Pick<CyclingWorkoutIntervalInput, "startOffsetSeconds" | "endOffsetSeconds">,
-) {
-  const selected = selectIntervalSamples(powerValues.length, interval);
-  const mean = average(powerValues.slice(selected.startOffsetSeconds, selected.endOffsetSeconds));
-  return {
-    ...selected,
-    meanPowerWatts: mean,
-    averagePowerWatts: mean == null ? null : round(mean),
   };
 }
 
@@ -583,22 +516,17 @@ export function computeCyclingWorkoutMetrics(
     );
   }
 
-  const midpoint = Math.floor(durationSeconds / 2);
-  const firstHalf = pairedEfficiency(power.values, heartRate.values, 0, midpoint);
-  const secondHalf = pairedEfficiency(power.values, heartRate.values, midpoint, durationSeconds);
-  const driftCoverageRequired = midpoint * 0.9;
-  const driftAvailable =
-    durationSeconds >= 1_200 &&
-    firstHalf.ratio != null &&
-    secondHalf.ratio != null &&
-    firstHalf.seconds >= driftCoverageRequired &&
-    secondHalf.seconds >= (durationSeconds - midpoint) * 0.9;
+  const drift = summarizeCyclingDecoupling(power.values, heartRate.values);
+  const driftAvailable = drift.percent !== null;
   if (!driftAvailable) {
     addUnavailable(
       "cardiac_drift",
       durationSeconds < 1_200
         ? "activity is shorter than 20 minutes"
-        : "paired power and heart-rate coverage is below 90% in one or both halves",
+        : drift.firstHalf.pairedSeconds < Math.floor(durationSeconds / 2) * 0.9 ||
+            drift.secondHalf.pairedSeconds < Math.ceil(durationSeconds / 2) * 0.9
+          ? "paired power and heart-rate coverage is below 90% in one or both halves"
+          : "paired power-to-heart-rate ratios cannot be compared",
     );
   }
 
@@ -628,16 +556,15 @@ export function computeCyclingWorkoutMetrics(
       pairedSeconds: efficiency.seconds,
     },
     cardiacDrift: {
-      percent:
-        driftAvailable && firstHalf.ratio != null && secondHalf.ratio != null
-          ? round(((firstHalf.ratio - secondHalf.ratio) / firstHalf.ratio) * 100)
-          : null,
+      percent: drift.percent,
       firstHalfPowerToHeartRate:
-        driftAvailable && firstHalf.ratio != null ? round(firstHalf.ratio, 3) : null,
+        driftAvailable && drift.firstHalf.ratio !== null ? round(drift.firstHalf.ratio, 3) : null,
       secondHalfPowerToHeartRate:
-        driftAvailable && secondHalf.ratio != null ? round(secondHalf.ratio, 3) : null,
-      pairedSeconds: driftAvailable ? firstHalf.seconds + secondHalf.seconds : 0,
-      method: "equal_elapsed_time_halves_power_to_heart_rate",
+        driftAvailable && drift.secondHalf.ratio !== null ? round(drift.secondHalf.ratio, 3) : null,
+      pairedSeconds: driftAvailable
+        ? drift.firstHalf.pairedSeconds + drift.secondHalf.pairedSeconds
+        : 0,
+      method: drift.method,
     },
     powerZones: zoneDistribution(power.values, validFtp, input.settings?.powerZoneUpperPcts),
     heartRateZones: zoneDistribution(
