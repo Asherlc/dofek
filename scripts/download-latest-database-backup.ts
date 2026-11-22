@@ -95,7 +95,7 @@ async function decryptBackup(
       position += 4 + length;
       const nonce = Buffer.from(baseNonce);
       nonce.writeBigUInt64BE(index, 4);
-      const decipher = createDecipheriv("aes-256-gcm", key, nonce);
+      const decipher = createDecipheriv("aes-256-gcm", key, nonce, { authTagLength: tagLength });
       decipher.setAuthTag(record.subarray(length - tagLength));
       const plaintext = Buffer.concat([
         decipher.update(record.subarray(0, length - tagLength)),

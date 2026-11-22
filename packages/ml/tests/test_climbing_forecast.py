@@ -22,7 +22,7 @@ def _observation(climb: str, day: int, *, grade_known_day: int | None = 1) -> Cl
     )
 
 
-def test_holdout_starts_at_cutoff_and_uses_only_earlier_grade_evidence():
+def test_holdout_starts_at_cutoff_and_uses_only_earlier_grade_evidence() -> None:
     previous = _observation("familiar", 5)
     familiar = _observation("familiar", 10)
     first_recorded = _observation("unfamiliar", 10)
@@ -39,12 +39,12 @@ def test_holdout_starts_at_cutoff_and_uses_only_earlier_grade_evidence():
     assert split.unavailable == (known_too_late, no_grade_date)
 
 
-def test_assigned_grade_likelihood_has_even_odds_at_equal_grades():
+def test_assigned_grade_likelihood_has_even_odds_at_equal_grades() -> None:
     assert send_probability(20.0, 20.0, 0.5) == 0.5
     assert send_probability(20.0, 22.0, 0.5) == pytest.approx(0.2689414214)
 
 
-def test_retrospective_mode_accepts_undated_grades_but_respects_explicit_dates():
+def test_retrospective_mode_accepts_undated_grades_but_respects_explicit_dates() -> None:
     undated = _observation("frozen", 10, grade_known_day=None)
     too_late = _observation("changed", 11, grade_known_day=10)
     split = split_holdout([undated, too_late], date(2026, 9, 10), retrospective=True)
@@ -53,7 +53,7 @@ def test_retrospective_mode_accepts_undated_grades_but_respects_explicit_dates()
     assert split.unavailable == (too_late,)
 
 
-def test_reports_probability_scores_and_calibration_in_the_large():
+def test_reports_probability_scores_and_calibration_in_the_large() -> None:
     scores = score_probabilities([True, False], [0.8, 0.3])
 
     assert scores is not None
@@ -65,7 +65,7 @@ def test_reports_probability_scores_and_calibration_in_the_large():
     assert score_probabilities([], []) is None
 
 
-def test_model_data_uses_monthly_states_and_keeps_heldout_outcomes_out():
+def test_model_data_uses_monthly_states_and_keeps_heldout_outcomes_out() -> None:
     history = (
         ClimbDay("a", date(2026, 6, 10), 21.0, True, date(2026, 6, 1)),
         ClimbDay("b", date(2026, 8, 3), 22.0, False, date(2026, 6, 1)),
@@ -81,12 +81,12 @@ def test_model_data_uses_monthly_states_and_keeps_heldout_outcomes_out():
     }
 
 
-def test_model_data_requires_sent_and_unsent_observations():
+def test_model_data_requires_sent_and_unsent_observations() -> None:
     with pytest.raises(ValueError, match="sends and unsuccessful days"):
         build_model_data((_observation("a", 2),), date(2026, 9, 5), initial_grade=18.0)
 
 
-def test_scores_familiar_and_unfamiliar_climbs_on_the_same_baseline():
+def test_scores_familiar_and_unfamiliar_climbs_on_the_same_baseline() -> None:
     cutoff = date(2026, 9, 10)
     split = split_holdout(
         [
