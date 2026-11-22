@@ -221,5 +221,7 @@ export interface ObserverSyncOptions {
   minimumSampleDate?: string | null;
   typeIdentifiers: readonly string[];
   onStage?: (stage: HealthKitSyncStage) => void;
+  /** Called after query, upload and any applicable anchor commit succeed. */
+  onTypeComplete?: (typeIdentifier: string) => void;
   assertCanContinue?: () => Promise<void>;
 }

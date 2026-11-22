@@ -71,6 +71,7 @@ vi.mock("./device-erasure-cutoff", async (importOriginal) => {
 import {
   type HealthKitSample,
   queryDailyStatistics,
+  querySleepSamples,
   queryWorkoutRoutes,
   queryWorkouts,
 } from "../modules/health-kit";
@@ -246,6 +247,35 @@ describe("initBackgroundHealthKitSync", () => {
         }),
       );
     });
+  });
+
+  it("retries unfinished catch-up work together with the next delivered type", async () => {
+    const client = createMockClient();
+    vi.mocked(queryWorkouts).mockRejectedValueOnce(new Error("Workouts unavailable"));
+    await initBackgroundHealthKitSync(client);
+    await vi.waitFor(() => {
+      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+        source: "bg-healthkit-sync",
+      });
+    });
+    vi.mocked(queryDailyStatistics).mockClear();
+    mockQueryAnchoredSamples.mockClear();
+    mockAddSampleUpdateListener.mock.calls[0][0]({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      updateId: "heart-rate",
+    });
+
+    await vi.waitFor(() => {
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["heart-rate"], true);
+    });
+    expect(vi.mocked(queryDailyStatistics).mock.calls.map(([type]) => type)).toEqual([
+      "HKQuantityTypeIdentifierStepCount",
+    ]);
+    expect(mockQueryAnchoredSamples.mock.calls.map(([type]) => type)).toEqual([
+      "HKQuantityTypeIdentifierHeartRate",
+    ]);
+    expect(queryWorkouts).toHaveBeenCalledTimes(2);
+    expect(querySleepSamples).toHaveBeenCalledTimes(1);
   });
 
   it("logs monotonic structured stage duration and context", async () => {
@@ -756,7 +786,7 @@ describe("initBackgroundHealthKitSync", () => {
     firstSync.resolve({ inserted: 1 });
     await vi.waitFor(() => {
       expect(secondClient.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
-      expect(secondOnSyncComplete).toHaveBeenCalledTimes(2);
+      expect(secondOnSyncComplete).toHaveBeenCalledOnce();
       expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["second-context-update"], true);
     });
 
