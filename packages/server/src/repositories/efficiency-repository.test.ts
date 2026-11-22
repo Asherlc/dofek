@@ -28,7 +28,7 @@ function makeSensorStore(rows: unknown[]): ActivitySensorStore {
         if (queryText?.includes("activity_aerobic_efficiency")) {
           return [];
         }
-        if (queryText?.includes("activity_polarization_zones")) {
+        if (queryText?.includes("activity_cycling_polarization")) {
           return rows.map((row) => schema.parse(row));
         }
         if (queryText?.includes("toInt32(count()) AS endurance_activities")) {
@@ -68,7 +68,7 @@ function makeSequentialSensorStore(rowsByCall: Record<string, unknown>[][]): Act
         // Read model queries return empty → exercises fallback path
         if (
           queryText?.includes("activity_aerobic_efficiency") ||
-          queryText?.includes("activity_polarization_zones")
+          queryText?.includes("activity_cycling_polarization")
         ) {
           return [];
         }
@@ -614,7 +614,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
       explanation: expect.stringContaining("cycling"),
       method: expect.objectContaining({
         formula: expect.stringContaining("log10"),
-        interpretation: expect.stringContaining("descriptive training-distribution heuristic"),
+        interpretation: expect.stringContaining("2.00 reference"),
       }),
     });
   });
@@ -654,6 +654,34 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     const readModelCall = vi.mocked(sensorStore.query).mock.calls[0];
     expect(readModelCall?.[1]).toContain("started_at > now() - INTERVAL {days:Int32} DAY");
     expect(readModelCall?.[2]).toHaveProperty("days", 90);
+  });
+
+  it("scopes the polarization trend to the caller's local entitlement dates", async () => {
+    const sensorStore = makeSensorStore([]);
+    const repo = new EfficiencyRepository(
+      { execute: vi.fn() },
+      "user-1",
+      "America/Los_Angeles",
+      sensorStore,
+      {
+        kind: "limited",
+        paid: false,
+        reason: "free_recent_week",
+        startDate: "2025-05-01",
+        endDateExclusive: "2025-06-01",
+      },
+    );
+    await repo.getPolarizationTrend(ChartRange.fromDays(null));
+    const call = vi.mocked(sensorStore.query).mock.calls[0];
+    expect(call?.[1]).toContain("started_at >= parseDateTime64BestEffort({accessStartDate:String}");
+    expect(call?.[1]).toContain(
+      "started_at < parseDateTime64BestEffort({accessEndDateExclusive:String}",
+    );
+    expect(call?.[2]).toMatchObject({
+      accessStartDate: "2025-05-01",
+      accessEndDateExclusive: "2025-06-01",
+      accessTimezone: "America/Los_Angeles",
+    });
   });
 
   it("omits lower-bound filters when days is null", async () => {
@@ -701,8 +729,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     expect(week?.z1Seconds).toBe(5000);
     expect(week?.z2Seconds).toBe(1000);
     expect(week?.z3Seconds).toBe(500);
-    // Verify polarization index matches the shared function
-    expect(week?.polarizationIndex).toBe(computePolarizationIndex(5000, 1000, 500));
+    expect(week?.polarizationIndex).toBe(1.585);
     expect(week).toMatchObject({
       totalSeconds: 6500,
       zonePercentages: { z1: 76.9, z2: 15.4, z3: 7.7 },
@@ -712,12 +739,9 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     expect(result.method).toEqual({
       formula:
         "Polarization index = log10((easy-zone fraction / threshold-zone fraction) × high-zone fraction × 100).",
-      zoneBasis:
-        "Easy zone (Zone 1) is below 80%, threshold zone (Zone 2) is 80–<90%, and high zone (Zone 3) is at least 90% of maximum heart rate.",
-      calculationChoice:
-        "Dofek requires recorded time in all three zones and does not calculate the polarization index when high-zone time exceeds easy-zone time.",
-      interpretation:
-        "The >2.00 comparison is Treff's descriptive training-distribution heuristic.",
+      zoneBasis: expect.stringMatching(/Dofek.*proxy.*below 80%.*80–<90%.*at least 90%/),
+      calculationChoice: expect.stringMatching(/zero.*no high-zone.*one percentage point/),
+      interpretation: expect.stringContaining("2.00"),
       source: {
         title: "Treff et al. (2019), The Polarization-Index",
         url: "https://doi.org/10.3389/fphys.2019.00707",
@@ -738,6 +762,20 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     // computePolarizationIndex returns null when total is zero
     expect(result.weeks[0]?.polarizationIndex).toBe(computePolarizationIndex(0, 0, 0));
+  });
+
+  it("leaves the zero-middle adjustment unavailable at exactly one percent high", async () => {
+    const { repo } = makeRepository([
+      {
+        max_hr: "190",
+        week: "2025-05-26",
+        z1_seconds: "0.001089",
+        z2_seconds: "0",
+        z3_seconds: "0.000011",
+      },
+    ]);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
+    expect(result.weeks[0]?.polarizationIndex).toBeNull();
   });
 
   it("returns multiple weeks", async () => {
@@ -801,8 +839,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     expect(week?.z1Seconds).toBe(7200);
     expect(week?.z2Seconds).toBe(600);
     expect(week?.z3Seconds).toBe(1200);
-    // The polarization index should match the shared computation
-    expect(week?.polarizationIndex).toBe(computePolarizationIndex(7200, 600, 1200));
+    expect(week?.polarizationIndex).toBe(2.204);
   });
 });
 
@@ -1071,7 +1108,7 @@ describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
     const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     const week = result.weeks[0];
     // Correct order: z1=7200, z2=300, z3=1500
-    const expectedIndex = computePolarizationIndex(7200, 300, 1500);
+    const expectedIndex = 2.602;
     // Swapped order would give different result
     const swappedIndex = computePolarizationIndex(300, 7200, 1500);
     expect(expectedIndex).not.toBe(swappedIndex);

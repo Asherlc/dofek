@@ -101,9 +101,7 @@ export const efficiencyRouter = router({
   ),
 
   /**
-   * Polarization Index trend per week using Treff 3-zone model (%HRmax).
-   *   Z1 (easy) = < 80% HRmax; Z2 (threshold) = 80-90%; Z3 (high) = >= 90%.
-   * PI = log10((f1 / f2) * f3 * 100); PI > 2.0 matches Treff's descriptive heuristic.
+   * Weekly cycling Polarization Index using Treff's equation and Dofek's HRmax bands.
    */
   polarizationTrend: selectedChartRangeQuery(
     "efficiency.polarizationTrend",
@@ -119,6 +117,7 @@ export const efficiencyRouter = router({
       );
       return repo.getPolarizationTrend(range);
     },
-    { outputSchema: polarizationTrendOutputSchema },
+    // Entitlements can change while the user's requested range stays the same.
+    { outputSchema: polarizationTrendOutputSchema, cache: false },
   ),
 });

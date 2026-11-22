@@ -13,14 +13,13 @@ vi.mock("./DofekChart.tsx", () => ({
 import { PolarizationTrendChart } from "./PolarizationTrendChart.tsx";
 
 describe("PolarizationTrendChart", () => {
-  it("renders the server-provided formula, zone basis, and primary source", () => {
+  it("renders the server-provided formula, zone basis, calculation rules, and primary source", () => {
     const method = {
       formula:
         "Polarization index = log10((easy-zone fraction / threshold-zone fraction) × high-zone fraction × 100).",
       zoneBasis:
         "Easy zone (Zone 1) is below 80%, threshold zone (Zone 2) is 80–<90%, and high zone (Zone 3) is at least 90% of maximum heart rate.",
-      calculationChoice:
-        "Dofek requires recorded time in all three zones and does not calculate the polarization index when high-zone time exceeds easy-zone time.",
+      calculationChoice: "Server-provided zero-zone rules.",
       interpretation:
         "The >2.00 comparison is Treff's descriptive training-distribution heuristic.",
       source: {
@@ -35,6 +34,8 @@ describe("PolarizationTrendChart", () => {
     fireEvent.click(screen.getByText("How this is calculated"));
     expect(screen.getByText(method.formula)).toBeVisible();
     expect(screen.getByText(method.zoneBasis)).toBeVisible();
+    expect(screen.getByText(method.calculationChoice)).toBeVisible();
+    expect(screen.getByText(method.interpretation)).toBeVisible();
     expect(screen.getByRole("link", { name: method.source.title })).toHaveAttribute(
       "href",
       method.source.url,

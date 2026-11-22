@@ -3,7 +3,7 @@
  *
  * Three models are supported:
  * 1. **Karvonen HR zones** (%HRR) — zone 0 plus the standard 5 training zones
- * 2. **Treff 3-zone** HR (%HRmax) — simplified model for polarization index
+ * 2. **Three-zone HRmax proxy** — Dofek's bands for the polarization index
  * 3. **7-zone** cycling power (%FTP) — standard model for power analysis
  */
 
@@ -214,8 +214,7 @@ export function mapHrZones(rows: { zone: number; seconds: number }[]): ActivityH
 // ── Treff 3-Zone Polarization Model ─────────────────────────────────
 
 /**
- * Treff 3-zone model for polarization analysis.
- * Uses %HRmax (simpler and more stable than Karvonen %HRR).
+ * Dofek's fixed HRmax bands for polarization analysis.
  */
 export const POLARIZATION_ZONES: PolarizationZoneDefinition[] = [
   { zone: 1, label: "Easy", minPctHrmax: 0, maxPctHrmax: 0.8 },
@@ -229,22 +228,31 @@ export const POLARIZATION_ZONES: PolarizationZoneDefinition[] = [
  * PI = log10((f1 / f2) * f3 * 100)
  * where f = fraction of total training time in each zone.
  *
- * PI > 2.0 matches Treff's descriptive polarized-distribution heuristic.
- * Returns null if any zone has zero time or Zone 3 exceeds Zone 1.
+ * Treff defines zero when Zone 3 is empty. For an empty Zone 2, Equation 2
+ * moves one percentage point from Zone 3 to Zone 2, as in Table 1.
+ * Return full precision for classification and null for undefined inputs.
  */
 export function computePolarizationIndex(
   z1Seconds: number,
   z2Seconds: number,
   z3Seconds: number,
 ): number | null {
-  if (z2Seconds <= 0 || z3Seconds <= 0 || z3Seconds > z1Seconds) return null;
+  if (
+    [z1Seconds, z2Seconds, z3Seconds].some((seconds) => !Number.isFinite(seconds) || seconds < 0) ||
+    z3Seconds > z1Seconds
+  ) {
+    return null;
+  }
   const total = z1Seconds + z2Seconds + z3Seconds;
+  if (!Number.isFinite(total) || total === 0) return null;
+  if (z3Seconds === 0) return 0;
+  if (z2Seconds === 0 && z3Seconds * 100 <= total) return null;
 
   const f1 = z1Seconds / total;
   const f2 = z2Seconds / total;
   const f3 = z3Seconds / total;
-  const ratio = (f1 / f2) * f3 * 100;
-  return Math.round(Math.log10(ratio) * 1000) / 1000;
+  const ratio = f2 === 0 ? (f1 / 0.01) * (f3 - 0.01) * 100 : (f1 / f2) * f3 * 100;
+  return ratio > 0 && Number.isFinite(ratio) ? Math.log10(ratio) : null;
 }
 
 // ── 7-Zone Cycling Power Model ──────────────────────────────────────

@@ -120,17 +120,17 @@ describe("efficiency.polarizationTrend integration", () => {
     expect(totalZ3).toBe(200);
   });
 
-  it("returns null PI when a zone has zero samples", async () => {
+  it("returns zero for a covered week with no high-zone time", async () => {
     const result = await query<PolarizationTrendResult>("efficiency.polarizationTrend", {
       days: 90,
     });
     const z1OnlyWeek = result.weeks.find((w) => w.z2Seconds === 0 && w.z3Seconds === 0);
     expect(z1OnlyWeek).toBeDefined();
     if (z1OnlyWeek) {
-      expect(z1OnlyWeek.polarizationIndex).toBeNull();
+      expect(z1OnlyWeek.polarizationIndex).toBe(0);
       expect(z1OnlyWeek).toMatchObject({
-        status: "insufficient_data",
-        statusLabel: "Not calculated",
+        status: "not_polarized",
+        statusLabel: "Does not match polarized-pattern heuristic",
       });
     }
   });

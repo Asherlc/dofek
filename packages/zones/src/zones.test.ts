@@ -348,17 +348,37 @@ describe("computePolarizationIndex", () => {
     // 80/10/10 split → f1=0.8, f2=0.1, f3=0.1
     // PI = log10((0.8 / 0.1) * 0.1 * 100) = log10(80) ≈ 1.903
     const result = computePolarizationIndex(800, 100, 100);
-    expect(result).toBe(1.903);
+    expect(result).toBeCloseTo(1.90309, 5);
   });
 
   it("returns exactly 2.00 for Treff's 60/15/25 boundary distribution", () => {
     expect(computePolarizationIndex(600, 150, 250)).toBe(2);
   });
 
-  it("returns null when any zone has zero time", () => {
-    expect(computePolarizationIndex(0, 100, 100)).toBeNull();
-    expect(computePolarizationIndex(800, 0, 100)).toBeNull();
-    expect(computePolarizationIndex(800, 100, 0)).toBeNull();
+  it.each([
+    [80, 5, 15, 2.38021],
+    [80, 0, 20, 3.18184],
+    [40, 59.9, 0.1, -1.17537],
+  ])("calculates the published index for %d/%d/%d", (easy, middle, high, expected) => {
+    expect(computePolarizationIndex(easy, middle, high)).toBeCloseTo(expected, 5);
+  });
+
+  it("returns zero when covered training has no high-zone time", () => {
+    expect(computePolarizationIndex(70, 30, 0)).toBe(0);
+  });
+
+  it.each([
+    [0, 0, 0],
+    [99, 0, 1],
+    [99.5, 0, 0.5],
+    [0, 100, 100],
+    [-1, 10, 0],
+    [100, -1, 1],
+    [100, 10, -1],
+    [100, Number.NaN, 0],
+    [Number.POSITIVE_INFINITY, 10, 0],
+  ])("leaves the index unavailable for %d/%d/%d", (easy, middle, high) => {
+    expect(computePolarizationIndex(easy, middle, high)).toBeNull();
   });
 
   it("returns null when Zone 3 exceeds Zone 1 because Treff defines the index as invalid", () => {
@@ -366,7 +386,7 @@ describe("computePolarizationIndex", () => {
   });
 
   it("calculates the index when Zone 3 equals Zone 1", () => {
-    expect(computePolarizationIndex(400, 200, 400)).toBe(1.903);
+    expect(computePolarizationIndex(400, 200, 400)).toBeCloseTo(1.90309, 5);
   });
 
   it("returns higher values for more polarized distributions", () => {
@@ -379,13 +399,8 @@ describe("computePolarizationIndex", () => {
     }
   });
 
-  it("rounds to 3 decimal places", () => {
-    const result = computePolarizationIndex(800, 100, 100);
-    expect(result).not.toBeNull();
-    if (result != null) {
-      const decimalPlaces = result.toString().split(".")[1]?.length ?? 0;
-      expect(decimalPlaces).toBeLessThanOrEqual(3);
-    }
+  it("preserves a result just above 2.00 for classification", () => {
+    expect(computePolarizationIndex(60, 14.995, 25.005)).toBeGreaterThan(2);
   });
 });
 

@@ -379,9 +379,9 @@ describe("efficiencyRouter", () => {
       expect(result.method.source.url).toBe("https://doi.org/10.3389/fphys.2019.00707");
     });
 
-    it("returns null polarization index when z2 is 0", async () => {
+    it("applies Treff's adjustment when middle-zone time is zero", async () => {
       const rows = [
-        { max_hr: 190, week: "2024-01-15", z1_seconds: 5000, z2_seconds: 0, z3_seconds: 100 },
+        { max_hr: 190, week: "2024-01-15", z1_seconds: 800, z2_seconds: 0, z3_seconds: 200 },
       ];
       const caller = createCaller({
         db: { execute: vi.fn() },
@@ -390,10 +390,10 @@ describe("efficiencyRouter", () => {
         sensorStore: makeSensorStore(rows),
       });
       const result = await caller.polarizationTrend({ days: 180 });
-      expect(result.weeks[0]?.polarizationIndex).toBeNull();
+      expect(result.weeks[0]).toMatchObject({ polarizationIndex: 3.182, status: "polarized" });
     });
 
-    it("returns null polarization index when z3 is 0", async () => {
+    it("returns zero for actual coverage with no high-zone time", async () => {
       const rows = [
         { max_hr: 190, week: "2024-01-15", z1_seconds: 5000, z2_seconds: 500, z3_seconds: 0 },
       ];
@@ -404,7 +404,7 @@ describe("efficiencyRouter", () => {
         sensorStore: makeSensorStore(rows),
       });
       const result = await caller.polarizationTrend({ days: 180 });
-      expect(result.weeks[0]?.polarizationIndex).toBeNull();
+      expect(result.weeks[0]).toMatchObject({ polarizationIndex: 0, status: "not_polarized" });
     });
 
     it("returns null polarization index when z1 is 0", async () => {

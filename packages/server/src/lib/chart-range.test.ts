@@ -233,6 +233,34 @@ describe("selected chart range query builders", () => {
     vi.useRealTimers();
   });
 
+  it("keeps access-sensitive chart results out of the shared response cache", async () => {
+    const testRouter = router({
+      polarizationTrend: selectedChartRangeQuery(
+        "efficiency.polarizationTrend",
+        60_000,
+        ({ range, ctx }) => ({ days: range.days, access: ctx.accessWindow.kind }),
+        { cache: false },
+      ),
+    });
+    const caller = createTestCallerFactory(testRouter)({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: {
+        kind: "limited",
+        paid: false,
+        reason: "free_recent_week",
+        startDate: "2026-07-01",
+        endDateExclusive: "2026-07-08",
+      },
+    });
+    await expect(caller.polarizationTrend({ days: null })).resolves.toEqual({
+      days: null,
+      access: "limited",
+    });
+    expect(cacheSetCalls).toEqual([]);
+  });
+
   it("validates days-only selected chart outputs", async () => {
     const testRouter = router({
       powerCurve: selectedChartRangeQuery(

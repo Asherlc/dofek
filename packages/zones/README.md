@@ -64,13 +64,13 @@ Readings below the first boundary classify as zone 0.
 PI = log10((f1 / f2) × f3 × 100)
 ```
 
-where each `f` is the fraction of total time in one of the three intensity
-zones. The function returns `null` when any zone has no time, which is Dofek's
-explicit calculation choice, or when Zone 3 exceeds Zone 1, which Treff defines
-as outside the index's valid range. The formula and descriptive 2.0 heuristic come from
-[Treff et al. (2019)](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2019.00707/full).
-The index describes a recorded training-intensity distribution; it is not a
-physiological or medical assessment.
+Each `f` is the proportion of covered training time in one intensity zone.
+The function returns zero for positive coverage with no high-zone time.
+With zero middle time and positive high time, it uses
+`log10((f1 / 0.01) × (f3 - 0.01) × 100)`, the grouping that reproduces
+Table 1. It returns `null` for missing or invalid time, high time above easy
+time, or a nonpositive logarithm argument. It retains full precision so
+consumers can classify before rounding. [Treff et al. (2019)](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2019.00707/pdf)
 
 ### Cycling power
 

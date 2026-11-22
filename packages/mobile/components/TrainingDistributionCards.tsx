@@ -65,11 +65,16 @@ export function TrainingDistributionCards({
                   ? "—"
                   : formatNumber(latestPolarizationWeek.polarizationIndex, 3)}
               </Text>
-              <Text style={styles.zoneSummary}>
-                {formatIntensity(latestPolarizationWeek.zonePercentages.z1)} easy ·{" "}
-                {formatIntensity(latestPolarizationWeek.zonePercentages.z2)} threshold ·{" "}
-                {formatIntensity(latestPolarizationWeek.zonePercentages.z3)} high
-              </Text>
+              {latestPolarizationWeek.totalSeconds > 0 ? (
+                <Text style={styles.zoneSummary}>
+                  {formatIntensity(latestPolarizationWeek.zonePercentages.z1)} easy ·{" "}
+                  {formatIntensity(latestPolarizationWeek.zonePercentages.z2)} middle ·{" "}
+                  {formatIntensity(latestPolarizationWeek.zonePercentages.z3)} high
+                </Text>
+              ) : null}
+              {latestPolarizationWeek.polarizationIndex === null ? (
+                <Text style={styles.zoneSummary}>{latestPolarizationWeek.explanation}</Text>
+              ) : null}
             </>
           ) : (
             <Text style={styles.emptyText}>
@@ -83,6 +88,8 @@ export function TrainingDistributionCards({
               TRAINING_TERMINOLOGY.polarization.details,
               polarization.method.formula,
               polarization.method.zoneBasis,
+              polarization.method.calculationChoice,
+              polarization.method.interpretation,
             ]}
             source={polarization.method.source}
             sourceActionId="polarization-source"

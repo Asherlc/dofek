@@ -1046,6 +1046,40 @@ during concurrent setup, verify the test configuration is not running those
 files in parallel and restart ClickHouse only after preserving the first fatal
 test command.
 
+## Cycling polarization elapsed-time cutover
+
+The [polarization model](../analytics/models/read_models/activity_polarization_zones.sql)
+writes integer microseconds to `analytics.activity_cycling_polarization`.
+The legacy release uses its own sample-count table. Prepare the new table
+before API activation, following the [candidate-image procedure](#overview-oxygen-and-temperature-cutover).
+
+1. Apply schema-only ClickHouse migration `0116_cycling_polarization_elapsed_seconds`
+   in the authorized operator runtime.
+2. Run the candidate's normal incremental `activity_polarization_zones` build
+   under the existing serialized analytics owner and production resource limits.
+3. Compare eligible activity keys to live rows in the new table. Require
+   zero missing keys before enabling the new reader. A cycling activity with
+   a completed positive-duration ride and positive profile HRmax has a live
+   row even when its covered time is zero.
+4. Follow the normal release procedure and verify the polarization endpoint.
+   Preserve the old table through the rollback window. Once neither the deployed
+   nor rollback release references it, retire it through a forward ClickHouse migration.
+
+```sql
+SELECT countIf(served.activity_id IS NULL) AS missing_rides
+FROM analytics.activity_summary_rows AS ride FINAL
+INNER JOIN postgres_fitness.user_profile_current AS profile
+  ON ride.user_id = profile.id
+LEFT JOIN (
+  SELECT user_id, activity_id
+  FROM analytics.activity_cycling_polarization FINAL
+  WHERE is_deleted = 0
+) AS served ON ride.user_id = served.user_id AND ride.activity_id = served.activity_id
+WHERE ride.is_deleted = 0 AND ride.canonical_type = 'cycling'
+  AND ride.ended_at > ride.started_at AND profile.max_hr > 0
+SETTINGS join_use_nulls = 1;
+```
+
 ## Deploy Retry
 
 After committing and pushing the fix branch:

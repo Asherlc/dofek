@@ -96,10 +96,16 @@ export function buildTreffPolarizationWeek(
   };
 
   if (input.polarizationIndex === null) {
-    const explanation =
-      input.z3Seconds > input.z1Seconds
-        ? "The index is not calculated because recorded Zone 3 time exceeds Zone 1, which is outside Treff's valid definition."
-        : "The index is not calculated because Dofek requires recorded cycling time in all three Treff heart-rate zones.";
+    let explanation = "The index is unavailable for this distribution.";
+    if (input.z3Seconds > input.z1Seconds) {
+      explanation =
+        "The index is not calculated because recorded Zone 3 time exceeds Zone 1, which is outside Treff's valid definition.";
+    } else if (totalSeconds === 0) {
+      explanation = "This week has no recorded cycling heart-rate coverage in the selected dates.";
+    } else if (input.z2Seconds === 0 && input.z3Seconds > 0) {
+      explanation =
+        "With zero middle-zone time, Treff's adjustment requires more than 1% high-zone time.";
+    }
     return {
       ...input,
       totalSeconds,
@@ -110,9 +116,14 @@ export function buildTreffPolarizationWeek(
     };
   }
 
-  if (input.polarizationIndex > DEFAULT_POLARIZATION_THRESHOLD) {
+  const polarizationIndex = Math.round(input.polarizationIndex * 1000) / 1000;
+  const hasPolarizedOrdering =
+    input.z1Seconds > input.z3Seconds && input.z3Seconds > input.z2Seconds;
+  const exceedsReference = input.polarizationIndex > DEFAULT_POLARIZATION_THRESHOLD;
+  if (exceedsReference && hasPolarizedOrdering) {
     return {
       ...input,
+      polarizationIndex,
       totalSeconds,
       zonePercentages,
       status: "polarized",
@@ -124,11 +135,13 @@ export function buildTreffPolarizationWeek(
 
   return {
     ...input,
+    polarizationIndex,
     totalSeconds,
     zonePercentages,
     status: "not_polarized",
     statusLabel: "Does not match polarized-pattern heuristic",
-    explanation:
-      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic.",
+    explanation: exceedsReference
+      ? "Treff's polarized pattern requires easy-zone time to exceed high-zone time, with the least time in the middle zone."
+      : "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic.",
   };
 }
