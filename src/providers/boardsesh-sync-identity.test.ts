@@ -68,6 +68,7 @@ async function sync(
     tickOverrides?: Record<string, unknown>;
     ascentOverrides?: Record<string, unknown>;
     lookup?: Record<string, unknown> | null;
+    stored?: Record<string, unknown> | null;
   } = {},
 ) {
   const base = createBoardSeshMetadataFetch({
@@ -92,7 +93,11 @@ async function sync(
       },
     });
   });
-  const { db } = createMockDatabase();
+  const storedRaw =
+    options.stored === undefined || options.stored === null
+      ? []
+      : [{ external_id: "boardsesh:tick:tick-1", raw: { metadata: { ascent: options.stored } } }];
+  const { db } = createMockDatabase({ executeResult: storedRaw });
   await new BoardSeshProvider(fetchFn).sync(
     new SyncRun({
       db,
@@ -159,5 +164,34 @@ describe("BoardSesh sync climb identity", () => {
     const { lookups, canonical } = await sync({ lookup: null });
     expect(lookups).toHaveLength(1);
     expect(canonical).toBeUndefined();
+  });
+
+  describe("when a lookup does not return an identity", () => {
+    const stored = { boardType: "kilter", climbUuid: "climb-1", canonicalClimbUuid: "kept-1" };
+
+    it("keeps the previously verified ID for the same source climb", async () => {
+      const { canonical } = await sync({ lookup: null, stored });
+      expect(canonical).toBe("kept-1");
+    });
+
+    it("keeps the previously verified ID when BoardSesh is unavailable", async () => {
+      const { canonical } = await sync({ lookup: { uuid: 1 }, stored });
+      expect(canonical).toBe("kept-1");
+    });
+
+    it("prefers a freshly verified ID over the stored one", async () => {
+      const { canonical } = await sync({ stored });
+      expect(canonical).toBe("canonical-1");
+    });
+
+    it.each([
+      ["a different problem", { ...stored, climbUuid: "other-climb" }],
+      ["a different board", { ...stored, boardType: "tension" }],
+      ["a blank ID", { ...stored, canonicalClimbUuid: "  " }],
+      ["no stored ID", { boardType: "kilter", climbUuid: "climb-1" }],
+    ])("does not reuse a stored ID from %s", async (_name, row) => {
+      const { canonical } = await sync({ lookup: null, stored: row });
+      expect(canonical).toBeUndefined();
+    });
   });
 });

@@ -1,7 +1,11 @@
 import { isValidClimbingGrade } from "@dofek/training/climbing-grades";
 import type { GradeComponent } from "@dofek/training/climbing-log";
 import { z } from "zod";
-import type { BoardLogbook, ClimbingBoardClient } from "../lib/climbing-board-account.ts";
+import type {
+  BoardLogbook,
+  ClimbingBoardClient,
+  StoredRawLoader,
+} from "../lib/climbing-board-account.ts";
 import { ClimbingBoardAccount } from "../lib/climbing-board-account.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
@@ -233,6 +237,11 @@ const boardTypes = [
   "spray",
 ] as const;
 const identifier = z.string().trim().min(1);
+const ascentIdentity = z.object({ boardType: z.string(), climbUuid: z.string() });
+const storedAscent = z.object({
+  metadata: z.object({ ascent: ascentIdentity.extend({ canonicalClimbUuid: identifier }) }),
+});
+const currentAscent = z.object({ metadata: z.object({ ascent: ascentIdentity }) });
 const tokenResponseSchema = z.object({
   jwt: identifier,
   refreshToken: identifier,
@@ -435,6 +444,7 @@ class BoardSeshClient implements ClimbingBoardClient {
     tokens: TokenSet,
     persistTokens: (tokens: TokenSet) => Promise<void>,
     signal?: AbortSignal,
+    storedRaw?: StoredRawLoader,
   ): Promise<BoardLogbook> {
     let current = tokens;
     if (!current.providerAccountId) throw authError("connection has no verified account identity");
@@ -691,9 +701,10 @@ class BoardSeshClient implements ClimbingBoardClient {
       : new Map<string, string>();
     // A temporarily unresolved lookup can succeed on a later tick in this sync;
     // attach the verified ID to every exactly matched tick after the feed is read.
-    for (const [entry, sourceIdentity] of identityByEntry) {
-      const canonicalClimbUuid = canonicalClimbIds.get(sourceIdentity);
-      if (!canonicalClimbUuid) continue;
+    const attachCanonical = (
+      entry: BoardLogbook["entries"][number],
+      canonicalClimbUuid: string,
+    ) => {
       const raw = z.record(z.string(), z.json()).parse(entry.raw);
       const metadata = z.record(z.string(), z.json()).parse(raw.metadata ?? {});
       const ascent = z.record(z.string(), z.json()).parse(metadata.ascent ?? {});
@@ -701,6 +712,28 @@ class BoardSeshClient implements ClimbingBoardClient {
         ...raw,
         metadata: { ...metadata, ascent: { ...ascent, canonicalClimbUuid } },
       });
+    };
+    const unresolved: BoardLogbook["entries"] = [];
+    for (const [entry, sourceIdentity] of identityByEntry) {
+      const canonicalClimbUuid = canonicalClimbIds.get(sourceIdentity);
+      if (canonicalClimbUuid) attachCanonical(entry, canonicalClimbUuid);
+      else unresolved.push(entry);
+    }
+    // A failed or empty lookup must not erase an ID verified by an earlier sync:
+    // carry it forward only while the stored tick still names the same source climb.
+    if (storedRaw && unresolved.length > 0) {
+      const stored = await storedRaw(unresolved.map((entry) => entry.externalId));
+      for (const entry of unresolved) {
+        const previous = storedAscent.safeParse(stored.get(entry.externalId));
+        const current = currentAscent.safeParse(entry.raw);
+        if (
+          previous.success &&
+          current.success &&
+          previous.data.metadata.ascent.boardType === current.data.metadata.ascent.boardType &&
+          previous.data.metadata.ascent.climbUuid === current.data.metadata.ascent.climbUuid
+        )
+          attachCanonical(entry, previous.data.metadata.ascent.canonicalClimbUuid);
+      }
     }
     return { entries, absentExternalIds: [], authoritative: true };
   }

@@ -44,13 +44,14 @@ const tick = (overrides: Record<string, unknown> = {}) => ({
 type IdentityMode =
   | "identity"
   | "identity-unavailable"
+  | "identity-lookup-failed"
   | "identity-late-success"
   | "identity-layout-mismatch";
 const isIdentityMode = (mode: string): mode is IdentityMode => mode.startsWith("identity");
 const identityPairs = (
   mode: IdentityMode,
 ): Array<{ uuid: string; climbUuid: string; angle?: number }> => {
-  if (mode === "identity")
+  if (mode === "identity" || mode === "identity-lookup-failed")
     return [
       { uuid: "tick-1", climbUuid: "climb-1" },
       { uuid: "tick-alias", climbUuid: "alias-1" },
@@ -112,6 +113,7 @@ describe("BoardSesh snapshot persistence", () => {
     | "auth-reject-always"
     | "identity"
     | "identity-unavailable"
+    | "identity-lookup-failed"
     | "identity-late-success"
     | "identity-layout-mismatch";
   let requestOrder: string[];
@@ -218,7 +220,9 @@ describe("BoardSesh snapshot persistence", () => {
             climbRequests.push(climbUuid);
             const firstLookup = climbRequests.filter((entry) => entry === climbUuid).length === 1;
             data[`c${index}`] =
-              mode === "identity-unavailable" || (mode === "identity-late-success" && firstLookup)
+              mode === "identity-unavailable" ||
+              mode === "identity-lookup-failed" ||
+              (mode === "identity-late-success" && firstLookup)
                 ? null
                 : { uuid: "canonical-1", boardType: "kilter", layoutId: 11 };
           }
@@ -833,6 +837,24 @@ describe("BoardSesh snapshot persistence", () => {
     );
     expect(canonicalIds).toEqual(["canonical-1", "canonical-1", "canonical-1"]);
     expect(climbRequests.sort()).toEqual(["alias-1", "climb-1"]);
+  });
+
+  it("keeps a previously verified canonical ID when a later lookup fails", async () => {
+    mode = "identity";
+    expect(await run()).toMatchObject({ errors: [], recordsSynced: 3 });
+    mode = "identity-lookup-failed";
+    expect(await run()).toMatchObject({ errors: [], recordsSynced: 3 });
+    const canonicalIds = (await rows()).map(
+      (row) =>
+        z
+          .object({
+            raw: z.object({
+              metadata: z.object({ ascent: z.object({ canonicalClimbUuid: z.string() }) }),
+            }),
+          })
+          .parse(row).raw.metadata.ascent.canonicalClimbUuid,
+    );
+    expect(canonicalIds).toEqual(["canonical-1", "canonical-1", "canonical-1"]);
   });
 
   it("leaves unavailable identity unresolved without caching the null result", async () => {
