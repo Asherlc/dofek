@@ -139,7 +139,7 @@ SELECT
     coalesce(zone_times.z1_microseconds, toUInt64(0)) AS z1_microseconds,
     coalesce(zone_times.z2_microseconds, toUInt64(0)) AS z2_microseconds,
     coalesce(zone_times.z3_microseconds, toUInt64(0)) AS z3_microseconds,
-    if(activity_meta.activity_id IS NULL, 1, 0) AS is_deleted,
+    if(activity_meta.activity_id IS null, 1, 0) AS is_deleted,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
 FROM activity_keys
