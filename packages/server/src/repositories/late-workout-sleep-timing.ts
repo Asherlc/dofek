@@ -251,6 +251,19 @@ function couldFinishInStudyWindow(start: string, end: string | null, habitual: n
   return offset >= STUDY_START && offset <= STUDY_END;
 }
 
+/** An unresolved record may span anything from its start onward when its end is missing or invalid. */
+function overlapsBout(
+  start: string,
+  end: string | null,
+  bout: ReturnType<typeof buildBouts>[number],
+): boolean {
+  const startMs = Date.parse(start);
+  const endMs = end === null ? Infinity : Date.parse(end);
+  const possibleEnd = endMs < startMs ? Infinity : endMs;
+  const boutStart = Math.min(...bout.workouts.map((member) => Date.parse(member.startedAt)));
+  return startMs <= Date.parse(bout.finish) && possibleEnd >= boutStart;
+}
+
 function matchNight(
   episode: SleepEpisode,
   window: WorkoutWindow | undefined,
@@ -272,7 +285,8 @@ function matchNight(
   const inWindow = bouts.filter((bout) => bout.inStudyWindow);
   const [first, second] = inWindow;
 
-  // Unresolved records cannot disqualify an independent bout if their possible finishes are outside the study window.
+  // Unresolved records cannot disqualify an independent bout unless they could finish in the study
+  // window or could overlap a candidate bout.
   const unresolved =
     habitual !== null &&
     workouts.some((workout) => {
@@ -283,7 +297,8 @@ function matchNight(
       }
       return (
         (workout.status === "unknown_bounds" || workout.status === "crosses_wake_window") &&
-        couldFinishInStudyWindow(workout.startedAt, workout.endedAt, habitual)
+        (couldFinishInStudyWindow(workout.startedAt, workout.endedAt, habitual) ||
+          inWindow.some((bout) => overlapsBout(workout.startedAt, workout.endedAt, bout)))
       );
     });
 

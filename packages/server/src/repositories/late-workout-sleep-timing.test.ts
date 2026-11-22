@@ -253,6 +253,22 @@ describe("late workout sleep timing", () => {
     });
   });
 
+  it("treats an unresolved record overlapping the evening bout as ambiguous even when it finishes outside the study window", () => {
+    const overlapping = workout("22:30", null, { ended_at: "2026-03-10T03:00:00Z" });
+    const result = timing([workout("22:00", "23:30"), overlapping]);
+
+    expect(result?.workouts.find(({ id }) => id === "22:30")?.status).toBe("crosses_wake_window");
+    expect(result?.status).toBe("ambiguous_workouts");
+  });
+
+  it("keeps the evening match when an unresolved record finishes outside the window without overlapping it", () => {
+    const earlier = workout("06:00", null, { ended_at: "2026-03-09T07:00:00Z" });
+    const result = timing([earlier, workout("22:00", "23:30")], undefined, "2026-03-09T06:30:00Z");
+
+    expect(result?.workouts.find(({ id }) => id === "06:00")?.status).toBe("crosses_wake_window");
+    expect(result?.status).toBe("matched");
+  });
+
   it("keeps an evening match when conflicting FIT bounds all finish outside the study window", () => {
     const conflicting = workout("07:00", "09:00", {
       fit_members: [

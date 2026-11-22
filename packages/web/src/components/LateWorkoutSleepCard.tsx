@@ -5,6 +5,7 @@ import {
   formatDurationMinutes,
   formatTimeOnly,
 } from "@dofek/format/format";
+import { sameDateNightLabel, timingLabel } from "@dofek/format/late-workout-sleep-labels";
 import { providerLabel } from "@dofek/providers/providers";
 import type { LateWorkoutSleep, LateWorkoutSleepNight } from "@dofek/training/late-workout-sleep";
 import { useId, useState } from "react";
@@ -19,34 +20,6 @@ interface LateWorkoutSleepCardProps {
 
 // Wake dates are calendar labels already resolved by the server.
 const calendarDateOptions = { timeZone: "UTC" };
-
-function timingLabel(minutes: number | null) {
-  if (minutes === null) return null;
-  if (Math.round(minutes) === 0) return "At usual onset";
-  return `${formatDurationMinutes(Math.abs(minutes))} ${minutes < 0 ? "before" : "after"} usual onset`;
-}
-
-function sameDateNightLabel(
-  night: LateWorkoutSleepNight,
-  sameDate: LateWorkoutSleepNight[] | undefined,
-  timezone: string,
-) {
-  if (!sameDate || sameDate.length < 2) return null;
-  const onsetClock = (episode: LateWorkoutSleepNight) =>
-    episode.actualOnset === null
-      ? null
-      : formatTimeOnly(episode.actualOnset, { timeZone: timezone });
-  const onset = onsetClock(night);
-  const sameOnset = sameDate.filter((episode) => onsetClock(episode) === onset);
-  if (onset && sameOnset.length === 1) return `Onset ${onset}`;
-  const source = providerLabel(night.sleepProvider);
-  const sameProvider = sameOnset.filter(
-    (episode) => providerLabel(episode.sleepProvider) === source,
-  );
-  const provider =
-    sameProvider.length > 1 ? `${source} · Record ${sameProvider.indexOf(night) + 1}` : source;
-  return onset ? `Onset ${onset} · ${provider}` : provider;
-}
 
 function NightEvidence({ night, timezone }: { night: LateWorkoutSleepNight; timezone: string }) {
   const clock = (value: string | null) =>
@@ -238,6 +211,7 @@ export function LateWorkoutSleepCard({
                           night,
                           nightsByDate.get(night.date),
                           data.range.timezone,
+                          providerLabel,
                         );
                         const loadLabel =
                           night.status !== "matched"

@@ -3,6 +3,7 @@ import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 import type { ActivitySearchIndex } from "../src/activity-search/opensearch.ts";
 import { ACTIVITY_SEARCH_PUBLICATION_OWNER } from "../src/activity-search/publication.ts";
 import {
@@ -43,8 +44,8 @@ interface RunAnalyticsBuildInput {
   projectCyclingPower(asOf: Date): Promise<{
     pendingActivities: number;
   }>;
-  /** Latest `refresh_version` written by `activity_fit_heart_rate`; required when that model is selected. */
-  readFitHeartRateVersion?(): Promise<string>;
+  /** Fingerprint of the rows written by `activity_fit_heart_rate`; required when that model is selected. */
+  readFitHeartRateFingerprint?(): Promise<string>;
   recordRun(input: {
     runId: string;
     pendingDatasets: readonly ProcessingOperationDataset[];
@@ -52,6 +53,7 @@ interface RunAnalyticsBuildInput {
   }): Promise<{ datasets: number; failed: number }>;
 }
 
+const fitHeartRateFingerprintSchema = z.object({ row_count: z.string(), checksum: z.string() });
 const FIT_HEART_RATE_MODEL = "activity_fit_heart_rate";
 const MAX_FIT_HEART_RATE_DRAIN_PASSES = 1_000;
 
@@ -89,7 +91,7 @@ export async function runAnalyticsBuild({
   readArtifact,
   recordRun,
   projectCyclingPower,
-  readFitHeartRateVersion,
+  readFitHeartRateFingerprint,
 }: RunAnalyticsBuildInput): Promise<{ datasets: number; failed: number }> {
   if (selectedModels.length === 0) {
     throw new Error("Analytics build requires at least one selected model");
@@ -150,11 +152,11 @@ export async function runAnalyticsBuild({
     }
   }
   if (exitCode === 0 && succeeded && inputs.includes(FIT_HEART_RATE_MODEL)) {
-    if (!readFitHeartRateVersion) {
-      throw new Error(`${FIT_HEART_RATE_MODEL} is selected but no version reader was provided`);
+    if (!readFitHeartRateFingerprint) {
+      throw new Error(`${FIT_HEART_RATE_MODEL} is selected but no fingerprint reader was provided`);
     }
     // The model processes a bounded batch per run; repeat until a run writes nothing new.
-    let version = await readFitHeartRateVersion();
+    let fingerprint = await readFitHeartRateFingerprint();
     for (let pass = 0; ; pass += 1) {
       if (pass >= MAX_FIT_HEART_RATE_DRAIN_PASSES) {
         throw new Error(
@@ -163,11 +165,27 @@ export async function runAnalyticsBuild({
       }
       const code = await runDbt(dbtArguments([FIT_HEART_RATE_MODEL]));
       if (code !== 0) {
-        throw new Error(`${FIT_HEART_RATE_MODEL} drain pass failed with exit code ${code}`);
+        // Record this pass's failure like any other phase so affected imports show failed.
+        const failed = parseDbtRunArtifacts({
+          manifest: await readDbtArtifact(readArtifact, "manifest.json", code),
+          runResults: await readDbtArtifact(readArtifact, "run_results.json", code),
+          sources: sourceArtifact,
+          selectedModels: [FIT_HEART_RATE_MODEL],
+        });
+        modelResults.splice(
+          0,
+          modelResults.length,
+          ...modelResults.filter((model) => model.name !== FIT_HEART_RATE_MODEL),
+          ...failed.models,
+        );
+        runId = failed.invocationId;
+        exitCode = code;
+        succeeded = false;
+        break;
       }
-      const next = await readFitHeartRateVersion();
-      if (next === version) break;
-      version = next;
+      const next = await readFitHeartRateFingerprint();
+      if (next === fingerprint) break;
+      fingerprint = next;
     }
   }
   if (exitCode === 0 && succeeded) {
@@ -274,14 +292,17 @@ export async function runAnalyticsBuildFromEnvironment(
                 );
                 return projectCyclingPower(owner, cyclingPowerPolicy, asOf);
               },
-              readFitHeartRateVersion: async () => {
-                const result = await owner.client.query<{ version: string }>({
-                  query:
-                    "SELECT toString(max(refresh_version)) AS version FROM analytics.activity_fit_heart_rate",
+              readFitHeartRateFingerprint: async () => {
+                // A clock-independent fingerprint of every written row version.
+                const result = await owner.client.query({
+                  query: `SELECT
+                      toString(count()) AS row_count,
+                      toString(sum(cityHash64(user_id, activity_id, refresh_version))) AS checksum
+                    FROM analytics.activity_fit_heart_rate`,
                   format: "JSONEachRow",
                 });
-                const [row] = await result.json();
-                return row?.version ?? "0";
+                const fingerprint = fitHeartRateFingerprintSchema.parse((await result.json())[0]);
+                return `${fingerprint.row_count}:${fingerprint.checksum}`;
               },
               recordRun: (run) => recordProcessingAnalyticsRun(database, run),
             });

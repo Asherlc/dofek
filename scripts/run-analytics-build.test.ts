@@ -150,10 +150,12 @@ describe("runAnalyticsBuild", () => {
   describe("activity_fit_heart_rate drain", () => {
     const selected = ["activity_fit_heart_rate"];
     function build(versions: string[], runDbt = vi.fn(async () => 0), reader = true) {
-      const readFitHeartRateVersion = vi.fn(async () => versions.shift() ?? "never");
+      const recordRun = vi.fn(async () => ({ datasets: 1, failed: 0 }));
+      const readFitHeartRateFingerprint = vi.fn(async () => versions.shift() ?? "never");
       return {
         runDbt,
-        readFitHeartRateVersion,
+        readFitHeartRateFingerprint,
+        recordRun,
         run: () =>
           runAnalyticsBuild({
             selectedModels: selected,
@@ -161,19 +163,20 @@ describe("runAnalyticsBuild", () => {
             microbatchBounds: TEST_MICROBATCH_BOUNDS,
             loadPendingDatasets: async () => [],
             runDbt,
-            readArtifact: createArtifactReader(
-              "fit-drain",
-              selected.map((model) => ({
-                uniqueId: `model.dofek.${model}`,
-                name: model,
-                status: "success",
-                executionTime: 1,
-                message: null,
-              })),
-            ),
+            readArtifact: async (name) =>
+              createArtifactReader(
+                `fit-drain-${runDbt.mock.calls.length}`,
+                selected.map((model) => ({
+                  uniqueId: `model.dofek.${model}`,
+                  name: model,
+                  status: runDbt.mock.calls.length > 1 ? "error" : "success",
+                  executionTime: 1,
+                  message: runDbt.mock.calls.length > 1 ? "Batch failed" : null,
+                })),
+              )(name),
             projectCyclingPower: async () => ({ pendingActivities: 0 }),
-            ...(reader && { readFitHeartRateVersion }),
-            recordRun: async () => ({ datasets: 1, failed: 0 }),
+            ...(reader && { readFitHeartRateFingerprint }),
+            recordRun,
           }),
       };
     }
@@ -191,18 +194,23 @@ describe("runAnalyticsBuild", () => {
       expect(runDbt).toHaveBeenCalledTimes(2);
     });
 
-    it("fails when a drain pass fails", async () => {
+    it("records a failed drain pass before failing the build", async () => {
       let calls = 0;
-      const { run } = build(
+      const { run, recordRun } = build(
         ["1"],
         vi.fn(async () => (++calls === 1 ? 0 : 1)),
       );
-      await expect(run()).rejects.toThrow("drain pass failed with exit code 1");
+      await expect(run()).rejects.toBeInstanceOf(AnalyticsBuildError);
+      expect(recordRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelResults: [expect.objectContaining({ name: selected[0], status: "failed" })],
+        }),
+      );
     });
 
-    it("requires a version reader when the model is selected", async () => {
+    it("requires a fingerprint reader when the model is selected", async () => {
       const { run } = build([], undefined, false);
-      await expect(run()).rejects.toThrow("no version reader was provided");
+      await expect(run()).rejects.toThrow("no fingerprint reader was provided");
     });
   });
 

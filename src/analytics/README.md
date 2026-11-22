@@ -37,7 +37,7 @@ success. Deletion and recomputation jobs await the same serialized analytics
 writer via [`analytics-refresh-queue.ts`](../analytics-refresh-queue.ts).
 
 `activity_fit_heart_rate` handles a bounded batch of activities per dbt run, so
-the build repeats that model until a run writes no new `refresh_version`
+the build repeats that model until a run writes no new rows
 before the downstream models and the Sleep cache refresh.
 
 [`activity-read-model-build.ts`](activity-read-model-build.ts) contains the CDC
