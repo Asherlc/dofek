@@ -204,6 +204,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `restore_food_entry` | `nutrition:read` + `nutrition:write` | Restores a deleted record while retaining its field and nutrient decisions. Returns that day's calorie/macro preview. |
 | `get_food_entry_history` | `nutrition:read` | Returns the paginated command and decision history for a food record. |
 | `get_body_metrics` | `health:read` | Returns reconciled body metrics, value kinds, source values, and 7/28-day rolling weight statistics. |
+| `get_overview_insights` | `health:read` + `activity:read` + `nutrition:read` | Returns the Overview's 90-day association and correlation candidates in computation order with confidence, effect, p-value, and evidence. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 
@@ -577,6 +578,28 @@ stored selected session ID.
 See the [series tool](../packages/server/src/mcp/recovery-training-series-tool.ts),
 [workout exposure repository](../packages/server/src/repositories/pre-sleep-activity-repository.ts),
 and [PostgreSQL time-zone conversion rules](https://www.postgresql.org/docs/current/functions-datetime.html).
+
+### Overview insights
+
+`get_overview_insights` requires an `end_date` in `YYYY-MM-DD` format and accepts
+an optional IANA `timezone`. It reuses the Overview's fixed 90-day window and the
+same server-side calculation as `insights.compute` for the authenticated user, so
+the tool returns the identical candidate set the app derives. An explicit
+`timezone` uses that analysis zone; otherwise the tool uses the request's
+`X-Timezone` header (default `UTC`). It requires `health:read`, `activity:read`,
+and `nutrition:read`, and no input selects another user.
+
+The result carries the `range` (`start_date`, `end_date`, `timezone`, and the
+fixed `days: 90`) and the insight candidates in the computation's order. Each
+candidate includes its `id`, `type`, `confidence`, `action`, `metric`, `message`,
+`detail`, `effect_size`, `p_value`, optional `correlation`, `explanation`,
+`confounders`, and `evidence`. Raw per-day points and grouped distributions are
+omitted from the payload. Candidates the card would hide as `insufficient` are
+retained, because the Overview card filters `insufficient` and then selects the
+largest absolute effect; returning the full ordered set lets a caller diagnose
+which candidate would surface. Every relationship is a descriptive association
+or correlation over observed data and does not establish causation. The tool is
+read-only and never changes the app's cached `insights.compute` request.
 
 #### Relationship analysis examples
 
