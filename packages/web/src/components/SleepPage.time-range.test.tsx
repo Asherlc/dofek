@@ -25,6 +25,7 @@ describe("SleepPage time range", () => {
 
     expectCallsContaining([
       { name: "sleep.list", input: { days: 7, endDate: "2026-07-08" } },
+      { name: "dailyMetrics.recorded", input: { days: 7, endDate: "2026-07-08", group: "sleep" } },
       { name: "sleep.stagesByDate", input: { date: "2026-07-06" } },
       { name: "insights.compute", input: { days: 90, endDate: "2026-07-08" } },
     ]);
@@ -35,6 +36,10 @@ describe("SleepPage time range", () => {
 
     expectCallsContaining([
       { name: "sleep.list", input: { days: null, endDate: "2026-07-08" } },
+      {
+        name: "dailyMetrics.recorded",
+        input: { days: null, endDate: "2026-07-08", group: "sleep" },
+      },
       { name: "sleep.stagesByDate", input: { date: "2026-07-06" } },
       { name: "insights.compute", input: { days: null, endDate: "2026-07-08" } },
     ]);

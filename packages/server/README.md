@@ -417,6 +417,10 @@ display unit and format dates, but they render the supplied direction and summar
 a trend from the observations. The responsive chart selects one exercise at a time so long exercise
 lists stay readable without hiding the time axis.
 
+### Strength exercise order evidence
+
+`strength.exerciseHistory` pairs each exercise's estimated-strength observations with optional Crimpd order evidence in one selected-range response, and keeps order-only lifts when no estimate exists. The repository reads only active, user-scoped Crimpd member workouts, verifies the raw `ACTIVITY_ORDER`, `SET_ORDER`, and `LOG_ID` positions, and requires completed sets with finite recorded `RESISTANCE` and `WEIGHT_UNIT` (`KG` or `LBS`) values. Loads stay in their recorded unit. The contract is defined in [strength-exercise-history.ts](src/contracts/strength-exercise-history.ts); source fields follow the [Crimpd set export](https://crimpd.com/docs/data-export/#setscsv).
+
 ### MCP activity and cycling analytics
 
 The read-only MCP keeps the existing `get_activity_streams` and
@@ -486,6 +490,21 @@ power, work, variability index, aerobic efficiency, cardiac drift, TSS, and inte
 coverage prerequisites are documented in
 [`@dofek/training`](../training/README.md#cycling-workout-metrics). Normalized power follows the
 [TrainingPeaks calculation](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).
+
+Set `test_protocol` to `lamberts_submaximal_cycle_test` to compare recorded Lamberts tests
+in the selected dates. Eligibility requires a named FIT cycling workout whose prescribed stages
+and linked laps match the original protocol, including calibration and recovery. The range uses
+the date of the recorded test start in the analysis timezone. The comparison uses the earliest
+and latest eligible tests across the entire range, even when they are on different pages.
+[Original LSCT study](https://pubmed.ncbi.nlm.nih.gov/19622525/),
+[Garmin FIT activity files](https://developer.garmin.com/fit/file-types/activity/).
+
+Stage means omit the first minute of each stage. Heart-rate recovery uses the final 16 seconds
+of stage 3 and seconds 44–60 after it, with cadence evidence of no pedaling during that first
+recovery minute. Incomplete sensor evidence leaves the corresponding measure `null`.
+Maximum heart rate is reported as a FIT configuration value when available, with measurement
+method `unknown`. Trainer, sensor source, and indoor/outdoor details are context. Eligible rides
+can be compared across trainers. [LSCT recovery method](https://doi.org/10.1007/s00421-023-05385-z).
 
 `get_training_load` preserves its original response when `detail` is omitted. With
 `detail: "analytical"`, it returns a complete daily date spine with six independent load channels:
