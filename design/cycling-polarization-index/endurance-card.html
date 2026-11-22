@@ -157,10 +157,10 @@
       buttons.forEach((button, buttonIndex) => { button.style.left = `${weekX(buttonIndex)}px`; });
     }
 
-    function selectWeek(i) {
-      active = i;
-      const week = weeks[i];
-      buttons.forEach((button, buttonIndex) => button.setAttribute("aria-pressed", String(buttonIndex === i)));
+    function selectWeek(weekIndex) {
+      active = weekIndex;
+      const week = weeks[weekIndex];
+      buttons.forEach((button, buttonIndex) => button.setAttribute("aria-pressed", String(buttonIndex === weekIndex)));
       title.innerHTML = `Week of ${week.date}${week.partial ? ` <span>· ${week.partial}</span>` : ""}`;
       indexDisplay.textContent = week.index?.toFixed(2) ?? "—";
       indexDisplay.setAttribute("aria-label", week.index === null ? "Index unavailable" : week.index.toFixed(2));
@@ -179,7 +179,7 @@
       drawChart();
     }
 
-    buttons.forEach((button, i) => button.addEventListener("click", () => selectWeek(i)));
+    buttons.forEach((button, buttonIndex) => button.addEventListener("click", () => selectWeek(buttonIndex)));
     selectWeek(active);
     new ResizeObserver(drawChart).observe(plot);
   })();
