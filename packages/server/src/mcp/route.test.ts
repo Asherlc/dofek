@@ -26,6 +26,8 @@ import { createDofekMcpServer } from "./tools.ts";
 
 const routeLoggerMocks = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock("../logger.ts", () => ({ logger: routeLoggerMocks }));
+const accessWindowMocks = vi.hoisted(() => ({ getAccessWindowForUser: vi.fn() }));
+vi.mock("../billing/access-window-repository.ts", () => accessWindowMocks);
 
 const toolTestMocks = vi.hoisted(() => {
   const mocks = {
@@ -130,7 +132,8 @@ vi.mock("../repositories/cycling-performance-repository.ts", () => ({
   }),
 }));
 
-vi.mock("../repositories/cycling-power-curve-repository.ts", () => ({
+vi.mock("../repositories/cycling-power-curve-repository.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../repositories/cycling-power-curve-repository.ts")>()),
   CyclingPowerCurveRepository: vi.fn(function vitestConstructor() {
     return { listRange: toolTestMocks.cyclingPowerCurveListRange };
   }),
@@ -990,6 +993,9 @@ describe("createMcpRouter", () => {
     ]) {
       expectedSchemes[name] = [{ type: "oauth2", scopes: ["nutrition:read", "nutrition:write"] }];
     }
+    expectedSchemes.get_cycling_power_profile = [
+      { type: "oauth2", scopes: ["activity:read", "health:read"] },
+    ];
     expectedSchemes.get_training_load = [
       { type: "oauth2", scopes: ["activity:read", "nutrition:read"] },
     ];
@@ -1300,6 +1306,7 @@ describe("createMcpRouter", () => {
       "get_effort_trend",
       "get_cycling_performance",
       "get_cycling_power_curve",
+      "get_cycling_power_profile",
       "get_running_race_forecast",
       "get_cycling_training_metrics",
       "get_sleep_summary",
@@ -1388,6 +1395,10 @@ describe("createMcpRouter", () => {
       {
         name: "get_cycling_power_curve",
         path: ["result", "bests", "[]", "quality", "median_sample_interval_seconds"],
+      },
+      {
+        name: "get_cycling_power_profile",
+        path: ["result", "threshold", "effective_from"],
       },
       {
         name: "get_cycling_training_metrics",
@@ -2567,6 +2578,61 @@ describe("createMcpRouter", () => {
       cursor: null,
       limit: 100,
     });
+  });
+
+  it("returns the compact power profile within the user's access window", async () => {
+    authorizeMcpToken(["activity:read", "health:read"]);
+    accessWindowMocks.getAccessWindowForUser.mockResolvedValue({
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2026-10-25",
+      endDateExclusive: "2026-11-01",
+    });
+    const sensorStore = makeMockSensorStore();
+    const response = await request(createTestApp(sensorStore), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_cycling_power_profile", {
+        start_date: "2026-10-01",
+        end_date: "2026-10-31",
+      }),
+    });
+    const parsed = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsed.result.structuredContent).toMatchObject({
+      result: {
+        range: { start_date: "2026-10-01", end_date: "2026-10-31" },
+        maximal_test_status: "unverified",
+        efforts: [
+          { duration_seconds: 5, effort: null },
+          { duration_seconds: 60, effort: null },
+          { duration_seconds: 300, effort: null },
+        ],
+        threshold: { watts: null, method: "configured" },
+      },
+    });
+    expect(accessWindowMocks.getAccessWindowForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      "user-id",
+      expect.any(String),
+    );
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
+      accessStartDate: "2026-10-25",
+      accessEndDateExclusive: "2026-11-01",
+    });
+  });
+
+  it("does not read the power profile without health:read for its body-weight evidence", async () => {
+    authorizeMcpToken(["activity:read"]);
+    const sensorStore = makeMockSensorStore();
+    const response = await request(createTestApp(sensorStore), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("get_cycling_power_profile", {
+        start_date: "2026-10-01",
+        end_date: "2026-10-31",
+      }),
+    });
+    expect(response.text).not.toContain("maximal_test_status");
+    expect(sensorStore.query).not.toHaveBeenCalled();
   });
 
   it("distinguishes an out-of-range metric from a metric with no recorded history", async () => {

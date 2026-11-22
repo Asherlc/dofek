@@ -244,6 +244,17 @@ and [mobile training screen](../mobile/app/strain.tsx).
 
 ## Key Implementation Details
 
+### Late workouts and sleep
+
+The protected Sleep procedure compares workout finishes with verified Polar
+sleep onset and a local-time reference for the same month and day type. The
+account's access window applies to the displayed nights, reference nights,
+preceding wakes, and workouts. Timing stays available when heart-rate load is
+unavailable. Load requires a complete, current one-second FIT recording for
+each workout in the bout and uses a profile maximum heart rate or a labeled
+age estimate. Web and iOS receive the same evidence and chart positions.
+[Design and study rules](../../docs/superpowers/specs/2026-11-21-late-workouts-and-sleep-design.md)
+
 - **Activity hardware**: `activity.hardware` resolves owned, visible activity
   members through the [activity repository](src/repositories/activity-repository.ts)
   and reads raw provider payloads and FIT observations from Postgres through the
@@ -455,6 +466,15 @@ are calculated in one bounded ClickHouse query over deduplicated activity sensor
 returning raw samples to the model. Formula and historical-refresh details are documented in
 [`analytics/README.md`](../../analytics/README.md#cycling-power-duration-semantics-and-refresh).
 
+`get_cycling_power_profile` uses the same inclusive date inputs and `activity:read` scope.
+It returns the best demonstrated 5-second, 1-minute, and 5-minute efforts plus cycling FTP
+configured as of the selected end date. The profile uses
+[Coggan's four inputs](https://www.trainingpeaks.com/blog/power-profiling/) and reports
+maximal test status as unverified. It prefers directly measured power, uses recorded
+power with unknown measurement method when needed, and excludes known estimates.
+It ranks the existing per-ride curve winners and exposes supporting ride and weight
+record IDs. The `cycling.powerProfile` query serves the same profile to the apps.
+
 `get_threshold_history` requires `activity:read`, a date range and cursor pagination.
 It returns the canonical computed eFTP history, including the supporting effort,
 effective time, model version and unquantified physiological uncertainty.
@@ -490,6 +510,13 @@ power, work, variability index, aerobic efficiency, cardiac drift, TSS, and inte
 coverage prerequisites are documented in
 [`@dofek/training`](../training/README.md#cycling-workout-metrics). Normalized power follows the
 [TrainingPeaks calculation](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).
+
+For a cycling lap explicitly linked to a timed Workout Step in the same FIT Activity file,
+`get_cycling_training_metrics` can return a `planned_comparison`. The comparison preserves a
+point or range in watts, planned duration, recorded lap timer duration, and the gap-aware average
+of available power samples. The activity detail clients read the same evidence through
+`intervals.plannedByActivity`. Conflicting plans are omitted from the comparison and retained
+in the source evidence. See the [FIT import requirements](../../src/fit/README.md#structured-cycling-intervals).
 
 Set `test_protocol` to `lamberts_submaximal_cycle_test` to compare recorded Lamberts tests
 in the selected dates. Eligibility requires a named FIT cycling workout whose prescribed stages

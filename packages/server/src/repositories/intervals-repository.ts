@@ -107,6 +107,18 @@ export interface DetectedInterval {
 
 export type ComparableIntervalSource = "provider_recorded" | "inferred" | "unknown";
 
+export type PlannedPowerTarget =
+  | { kind: "point"; watts: number }
+  | { kind: "range"; minWatts: number; maxWatts: number };
+
+/** One matched FIT Workout Step / Lap observation; its values are only meaningful together. */
+export interface PlannedIntervalFacts {
+  fitSource: "workout_step_lap";
+  target: PlannedPowerTarget;
+  plannedDurationSeconds: number;
+  recordedTimerDurationSeconds: number | null;
+}
+
 /** Provider-neutral stored interval evidence normalized to activity-relative boundaries. */
 export interface ComparableInterval {
   intervalIndex: number;
@@ -126,6 +138,7 @@ export interface ComparableInterval {
   targetPowerWatts: number | null;
   targetResistance: number | null;
   raw: unknown | null;
+  plan?: PlannedIntervalFacts | null;
   completionPct?: number | null;
   conflicts?: string[];
   sourceEvidence?: Omit<ComparableInterval, "conflicts" | "sourceEvidence">[];
@@ -160,6 +173,8 @@ export function mergeComparableIntervals(intervals: ComparableInterval[]): Compa
     group.sort(
       (a, b) =>
         sourcePrecedence(b.source) - sourcePrecedence(a.source) ||
+        // The plan owner supplies attribution, so a FIT plan peer is the base of its source class.
+        Number(b.plan != null) - Number(a.plan != null) ||
         JSON.stringify(a).localeCompare(JSON.stringify(b)),
     );
     const preferred = group[0];
@@ -185,6 +200,12 @@ export function mergeComparableIntervals(intervals: ComparableInterval[]): Compa
       result[field] = values.length === 1 ? (values[0] ?? null) : null;
       if (values.length > 1) conflicts.push(field);
     }
+    // A plan is one observation: any differing endpoint or time makes the whole plan conflict.
+    const plans = new Map(
+      peers.flatMap((item) => (item.plan ? [[JSON.stringify(item.plan), item.plan] as const] : [])),
+    );
+    if (plans.size > 0) result.plan = plans.size === 1 ? ([...plans.values()][0] ?? null) : null;
+    if (plans.size > 1) conflicts.push("plan");
     for (const field of ["segmentType", "intervalType", "workRecoveryKind"] as const) {
       if (new Set(peers.flatMap((item) => (item[field] == null ? [] : [item[field]]))).size > 1) {
         result[field] = null;
@@ -192,7 +213,7 @@ export function mergeComparableIntervals(intervals: ComparableInterval[]): Compa
       }
     }
     if (conflicts.length) {
-      if (conflicts.some((field) => field.startsWith("target"))) {
+      if (conflicts.some((field) => field.startsWith("target") || field === "plan")) {
         result.completionPct = null;
         conflicts.push("completionPct");
       }

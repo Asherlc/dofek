@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { listPreSleepActivities } from "./pre-sleep-activity-repository.ts";
+import { listPreSleepActivities, listWorkoutWindows } from "./pre-sleep-activity-repository.ts";
 import type { SleepEpisode } from "./sleep-episode-analysis.ts";
 
 const filters = {
@@ -428,5 +428,102 @@ describe("listPreSleepActivities", () => {
     expect(summary?.source_activity_ids[99]).toBe("activity-099");
     expect(summary?.source_activity_ids_truncated).toBe(true);
     expect(summary?.source_providers).toEqual(["alpha", "zeta"]);
+  });
+});
+
+describe("listWorkoutWindows", () => {
+  const access = { startDate: "2026-03-07", endDate: "2026-03-08", timezone: "UTC" };
+
+  function pair(previousEnd: string, previousOverrides: Partial<SleepEpisode["timing"]> = {}) {
+    const previous = episode({
+      id: "sleep-prev",
+      started_at: "2026-03-06T22:00:00.000Z",
+      ended_at: previousEnd,
+      local_start_date: "2026-03-06",
+      local_wake_date: previousEnd.slice(0, 10),
+    });
+    previous.timing = { ...previous.timing, ...previousOverrides };
+    const current = episode({
+      id: "sleep-current",
+      started_at: "2026-03-09T12:00:00.000Z",
+      ended_at: "2026-03-09T07:00:00.000Z",
+      local_start_date: "2026-03-09",
+      local_wake_date: "2026-03-09",
+    });
+    return [current, previous];
+  }
+
+  function workoutRow() {
+    const { matches_filter: _matches, ...row } = activityRow();
+    return { ...row, matches_filter: false, provider_type: "strava", fit_members: [] };
+  }
+
+  it("returns previous wake and activities without internal columns", async () => {
+    const db = makeDb([workoutRow()]);
+    const result = await listWorkoutWindows(db, "user-1", pair("2026-03-07T06:00:00.000Z"), access);
+
+    const { sleep_id: _sleepId, matches_filter: _matches, ...expected } = workoutRow();
+    expect(result.get("sleep-current")).toEqual({
+      previousWake: { sessionId: "sleep-prev", endedAt: "2026-03-07T06:00:00.000Z" },
+      activities: [expected],
+    });
+  });
+
+  it("returns an empty activity list when the window has no rows", async () => {
+    const result = await listWorkoutWindows(
+      makeDb([]),
+      "user-1",
+      pair("2026-03-07T06:00:00.000Z"),
+      access,
+    );
+    expect(result.get("sleep-current")?.activities).toEqual([]);
+  });
+
+  it("includes wake dates on both inclusive range boundaries", async () => {
+    for (const wake of ["2026-03-07T06:00:00.000Z", "2026-03-08T06:00:00.000Z"]) {
+      const db = makeDb([]);
+      const result = await listWorkoutWindows(db, "user-1", pair(wake), access);
+      expect(result.has("sleep-current")).toBe(true);
+      expect(db.execute).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("excludes wake dates before or after the access range", async () => {
+    for (const wake of ["2026-03-06T23:00:00.000Z", "2026-03-09T00:30:00.000Z"]) {
+      const db = makeDb([]);
+      const result = await listWorkoutWindows(db, "user-1", pair(wake), access);
+      expect(result.size).toBe(0);
+      expect(db.execute).not.toHaveBeenCalled();
+    }
+  });
+
+  it("evaluates the wake date in the access timezone", async () => {
+    const db = makeDb([]);
+    const result = await listWorkoutWindows(db, "user-1", pair("2026-03-09T02:00:00.000Z"), {
+      ...access,
+      timezone: "America/New_York",
+    });
+    expect(result.has("sleep-current")).toBe(true);
+  });
+
+  it("excludes windows whose previous sleep has no elapsed duration", async () => {
+    const db = makeDb([]);
+    const result = await listWorkoutWindows(
+      db,
+      "user-1",
+      pair("2026-03-07T06:00:00.000Z", { elapsed_minutes: null }),
+      access,
+    );
+    expect(result.size).toBe(0);
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
+  it("ignores naps as the current sleep", async () => {
+    const [current, previous] = pair("2026-03-07T06:00:00.000Z");
+    if (!current) throw new Error("fixture");
+    current.timing = { ...current.timing, is_nap: true };
+    const db = makeDb([]);
+    const result = await listWorkoutWindows(db, "user-1", [current, previous], access);
+    expect(result.size).toBe(0);
   });
 });

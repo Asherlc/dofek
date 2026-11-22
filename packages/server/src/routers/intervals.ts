@@ -1,8 +1,15 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import {
+  ActivityRepository,
+  type ActivitySensorStore,
+} from "../repositories/activity-repository.ts";
 import { IntervalsRepository } from "../repositories/intervals-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import {
+  getPlannedIntervalComparisons,
+  plannedIntervalComparisonSchema,
+} from "../repositories/planned-interval-comparison.ts";
+import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -28,6 +35,27 @@ export const intervalsRouter = router({
       const sensorStore = requireSensorStore(ctx.sensorStore, "intervals.byActivity");
       const repo = new IntervalsRepository(ctx.db, ctx.userId, sensorStore);
       return repo.getByActivity(input.activityId);
+    }),
+
+  /**
+   * Eligible FIT planned-versus-recorded laps for one visible activity (any merged member ID).
+   * Empty when the activity is not visible or has no eligible plan. Uncached: visibility depends
+   * on the caller's current access window and on deletes or merges that a cache key cannot see.
+   */
+  plannedByActivity: protectedProcedure
+    .input(z.object({ activityId: z.guid() }))
+    .output(z.array(plannedIntervalComparisonSchema))
+    .query(async ({ ctx, input }) => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "intervals.plannedByActivity");
+      const window = await new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        sensorStore,
+      ).findSensorWindow(input.activityId);
+      if (!window) return [];
+      return getPlannedIntervalComparisons(ctx.db, sensorStore, ctx.userId, window);
     }),
 
   /**
