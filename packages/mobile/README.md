@@ -40,6 +40,12 @@ see the [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-sco
 
 The [Sleep route](app/sleep.tsx) lets users browse stages by sleep date independently
 of the trend range and starts on the latest date returned by the server.
+Below Recent Nights, **Late workouts & sleep** follows the trend range. Tap
+**View nights** to compare recorded workout finish and sleep onset with usual onset
+and inspect load availability and source records. The card labels the effective
+date range and presents the study suggestion separately. While the server
+rechecks history access, the card shows refresh status and retains the night
+selection. [Leota et al., 2025](https://doi.org/10.1038/s41467-025-58271-x)
 
 - **Strength exercise order.** The Training Strength section shows the estimated strength card with the same selected range and searchable exercise selector as web. It uses the shared `strength.exerciseHistory` contract and renders the same Crimpd order evidence and recorded-unit set table. The disclosure links the ACSM position stand. Sources: [estimated strength card](components/EstimatedStrengthCard.tsx), [server contract](../server/src/contracts/strength-exercise-history.ts), [Crimpd set export](https://crimpd.com/docs/data-export/#setscsv), [ACSM position stand](https://pmc.ncbi.nlm.nih.gov/articles/PMC12965823/#T6).
 

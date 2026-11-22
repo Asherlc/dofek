@@ -4,6 +4,7 @@ import { type ComponentType, type ReactNode, useState } from "react";
 import { expect, vi } from "vitest";
 import { BodyDaysContext } from "../../lib/bodyDaysContext.ts";
 import { SELECTED_RANGE_QUERY_REGISTRY } from "../../lib/selectedRangeQueryRegistry.test-helper.ts";
+import { emptyLateWorkoutSleep } from "../late-workout-sleep-fixtures.ts";
 
 const state: {
   queryCalls: Array<{ name: string; input: unknown }>;
@@ -162,6 +163,7 @@ vi.mock("../../lib/trpc.ts", () => {
         latestStages: recordQuery("sleep.latestStages"),
         stagesByDate: recordQuery("sleep.stagesByDate", { date: "2026-07-07", stages: [] }),
         list: recordQuery("sleep.list"),
+        lateWorkouts: recordQuery("sleep.lateWorkouts", emptyLateWorkoutSleep),
       },
       stress: {
         scores: recordQuery("stress.scores"),

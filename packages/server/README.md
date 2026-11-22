@@ -244,6 +244,17 @@ and [mobile training screen](../mobile/app/strain.tsx).
 
 ## Key Implementation Details
 
+### Late workouts and sleep
+
+The protected Sleep procedure compares workout finishes with verified Polar
+sleep onset and a local-time reference for the same month and day type. The
+account's access window applies to the displayed nights, reference nights,
+preceding wakes, and workouts. Timing stays available when heart-rate load is
+unavailable. Load requires a complete, current one-second FIT recording for
+each workout in the bout and uses a profile maximum heart rate or a labeled
+age estimate. Web and iOS receive the same evidence and chart positions.
+[Design and study rules](../../docs/superpowers/specs/2026-11-21-late-workouts-and-sleep-design.md)
+
 - **Activity hardware**: `activity.hardware` resolves owned, visible activity
   members through the [activity repository](src/repositories/activity-repository.ts)
   and reads raw provider payloads and FIT observations from Postgres through the

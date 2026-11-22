@@ -55,10 +55,9 @@ function validateOffset(offsetMinutes: number | null | undefined): number | null
   return offsetMinutes;
 }
 
-function offsetInTimezone(date: Date, timezone: string): number {
-  let parts: Intl.DateTimeFormatPart[];
+function wallClockFormatter(timezone: string) {
   try {
-    parts = new Intl.DateTimeFormat("en-US", {
+    return new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
       year: "numeric",
       month: "2-digit",
@@ -67,11 +66,15 @@ function offsetInTimezone(date: Date, timezone: string): number {
       minute: "2-digit",
       second: "2-digit",
       hourCycle: "h23",
-    }).formatToParts(date);
+    });
   } catch {
     throw new Error(`Invalid IANA timezone: ${timezone}`);
   }
+}
 
+function offsetInTimezone(date: Date, timezone: string | Intl.DateTimeFormat): number {
+  const formatter = typeof timezone === "string" ? wallClockFormatter(timezone) : timezone;
+  const parts = formatter.formatToParts(date);
   const values = Object.fromEntries(
     parts
       .filter((part) => ["year", "month", "day", "hour", "minute", "second"].includes(part.type))
@@ -173,31 +176,42 @@ export function resolveProviderTimezoneLocalTimeContext(input: {
   });
 }
 
+function wallClockCandidates(wallClockDate: Date, timezone: string): Date[] {
+  requireValidDate(wallClockDate, "startedAt");
+  const formatter = wallClockFormatter(timezone);
+  const offsets = new Set<number>();
+  for (let deltaMinutes = -1_440; deltaMinutes <= 1_440; deltaMinutes += 30) {
+    offsets.add(
+      offsetInTimezone(new Date(wallClockDate.getTime() + deltaMinutes * 60_000), formatter),
+    );
+  }
+  return [...offsets]
+    .map((offsetMinutes) => new Date(wallClockDate.getTime() - offsetMinutes * 60_000))
+    .filter(
+      (candidate) =>
+        candidate.getTime() + offsetInTimezone(candidate, formatter) * 60_000 ===
+        wallClockDate.getTime(),
+    )
+    .sort((left, right) => left.getTime() - right.getTime());
+}
+
+/** Resolves only wall-clock times that identify one instant. */
+export function resolveUniqueWallClockInTimezone(
+  wallClockDate: Date,
+  timezone: string,
+): Date | null {
+  const [candidate, alternate] = wallClockCandidates(wallClockDate, timezone.trim());
+  return candidate && !alternate ? candidate : null;
+}
+
 /**
  * Interpret UTC calendar fields as a naive wall-clock value in an IANA zone.
  * Ambiguous fall-back values choose the earlier instant; nonexistent spring-
  * forward values fail instead of being normalized to a different wall time.
  */
 export function resolveNaiveWallClockInTimezone(wallClockDate: Date, timezone: string): Date {
-  requireValidDate(wallClockDate, "startedAt");
   const normalizedTimezone = timezone.trim();
-  const offsets = new Set<number>();
-  for (let deltaMinutes = -1_440; deltaMinutes <= 1_440; deltaMinutes += 30) {
-    offsets.add(
-      offsetInTimezone(
-        new Date(wallClockDate.getTime() + deltaMinutes * 60_000),
-        normalizedTimezone,
-      ),
-    );
-  }
-  const candidates = [...offsets]
-    .map((offsetMinutes) => new Date(wallClockDate.getTime() - offsetMinutes * 60_000))
-    .filter(
-      (candidate) =>
-        candidate.getTime() + offsetInTimezone(candidate, normalizedTimezone) * 60_000 ===
-        wallClockDate.getTime(),
-    )
-    .sort((left, right) => left.getTime() - right.getTime());
+  const candidates = wallClockCandidates(wallClockDate, normalizedTimezone);
   const startedAt = candidates[0];
   if (!startedAt) {
     throw new Error(`Wall-clock timestamp does not exist in ${normalizedTimezone}`);
