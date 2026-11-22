@@ -202,7 +202,11 @@ export const cyclingRouter = router({
         ctx.timezone,
         ctx.accessWindow,
       ).getTrend(range),
-    { expiresAt: "localDayBoundary", outputSchema: cyclingDecouplingOutputSchema },
+    {
+      expiresAt: "localDayBoundary",
+      outputSchema: cyclingDecouplingOutputSchema,
+      scopeByAccessWindow: true,
+    },
   ),
   durability: selectedChartCustomRangeQuery(
     "cycling.durability",

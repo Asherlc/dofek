@@ -95,6 +95,12 @@ describe("cyclingRouter", () => {
     }
   });
 
+  it("scopes the decoupling cache by the caller's access window", () => {
+    expect(cachedQueryOptions).toContainEqual(
+      expect.objectContaining({ expiresAt: "localDayBoundary", scopeByAccessWindow: true }),
+    );
+  });
+
   it("versions the performance cache contract", () => {
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 3_600_000,

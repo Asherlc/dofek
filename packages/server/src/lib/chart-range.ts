@@ -156,6 +156,7 @@ export function selectedChartRangeQuery<TResult>(
     expiresAt?: "localDayBoundary";
     outputSchema?: z.ZodType<TResult>;
     keyVersion?: string;
+    scopeByAccessWindow?: boolean;
   } = {},
 ) {
   assertSelectedChartInputKind(endpoint, "days");
@@ -163,6 +164,7 @@ export function selectedChartRangeQuery<TResult>(
     maxAge: ttlMs,
     expiresAt: options.expiresAt,
     keyVersion: options.keyVersion,
+    scopeByAccessWindow: options.scopeByAccessWindow,
   })
     .input(selectedChartRangeInput(endpoint, options))
     .output(options.outputSchema ?? z.custom<TResult>())

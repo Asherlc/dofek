@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 const HEALTH_SYNC_INITIAL_FETCH_PATHS = new Set([
   "activity.byId",
+  "cycling.decoupling",
   "climbing.volumeIncrease",
   "climbing.attemptIncrease",
 ]);
@@ -10,7 +11,6 @@ const SYNCED_HEALTH_DATA_QUERY_PATHS = new Set([
   "mobileDashboard.dashboardV2",
   "mobileDashboard.recovery",
   "mobileDashboard.trainingV2",
-  "cycling.decoupling",
   ...HEALTH_SYNC_INITIAL_FETCH_PATHS,
   "calendar.weekListV2",
   "calendar.activityOverview",

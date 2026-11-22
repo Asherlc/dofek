@@ -7,6 +7,7 @@ describe("invalidateSyncedHealthData", () => {
     ["climbing", "volumeIncrease"],
     ["climbing", "attemptIncrease"],
     ["activity", "byId"],
+    ["cycling", "decoupling"],
   ])(
     "refreshes %s.%s when its first fetch overlaps a completed sync",
     async (router, procedure) => {
