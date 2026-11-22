@@ -72,6 +72,13 @@ describe("getProviderQueueConfig", () => {
       syncTier: "daily",
     });
   });
+
+  it("runs Intervals.icu syncs on the scheduled frequent tier without a fixed limiter", () => {
+    expect(getProviderQueueConfig("intervals.icu")).toStrictEqual({
+      concurrency: 1,
+      syncTier: "frequent",
+    });
+  });
 });
 
 describe("config values are reasonable", () => {
@@ -104,7 +111,8 @@ describe("config values are reasonable", () => {
 describe("getConfiguredProviderIds", () => {
   it("returns all known provider IDs", () => {
     const ids = getConfiguredProviderIds();
-    expect(ids).toHaveLength(36);
+    expect(ids).toHaveLength(37);
+    expect(ids).toContain("intervals.icu");
     expect(ids).toContain("crimpd");
     expect(ids).toContain("eight-a");
     expect(ids).toContain("strava");

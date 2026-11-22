@@ -182,6 +182,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type, ISO week, modality, or purpose, including unclassified and power coverage. |
 | `get_running_race_forecast` | `activity:read` | Estimates a 10K or half-marathon finish from a shorter imported race and returns the source evidence. |
 | `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
+| `get_cycling_training_metrics` | `activity:read` | Returns per-ride cycling metrics or compares recorded Lamberts tests when given a test protocol. |
 | `get_training_load` | `activity:read`; also `nutrition:read` when requested | Returns daily load and rolling windows; analytical detail preserves modality channels and can include aligned nutrition. |
 | `get_recovery_training_series` | Scope depends on selected fields and grain: `health:read`, `activity:read`, and/or `nutrition:read` | Aligns selected observations by local day or main sleep, with workout timing and coverage evidence. |
 | `compare_performances` | `activity:read` | Compares only explicitly or strongly evidenced equivalent workouts, routes, climbs, strength exercises, or standardized tests with contextual deltas and provenance. |
@@ -203,6 +204,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `restore_food_entry` | `nutrition:read` + `nutrition:write` | Restores a deleted record while retaining its field and nutrient decisions. Returns that day's calorie/macro preview. |
 | `get_food_entry_history` | `nutrition:read` | Returns the paginated command and decision history for a food record. |
 | `get_body_metrics` | `health:read` | Returns reconciled body metrics, value kinds, source values, and 7/28-day rolling weight statistics. |
+| `get_overview_insights` | `health:read` + `activity:read` + `nutrition:read` | Returns the Overview's 90-day association and correlation candidates in computation order with confidence, effect, p-value, and evidence. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 
@@ -577,6 +579,28 @@ See the [series tool](../packages/server/src/mcp/recovery-training-series-tool.t
 [workout exposure repository](../packages/server/src/repositories/pre-sleep-activity-repository.ts),
 and [PostgreSQL time-zone conversion rules](https://www.postgresql.org/docs/current/functions-datetime.html).
 
+### Overview insights
+
+`get_overview_insights` requires an `end_date` in `YYYY-MM-DD` format and accepts
+an optional IANA `timezone`. It reuses the Overview's fixed 90-day window and the
+same server-side calculation as `insights.compute` for the authenticated user, so
+the tool returns the identical candidate set the app derives. An explicit
+`timezone` uses that analysis zone; otherwise the tool uses the request's
+`X-Timezone` header (default `UTC`). It requires `health:read`, `activity:read`,
+and `nutrition:read`, and no input selects another user.
+
+The result carries the `range` (`start_date`, `end_date`, `timezone`, and the
+fixed `days: 90`) and the insight candidates in the computation's order. Each
+candidate includes its `id`, `type`, `confidence`, `action`, `metric`, `message`,
+`detail`, `effect_size`, `p_value`, optional `correlation`, `explanation`,
+`confounders`, and `evidence`. Raw per-day points and grouped distributions are
+omitted from the payload. Candidates the card would hide as `insufficient` are
+retained, because the Overview card filters `insufficient` and then selects the
+largest absolute effect; returning the full ordered set lets a caller diagnose
+which candidate would surface. Every relationship is a descriptive association
+or correlation over observed data and does not establish causation. The tool is
+read-only and never changes the app's cached `insights.compute` request.
+
 #### Relationship analysis examples
 
 These are `tools/call` parameters and abbreviated structured responses from
@@ -767,6 +791,20 @@ discovery nor the report fetches provider history or refreshes models.
 Operators can generate the same analysis using the
 [TypeScript report command](../scripts/README.md#verification--tooling), which
 retains the full comparison/trend responses and their provenance.
+
+### Lamberts Submaximal Cycle Test
+
+Call `get_cycling_training_metrics` with `test_protocol: "lamberts_submaximal_cycle_test"`
+and an inclusive local date range. The result lists eligible recorded FIT tests newest first.
+Use `next_cursor` with the same dates and filters to see earlier tests. The range comparison
+reports stage 2 and stage 3 power changes between the earliest and latest eligible tests when
+both observations are available.
+
+Use the returned equipment and indoor/outdoor information as context. The response includes
+eligible tests across trainers and reports the maximum heart rate measurement method as `unknown`.
+Keep missing stage data, exertion ratings, and recovery posture unknown in the interpretation.
+Previously imported files need a fresh FIT import to capture the workout structure used for
+eligibility. [LSCT protocol and evidence](../packages/server/README.md#mcp-activity-and-cycling-analytics).
 
 ### Historical verification record — 2026-09-10
 

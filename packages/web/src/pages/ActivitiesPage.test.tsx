@@ -53,6 +53,16 @@ let mockOverviewQuery: {
   refetch?: () => void;
 };
 let weekListInput: unknown;
+let upcomingQueryInput: unknown;
+let mockUpcomingQuery: {
+  data: unknown;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+  isFetching: boolean;
+  refetch: () => void;
+};
+let invalidateUpcoming: CallableVitestMock;
 const titleSearchQuery = vi.hoisted(() => vi.fn());
 const locationSearchQuery = vi.hoisted(() => vi.fn());
 const placeLookupQuery = vi.hoisted(() => vi.fn());
@@ -173,6 +183,12 @@ vi.mock("../lib/trpc.ts", () => ({
           return mockOverviewQuery;
         },
       },
+      upcomingWorkouts: {
+        useQuery: (input: unknown) => {
+          upcomingQueryInput = input;
+          return mockUpcomingQuery;
+        },
+      },
     },
     activity: {
       images: {
@@ -228,6 +244,7 @@ vi.mock("../lib/trpc.ts", () => ({
           getData: (input: unknown) => liveQueryClient?.getQueryData(["activities", input]),
         },
         activityOverview: { invalidate: invalidateActivityOverview },
+        upcomingWorkouts: { invalidate: invalidateUpcoming },
         searchActivities: { invalidate: vi.fn() },
         calendarData: { invalidate: invalidateCalendarData },
       },
@@ -251,6 +268,7 @@ vi.mock("../lib/unitContext.ts", () => ({
 }));
 
 import { branchingSourceTree } from "../components/ActivitySourceDisclosure.fixtures.ts";
+import { plannedWorkoutDays } from "../components/UpcomingWorkouts.fixtures.ts";
 import { maps, resetMaps } from "../lib/maplibre-test-helpers.ts";
 import { ActivitiesPage } from "./ActivitiesPage.tsx";
 
@@ -345,6 +363,19 @@ describe("ActivitiesPage", () => {
     expect(screen.getByRole("checkbox", { name: "Select Running" })).toBeDefined();
   });
 
+  it("renders the upcoming schedule beside an empty completed history without changing its totals", () => {
+    mockUpcomingQuery = { ...mockUpcomingQuery, data: plannedWorkoutDays };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByRole("heading", { name: "Upcoming workouts" })).toBeDefined();
+    expect(screen.getByText("Threshold intervals")).toBeDefined();
+    expect(screen.getByText("Planned")).toBeDefined();
+    expect(upcomingQueryInput).toBeUndefined();
+    expect(screen.getByText("No activities in the last 4 weeks.")).toBeDefined();
+    expect(screen.getByText("0")).toBeDefined();
+  });
+
   beforeEach(() => {
     mockImagesUseQuery.mockReset();
     mockImagesUseQuery.mockReturnValue({
@@ -375,6 +406,16 @@ describe("ActivitiesPage", () => {
     weekListInput = undefined;
     overviewInput = undefined;
     overviewOptions = undefined;
+    upcomingQueryInput = undefined;
+    mockUpcomingQuery = {
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      error: null,
+      isFetching: false,
+      refetch: vi.fn(),
+    };
+    invalidateUpcoming = vi.fn();
     bulkDeleteMutate = vi.fn();
     mergeMutate = vi.fn();
     restoreProviderAbsentMutate = vi.fn();

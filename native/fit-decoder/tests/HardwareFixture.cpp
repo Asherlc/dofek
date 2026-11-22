@@ -9,8 +9,12 @@
 #include "fit_encode.hpp"
 #include "fit_crc.hpp"
 #include "fit_file_id_mesg.hpp"
+#include "fit_lap_mesg.hpp"
 #include "fit_record_mesg.hpp"
 #include "fit_weight_scale_mesg.hpp"
+#include "fit_workout_mesg.hpp"
+#include "fit_workout_step_mesg.hpp"
+#include "fit_zones_target_mesg.hpp"
 
 int main(int argc, char* argv[]) {
   if (argc != 3) return 2;
@@ -19,6 +23,41 @@ int main(int argc, char* argv[]) {
   fit::Encode encoder(fit::ProtocolVersion::V20);
   encoder.Open(file);
   const std::string fixture_mode(argv[2]);
+  if (fixture_mode == "workout-structure") {
+    constexpr FIT_DATE_TIME start = 1000000000;
+    fit::FileIdMesg file_id;
+    file_id.SetType(FIT_FILE_ACTIVITY);
+    encoder.Write(file_id);
+    fit::WorkoutMesg workout;
+    workout.SetSport(FIT_SPORT_CYCLING);
+    workout.SetNumValidSteps(1);
+    workout.SetWktName(L"LSCT");
+    encoder.Write(workout);
+    fit::WorkoutStepMesg step;
+    step.SetMessageIndex(0);
+    step.SetDurationType(FIT_WKT_STEP_DURATION_TIME);
+    step.SetDurationTime(360.0F);
+    step.SetTargetType(FIT_WKT_STEP_TARGET_HEART_RATE);
+    step.SetTargetHrZone(0);
+    step.SetCustomTargetHeartRateLow(60);
+    step.SetCustomTargetHeartRateHigh(60);
+    encoder.Write(step);
+    fit::ZonesTargetMesg zones;
+    zones.SetMaxHeartRate(190);
+    encoder.Write(zones);
+    fit::RecordMesg record;
+    record.SetTimestamp(start);
+    record.SetHeartRate(114);
+    encoder.Write(record);
+    fit::LapMesg lap;
+    lap.SetWktStepIndex(0);
+    lap.SetStartTime(start);
+    lap.SetTimestamp(start + 360);
+    lap.SetTotalElapsedTime(360.0F);
+    lap.SetTotalTimerTime(360.0F);
+    encoder.Write(lap);
+    return encoder.Close() ? 0 : 1;
+  }
   if (fixture_mode.rfind("recovery-", 0) == 0) {
     fit::FileIdMesg file_id;
     const bool chained_header = fixture_mode.rfind("recovery-chained-", 0) == 0 ||

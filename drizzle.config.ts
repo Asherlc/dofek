@@ -12,6 +12,7 @@ export default defineConfig({
     "./src/db/schema/events.ts",
     "./src/db/schema/nutrition.ts",
     "./src/db/schema/mcp.ts",
+    "./src/db/schema/planned-workout.ts",
     "./src/db/schema/record-modifications.ts",
     "./src/db/schema/reference.ts",
   ],
