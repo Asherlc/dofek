@@ -6,6 +6,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
+import { bindProviderSourceAccount } from "../../../../src/db/provider-data-deletion.ts";
+import { runningRaceResult } from "../../../../src/db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { deleteProviderAuthorization } from "../../../../src/db/tokens.ts";
 import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
@@ -337,6 +339,30 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
     await testContext?.cleanup();
   });
 
+  it("deletes disconnected Runalyze race results only for the requesting owner", async () => {
+    const runalyze = "runalyze";
+    await testContext.db.execute(
+      sql`INSERT INTO fitness.provider (id, name) VALUES (${runalyze}, 'Runalyze')`,
+    );
+    await testContext.db.insert(runningRaceResult).values(
+      [userId, secondUserId].map((ownerId) => ({
+        userId: ownerId,
+        providerId: runalyze,
+        sourceActivityId: "42",
+        sourceSport: "Running",
+        sourceDateTime: "2026-04-01T09:00:00+02:00",
+        distanceMeters: 5000,
+        finishSeconds: 1500,
+      })),
+    );
+    const repository = new ProviderDetailRepository(testContext.db, userId);
+    await expect(repository.canDeleteProviderData(runalyze)).resolves.toBe(true);
+    await repository.requestProviderDataDeletion(runalyze);
+    expect(await testContext.db.select().from(runningRaceResult)).toMatchObject([
+      { userId: secondUserId, providerId: runalyze, sourceActivityId: "42" },
+    ]);
+  });
+
   it("deletes one user's records while preserving both users' connections and tokens", async () => {
     const repository = new ProviderDetailRepository(testContext.db, userId);
 
@@ -413,6 +439,13 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
     expect(selectedClinicalRecordCount?.count).toBe(0);
     expect(retainedProviderClinicalRecordCount?.count).toBe(1);
     expect(secondUserClinicalRecordCount?.count).toBe(1);
+  });
+
+  it("keeps deletion available when only a retained source-account binding remains", async () => {
+    await bindProviderSourceAccount(testContext.db, userId, "intervals.icu", "i123");
+    const repository = new ProviderDetailRepository(testContext.db, userId, noRetainedMetricStream);
+
+    await expect(repository.canDeleteProviderData("intervals.icu")).resolves.toBe(true);
   });
 
   it("authorizes canonical deletion from retained rows after disconnect and emits its outbox event", async () => {

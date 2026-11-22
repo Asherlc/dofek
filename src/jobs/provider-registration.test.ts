@@ -29,6 +29,7 @@ const mockProviders = {
   "eight-sleep": { id: "eight-sleep" },
   zwift: { id: "zwift" },
   trainerroad: { id: "trainerroad" },
+  runalyze: { id: "runalyze" },
   ultrahuman: { id: "ultrahuman" },
   concept2: { id: "concept2" },
   xert: { id: "xert" },
@@ -40,6 +41,7 @@ const mockProviders = {
   "kaya-export": { id: "kaya-export" },
   "zos-app": { id: "zos-app" },
   boardsesh: { id: "boardsesh" },
+  "intervals.icu": { id: "intervals.icu" },
 };
 
 function mockProviderConstructor(provider: { id: string }) {
@@ -108,6 +110,9 @@ vi.mock("../providers/zwift.ts", () => ({
 vi.mock("../providers/trainerroad.ts", () => ({
   TrainerRoadProvider: mockProviderConstructor(mockProviders.trainerroad),
 }));
+vi.mock("../providers/runalyze.ts", () => ({
+  RunalyzeProvider: mockProviderConstructor(mockProviders.runalyze),
+}));
 vi.mock("../providers/ultrahuman.ts", () => ({
   UltrahumanProvider: mockProviderConstructor(mockProviders.ultrahuman),
 }));
@@ -140,6 +145,9 @@ vi.mock("../providers/zos-app/provider.ts", () => ({
 }));
 vi.mock("../providers/boardsesh.ts", () => ({
   BoardSeshProvider: mockProviderConstructor(mockProviders.boardsesh),
+}));
+vi.mock("../providers/intervals-icu/provider.ts", () => ({
+  IntervalsIcuProvider: mockProviderConstructor(mockProviders["intervals.icu"]),
 }));
 
 // The real constructor verifies theCrag exposes its per-user auth contract.
@@ -183,6 +191,14 @@ describe("provider-registration", () => {
         "boardsesh",
       ]),
     );
+  });
+
+  it("registers Intervals.icu for worker sync discovery", async () => {
+    const { ensureProvidersRegistered } = await import("./provider-registration.ts");
+    await ensureProvidersRegistered();
+
+    const ids = mockRegisterProvider.mock.calls.map(([provider]) => provider.id);
+    expect(ids).toContain("intervals.icu");
   });
 
   it("registers theCrag with a personal API key connection", async () => {

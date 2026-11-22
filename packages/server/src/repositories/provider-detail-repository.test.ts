@@ -95,8 +95,8 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("PROVIDER_ACCOUNT_TABLES", () => {
-  it("contains 15 child tables", () => {
-    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(15);
+  it("contains 17 child tables", () => {
+    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(17);
   });
 
   it("includes all required child tables", () => {
@@ -105,6 +105,7 @@ describe("PROVIDER_ACCOUNT_TABLES", () => {
     expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.body_measurement");
     expect(PROVIDER_ACCOUNT_TABLES).not.toContain("fitness.nutrition_daily");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.daily_metrics");
+    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.running_race_result");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.sleep_session");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.food_entry");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.clinical_record");
@@ -559,6 +560,22 @@ describe("ProviderDetailRepository", () => {
       expect(query).not.toHaveBeenCalled();
     });
 
+    it("discovers calendar-only retained data from planned_workout rows", async () => {
+      const { bodyStore } = makeBodyStore([{ has_data: 0 }]);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ has_data: true }]);
+      const repository = new ProviderDetailRepository(
+        { execute, transaction: vi.fn() },
+        "user-1",
+        bodyStore,
+      );
+
+      await expect(repository.canDeleteProviderData("intervals.icu")).resolves.toBe(true);
+      expect(stringifyQuery(execute.mock.calls[1]?.[0])).toContain("fitness.planned_workout");
+    });
+
     it("allows a disconnected user with active retained metric-stream records", async () => {
       const { bodyStore, query } = makeBodyStore([{ has_data: 1 }]);
       const execute = vi
@@ -637,6 +654,7 @@ describe("ProviderDetailRepository", () => {
       const deleteSql = txExecute.mock.calls.map((call) => stringifyQuery(call[0])).join("\n");
       expect(deleteSql).toContain("fitness.clinical_record");
       expect(deleteSql).toContain("fitness.imu_session");
+      expect(deleteSql).toContain("fitness.planned_workout");
       expect(deleteSql).not.toContain("fitness.oauth_token");
       expect(deleteSql).toContain("fitness.provider_data_generation");
       expect(deleteSql).toContain("fitness.provider_data_deletion_outbox");
@@ -804,9 +822,9 @@ describe("ProviderDetailRepository", () => {
     });
 
     it("PROVIDER_ACCOUNT_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(15);
+      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(17);
       expect(PROVIDER_ACCOUNT_TABLES[0]).toBe("fitness.daily_metrics");
-      expect(PROVIDER_ACCOUNT_TABLES[14]).toBe("fitness.provider_connection");
+      expect(PROVIDER_ACCOUNT_TABLES.at(-1)).toBe("fitness.provider_connection");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {

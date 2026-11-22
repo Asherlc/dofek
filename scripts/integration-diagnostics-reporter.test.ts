@@ -3,8 +3,85 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+function captureUntilHardStop(
+  config: string,
+  signal: AbortSignal,
+  reachedCheckpoint: (output: string) => boolean,
+): Promise<string> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [path.resolve("node_modules/vitest/vitest.mjs"), "run", "--config", config, "--retry=0"],
+      { detached: true, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let output = "";
+    let stderrBytes = 0;
+    let stderrTail = "";
+    let checkpointObserved = false;
+    let stopRequested = false;
+    let deadlineExpired = false;
+    let spawnError: Error | undefined;
+    const stop = () => {
+      if (!child.pid || stopRequested) return;
+      stopRequested = true;
+      try {
+        // Descendants can hold the runner's pipes open after it exits.
+        process.kill(-child.pid, "SIGKILL");
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) reject(error);
+      }
+    };
+    signal.addEventListener("abort", stop, { once: true });
+    // Fire before the 15s test timeout so a stalled nested runner reports its output.
+    const deadline = setTimeout(() => {
+      if (!checkpointObserved) {
+        deadlineExpired = true;
+        stop();
+      }
+    }, 12_000);
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+      output += chunk;
+      if (!stopRequested && reachedCheckpoint(output)) {
+        checkpointObserved = true;
+        stop();
+      }
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderrBytes += chunk.length;
+      stderrTail = (stderrTail + chunk.toString()).slice(-2000);
+    });
+    child.once("error", (error) => {
+      spawnError = error;
+      stop();
+    });
+    child.once("exit", stop);
+    child.once("close", (code, exitSignal) => {
+      clearTimeout(deadline);
+      signal.removeEventListener("abort", stop);
+      if (spawnError) reject(spawnError);
+      else if (signal.aborted || deadlineExpired) {
+        reject(
+          new Error(
+            `Runner did not reach the checkpoint before abort. stdout tail: ${output.slice(-2000)} stderr tail: ${stderrTail}`,
+            { cause: signal.reason },
+          ),
+        );
+      } else if (!checkpointObserved || exitSignal !== "SIGKILL") {
+        reject(
+          new Error(
+            `Unexpected runner exit (code ${code}, signal ${exitSignal}, checkpoint observed ${checkpointObserved}, stderr bytes ${stderrBytes})`,
+          ),
+        );
+      } else resolve(output);
+    });
+  });
+}
+
 describe("integration diagnostics reporter", () => {
-  it("projects failed suite, case and module errors before the runner can summarize", async () => {
+  it("projects failed suite, case and module errors before the runner can summarize", async ({
+    signal,
+  }) => {
     const dir = mkdtempSync(path.join(process.cwd(), "src/test/diagnostic-runner-"));
     const testFile = path.join(dir, "failed.integration.test.ts");
     const moduleFile = path.join(dir, "module-failed.integration.test.ts");
@@ -40,34 +117,11 @@ class ObservedReporter extends Reporter {
 export default defineConfig({ test: { reporters: [new ObservedReporter()], projects: [{ test: { name: "integration", fileParallelism: false, includeTaskLocation: true, include: [${JSON.stringify(testFile)}, ${JSON.stringify(moduleFile)}] } }] } });`,
     );
     try {
-      const output = await new Promise<string>((resolve, reject) => {
-        const child = spawn(
-          process.execPath,
-          [
-            path.join(process.cwd(), "node_modules/vitest/vitest.mjs"),
-            "run",
-            "--config",
-            config,
-            "--retry=0",
-          ],
-          { detached: true, stdio: ["ignore", "pipe", "pipe"] },
-        );
-        let text = "";
-        const timer = setTimeout(() => {
-          if (child.pid) process.kill(-child.pid, "SIGKILL");
-          reject(new Error("Failed module event was not observed"));
-        }, 10_000);
-        child.stdout.on("data", (chunk: Buffer) => {
-          text += chunk.toString();
-          if (text.split('"event":"module.failed"').length === 3 && child.pid)
-            process.kill(-child.pid, "SIGKILL");
-        });
-        child.on("error", reject);
-        child.on("close", () => {
-          clearTimeout(timer);
-          resolve(text);
-        });
-      });
+      const output = await captureUntilHardStop(
+        config,
+        signal,
+        (text) => text.split('"event":"module.failed"').length >= 3,
+      );
       const events = output
         .split("\n")
         .filter(Boolean)
@@ -125,7 +179,7 @@ export default defineConfig({ test: { reporters: [new ObservedReporter()], proje
       rmSync(dir, { recursive: true, force: true });
     }
   }, 15_000);
-  it("flushes a real hook start before a hard stop", async () => {
+  it("flushes a real hook start before a hard stop", async ({ signal }) => {
     const dir = mkdtempSync(path.join(process.cwd(), "src/test/diagnostic-runner-"));
     const testFile = path.join(dir, "stalled.integration.test.ts");
     const config = path.join(dir, "vitest.config.ts");
@@ -168,76 +222,9 @@ export default defineConfig({
 });`,
     );
     try {
-      const { output, signal } = await new Promise<{
-        output: string;
-        signal: NodeJS.Signals | null;
-      }>((resolve, reject) => {
-        const child = spawn(
-          process.execPath,
-          [
-            path.join(process.cwd(), "node_modules/vitest/vitest.mjs"),
-            "run",
-            "--config",
-            config,
-            "--retry=0",
-          ],
-          { cwd: process.cwd(), detached: true, stdio: ["ignore", "pipe", "pipe"] },
-        );
-        let text = "";
-        let stderrLength = 0;
-        let hookObserved = false;
-        let killed = false;
-        let settled = false;
-        const killGroup = () => {
-          if (killed || !child.pid) return;
-          killed = true;
-          try {
-            process.kill(-child.pid, "SIGKILL");
-          } catch (error) {
-            if (
-              typeof error !== "object" ||
-              error === null ||
-              !("code" in error) ||
-              error.code !== "ESRCH"
-            )
-              throw error;
-          }
-        };
-        const settle = (complete: () => void) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          complete();
-        };
-        const fail = (message: string) => settle(() => reject(new Error(message)));
-        const succeed = (closeSignal: NodeJS.Signals | null) =>
-          settle(() => resolve({ output: text, signal: closeSignal }));
-        child.stderr.on("data", (chunk: Buffer) => {
-          stderrLength += chunk.length;
-        });
-        const timer = setTimeout(() => {
-          killGroup();
-          fail(
-            `Runner pipes did not close; hook observed: ${hookObserved}; stderr empty: ${stderrLength === 0}`,
-          );
-        }, 10_000);
-        child.on("exit", (code, exitSignal) => {
-          if (!hookObserved) {
-            killGroup();
-            fail(`Runner exited before hook start; code: ${code}; signal: ${exitSignal}`);
-          }
-        });
-        child.stdout.on("data", (chunk: Buffer) => {
-          text += chunk.toString();
-          if (!hookObserved && text.includes('"event":"hook.start"')) {
-            hookObserved = true;
-            killGroup();
-          }
-        });
-        child.on("error", (error) => fail(`Runner failed to spawn: ${error.message}`));
-        child.on("close", (_code, closeSignal) => succeed(closeSignal));
-      });
-      expect(signal).toBe("SIGKILL");
+      const output = await captureUntilHardStop(config, signal, (text) =>
+        text.includes('"event":"hook.start"'),
+      );
       expect(existsSync(marker)).toBe(true);
       expect(output).not.toContain("other.integration.test.ts");
       expect(output).toContain('"event":"module.start"');

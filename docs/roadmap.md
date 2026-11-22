@@ -66,6 +66,14 @@ Connect daily decisions to planned and completed work.
 - [ ] Explain plan deviations using recovery, availability, and completed-work evidence without moral judgment.
 - [ ] Adjust future recommendations when the user accepts a change or repeatedly dismisses a type of action.
 - [ ] Prefer importing existing structured plans and device calendars before building a broad custom plan-authoring system.
+- [ ] Import Intervals.icu A/B/C races, planned workouts, and weekly time, distance,
+  and training-load targets into Activities on web and iOS as read-only records
+  with source attribution. Before release, obtain Intervals.icu OAuth approval
+  and verify fields, units, local dates, and removal behavior against populated
+  calendar responses authorized with `CALENDAR:READ`.
+  [Shared design](superpowers/specs/2026-11-21-provider-goals-and-calendar-design.md#provider-evidence) ·
+  [Intervals.icu API](https://intervals.icu/api/v1/docs) ·
+  [Intervals.icu OAuth](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759).
 
 [TrainingPeaks](https://www.trainingpeaks.com/) demonstrates the complete plan-calendar-device-compliance loop, including structured plans and workouts that sync to compatible devices in its [training-plan catalog](https://www.trainingpeaks.com/training-plans/). Dofek's opportunity is to combine that planning loop with cross-provider recovery, nutrition, and behavior evidence.
 

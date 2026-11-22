@@ -39693,3 +39693,53 @@ Local qualification and CI are separate from production throughput acceptance. T
   assertions. The focused PostgreSQL diagnostic is the successful local
   evidence for the query behavior.
   [Local test wrapper](testing.md#integration-dependencies)
+
+## 2026-11-21 — Docker VM AIO exhaustion during cycling durability validation
+
+- The local command `pnpm test:integration -- src/db/cycling-durability-effort.integration.test.ts`
+  stopped during `compose:up`, before test collection. Redpanda repeatedly exited
+  with code 133. PostgreSQL and Redis were healthy when inspected. The failure
+  interrupted local validation. Production was unaffected.
+- Redpanda’s first fatal message began `Could not setup Async I/O: unknown error`.
+  A read-only check in the workspace PostgreSQL container returned `65536` for
+  both `aio-nr` and `aio-max-nr`, confirming that the shared Docker Desktop Linux
+  VM could not allocate another AIO slot. [Linux kernel AIO settings](https://www.kernel.org/doc/html/latest/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+- With user authorization, set the local VM runtime ceiling to `1048576` and
+  confirmed it from the workspace container. The unchanged command then
+  reported Redpanda healthy. The change used a disposable container and leaves
+  the repository and persistent Docker configuration untouched.
+- The unchanged command still stopped before test collection with `container
+  insights-cycling-durability-clickhouse-1 is unhealthy`. The health-check log
+  repeatedly reported `Health check exceeded timeout (5s)`. A manual `SELECT 1`
+  succeeded over both HTTP and the native client. At inspection, the ten-CPU VM
+  reported a one-minute load of 855.41 and 95.59 percent CPU waiting over the
+  last ten seconds. The ClickHouse health gate and rebuilt feature tests remain
+  pending. [Shared Docker VM resource checks](testing.md#shared-docker-vm-resource-pressure).
+- At 18:42 UTC, the unchanged integration command passed service health and
+  all ten model fixtures with its standard test timeout. The earlier direct
+  run isolated inefficient array processing in the draft SQL, which was
+  corrected before this run. The temporary AIO ceiling is the only VM change.
+
+## 2026-11-21 — Integration diagnostics reporter fixture deadline
+
+- **Impact.** The required CI gate on [PR #3437](https://github.com/Asherlc/dofek/pull/3437) failed during `pnpm exec vitest run --project unit --coverage`. Production was unaffected. The failing test reported `Runner pipes did not close; hook observed: false; stderr empty: true`. The same test required a retry on another branch that morning. [Failed unit job](https://github.com/Asherlc/dofek/actions/runs/44930189502/job/136925408470) · [Unit job with a retry](https://github.com/Asherlc/dofek/actions/runs/44927966697/job/136918401004).
+- **Cause and repair.** The fixture started a separate 10-second watchdog before the nested Vitest runner loaded its config and executed the tests. Under local load the real hook arrived after 10.8 seconds, within the fixture's 15-second Vitest deadline. A controlled late hook reproduced the hosted error. The fixture now uses Vitest's test cancellation signal to stop the detached process group. It still requires the real checkpoint and a hard stop before inspecting output. The hosted failure log lacks child startup timings. [Reporter tests](../scripts/integration-diagnostics-reporter.test.ts) · [Vitest cancellation](https://main.vitest.dev/guide/test-context#signal).
+- **Validation and follow-up.** A controlled replay delayed the real hook by 10.75 seconds from fixture setup. The old fixture failed and the repaired fixture passed with retries disabled. Suppressing the hook entirely still failed at 15 seconds and stopped both the runner and its descendant. Monitor the new PR head for recurring startup delays.
+
+## 2026-11-21 — Local Docker capacity delayed race forecast validation
+
+- `pnpm test:integration` stopped before Vitest when the workspace's Redpanda
+  service reported `Could not setup Async I/O`. The shared Docker VM had
+  `aio-nr=65536` and `aio-max-nr=65536`. Exhausting the VM-wide AIO limit
+  prevented the broker from starting. The impact was limited to local validation.
+  [Linux kernel AIO limits](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr)
+- Later the limit was `1048576` and usage was `131692`. The workspace services
+  passed their health checks and the standard runner passed the forecast and
+  import integration tests on PostgreSQL. The provider-deletion suite still
+  hit the existing 120-second fixture setup deadline before assertions. A
+  rollback-only PostgreSQL check verified owner-scoped deletion. The cause of the
+  remaining fixture timeout was unresolved. The implementation left the shared
+  runner and service configuration intact.
+- When local Redpanda logs report AIO exhaustion, record both counters and check
+  the workspace service status before retrying. Keep the full integration suite
+  as a GitHub CI gate. [Shared Docker VM resource pressure](testing.md#shared-docker-vm-resource-pressure)

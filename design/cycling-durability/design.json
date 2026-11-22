@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "title": "Cycling durability",
+  "kind": "prototype",
+  "description": "Compare your best cycling power with what you can do after a set amount of pedaling.",
+  "artboards": [
+    {
+      "id": "comparison",
+      "title": "Power after prior work",
+      "file": "comparison.html",
+      "width": 720
+    },
+    {
+      "id": "web",
+      "title": "Dofek Web · Training / Cycling",
+      "file": "web.html",
+      "width": 1200,
+      "group": "app-context"
+    },
+    {
+      "id": "ios",
+      "title": "Dofek iOS · Training / Cycling",
+      "file": "ios.html",
+      "width": 390,
+      "group": "app-context"
+    }
+  ]
+}

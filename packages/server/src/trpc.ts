@@ -270,6 +270,7 @@ interface CachePolicy {
   maxAge: number;
   expiresAt?: CacheExpiry;
   keyVersion?: string;
+  scopeByAccessWindow?: boolean;
   outputSchema?: ZodType;
   shouldCache?: (data: unknown) => boolean;
 }
@@ -332,8 +333,13 @@ function cached(policy: CachePolicy) {
   return trpc.middleware(async ({ ctx, path, type, getRawInput, next }) => {
     const start = performance.now();
     const rawInput = await getRawInput();
-    // Include userId in cache key to prevent cross-user data leaks
-    const key = requestCacheKey(ctx.userId, path, rawInput, ctx.timezone, policy.keyVersion);
+    const access = ctx.accessWindow;
+    const accessScope =
+      access?.kind === "limited" ? `${access.startDate}-to-${access.endDateExclusive}` : "full";
+    const keyVersion = policy.scopeByAccessWindow
+      ? `${policy.keyVersion ?? "v1"}-${accessScope}`
+      : policy.keyVersion;
+    const key = requestCacheKey(ctx.userId, path, rawInput, ctx.timezone, keyVersion);
 
     // Cache lookup
     const cacheLookupStart = performance.now();

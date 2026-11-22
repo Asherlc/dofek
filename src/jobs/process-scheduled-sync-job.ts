@@ -94,6 +94,7 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: Schedul
   );
 
   let jobCount = 0;
+  let skippedUnconfigured = 0;
   let skippedDisconnected = 0;
   let skippedDueToCooldown = 0;
   let skippedDueToInFlight = 0;
@@ -102,7 +103,11 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: Schedul
 
   function skippedCount(): number {
     return (
-      skippedDisconnected + skippedDueToCooldown + skippedDueToInFlight + skippedDueToAccountErasure
+      skippedUnconfigured +
+      skippedDisconnected +
+      skippedDueToCooldown +
+      skippedDueToInFlight +
+      skippedDueToAccountErasure
     );
   }
 
@@ -121,6 +126,14 @@ export async function processScheduledSyncJob(job: ScheduledSyncJob, db: Schedul
           const provider = getProvider(providerId);
           if (!provider || !isSyncEligibleProvider(provider)) {
             logger.info(`[scheduled-sync] Skipping non-sync provider ${providerId}`);
+            processedConnections++;
+            await reportDispatchProgress();
+            continue;
+          }
+
+          if (provider.validate() !== null) {
+            skippedUnconfigured++;
+            logger.info(`[scheduled-sync] Skipping unconfigured provider ${providerId}`);
             processedConnections++;
             await reportDispatchProgress();
             continue;

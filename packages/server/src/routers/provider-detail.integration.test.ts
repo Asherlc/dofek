@@ -2,7 +2,7 @@ import { closeProviderOperationFencePool } from "dofek/db/provider-operation-fen
 import { ensureProvider, loadTokens, saveTokens } from "dofek/db/tokens";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { executeWithSchema } from "../../../../src/db/typed-sql.ts";
@@ -118,10 +118,51 @@ describe("provider detail operation fences (integration)", () => {
     expect(connections).toEqual([{ provider_id: "garmin" }]);
   });
 
+  it("revokes a saved Intervals.icu connection after the app credentials are removed", async () => {
+    vi.stubEnv("INTERVALS_ICU_CLIENT_ID", undefined);
+    vi.stubEnv("INTERVALS_ICU_CLIENT_SECRET", undefined);
+    try {
+      await ensureProvider(context.db, "intervals.icu", "Intervals.icu", undefined, userId);
+      await saveTokens(
+        context.db,
+        "intervals.icu",
+        {
+          ...existingTokens,
+          accessToken: "saved-intervals-token",
+          refreshToken: null,
+          providerAccountId: "i123",
+        },
+        userId,
+      );
+      const authorizations: (string | null)[] = [];
+      externalApiServer.use(
+        http.delete("https://intervals.icu/api/v1/disconnect-app", ({ request }) => {
+          authorizations.push(request.headers.get("authorization"));
+          return new HttpResponse(null, { status: 200 });
+        }),
+      );
+
+      await expect(caller().disconnect({ providerId: "intervals.icu" })).resolves.toMatchObject({
+        success: true,
+      });
+
+      expect(authorizations).toEqual(["Bearer saved-intervals-token"]);
+      await expect(loadTokens(context.db, "intervals.icu", userId)).resolves.toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("atomically deletes provider data and queues its generation while retaining credentials", async () => {
+    await ensureProvider(context.db, "intervals.icu", "Intervals.icu", undefined, userId);
     await context.db.execute(
       sql`INSERT INTO fitness.daily_metrics (user_id, provider_id, date, steps)
           VALUES (${userId}, 'garmin', '2026-10-20', 4000)`,
+    );
+    await context.db.execute(
+      sql`INSERT INTO fitness.planned_workout (user_id, provider_id, external_id, start_date)
+          VALUES (${userId}, 'garmin', 'planned-garmin', '2026-10-20'),
+                 (${userId}, 'intervals.icu', 'planned-intervals', '2026-10-20')`,
     );
 
     const result = await caller().deleteAllData({ providerId: "garmin", confirmation: "DELETE" });
@@ -135,6 +176,12 @@ describe("provider detail operation fences (integration)", () => {
           WHERE user_id = ${userId} AND provider_id = 'garmin'`,
     );
     expect(data).toEqual([{ count: 0 }]);
+    const plannedProviders = await executeWithSchema(
+      context.db,
+      z.object({ provider_id: z.string() }),
+      sql`SELECT provider_id FROM fitness.planned_workout WHERE user_id = ${userId}`,
+    );
+    expect(plannedProviders).toEqual([{ provider_id: "intervals.icu" }]);
     const requests = await executeWithSchema(
       context.db,
       z.object({ generation: z.coerce.number(), status: z.string() }),

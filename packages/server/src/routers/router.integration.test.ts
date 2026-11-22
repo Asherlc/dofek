@@ -719,66 +719,9 @@ describe("Router coverage", () => {
       }
     });
 
-    it("estimatedOneRepMax returns e1RM history for qualified exercises", async () => {
-      const result = await query<
-        {
-          exerciseName: string;
-          history: {
-            date: string;
-            estimatedMax: number;
-            actualWeight: number;
-            actualReps: number;
-          }[];
-          trend: {
-            direction: "increasing" | "decreasing" | "stable";
-            summary: string;
-            changeMagnitudeKg: number;
-            firstDate: string;
-            latestDate: string;
-          };
-        }[]
-      >("strength.estimatedOneRepMax", { days: 90 });
-
-      // With 6 weeks * 2 workouts = 12 appearances, exercises should qualify (>= 3)
-      expect(result.length).toBeGreaterThan(0);
-
-      for (const exercise of result) {
-        expect(exercise.exerciseName).toBeTruthy();
-        expect(exercise.history.length).toBeGreaterThanOrEqual(3);
-        const firstEntry = exercise.history[0];
-        const latestEntry = exercise.history.at(-1);
-        expect(firstEntry).toBeDefined();
-        expect(latestEntry).toBeDefined();
-        if (!firstEntry || !latestEntry) {
-          throw new Error("Estimated max history unexpectedly had no date bounds.");
-        }
-
-        const changeKg = Math.round((latestEntry.estimatedMax - firstEntry.estimatedMax) * 10) / 10;
-        const expectedDirection =
-          changeKg > 0 ? "increasing" : changeKg < 0 ? "decreasing" : "stable";
-        const expectedSummary = {
-          increasing: "Estimated max increased from first to latest estimate.",
-          decreasing: "Estimated max decreased from first to latest estimate.",
-          stable: "Estimated max did not change from first to latest estimate.",
-        } as const;
-
-        expect(exercise.trend.direction).toBe(expectedDirection);
-        expect(exercise.trend.summary).toBe(expectedSummary[expectedDirection]);
-        expect(exercise.trend.changeMagnitudeKg).toBe(Math.abs(changeKg));
-        expect(exercise.trend.firstDate).toBe(firstEntry.date);
-        expect(exercise.trend.latestDate).toBe(latestEntry.date);
-
-        for (const entry of exercise.history) {
-          expect(entry.date).toBeTruthy();
-          expect(entry.estimatedMax).toBeGreaterThan(0);
-          expect(entry.actualWeight).toBeGreaterThan(0);
-          expect(entry.actualReps).toBeGreaterThanOrEqual(1);
-          expect(entry.actualReps).toBeLessThanOrEqual(12);
-          // Epley formula: e1RM = weight * (1 + reps/30)
-          // e1RM should be >= actualWeight
-          expect(entry.estimatedMax).toBeGreaterThanOrEqual(entry.actualWeight);
-        }
-      }
+    it("estimatedOneRepMax excludes seeded workouts with unknown fatigue", async () => {
+      const result = await query<unknown[]>("strength.estimatedOneRepMax", { days: 90 });
+      expect(result).toEqual([]);
     });
 
     it("muscleGroupVolume returns weekly sets per muscle group", async () => {

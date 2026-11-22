@@ -124,6 +124,21 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
+    name: "daily-metric-values.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT dm.id AS daily_metrics_id, dm.date, dm.provider_id, dm.source_name,
+                   v.metric_type_id, t.unit, v.value
+            FROM fitness.daily_metric_value v
+            JOIN fitness.daily_metrics dm ON dm.id = v.daily_metrics_id
+            JOIN fitness.daily_metric_type t ON t.id = v.metric_type_id
+            WHERE dm.user_id = ${userId}
+            ORDER BY dm.date, dm.provider_id, v.metric_type_id`,
+      ),
+  },
+  {
     name: "strength-sets.csv",
     query: (db, userId) =>
       executeWithSchema(
@@ -243,6 +258,15 @@ const EXPORT_TABLES: ExportTableConfig[] = [
         db,
         exportRowSchema,
         sql`SELECT a.* FROM fitness.climbing_attempt a JOIN fitness.climbing_log_entry e ON e.id=a.climbing_log_entry_id WHERE e.user_id=${userId} ORDER BY a.climbing_log_entry_id,a.attempt_index NULLS LAST,a.id`,
+      ),
+  },
+  {
+    name: "planned-workouts.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT * FROM fitness.planned_workout WHERE user_id = ${userId} ORDER BY start_date, start_time NULLS FIRST, external_id`,
       ),
   },
 ];

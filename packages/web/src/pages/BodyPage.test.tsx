@@ -9,6 +9,7 @@ const queryMocks = vi.hoisted(() => ({
   trends: vi.fn(),
   dailyMetrics: vi.fn(),
   hrvBaseline: vi.fn(),
+  recorded: vi.fn(),
   stress: vi.fn(),
   timeSeries: vi.fn(),
   weightOverview: vi.fn(),
@@ -101,6 +102,7 @@ vi.mock("../lib/trpc.ts", () => ({
       trends: { useQuery: queryMocks.trends },
       list: { useQuery: queryMocks.dailyMetrics },
       hrvBaseline: { useQuery: queryMocks.hrvBaseline },
+      recorded: { useQuery: queryMocks.recorded },
     },
     stress: { scores: { useQuery: queryMocks.stress } },
     bodyAnalytics: { weightOverview: { useQuery: queryMocks.weightOverview } },
@@ -227,6 +229,7 @@ function setHealthyQueries(): void {
   queryMocks.stress.mockReturnValue(mockQuery({ data: undefined }));
   queryMocks.weightOverview.mockReturnValue(mockQuery({ data: healthyWeightOverview }));
   queryMocks.insights.mockReturnValue(mockQuery({ data: [] }));
+  queryMocks.recorded.mockReturnValue(mockQuery({ data: [] }));
 }
 
 beforeEach(() => {
@@ -237,6 +240,24 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BodyPage", () => {
+  it("shows provider-reported observations, and keeps them with an actionable error on refresh failure", () => {
+    const row = {
+      date: "2026-03-01",
+      metric: "weight",
+      value: 70,
+      unit: "kg",
+      providerId: "intervals.icu",
+      sourceName: null,
+    };
+    queryMocks.recorded.mockReturnValue(
+      mockQuery({ data: [row], error: new Error("recorded refresh failed") }),
+    );
+    render(<BodyPage />);
+    expect(screen.getByText("70.0 kg")).toBeTruthy();
+    expect(screen.getByText("Measurements may include data from Garmin devices.")).toBeTruthy();
+    expect(screen.getByText(/Provider-reported weight and resting heart rate/)).toBeTruthy();
+  });
+
   it("renders the body fat percentage card with canonical body-fat trend data", () => {
     render(<BodyPage />);
 

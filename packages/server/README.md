@@ -353,6 +353,16 @@ block-bootstrap methods for weakly dependent time-series errors
 ([Lahiri et al.](https://doi.org/10.1080/01621459.2011.646929)). Clients only render and
 unit-format this evidence; they do not calculate slopes, intervals, or interpretations.
 
+The shared web and mobile `strength.loggedSetComparison` query compares observed loads at matching
+rep counts within the selected timestamp range and request access window. It counts canonical,
+deduplicated sets with positive normalized load and reps that pass the existing working-volume
+quality checks, excluding warm-ups, rests, missing values, and ambiguous or conflicting observations.
+Session and set evidence retain provider attribution; first/latest comparisons require distinct
+local dates. The response includes context from the
+[Schoenfeld et al. trial](https://pmc.ncbi.nlm.nih.gov/articles/pmid/30153194/), which used supervised
+sets to failure and tested squat and bench-press strength, without prescribing set targets or
+inferring personal causation.
+
 ### Health-status evidence contract
 
 Health-status values are interpreted only by
@@ -406,6 +416,10 @@ exact date bounds for each exercise. Web clients may convert the kilogram values
 display unit and format dates, but they render the supplied direction and summary without inferring
 a trend from the observations. The responsive chart selects one exercise at a time so long exercise
 lists stay readable without hiding the time axis.
+
+### Strength exercise order evidence
+
+`strength.exerciseHistory` pairs each exercise's estimated-strength observations with optional Crimpd order evidence in one selected-range response, and keeps order-only lifts when no estimate exists. The repository reads only active, user-scoped Crimpd member workouts, verifies the raw `ACTIVITY_ORDER`, `SET_ORDER`, and `LOG_ID` positions, and requires completed sets with finite recorded `RESISTANCE` and `WEIGHT_UNIT` (`KG` or `LBS`) values. Loads stay in their recorded unit. The contract is defined in [strength-exercise-history.ts](src/contracts/strength-exercise-history.ts); source fields follow the [Crimpd set export](https://crimpd.com/docs/data-export/#setscsv).
 
 ### MCP activity and cycling analytics
 
@@ -476,6 +490,21 @@ power, work, variability index, aerobic efficiency, cardiac drift, TSS, and inte
 coverage prerequisites are documented in
 [`@dofek/training`](../training/README.md#cycling-workout-metrics). Normalized power follows the
 [TrainingPeaks calculation](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).
+
+Set `test_protocol` to `lamberts_submaximal_cycle_test` to compare recorded Lamberts tests
+in the selected dates. Eligibility requires a named FIT cycling workout whose prescribed stages
+and linked laps match the original protocol, including calibration and recovery. The range uses
+the date of the recorded test start in the analysis timezone. The comparison uses the earliest
+and latest eligible tests across the entire range, even when they are on different pages.
+[Original LSCT study](https://pubmed.ncbi.nlm.nih.gov/19622525/),
+[Garmin FIT activity files](https://developer.garmin.com/fit/file-types/activity/).
+
+Stage means omit the first minute of each stage. Heart-rate recovery uses the final 16 seconds
+of stage 3 and seconds 44–60 after it, with cadence evidence of no pedaling during that first
+recovery minute. Incomplete sensor evidence leaves the corresponding measure `null`.
+Maximum heart rate is reported as a FIT configuration value when available, with measurement
+method `unknown`. Trainer, sensor source, and indoor/outdoor details are context. Eligible rides
+can be compared across trainers. [LSCT recovery method](https://doi.org/10.1007/s00421-023-05385-z).
 
 `get_training_load` preserves its original response when `detail` is omitted. With
 `detail: "analytical"`, it returns a complete daily date spine with six independent load channels:
@@ -666,10 +695,12 @@ source set/activity/provider records remain listed. Conflicting overlapping sets
 are flagged, and are excluded from aggregates rather than silently reconciled.
 
 Set volume is `weight_kg × repetitions`. Estimated 1RM uses the named Epley formula
-`weight_kg × (1 + repetitions / 30)`, one of the prediction equations evaluated by
-[LeSuer et al. (1997)](https://doi.org/10.1519/00124278-199711000-00001). Dofek applies it only to
-unflagged working sets of 1–12 repetitions. Warm-ups,
-rests, missing load/repetitions, and suspicious records do not contribute to volume/e1RM/PRs.
+`weight_kg × (1 + 0.0333 × repetitions)`, one of the prediction equations evaluated by
+[LeSuer et al. (1997)](https://doi.org/10.1519/00124278-199711000-00001). Eligible sets have
+2–10 completed reps of barbell bench press, squat, back squat, or deadlift, verified units,
+and a Strong text-share Failure tag. RPE does not establish fatigue. Recorded singles
+remain in workout history. Warm-ups, rests, missing load/repetitions, and suspicious
+records do not contribute to volume, estimates, or PRs.
 Records with negative values, more than 100 repetitions, load above 500 kg, RPE outside 0–10, or a
 high-repetition/low-load pattern consistent with reversed fields or import corruption remain
 unchanged in detail with quality flags. These bounds are validation policy, not silent corrections

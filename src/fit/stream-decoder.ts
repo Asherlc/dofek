@@ -54,6 +54,18 @@ const deviceBatchMessageSchema = z.object({
   messages: z.array(rawMessageSchema).max(250),
 });
 
+const workoutStructureMessageSchema = z.object({
+  messageType: z.enum(["workout", "workout_step", "lap", "zones_target"]),
+  raw: rawMessageSchema,
+});
+
+export type FitWorkoutStructureMessage = z.infer<typeof workoutStructureMessageSchema>;
+
+const workoutStructureBatchMessageSchema = z.object({
+  type: z.literal("workout-structure"),
+  messages: z.array(workoutStructureMessageSchema).min(1).max(250),
+});
+
 const endMessageSchema = z.object({
   type: z.literal("end"),
   messageCount: z.number().int().nonnegative(),
@@ -64,6 +76,7 @@ const decoderMessageSchema = z.discriminatedUnion("type", [
   recordBatchMessageSchema,
   weightBatchMessageSchema,
   deviceBatchMessageSchema,
+  workoutStructureBatchMessageSchema,
   endMessageSchema,
 ]);
 
@@ -93,6 +106,7 @@ export interface FitStreamConsumer {
   onRecordBatch: (records: ParsedFitRecord[]) => Promise<void>;
   onWeightBatch: (weights: ParsedFitWeight[]) => Promise<void>;
   onDeviceInfoBatch: (messages: Record<string, unknown>[]) => Promise<void>;
+  onWorkoutStructureBatch?: (messages: FitWorkoutStructureMessage[]) => Promise<void>;
 }
 
 export interface FitStreamResult {
@@ -277,6 +291,22 @@ export async function streamFitFile(
           }
           consumedMessageCount += message.messages.length;
           await consumer.onDeviceInfoBatch(message.messages);
+          await writeContinue(child.stdin);
+          armIdleTimeout();
+          break;
+        case "workout-structure":
+          if (!metadataReceived) {
+            throw new FitDecoderError(
+              "Native FIT decoder returned workout structure before file metadata",
+            );
+          }
+          if (metadataIsWeightFile) {
+            throw new FitDecoderError(
+              "Native FIT decoder returned workout structure for a weight file",
+            );
+          }
+          consumedMessageCount += message.messages.length;
+          await consumer.onWorkoutStructureBatch?.(message.messages);
           await writeContinue(child.stdin);
           armIdleTimeout();
           break;
