@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "title": "Climbing send probability",
+  "kind": "prototype",
+  "description": "Search imported climbs by name or location and show the send probability for the climb the user selects.",
+  "artboards": [
+    {
+      "id": "chat",
+      "title": "Training · Climb search",
+      "file": "chat.html",
+      "width": 760
+    }
+  ]
+}

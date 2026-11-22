@@ -3,6 +3,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import { logger } from "../logger.ts";
 import { ProviderInvalidCredentialsError } from "./auth-errors.ts";
 import {
   ascent,
@@ -329,6 +330,7 @@ describe("KayaSyncProvider", () => {
 
   it("records attached and historical standalone photos from the fetched logbook after persistence", async () => {
     const db = database();
+    const loggerInfo = vi.spyOn(logger, "info").mockImplementation(() => logger);
     mocks.loadTokens.mockResolvedValue({
       accessToken: "token",
       scopes: JSON.stringify({ kayaUserId: "42" }),
@@ -383,6 +385,9 @@ describe("KayaSyncProvider", () => {
         }),
       }),
     ]);
+    expect(loggerInfo).toHaveBeenCalledWith(
+      "[kaya] fetched sessions=1 ascents=2 oldestAscent=2020-01-01",
+    );
     expect(mocks.ascents).toHaveBeenCalledTimes(1);
   });
   it("refreshes the exact ascent photo through the verified complete logbook contract", async () => {
@@ -940,6 +945,7 @@ describe("KayaSyncProvider", () => {
 
   it("reconciles a complete empty logbook and session list without a standalone lookup", async () => {
     const db = database();
+    const loggerInfo = vi.spyOn(logger, "info").mockImplementation(() => logger);
     mocks.loadTokens.mockResolvedValue({
       accessToken: "token",
       scopes: JSON.stringify({ kayaUserId: "42" }),
@@ -949,6 +955,9 @@ describe("KayaSyncProvider", () => {
     const sync = run(db);
 
     expect(await new KayaSyncProvider().sync(sync)).toMatchObject({ recordsSynced: 0, errors: [] });
+    expect(loggerInfo).toHaveBeenCalledWith(
+      "[kaya] fetched sessions=0 ascents=0 oldestAscent=none",
+    );
     expect(mocks.persist).toHaveBeenCalledWith(db, { userId, providerId: "kaya", entries: [] }, []);
     expect(mocks.reconcileActivities).toHaveBeenCalledWith(db, {
       userId,
