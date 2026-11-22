@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 // Each test boots a full nested Vitest run (~3-5s alone). CI runs it alongside the entire parallel
 // unit suite, where CPU contention exceeded the previous 15s cap (job 137104627159).
 const DIAGNOSTIC_RUNNER_TIMEOUT_MS = 60_000;
+const CAPTURE_CLEANUP_MARGIN_MS = 3_000;
 
 function captureUntilHardStop(
   config: string,
@@ -37,13 +38,13 @@ function captureUntilHardStop(
       }
     };
     signal.addEventListener("abort", stop, { once: true });
-    // Fire before the 15s test timeout so a stalled nested runner reports its output.
+    // Fire before the shared test timeout (minus cleanup margin) so a stalled nested runner reports its output.
     const deadline = setTimeout(() => {
       if (!checkpointObserved) {
         deadlineExpired = true;
         stop();
       }
-    }, 12_000);
+    }, DIAGNOSTIC_RUNNER_TIMEOUT_MS - CAPTURE_CLEANUP_MARGIN_MS);
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
       output += chunk;
       if (!stopRequested && reachedCheckpoint(output)) {

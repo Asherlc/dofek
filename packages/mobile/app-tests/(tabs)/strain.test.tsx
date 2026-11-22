@@ -258,22 +258,12 @@ describe("StrainScreen", () => {
     const status = screen.getByTestId("climbing-refresh-status");
     expect(status.textContent).toBe("Updating climbing strengths…");
     expect(status.getAttribute("accessibilityliveregion")).toBe("polite");
+    expect(screen.getByText("Climbing strengths").nextElementSibling).toBe(status);
     expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
 
     mockStrengthsState.isFetching = false;
     rerender(<StrainScreen />);
     expect(screen.queryByTestId("climbing-refresh-status")).toBeNull();
-  });
-
-  it("renders the climbing refresh status inside the strengths card next to its heading", async () => {
-    mockStrengthsState.isFetching = true;
-    const { default: StrainScreen } = await import("../../app/strain");
-    render(<StrainScreen />);
-
-    const heading = screen.getByText("Climbing strengths");
-    const status = screen.getByTestId("climbing-refresh-status");
-    expect(heading.parentElement?.contains(status)).toBe(true);
-    expect(heading.nextElementSibling).toBe(status);
   });
 
   it("keeps cached strengths visible with an updating indicator while a new population loads", async () => {
@@ -895,7 +885,6 @@ describe("StrainScreen", () => {
     render(<TrainingAnalysis section="climbing" isFocused />);
 
     expect(screen.getByTestId("query-state-loading")).toBeTruthy();
-    expect(screen.getAllByTestId("query-state-loading")).toHaveLength(1);
     expect(screen.queryByText("Volume by Grade")).toBeNull();
   });
 
@@ -913,11 +902,10 @@ describe("StrainScreen", () => {
     render(<TrainingAnalysis section="climbing" isFocused />);
 
     expect(screen.getByText("Annual onsights unavailable")).toBeTruthy();
-    expect(screen.getAllByText("Annual onsights unavailable")).toHaveLength(1);
     expect(screen.queryByText("Volume by Grade")).toBeNull();
   });
 
-  it("shows the standalone annual result once while trainingV2 is loading", async () => {
+  it("keeps the open onsight detail when training finishes loading", async () => {
     mockTrainingState.data = undefined;
     mockTrainingState.isLoading = true;
     mockBestOnsightQuery.mockReturnValue({
@@ -927,24 +915,23 @@ describe("StrainScreen", () => {
     });
 
     const { TrainingAnalysis } = await import("../../app/strain");
-    render(<TrainingAnalysis section="climbing" isFocused />);
+    const view = render(<TrainingAnalysis section="climbing" isFocused />);
 
     expect(screen.getAllByText("Best recorded onsight")).toHaveLength(1);
     expect(screen.getByLabelText("5.11a, open Gym Lead send")).toBeTruthy();
-  });
-
-  it("keeps the in-card annual matrix as the only instance when the regular climbing card is available", async () => {
-    mockBestOnsightQuery.mockReturnValue({
-      data: climbingBestOnsightFixture(),
-      isLoading: false,
-      error: null,
-    });
-
-    const { TrainingAnalysis } = await import("../../app/strain");
-    render(<TrainingAnalysis section="climbing" isFocused />);
-
+    fireEvent.click(screen.getByLabelText("5.11a, open Gym Lead send"));
+    const dialog = screen.getByRole("dialog", { name: "Climb detail" });
+    const detailBefore = within(dialog).getByTestId("record-detail-input").textContent;
+    mockTrainingState.data = structuredClone(defaultMockTrainingData());
+    mockTrainingState.isLoading = false;
+    view.rerender(<TrainingAnalysis section="climbing" isFocused />);
+    expect(
+      within(screen.getByRole("dialog", { name: "Climb detail" })).getByTestId(
+        "record-detail-input",
+      ).textContent,
+    ).toBe(detailBefore);
     expect(screen.getAllByText("Best recorded onsight")).toHaveLength(1);
-    expect(screen.getByLabelText("5.11a, open Gym Lead send")).toBeTruthy();
+    expect(screen.getByText("Volume by Grade")).toBeTruthy();
   });
 });
 
