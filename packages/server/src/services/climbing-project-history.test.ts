@@ -161,7 +161,7 @@ describe("summarizeClimbingProjectHistory", () => {
     expect(earlierOnDifferentDay.earlierSessionsUnknown).toBe(true);
   });
 
-  it("derives the selected method only from described or explicitly methoded selections", () => {
+  it("derives the selected method only from described or explicit-method selections", () => {
     const base = [observation("2026-11-09", "send", { method: "lead" })];
     const anonymous = summarizeClimbingProjectHistory("2026-11-13", [
       ...base,

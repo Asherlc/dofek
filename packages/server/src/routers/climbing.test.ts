@@ -125,6 +125,14 @@ describe("climbingRouter", () => {
     await expect(caller.projectHistory({ logEntryId: groupId })).resolves.toBeNull();
   });
 
+  it("reports a missing or inaccessible climb record as not found", async () => {
+    const { caller } = makeCaller([]);
+    await expect(caller.projectHistory({ logEntryId: groupId })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Climbing log not found",
+    });
+  });
+
   it("serves an increase in recorded climbing attempts through its own query", async () => {
     const { caller, execute } = makeCaller([
       { daysAgo: 0, attempts: 20 },
