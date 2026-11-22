@@ -13,17 +13,22 @@ const cyclingSession = {
   raw: {},
 };
 
+function sessionOccurrences(occurrences: number) {
+  return [{ messageType: "session", field: "start_time", occurrences }];
+}
+
+function workout(declaredSteps: unknown = 2) {
+  return { sport: 2, num_valid_steps: declaredSteps };
+}
+
 function metadata(overrides: Partial<FitStreamMetadata> = {}): FitStreamMetadata {
   return {
     fileId: null,
     fileType: 4,
     fileTypeName: "activity",
-    fieldOccurrences: [],
+    fieldOccurrences: sessionOccurrences(1),
     isWeightFile: false,
     recoveryError: null,
-    sessionMessageCount: 1,
-    workoutMessageCount: 1,
-    workoutStepCount: 2,
     session: cyclingSession,
     ...overrides,
   };
@@ -66,10 +71,14 @@ function build(
   steps: Record<string, unknown>[],
   laps: Record<string, unknown>[],
   meta = metadata(),
+  workouts: Record<string, unknown>[] = [workout()],
 ) {
   const collector = new FitWorkoutIntervalCollector();
-  collector.addWorkoutSteps(steps);
-  collector.addLaps(laps);
+  collector.addStructure([
+    ...workouts.map((raw) => ({ messageType: "workout" as const, raw })),
+    ...steps.map((raw) => ({ messageType: "workout_step" as const, raw })),
+    ...laps.map((raw) => ({ messageType: "lap" as const, raw })),
+  ]);
   return collector.build(meta);
 }
 
@@ -166,19 +175,32 @@ describe("FitWorkoutIntervalCollector", () => {
     expect(build([step(0)], [lap(0, 0, -10)])).toEqual([]);
   });
 
-  const ineligibleFiles: Array<[string, Partial<FitStreamMetadata>]> = [
+  const ineligibleFiles: Array<[string, Partial<FitStreamMetadata>, Record<string, unknown>[]?]> = [
     ["not an activity", { fileType: 5 }],
     ["noncycling", { session: { ...cyclingSession, sport: "running" } }],
-    ["multi-session", { sessionMessageCount: 2 }],
-    ["no workout header", { workoutMessageCount: 0 }],
-    ["two workout headers", { workoutMessageCount: 2 }],
+    ["multi-session", { fieldOccurrences: sessionOccurrences(2) }],
+    ["no session start", { fieldOccurrences: [] }],
+    ["no workout header", {}, []],
+    ["two workout headers", {}, [workout(), workout()]],
     ["recovered", { recoveryError: "truncated" }],
     ["no session", { session: null }],
-    ["missing declared step count", { workoutStepCount: null }],
-    ["zero declared step count", { workoutStepCount: 0 }],
+    ["missing declared step count", {}, [{ sport: 2 }]],
+    ["zero declared step count", {}, [workout(0)]],
+    ["fractional declared step count", {}, [workout(1.5)]],
   ];
-  it.each(ineligibleFiles)("is ineligible when the file is %s", (_name, overrides) => {
-    expect(build([step(0)], [lap(0, 0, 0)], metadata(overrides))).toEqual([]);
+  it.each(ineligibleFiles)("is ineligible when the file is %s", (_name, overrides, workouts) => {
+    expect(build([step(0)], [lap(0, 0, 0)], metadata(overrides), workouts)).toEqual([]);
+  });
+
+  it("ignores zone targets", () => {
+    const collector = new FitWorkoutIntervalCollector();
+    collector.addStructure([
+      { messageType: "workout", raw: workout() },
+      { messageType: "zones_target", raw: { max_heart_rate: 190 } },
+      { messageType: "workout_step", raw: step(0) },
+      { messageType: "lap", raw: lap(0, 0, 0) },
+    ]);
+    expect(collector.build(metadata())).toHaveLength(1);
   });
 
   it("retains only a compact raw projection and maps numeric intensity", () => {
@@ -221,18 +243,17 @@ describe("FitWorkoutIntervalCollector", () => {
   });
 
   it("links only steps below the Workout header's declared step count", () => {
-    const meta = metadata({ workoutStepCount: 1 });
-    const rows = build([step(0), step(1)], [lap(0, 0, 0), lap(1, 1, 180)], meta);
+    const rows = build([step(0), step(1)], [lap(0, 0, 0), lap(1, 1, 180)], metadata(), [
+      workout(1),
+    ]);
     expect(rows.map((row) => row.stepMessageIndex)).toEqual([0]);
     expect(build([step(0), step(1)], [lap(0, 0, 0), lap(1, 1, 180)])).toHaveLength(2);
-    expect(build([step(0)], [lap(0, 0, 0)], metadata({ workoutStepCount: 2 }))).toHaveLength(1);
+    expect(build([step(0)], [lap(0, 0, 0)], metadata(), [workout(2)])).toHaveLength(1);
   });
 
   it("bounds identity maps by the plain FIT message index mask (0-4095)", () => {
     expect(build([step(4096)], [lap(0, 4096, 0)])).toEqual([]);
     expect(build([step(0x8000)], [lap(0, 0x8000, 0)])).toEqual([]);
-    expect(
-      build([step(4095)], [lap(0, 4095, 0)], metadata({ workoutStepCount: 4096 })),
-    ).toHaveLength(1);
+    expect(build([step(4095)], [lap(0, 4095, 0)], metadata(), [workout(4096)])).toHaveLength(1);
   });
 });

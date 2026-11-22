@@ -79,9 +79,6 @@ function metadataMessage(overrides: Record<string, unknown> = {}): Record<string
     session: null,
     sportName: null,
     subSportName: null,
-    sessionMessageCount: 1,
-    workoutMessageCount: 0,
-    workoutStepCount: null,
     fieldOccurrences: [],
     ...overrides,
   };
@@ -93,8 +90,6 @@ function noopConsumer(overrides: Partial<FitStreamConsumer> = {}): FitStreamCons
     onRecordBatch: async () => undefined,
     onWeightBatch: async () => undefined,
     onDeviceInfoBatch: async () => undefined,
-    onLapBatch: async () => undefined,
-    onWorkoutStepBatch: async () => undefined,
     ...overrides,
   };
 }
@@ -215,124 +210,6 @@ describe("streamFitFile", () => {
     expect(decoder.acknowledgements).toHaveLength(3);
   });
 
-  it("exposes exact session and workout counts in metadata", async () => {
-    const decoder = simulatedDecoder();
-    mockSpawn.mockReturnValue(decoder.child);
-    const onMetadata = vi.fn(async () => undefined);
-    queueMicrotask(async () => {
-      decoder.send(metadataMessage({ sessionMessageCount: 2, workoutMessageCount: 1 }));
-      await decoder.waitForAcknowledgement(1);
-      decoder.send({ type: "end", messageCount: 0 });
-      decoder.finish();
-    });
-
-    await streamFitFile("activity.fit", noopConsumer({ onMetadata }));
-
-    expect(onMetadata).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionMessageCount: 2, workoutMessageCount: 1 }),
-    );
-  });
-
-  it("rejects metadata without session and workout counts", async () => {
-    const decoder = simulatedDecoder();
-    mockSpawn.mockReturnValue(decoder.child);
-    const { sessionMessageCount: _session, ...withoutCounts } = metadataMessage();
-    queueMicrotask(() => {
-      decoder.send(withoutCounts);
-      decoder.finish();
-    });
-
-    await expect(streamFitFile("activity.fit", noopConsumer())).rejects.toThrow(
-      "invalid protocol message",
-    );
-  });
-
-  it("delivers raw workout step and lap batches in order and acknowledges after each", async () => {
-    const decoder = simulatedDecoder();
-    mockSpawn.mockReturnValue(decoder.child);
-    const steps = [
-      {
-        message_index: 0,
-        duration_type: 0,
-        duration_value: 180000,
-        custom_target_value_low: 1250,
-        custom_target_value_high: 1265,
-      },
-      {
-        message_index: 1,
-        duration_type: 0,
-        duration_value: 180000,
-        custom_target_value_low: 1260,
-        custom_target_value_high: 1260,
-      },
-    ];
-    const laps = [
-      { message_index: 0, wkt_step_index: 0, total_timer_time: 180, total_elapsed_time: 180 },
-      { message_index: 1, wkt_step_index: 0, total_timer_time: 134, total_elapsed_time: 145 },
-      { message_index: 2, wkt_step_index: 1, total_timer_time: 180, total_elapsed_time: 180 },
-    ];
-    const events: string[] = [];
-    queueMicrotask(async () => {
-      decoder.send(metadataMessage({ workoutMessageCount: 1 }));
-      await decoder.waitForAcknowledgement(1);
-      decoder.send({ type: "workoutSteps", messages: steps });
-      await decoder.waitForAcknowledgement(2);
-      decoder.send({ type: "records", messages: [{ timestamp: "2026-07-01T12:00:01Z" }] });
-      await decoder.waitForAcknowledgement(3);
-      decoder.send({ type: "laps", messages: laps });
-      await decoder.waitForAcknowledgement(4);
-      decoder.send({ type: "end", messageCount: 6 });
-      decoder.finish();
-    });
-
-    const result = await streamFitFile(
-      "activity.fit",
-      noopConsumer({
-        onWorkoutStepBatch: async (messages) => {
-          events.push(`steps:${messages.length}`);
-          expect(messages).toEqual(steps);
-        },
-        onRecordBatch: async () => {
-          events.push("records");
-        },
-        onLapBatch: async (messages) => {
-          events.push(`laps:${messages.length}`);
-          expect(messages).toEqual(laps);
-        },
-      }),
-    );
-
-    expect(events).toEqual(["steps:2", "records", "laps:3"]);
-    expect(result).toEqual({ messageCount: 6 });
-    expect(decoder.acknowledgements).toHaveLength(4);
-  });
-
-  it("rejects lap and workout step batches before metadata or over the message bound", async () => {
-    for (const type of ["laps", "workoutSteps"] as const) {
-      const early = simulatedDecoder();
-      mockSpawn.mockReturnValue(early.child);
-      queueMicrotask(() => {
-        early.send({ type, messages: [{}] });
-        early.finish();
-      });
-      await expect(streamFitFile("activity.fit", noopConsumer())).rejects.toThrow(
-        "before file metadata",
-      );
-
-      const oversized = simulatedDecoder();
-      mockSpawn.mockReturnValue(oversized.child);
-      queueMicrotask(async () => {
-        oversized.send(metadataMessage());
-        await oversized.waitForAcknowledgement(1);
-        oversized.send({ type, messages: Array.from({ length: 251 }, () => ({})) });
-        oversized.finish();
-      });
-      await expect(streamFitFile("activity.fit", noopConsumer())).rejects.toThrow(
-        "invalid protocol message",
-      );
-    }
-  });
-
   it("accepts device observations for weight files", async () => {
     const decoder = simulatedDecoder();
     mockSpawn.mockReturnValue(decoder.child);
@@ -349,6 +226,134 @@ describe("streamFitFile", () => {
       { messageCount: 1 },
     );
     expect(onDeviceInfoBatch).toHaveBeenCalledWith([{ device_index: 0 }]);
+  });
+
+  it("passes raw workout structure to the consumer before acknowledging the batch", async () => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    const messages = [
+      { messageType: "workout", raw: { wkt_name: "LSCT" } },
+      {
+        messageType: "workout_step",
+        raw: { message_index: 0, duration_value: 360000, custom_target_value_low: 60 },
+      },
+      { messageType: "lap", raw: { wkt_step_index: 0, total_elapsed_time: 360 } },
+      { messageType: "zones_target", raw: { max_heart_rate: 190 } },
+    ];
+    let started: (() => void) | undefined;
+    const workoutBatchStarted = new Promise<void>((resolvePromise) => {
+      started = resolvePromise;
+    });
+    let release: (() => void) | undefined;
+    const workoutBatchHeld = new Promise<void>((resolvePromise) => {
+      release = resolvePromise;
+    });
+    const onWorkoutStructureBatch = vi.fn(async () => {
+      started?.();
+      await workoutBatchHeld;
+    });
+    queueMicrotask(async () => {
+      decoder.send(metadataMessage());
+      await decoder.waitForAcknowledgement(1);
+      decoder.send({ type: "workout-structure", messages });
+      await decoder.waitForAcknowledgement(2);
+      decoder.send({ type: "end", messageCount: messages.length });
+      decoder.finish();
+    });
+
+    const result = streamFitFile("activity.fit", noopConsumer({ onWorkoutStructureBatch }));
+    try {
+      await Promise.race([workoutBatchStarted, result]);
+      expect(decoder.acknowledgements).toHaveLength(1);
+      expect(onWorkoutStructureBatch).toHaveBeenCalledWith(messages);
+    } finally {
+      release?.();
+    }
+    await expect(result).resolves.toEqual({ messageCount: 4 });
+  });
+
+  it("counts workout structure for consumers that do not request it", async () => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    queueMicrotask(async () => {
+      decoder.send(metadataMessage());
+      await decoder.waitForAcknowledgement(1);
+      decoder.send({ type: "workout-structure", messages: [{ messageType: "lap", raw: {} }] });
+      await decoder.waitForAcknowledgement(2);
+      decoder.send({ type: "end", messageCount: 1 });
+      decoder.finish();
+    });
+    await expect(streamFitFile("activity.fit", noopConsumer())).resolves.toEqual({
+      messageCount: 1,
+    });
+  });
+
+  it("rejects workout structure batches for weight files", async () => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    queueMicrotask(async () => {
+      decoder.send(metadataMessage({ fileType: 9, hasWeightMessages: true }));
+      await decoder.waitForAcknowledgement(1);
+      decoder.send({ type: "workout-structure", messages: [{ messageType: "lap", raw: {} }] });
+    });
+    await expect(streamFitFile("weight.fit", noopConsumer())).rejects.toThrow(
+      "Native FIT decoder returned workout structure for a weight file",
+    );
+  });
+
+  it("rejects workout structure before file metadata", async () => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    queueMicrotask(() =>
+      decoder.send({ type: "workout-structure", messages: [{ messageType: "lap", raw: {} }] }),
+    );
+    await expect(streamFitFile("activity.fit", noopConsumer())).rejects.toThrow(
+      "Native FIT decoder returned workout structure before file metadata",
+    );
+  });
+
+  it.each([
+    { label: "empty", messages: [] },
+    {
+      label: "oversized",
+      messages: Array.from({ length: 251 }, () => ({ messageType: "lap", raw: {} })),
+    },
+    { label: "unsupported message type", messages: [{ messageType: "record", raw: {} }] },
+    { label: "invalid raw fields", messages: [{ messageType: "lap", raw: "invalid" }] },
+  ])("rejects an invalid workout structure batch ($label)", async ({ messages }) => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    const onWorkoutStructureBatch = vi.fn(async () => undefined);
+    queueMicrotask(async () => {
+      decoder.send(metadataMessage());
+      await decoder.waitForAcknowledgement(1);
+      decoder.send({ type: "workout-structure", messages });
+    });
+    await expect(
+      streamFitFile("activity.fit", noopConsumer({ onWorkoutStructureBatch })),
+    ).rejects.toThrow("Native FIT decoder returned an invalid protocol message");
+    expect(onWorkoutStructureBatch).not.toHaveBeenCalled();
+  });
+
+  it("times out if the decoder goes silent after a workout structure batch", async () => {
+    vi.useFakeTimers();
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+
+    const streamPromise = streamFitFile("activity.fit", noopConsumer());
+    decoder.send(metadataMessage());
+    await decoder.waitForAcknowledgement(1);
+    decoder.send({ type: "workout-structure", messages: [{ messageType: "lap", raw: {} }] });
+    await decoder.waitForAcknowledgement(2);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const rejectionExpectation = expect(streamPromise).rejects.toThrow(
+      "Native FIT decoder was idle for 120000ms",
+    );
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(decoder.child.kill).toHaveBeenCalledWith("SIGKILL");
+    await rejectionExpectation;
   });
 
   it("rejects device batches before metadata", async () => {
@@ -399,9 +404,6 @@ describe("streamFitFile", () => {
           },
           sportName: "cycling",
           subSportName: "mountain",
-          sessionMessageCount: 1,
-          workoutMessageCount: 0,
-          workoutStepCount: null,
           fieldOccurrences: [{ messageType: "file_id", field: "time_created", occurrences: 1 }],
         });
         await decoder.waitForAcknowledgement(1);
@@ -592,9 +594,6 @@ describe("streamFitFile", () => {
         session: null,
         sportName: null,
         subSportName: null,
-        sessionMessageCount: 1,
-        workoutMessageCount: 0,
-        workoutStepCount: null,
         fieldOccurrences: [],
       });
       await decoder.waitForAcknowledgement(1);
@@ -784,75 +783,6 @@ describe("streamFitFile", () => {
     expect(onRecordBatch).not.toHaveBeenCalled();
   });
 
-  it("accepts exactly the maximum batch size and tolerates consumers without lap or step handlers", async () => {
-    for (const type of ["laps", "workoutSteps"] as const) {
-      const decoder = simulatedDecoder();
-      mockSpawn.mockReturnValue(decoder.child);
-      queueMicrotask(async () => {
-        decoder.send(metadataMessage());
-        await decoder.waitForAcknowledgement(1);
-        decoder.send({ type, messages: Array.from({ length: 250 }, () => ({})) });
-        await decoder.waitForAcknowledgement(2);
-        decoder.send({ type: "end", messageCount: 250 });
-        decoder.finish();
-      });
-      const { onLapBatch, onWorkoutStepBatch, ...withoutHandlers } = noopConsumer();
-      expect(onLapBatch).toBeDefined();
-      expect(onWorkoutStepBatch).toBeDefined();
-      await expect(streamFitFile("activity.fit", withoutHandlers)).resolves.toEqual({
-        messageCount: 250,
-      });
-    }
-  });
-
-  it("rejects lap and workout step batches for a weight file", async () => {
-    for (const type of ["laps", "workoutSteps"] as const) {
-      const decoder = simulatedDecoder();
-      mockSpawn.mockReturnValue(decoder.child);
-      const handler = vi.fn(async () => undefined);
-      queueMicrotask(async () => {
-        decoder.send(metadataMessage({ fileType: 9, fileTypeName: "weight" }));
-        await decoder.waitForAcknowledgement(1);
-        decoder.send({ type, messages: [{}] });
-        decoder.finish();
-      });
-      await expect(
-        streamFitFile(
-          "weight.fit",
-          noopConsumer({ onLapBatch: handler, onWorkoutStepBatch: handler }),
-        ),
-      ).rejects.toThrow(`Native FIT decoder returned ${type} for a weight file`);
-      expect(handler).not.toHaveBeenCalled();
-    }
-  });
-
-  it("restarts the idle timeout after each lap and workout step batch", async () => {
-    for (const type of ["laps", "workoutSteps"] as const) {
-      vi.useFakeTimers();
-      const decoder = simulatedDecoder();
-      mockSpawn.mockReturnValue(decoder.child);
-      const streamPromise = streamFitFile("activity.fit", noopConsumer());
-      const rejection = expect(streamPromise).rejects.toThrow(
-        "Native FIT decoder was idle for 120000ms",
-      );
-      decoder.send(metadataMessage());
-      await decoder.waitForAcknowledgement(1);
-      await vi.advanceTimersByTimeAsync(100_000);
-      decoder.send({ type, messages: [{}] });
-      await decoder.waitForAcknowledgement(2);
-      await vi.advanceTimersByTimeAsync(100_000);
-      expect(decoder.child.kill).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(20_000);
-      if (decoder.child.kill.mock.calls.length === 0) {
-        decoder.finish();
-      }
-      expect(decoder.child.kill).toHaveBeenCalledWith("SIGKILL");
-      decoder.finish();
-      await rejection;
-      vi.useRealTimers();
-    }
-  });
-
   it("rejects record batches for a weight file", async () => {
     const decoder = simulatedDecoder();
     mockSpawn.mockReturnValue(decoder.child);
@@ -868,9 +798,6 @@ describe("streamFitFile", () => {
         session: null,
         sportName: null,
         subSportName: null,
-        sessionMessageCount: 1,
-        workoutMessageCount: 0,
-        workoutStepCount: null,
         fieldOccurrences: [],
       });
       await decoder.waitForAcknowledgement(1);
@@ -1000,9 +927,6 @@ describe("streamFitFile", () => {
         session: null,
         sportName: null,
         subSportName: null,
-        sessionMessageCount: 1,
-        workoutMessageCount: 0,
-        workoutStepCount: null,
         fieldOccurrences: [],
       });
       await decoder.waitForAcknowledgement(1);
@@ -1082,9 +1006,6 @@ describe("streamFitFile", () => {
       session: null,
       sportName: null,
       subSportName: null,
-      sessionMessageCount: 1,
-      workoutMessageCount: 0,
-      workoutStepCount: null,
       fieldOccurrences: [],
     });
     await decoder.waitForAcknowledgement(1);

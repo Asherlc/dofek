@@ -260,9 +260,6 @@ async function streamActivity(
     fileId: null,
     fileType: 4,
     fileTypeName: "activity",
-    sessionMessageCount: 1,
-    workoutMessageCount: 0,
-    workoutStepCount: null,
     fieldOccurrences: [],
     isWeightFile: false,
     session: activity.session,
@@ -305,9 +302,6 @@ async function streamGeneratedTestFit(
       fileId: null,
       fileType: 32,
       fileTypeName: "monitoring_b",
-      sessionMessageCount: 1,
-      workoutMessageCount: 0,
-      workoutStepCount: null,
       fieldOccurrences: [
         { messageType: "file_id", field: "type", occurrences: 1 },
         { messageType: "file_id", field: "time_created", occurrences: 1 },
@@ -328,9 +322,6 @@ async function streamGeneratedTestFit(
     fileId: null,
     fileType: typeof fileType === "number" ? fileType : 9,
     fileTypeName: "weight",
-    sessionMessageCount: 1,
-    workoutMessageCount: 0,
-    workoutStepCount: null,
     fieldOccurrences: [
       { messageType: "file_id", field: "type", occurrences: 1 },
       { messageType: "file_id", field: "time_created", occurrences: 1 },
@@ -720,9 +711,6 @@ describe("processFitFileImportJob", () => {
         fileId,
         fileType: 4,
         fileTypeName: "activity",
-        sessionMessageCount: 1,
-        workoutMessageCount: 0,
-        workoutStepCount: null,
         fieldOccurrences: [],
         isWeightFile: false,
         session: defaultFitActivity().session,
@@ -765,9 +753,6 @@ describe("processFitFileImportJob", () => {
         fileId: null,
         fileType: 4,
         fileTypeName: "activity",
-        sessionMessageCount: 1,
-        workoutMessageCount: 0,
-        workoutStepCount: null,
         fieldOccurrences: [],
         isWeightFile: false,
         session: defaultFitActivity().session,
@@ -1159,9 +1144,6 @@ describe("processFitFileImportJob", () => {
           fileId: null,
           fileType: 4,
           fileTypeName: "activity",
-          sessionMessageCount: 1,
-          workoutMessageCount: 0,
-          workoutStepCount: null,
           fieldOccurrences: [],
           isWeightFile: false,
           session: activity.session,
@@ -1430,39 +1412,41 @@ describe("processFitFileImportJob", () => {
     });
   });
 
-  it("replaces FIT workout intervals from linked lap and workout step batches", async () => {
+  it("replaces FIT workout intervals from linked workout structure batches", async () => {
     mockStreamFitFile.mockImplementationOnce(
       async (_filePath: string, consumer: FitStreamConsumer) => {
         await consumer.onMetadata({
           fileId: null,
           fileType: 4,
           fileTypeName: "activity",
-          sessionMessageCount: 1,
-          workoutMessageCount: 1,
-          workoutStepCount: 1,
-          fieldOccurrences: [],
+          fieldOccurrences: [{ messageType: "session", field: "start_time", occurrences: 1 }],
           isWeightFile: false,
           session: defaultFitActivity().session,
           recoveryError: null,
         });
-        await consumer.onWorkoutStepBatch?.([
+        await consumer.onWorkoutStructureBatch?.([
+          { messageType: "workout", raw: { sport: 2, num_valid_steps: 1 } },
           {
-            message_index: 0,
-            duration_type: 0,
-            duration_value: 180000,
-            target_type: 4,
-            target_value: 0,
-            custom_target_value_low: 1260,
-            custom_target_value_high: 1260,
+            messageType: "workout_step",
+            raw: {
+              message_index: 0,
+              duration_type: 0,
+              duration_value: 180000,
+              target_type: 4,
+              target_value: 0,
+              custom_target_value_low: 1260,
+              custom_target_value_high: 1260,
+            },
           },
-        ]);
-        await consumer.onLapBatch?.([
           {
-            message_index: 0,
-            wkt_step_index: 0,
-            start_time: "2026-07-01T12:00:00.000Z",
-            total_elapsed_time: 180,
-            total_timer_time: 0,
+            messageType: "lap",
+            raw: {
+              message_index: 0,
+              wkt_step_index: 0,
+              start_time: "2026-07-01T12:00:00.000Z",
+              total_elapsed_time: 180,
+              total_timer_time: 0,
+            },
           },
         ]);
         return { messageCount: 0 };

@@ -498,6 +498,21 @@ of available power samples. The activity detail clients read the same evidence t
 `intervals.plannedByActivity`. Conflicting plans are omitted from the comparison and retained
 in the source evidence. See the [FIT import requirements](../../src/fit/README.md#structured-cycling-intervals).
 
+Set `test_protocol` to `lamberts_submaximal_cycle_test` to compare recorded Lamberts tests
+in the selected dates. Eligibility requires a named FIT cycling workout whose prescribed stages
+and linked laps match the original protocol, including calibration and recovery. The range uses
+the date of the recorded test start in the analysis timezone. The comparison uses the earliest
+and latest eligible tests across the entire range, even when they are on different pages.
+[Original LSCT study](https://pubmed.ncbi.nlm.nih.gov/19622525/),
+[Garmin FIT activity files](https://developer.garmin.com/fit/file-types/activity/).
+
+Stage means omit the first minute of each stage. Heart-rate recovery uses the final 16 seconds
+of stage 3 and seconds 44–60 after it, with cadence evidence of no pedaling during that first
+recovery minute. Incomplete sensor evidence leaves the corresponding measure `null`.
+Maximum heart rate is reported as a FIT configuration value when available, with measurement
+method `unknown`. Trainer, sensor source, and indoor/outdoor details are context. Eligible rides
+can be compared across trainers. [LSCT recovery method](https://doi.org/10.1007/s00421-023-05385-z).
+
 `get_training_load` preserves its original response when `detail` is omitted. With
 `detail: "analytical"`, it returns a complete daily date spine with six independent load channels:
 cycling power TSS, threshold-heart-rate weighted zone-minutes, session-RPE minutes, recorded

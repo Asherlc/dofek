@@ -21,7 +21,6 @@
 #include "fit_runtime_exception.hpp"
 #include "fit_record_mesg.hpp"
 #include "fit_session_mesg.hpp"
-#include "fit_workout_mesg.hpp"
 #include "field-json.hpp"
 
 namespace {
@@ -161,7 +160,6 @@ class MetadataListener final : public fit::MesgListener {
         break;
       }
       case FIT_MESG_NUM_SESSION: {
-        ++session_message_count_;
         if (!session_json_.has_value()) {
           const fit::SessionMesg session(message);
           session_json_ = JsonMessage(message);
@@ -182,14 +180,6 @@ class MetadataListener final : public fit::MesgListener {
         }
         break;
       }
-      case FIT_MESG_NUM_WORKOUT: {
-        ++workout_message_count_;
-        const fit::WorkoutMesg workout(message);
-        if (workout_message_count_ == 1 && workout.IsNumValidStepsValid()) {
-          workout_declared_step_count_ = workout.GetNumValidSteps();
-        }
-        break;
-      }
       case FIT_MESG_NUM_WEIGHT_SCALE:
         has_weight_messages_ = true;
         break;
@@ -203,13 +193,6 @@ class MetadataListener final : public fit::MesgListener {
   const std::optional<std::string>& FileIdJson() const { return file_id_json_; }
   bool HasWeightMessages() const { return has_weight_messages_; }
   std::size_t TimestampedRecordCount() const { return timestamped_record_count_; }
-  std::size_t SessionMessageCount() const { return session_message_count_; }
-  std::size_t WorkoutMessageCount() const { return workout_message_count_; }
-  // The single Workout header's `num_valid_steps`; absent when there is not exactly one header or
-  // the field is invalid.
-  std::optional<unsigned int> WorkoutStepCount() const {
-    return workout_message_count_ == 1 ? workout_declared_step_count_ : std::nullopt;
-  }
   const std::optional<std::string>& SessionJson() const { return session_json_; }
   const std::optional<std::string>& SportName() const { return sport_name_; }
   const std::optional<std::string>& SubSportName() const { return sub_sport_name_; }
@@ -258,9 +241,6 @@ class MetadataListener final : public fit::MesgListener {
   std::optional<std::string> file_id_json_;
   bool has_weight_messages_ = false;
   std::size_t timestamped_record_count_ = 0;
-  std::size_t session_message_count_ = 0;
-  std::size_t workout_message_count_ = 0;
-  std::optional<unsigned int> workout_declared_step_count_;
   std::optional<std::string> session_json_;
   std::optional<std::string> sport_name_;
   std::optional<std::string> sub_sport_name_;
@@ -277,22 +257,44 @@ std::size_t BatchEnvelopeBytes(const std::string& type) {
          std::string(",\"messages\":[]}").size() + 1;
 }
 
+const char* WorkoutStructureMessageName(FIT_UINT16 message_number) {
+  switch (message_number) {
+    case FIT_MESG_NUM_WORKOUT: return "workout";
+    case FIT_MESG_NUM_WORKOUT_STEP: return "workout_step";
+    case FIT_MESG_NUM_LAP: return "lap";
+    case FIT_MESG_NUM_ZONES_TARGET: return "zones_target";
+    default: return nullptr;
+  }
+}
+
 class BatchListener final : public fit::MesgListener {
  public:
-  explicit BatchListener(std::unordered_map<FIT_UINT16, std::string> batch_types)
-      : batch_types_(std::move(batch_types)) {}
+  BatchListener(FIT_UINT16 target_message_number, std::string batch_type,
+                bool stream_workout_structure)
+      : target_message_number_(target_message_number),
+        target_batch_type_(std::move(batch_type)),
+        stream_workout_structure_(stream_workout_structure),
+        batch_type_(target_batch_type_) {}
 
   void OnMesg(fit::Mesg& message) override {
-    const auto batch_type_entry = batch_types_.find(message.GetNum());
-    if (batch_type_entry == batch_types_.end()) {
+    const auto message_number = message.GetNum();
+    const char* structure_name =
+        stream_workout_structure_ ? WorkoutStructureMessageName(message_number) : nullptr;
+    if (message_number != target_message_number_ &&
+        message_number != FIT_MESG_NUM_DEVICE_INFO && structure_name == nullptr) {
       return;
     }
-    const std::string& message_type = batch_type_entry->second;
+    const std::string& message_type = structure_name != nullptr ? workout_batch_type_
+        : message_number == FIT_MESG_NUM_DEVICE_INFO ? device_batch_type_
+        : target_batch_type_;
     if (message_type != batch_type_) {
       FlushBatch();
       batch_type_ = message_type;
     }
     std::string json = JsonMessage(message);
+    if (structure_name != nullptr) {
+      json = std::string("{\"messageType\":") + JsonString(structure_name) + ",\"raw\":" + json + "}";
+    }
     if (BatchEnvelopeBytes(batch_type_) + json.size() > kMaximumBatchBytes) {
       throw std::runtime_error("One decoded FIT message exceeds the 512 KiB batch limit");
     }
@@ -304,7 +306,7 @@ class BatchListener final : public fit::MesgListener {
     }
     batch_bytes_ += (messages_.empty() ? 0 : 1) + json.size();
     messages_.push_back(std::move(json));
-    if (message.GetNum() == FIT_MESG_NUM_RECORD) {
+    if (message_number == FIT_MESG_NUM_RECORD) {
       const fit::RecordMesg record(message);
       if (record.IsTimestampValid()) {
         ++timestamped_record_count_;
@@ -330,7 +332,11 @@ class BatchListener final : public fit::MesgListener {
   }
 
  private:
-  const std::unordered_map<FIT_UINT16, std::string> batch_types_;
+  FIT_UINT16 target_message_number_;
+  const std::string target_batch_type_;
+  const std::string device_batch_type_ = "devices";
+  const std::string workout_batch_type_ = "workout-structure";
+  const bool stream_workout_structure_;
   std::string batch_type_;
   std::vector<std::string> messages_;
   std::size_t batch_bytes_ = 0;
@@ -384,14 +390,6 @@ void WriteMetadata(const MetadataListener& metadata, const std::optional<std::st
   } else {
     output << "null";
   }
-  output << ",\"sessionMessageCount\":" << metadata.SessionMessageCount()
-         << ",\"workoutMessageCount\":" << metadata.WorkoutMessageCount();
-  output << ",\"workoutStepCount\":";
-  if (metadata.WorkoutStepCount().has_value()) {
-    output << *metadata.WorkoutStepCount();
-  } else {
-    output << "null";
-  }
   output << ",\"subSportName\":";
   if (metadata.SubSportName().has_value()) {
     output << JsonString(*metadata.SubSportName());
@@ -436,7 +434,9 @@ void WriteBatch(const std::string& type, const std::vector<std::string>& message
 
 std::size_t StreamMessages(
     const std::string& file_path,
-    const std::unordered_map<FIT_UINT16, std::string>& batch_types,
+    FIT_UINT16 target_message_number,
+    const std::string& batch_type,
+    bool stream_workout_structure,
     const std::optional<std::string>& expected_recovery_error,
     std::size_t expected_timestamped_records) {
   std::ifstream file(file_path, std::ios::in | std::ios::binary);
@@ -445,7 +445,7 @@ std::size_t StreamMessages(
   }
   fit::Decode decoder;
   fit::MesgBroadcaster broadcaster;
-  BatchListener listener(batch_types);
+  BatchListener listener(target_message_number, batch_type, stream_workout_structure);
   broadcaster.AddListener(static_cast<fit::MesgListener&>(listener));
   std::optional<std::string> recovery_error;
   try {
@@ -486,21 +486,12 @@ int Run(const std::string& file_path) {
 
   const bool is_weight_file =
       metadata.FileType() == FIT_FILE_WEIGHT || metadata.HasWeightMessages();
-  std::unordered_map<FIT_UINT16, std::string> batch_types = {
-      {is_weight_file ? FIT_MESG_NUM_WEIGHT_SCALE : FIT_MESG_NUM_RECORD,
-       is_weight_file ? "weights" : "records"},
-      {FIT_MESG_NUM_DEVICE_INFO, "devices"}};
-  // Interval evidence is only meaningful for one unchained activity that embeds exactly one
-  // workout; metadata counts aggregate every chained segment, so a lap in one segment must not
-  // link to a standalone workout in another.
-  if (!is_weight_file && metadata.FileType() == FIT_FILE_ACTIVITY &&
-      metadata.WorkoutMessageCount() == 1 && FitsWithinFirstDeclaredSegment(file_path)) {
-    batch_types.emplace(FIT_MESG_NUM_LAP, "laps");
-    batch_types.emplace(FIT_MESG_NUM_WORKOUT_STEP, "workoutSteps");
-  }
-  const std::size_t message_count = StreamMessages(
-      file_path, batch_types, recovery_error,
-      is_weight_file ? 0 : metadata.TimestampedRecordCount());
+  const bool stream_workout_structure =
+      metadata.FileType() == FIT_FILE_ACTIVITY && metadata.FieldOccurrences().count("workout") > 0;
+  const std::size_t message_count = is_weight_file
+      ? StreamMessages(file_path, FIT_MESG_NUM_WEIGHT_SCALE, "weights", false, recovery_error, 0)
+      : StreamMessages(file_path, FIT_MESG_NUM_RECORD, "records", stream_workout_structure, recovery_error,
+                       metadata.TimestampedRecordCount());
   std::cout << "{\"type\":\"end\",\"messageCount\":" << message_count << "}\n"
             << std::flush;
   return 0;

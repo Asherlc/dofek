@@ -1,4 +1,4 @@
-import type { FitStreamMetadata } from "./stream-decoder.ts";
+import type { FitStreamMetadata, FitWorkoutStructureMessage } from "./stream-decoder.ts";
 
 /** Discriminator stored in `fitness.activity_interval.fit_source` for rows owned by this module. */
 export const FIT_WORKOUT_LAP_SOURCE = "workout_step_lap" as const;
@@ -170,55 +170,75 @@ function normalizeLap(raw: RawMessage): CompactLap | undefined {
   };
 }
 
-function isEligibleFile(metadata: FitStreamMetadata): boolean {
+/** Exact FIT Session message count: every session carries `start_time`, so its occurrences count them. */
+function sessionMessageCount(metadata: FitStreamMetadata): number {
   return (
-    metadata.fileType === FIT_FILE_TYPE_ACTIVITY &&
-    metadata.recoveryError === null &&
-    metadata.sessionMessageCount === 1 &&
-    metadata.workoutMessageCount === 1 &&
-    metadata.workoutStepCount !== null &&
-    metadata.workoutStepCount > 0 &&
-    metadata.session?.sport.toLowerCase() === "cycling"
+    metadata.fieldOccurrences.find(
+      ({ messageType, field }) => messageType === "session" && field === "start_time",
+    )?.occurrences ?? 0
   );
 }
 
 /**
- * Collects Lap and Workout Step messages from one FIT stream and links them. A lap's
+ * Collects the Workout, Workout Step and Lap messages of one FIT stream and links them. A lap's
  * `wkt_step_index` must equal exactly one step's `message_index`; nothing is inferred. Entries
  * are keyed by message index, so a duplicated index marks that identity ambiguous.
  */
 export class FitWorkoutIntervalCollector {
   readonly #steps = new Map<number, NormalizedStep | typeof AMBIGUOUS>();
   readonly #laps = new Map<number, CompactLap | typeof AMBIGUOUS>();
+  #workoutCount = 0;
+  #declaredSteps: number | null = null;
 
-  addWorkoutSteps(messages: readonly RawMessage[]): void {
-    for (const message of messages) {
-      const index = fitIndex(message.message_index);
-      if (index === undefined) continue;
-      const normalized = this.#steps.has(index) ? undefined : normalizeStep(message);
-      this.#steps.set(index, normalized ?? AMBIGUOUS);
+  addStructure(messages: readonly FitWorkoutStructureMessage[]): void {
+    for (const { messageType, raw } of messages) {
+      if (messageType === "workout") this.#addWorkout(raw);
+      else if (messageType === "workout_step") this.#addWorkoutStep(raw);
+      else if (messageType === "lap") this.#addLap(raw);
     }
   }
 
-  addLaps(messages: readonly RawMessage[]): void {
-    for (const message of messages) {
-      const index = fitIndex(message.message_index);
-      if (index === undefined) continue;
-      const normalized = this.#laps.has(index) ? undefined : normalizeLap(message);
-      this.#laps.set(index, normalized ?? AMBIGUOUS);
-    }
+  #addWorkout(raw: RawMessage): void {
+    this.#workoutCount += 1;
+    const declared = finiteNumber(raw.num_valid_steps);
+    this.#declaredSteps =
+      declared !== undefined && Number.isInteger(declared) && declared > 0 ? declared : null;
+  }
+
+  #addWorkoutStep(message: RawMessage): void {
+    const index = fitIndex(message.message_index);
+    if (index === undefined) return;
+    const normalized = this.#steps.has(index) ? undefined : normalizeStep(message);
+    this.#steps.set(index, normalized ?? AMBIGUOUS);
+  }
+
+  #addLap(message: RawMessage): void {
+    const index = fitIndex(message.message_index);
+    if (index === undefined) return;
+    const normalized = this.#laps.has(index) ? undefined : normalizeLap(message);
+    this.#laps.set(index, normalized ?? AMBIGUOUS);
   }
 
   build(metadata: FitStreamMetadata): FitWorkoutInterval[] {
     const session = metadata.session;
-    if (!session || !isEligibleFile(metadata)) return [];
+    // Garmin's Workout header declares `num_valid_steps`; a step or lap link outside
+    // 0 <= index < count cannot refer to a step of this workout.
+    const declaredSteps = this.#declaredSteps;
+    if (
+      !session ||
+      metadata.fileType !== FIT_FILE_TYPE_ACTIVITY ||
+      metadata.recoveryError !== null ||
+      sessionMessageCount(metadata) !== 1 ||
+      this.#workoutCount !== 1 ||
+      declaredSteps === null ||
+      session.sport.toLowerCase() !== "cycling"
+    ) {
+      return [];
+    }
     const sessionStart = session.startTime.getTime();
     const sessionEnd = sessionStart + session.totalElapsedTime * 1000;
     if (!Number.isFinite(sessionStart) || !Number.isFinite(sessionEnd)) return [];
 
-    // Garmin's Workout header declares `num_valid_steps`; a step or lap link outside
-    // 0 <= index < count cannot refer to a step of this workout.
-    const declaredSteps = metadata.workoutStepCount ?? 0;
     const candidates: Array<Omit<FitWorkoutInterval, "intervalIndex">> = [];
     for (const [lapIndex, lap] of this.#laps) {
       if (lap === AMBIGUOUS) continue;

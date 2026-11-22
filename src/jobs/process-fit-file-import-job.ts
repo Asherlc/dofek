@@ -24,11 +24,16 @@ import {
 } from "../db/provider-activity-sync.ts";
 import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
 import { fitExternalIdFromFile } from "../fit/external-id.ts";
+import {
+  matchLambertsWorkout,
+  maximumLambertsWorkoutObservations,
+} from "../fit/lamberts-workout.ts";
 import { type ParsedFitRecord, type ParsedFitSession, parseFitRecord } from "../fit/parser.ts";
 import { fitRecordsToSensorSamples } from "../fit/records.ts";
 import {
   FitDecoderError,
   type FitStreamMetadata,
+  type FitWorkoutStructureMessage,
   type ParsedFitWeight,
   streamFitFile,
 } from "../fit/stream-decoder.ts";
@@ -543,6 +548,7 @@ export async function importFitFile(
   try {
     let importType: "activity" | "unsupported" | "weight" | undefined;
     let streamMetadata: FitStreamMetadata | undefined;
+    let workoutStructure: FitWorkoutStructureMessage[] | null = [];
     try {
       await streamFitFile(data.filePath, {
         onMetadata: async (metadata) => {
@@ -575,11 +581,18 @@ export async function importFitFile(
         onDeviceInfoBatch: async (messages) => {
           if (importType === "activity") await stageDeviceBatch(spool, messages);
         },
-        onLapBatch: async (messages) => {
-          if (importType === "activity") workoutIntervals.addLaps(messages);
-        },
-        onWorkoutStepBatch: async (messages) => {
-          if (importType === "activity") workoutIntervals.addWorkoutSteps(messages);
+        onWorkoutStructureBatch: async (messages) => {
+          if (importType !== "activity") return;
+          workoutIntervals.addStructure(messages);
+          if (workoutStructure === null) return;
+          for (const message of messages) {
+            if (message.messageType === "lap" && message.raw.wkt_step_index === undefined) continue;
+            if (workoutStructure.length === maximumLambertsWorkoutObservations) {
+              workoutStructure = null;
+              return;
+            }
+            workoutStructure.push(message);
+          }
         },
       });
     } catch (error) {
@@ -650,10 +663,21 @@ export async function importFitFile(
             await writeMetricStreamBatchForScope(db, scope, rows, SOURCE_TYPE_FILE);
           }
         });
+        const declaredFileCount = streamMetadata.fieldOccurrences.find(
+          ({ messageType, field }) => messageType === "file_id" && field === "type",
+        )?.occurrences;
+        const lambertsWorkout =
+          activityImport.activityType.canonicalType === "cycling" &&
+          streamMetadata.recoveryError === null &&
+          declaredFileCount === 1 &&
+          workoutStructure !== null
+            ? matchLambertsWorkout(workoutStructure)
+            : null;
         await replaceActivityDeviceObservations(
           db,
           { activityId, userId: data.userId },
           replayDeviceBatches(spool, streamMetadata.fileId),
+          lambertsWorkout,
         );
         await replaceFitWorkoutIntervals(
           db,

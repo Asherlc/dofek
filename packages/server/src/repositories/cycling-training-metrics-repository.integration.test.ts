@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
-import { activity } from "../../../../src/db/schema/activity.ts";
+import { activity, activityInterval } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
@@ -11,6 +11,7 @@ import { cyclingEffortMetricsSchema } from "../mcp/performance-comparison-output
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { loadCyclingEffortMetrics } from "./cycling-effort-metrics.ts";
 import { CyclingTrainingMetricsRepository } from "./cycling-training-metrics-repository.ts";
+import { LambertsTestRepository } from "./lamberts-test-repository.ts";
 
 const activityId = randomUUID();
 const duplicateMemberId = randomUUID();
@@ -519,5 +520,155 @@ describe("CyclingTrainingMetricsRepository database semantics", () => {
     });
     expect(result.activities[0]?.metrics.power.normalized_watts).toBeNull();
     expect(result.activities[0]?.metrics.intervals[0]?.normalized_power_watts).toBeNull();
+  });
+
+  it("compares complete visible FIT tests by their local test dates across pages and trainers", async () => {
+    const otherUser = randomUUID();
+    await postgres.db.execute(sql`
+      INSERT INTO fitness.user_profile (id, name) VALUES (${otherUser}::uuid, 'Other cyclist')
+    `);
+    const providerId = "cycling-training-metrics-fixture";
+    const firstGroup = randomUUID();
+    const latestGroup = randomUUID();
+    const latestMember = randomUUID();
+    const firstStart = Date.parse("2026-06-01T07:05:00Z");
+    const latestStart = Date.parse("2026-07-01T06:40:00Z");
+    const stages = [
+      ["lsct_stage_1", 0, 360],
+      ["lsct_calibration", 360, 390],
+      ["lsct_stage_2", 390, 750],
+      ["lsct_stage_3", 750, 930],
+      ["lsct_recovery", 930, 1020],
+    ] as const;
+    const fits = [
+      { groupId: firstGroup, id: firstGroup, start: firstStart, max: null, source: "First FIT" },
+      {
+        groupId: latestGroup,
+        id: latestMember,
+        start: latestStart,
+        max: 190,
+        source: "Latest FIT",
+      },
+      { groupId: latestGroup, id: randomUUID(), start: latestStart, max: 190, source: "Duplicate" },
+      { groupId: randomUUID(), id: randomUUID(), start: firstStart, max: 190, source: "Partial" },
+      { groupId: randomUUID(), id: randomUUID(), start: firstStart, max: 190, source: "Other" },
+    ];
+    await postgres.db.insert(activity).values(
+      fits.map((fit) => ({
+        id: fit.id,
+        groupId: fit.groupId,
+        userId: fit.source === "Other" ? otherUser : TEST_USER_ID,
+        providerId,
+        externalId: fit.id,
+        canonicalType: "cycling",
+        providerType: "cycling",
+        sourceName: fit.source,
+        modality: "indoor",
+        startedAt: new Date(fit.start - 600_000),
+        endedAt: new Date(fit.start + 1_080_000),
+      })),
+    );
+    await postgres.db.insert(activityInterval).values(
+      fits.flatMap((fit) =>
+        (fit.source === "Partial" ? stages.slice(0, -1) : stages).map(
+          ([segmentType, start, end], intervalIndex) => ({
+            activityId: fit.id,
+            intervalIndex,
+            startedAt: new Date(fit.start + start * 1000),
+            endedAt: new Date(fit.start + end * 1000),
+            sourceKind: "provider_recorded" as const,
+            sourceProvider: providerId,
+            sourceActivityId: fit.id,
+            segmentType,
+            raw: {
+              fitWorkoutStep: { message_index: intervalIndex },
+              fitLap: { wkt_step_index: intervalIndex },
+              ...(intervalIndex === 0
+                ? { fitWorkout: { wkt_name: "LSCT" }, fitZonesTarget: { max_heart_rate: fit.max } }
+                : {}),
+            },
+          }),
+        ),
+      ),
+    );
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.activity_sensor_sample`,
+      values: [
+        { groupId: firstGroup, start: firstStart, stage2: 222, stage3: 278, device: "kickr" },
+        { groupId: latestGroup, start: latestStart, stage2: 230, stage3: 289, device: "neo" },
+      ].flatMap((fit) =>
+        Array.from({ length: 1_080 }, (_, second) => {
+          const power = second < 390 ? 120 : second < 750 ? fit.stage2 : fit.stage3;
+          return [
+            { channel: "power", scalar: second < 930 ? power : 0, millis: 0 },
+            { channel: "heart_rate", scalar: second < 974 ? 170 : 125, millis: 0 },
+            { channel: "cadence", scalar: second < 930 ? 90 : 0, millis: 0 },
+            { channel: "speed", scalar: 8, millis: 500 },
+          ].map(({ channel, scalar, millis }) => ({
+            activity_id: fit.groupId,
+            user_id: TEST_USER_ID,
+            recorded_at: new Date(fit.start + second * 1000 + millis)
+              .toISOString()
+              .replace("T", " ")
+              .replace("Z", ""),
+            channel,
+            scalar,
+            provider_id: providerId,
+            device_id: fit.device,
+            measurement_kind: "direct",
+            refresh_version: 1,
+            is_deleted: 0,
+          }));
+        }).flat(),
+      ),
+      format: "JSONEachRow",
+    });
+
+    const repository = new LambertsTestRepository(
+      postgres.db,
+      store,
+      TEST_USER_ID,
+      "America/Los_Angeles",
+    );
+    const selection = {
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      modalities: ["indoor"],
+      providers: [providerId],
+      cursor: null,
+      limit: 1,
+    };
+    const newest = await repository.listRange(selection);
+    expect(newest).toMatchObject({
+      total_tests: 2,
+      next_cursor: latestGroup,
+      comparison: {
+        earliest: { activity_id: firstGroup, date: "2026-06-01" },
+        latest: { activity_id: latestGroup, date: "2026-06-30" },
+        stage_2_mean_watts_change: 8,
+        stage_3_mean_watts_change: 11,
+      },
+    });
+    expect(newest.tests[0]).toMatchObject({
+      activity_id: latestGroup,
+      started_at: "2026-07-01T06:40:00.000Z",
+      source_devices: ["neo"],
+      heart_rate_maximum: { configured_bpm: 190, measurement_method: "unknown" },
+      recovery: { observed_heart_rate_drop_bpm: 45, non_pedaling: true, seated_upright: null },
+    });
+    expect(newest.tests[0]?.source_activity_id).not.toBe(latestGroup);
+    const previous = await repository.listRange({ ...selection, cursor: newest.next_cursor });
+    expect(previous.comparison).toEqual(newest.comparison);
+    expect(previous.next_cursor).toBeNull();
+    expect(previous.tests[0]).toMatchObject({
+      activity_id: firstGroup,
+      source_devices: ["kickr"],
+      heart_rate_maximum: { configured_bpm: null, measurement_method: "unknown" },
+    });
+    expect(await repository.listRange({ ...selection, modalities: ["outdoor"] })).toMatchObject({
+      tests: [],
+      comparison: null,
+      total_tests: 0,
+    });
   });
 });

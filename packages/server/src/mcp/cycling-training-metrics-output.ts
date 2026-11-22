@@ -114,6 +114,83 @@ const bestPowerSchema = z
   })
   .strict();
 
+export const lambertsTestProtocol = "lamberts_submaximal_cycle_test" as const;
+
+const lambertsStageSchema = z
+  .object({
+    stage: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    target_maximum_heart_rate_pct: z.union([z.literal(60), z.literal(80), z.literal(90)]),
+    mean_power_watts: nullableNumber,
+    mean_heart_rate_bpm: nullableNumber,
+    mean_cadence_rpm: nullableNumber,
+    mean_speed_meters_per_second: nullableNumber,
+    perceived_exertion: z.null(),
+  })
+  .strict();
+
+const lambertsRecoverySchema = z
+  .object({
+    observed_heart_rate_drop_bpm: nullableNumber,
+    non_pedaling: z.boolean().nullable(),
+    seated_upright: z.null(),
+  })
+  .strict();
+
+const lambertsTestSchema = z
+  .object({
+    activity_id: z.uuid(),
+    source_activity_id: z.uuid(),
+    source_provider: z.string().min(1),
+    source_name: nullableString,
+    date: z.string(),
+    started_at: z.string(),
+    modality: nullableString,
+    source_providers: z.array(z.string()),
+    source_devices: z.array(z.string()),
+    sample_source_providers: z.array(z.string()),
+    power_measurement_kinds: z.array(z.enum(["direct", "estimated", "unknown"])),
+    heart_rate_maximum: z
+      .object({
+        configured_bpm: nullableNumber,
+        measurement_method: z.literal("unknown"),
+      })
+      .strict(),
+    stages: z.array(lambertsStageSchema).length(3),
+    recovery: lambertsRecoverySchema,
+  })
+  .strict();
+
+const lambertsAnchorSchema = z
+  .object({
+    activity_id: z.uuid(),
+    date: z.string(),
+    started_at: z.string(),
+    stage_2_mean_power_watts: nullableNumber,
+    stage_3_mean_power_watts: nullableNumber,
+  })
+  .strict();
+
+const lambertsTestComparisonSchema = z
+  .object({
+    earliest: lambertsAnchorSchema,
+    latest: lambertsAnchorSchema,
+    stage_2_mean_watts_change: nullableNumber,
+    stage_3_mean_watts_change: nullableNumber,
+  })
+  .strict();
+
+/** Strict MCP wire contract for the opt-in Lamberts comparison mode. */
+export const lambertsTestResultSchema = z
+  .object({
+    protocol: z.literal(lambertsTestProtocol),
+    range: rangeSchema,
+    total_tests: z.number().int().nonnegative(),
+    tests: z.array(lambertsTestSchema),
+    next_cursor: nullableString,
+    comparison: lambertsTestComparisonSchema.nullable(),
+  })
+  .strict();
+
 /** Strict MCP wire contract for coverage-aware per-activity cycling metrics. */
 export const cyclingTrainingMetricsOutputSchema = z
   .object({
@@ -243,3 +320,8 @@ export const cyclingTrainingMetricsOutputSchema = z
       .strict(),
   })
   .strict();
+
+/** Registered responses for cycling analysis. */
+export const cyclingTrainingMetricsToolOutputSchema = cyclingTrainingMetricsOutputSchema.extend({
+  result: z.union([cyclingTrainingMetricsOutputSchema.shape.result, lambertsTestResultSchema]),
+});

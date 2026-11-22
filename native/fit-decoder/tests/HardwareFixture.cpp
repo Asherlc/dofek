@@ -11,10 +11,10 @@
 #include "fit_file_id_mesg.hpp"
 #include "fit_lap_mesg.hpp"
 #include "fit_record_mesg.hpp"
-#include "fit_session_mesg.hpp"
+#include "fit_weight_scale_mesg.hpp"
 #include "fit_workout_mesg.hpp"
 #include "fit_workout_step_mesg.hpp"
-#include "fit_weight_scale_mesg.hpp"
+#include "fit_zones_target_mesg.hpp"
 
 int main(int argc, char* argv[]) {
   if (argc != 3) return 2;
@@ -23,6 +23,41 @@ int main(int argc, char* argv[]) {
   fit::Encode encoder(fit::ProtocolVersion::V20);
   encoder.Open(file);
   const std::string fixture_mode(argv[2]);
+  if (fixture_mode == "workout-structure") {
+    constexpr FIT_DATE_TIME start = 1000000000;
+    fit::FileIdMesg file_id;
+    file_id.SetType(FIT_FILE_ACTIVITY);
+    encoder.Write(file_id);
+    fit::WorkoutMesg workout;
+    workout.SetSport(FIT_SPORT_CYCLING);
+    workout.SetNumValidSteps(1);
+    workout.SetWktName(L"LSCT");
+    encoder.Write(workout);
+    fit::WorkoutStepMesg step;
+    step.SetMessageIndex(0);
+    step.SetDurationType(FIT_WKT_STEP_DURATION_TIME);
+    step.SetDurationTime(360.0F);
+    step.SetTargetType(FIT_WKT_STEP_TARGET_HEART_RATE);
+    step.SetTargetHrZone(0);
+    step.SetCustomTargetHeartRateLow(60);
+    step.SetCustomTargetHeartRateHigh(60);
+    encoder.Write(step);
+    fit::ZonesTargetMesg zones;
+    zones.SetMaxHeartRate(190);
+    encoder.Write(zones);
+    fit::RecordMesg record;
+    record.SetTimestamp(start);
+    record.SetHeartRate(114);
+    encoder.Write(record);
+    fit::LapMesg lap;
+    lap.SetWktStepIndex(0);
+    lap.SetStartTime(start);
+    lap.SetTimestamp(start + 360);
+    lap.SetTotalElapsedTime(360.0F);
+    lap.SetTotalTimerTime(360.0F);
+    encoder.Write(lap);
+    return encoder.Close() ? 0 : 1;
+  }
   if (fixture_mode.rfind("recovery-", 0) == 0) {
     fit::FileIdMesg file_id;
     const bool chained_header = fixture_mode.rfind("recovery-chained-", 0) == 0 ||
@@ -132,107 +167,6 @@ int main(int argc, char* argv[]) {
       corrupt.write(&byte, 1);
     }
     return 0;
-  }
-  if (fixture_mode == "workout" || fixture_mode == "workout-no-count" ||
-      fixture_mode == "plain-laps" || fixture_mode == "workout-chained") {
-    const bool embeds_workout = fixture_mode == "workout" || fixture_mode == "workout-no-count";
-    fit::FileIdMesg file_id;
-    file_id.SetType(FIT_FILE_ACTIVITY);
-    file_id.SetManufacturer(FIT_MANUFACTURER_GARMIN);
-    encoder.Write(file_id);
-    if (embeds_workout) {
-      fit::WorkoutMesg workout;
-      workout.SetSport(FIT_SPORT_CYCLING);
-      if (fixture_mode != "workout-no-count") {
-        workout.SetNumValidSteps(2);
-      }
-      encoder.Write(workout);
-    }
-    const FIT_UINT32 target_low[] = {1250, 1260};
-    const FIT_UINT32 target_high[] = {1265, 1260};
-    for (FIT_MESSAGE_INDEX step_index = 0; step_index < 2; ++step_index) {
-      if (!embeds_workout) {
-        break;
-      }
-      fit::WorkoutStepMesg step;
-      step.SetMessageIndex(step_index);
-      step.SetDurationType(FIT_WKT_STEP_DURATION_TIME);
-      step.SetDurationValue(180000);
-      step.SetTargetType(FIT_WKT_STEP_TARGET_POWER);
-      step.SetTargetValue(0);
-      step.SetCustomTargetValueLow(target_low[step_index]);
-      step.SetCustomTargetValueHigh(target_high[step_index]);
-      encoder.Write(step);
-    }
-    for (int second = 0; second < 5; ++second) {
-      fit::RecordMesg record;
-      record.SetTimestamp(1000000000 + second * 120);
-      record.SetPower(250);
-      encoder.Write(record);
-    }
-    const FIT_UINT8 lap_step_index[] = {0, 0, 1};
-    const FIT_UINT32 lap_start_offset[] = {0, 180, 325};
-    const FIT_UINT32 lap_end_offset[] = {180, 325, 505};
-    const float lap_timer[] = {180.0F, 134.0F, 180.0F};
-    const float lap_elapsed[] = {180.0F, 145.0F, 180.0F};
-    for (FIT_MESSAGE_INDEX lap_index = 0; lap_index < 3; ++lap_index) {
-      fit::LapMesg lap;
-      lap.SetMessageIndex(lap_index);
-      lap.SetStartTime(1000000000 + lap_start_offset[lap_index]);
-      lap.SetTimestamp(1000000000 + lap_end_offset[lap_index]);
-      lap.SetWktStepIndex(lap_step_index[lap_index]);
-      lap.SetTotalTimerTime(lap_timer[lap_index]);
-      lap.SetTotalElapsedTime(lap_elapsed[lap_index]);
-      encoder.Write(lap);
-    }
-    fit::SessionMesg session;
-    session.SetStartTime(1000000000);
-    session.SetTimestamp(1000000505);
-    session.SetTotalElapsedTime(505.0F);
-    session.SetSport(FIT_SPORT_CYCLING);
-    encoder.Write(session);
-    if (fixture_mode != "workout-chained") {
-      return encoder.Close() ? 0 : 1;
-    }
-    // Chain a standalone Workout file after the lap-only activity: the lap links resolve to
-    // steps in a different FIT segment, which is not a same-file link.
-    if (!encoder.Close()) return 1;
-    file.close();
-    const std::string workout_path = std::string(argv[1]) + ".workout";
-    {
-      std::fstream workout_file(
-          workout_path, std::ios::in | std::ios::out | std::ios::binary | std::ios::trunc);
-      if (!workout_file.is_open()) return 1;
-      fit::Encode workout_encoder(fit::ProtocolVersion::V20);
-      workout_encoder.Open(workout_file);
-      fit::FileIdMesg workout_file_id;
-      workout_file_id.SetType(FIT_FILE_WORKOUT);
-      workout_file_id.SetManufacturer(FIT_MANUFACTURER_GARMIN);
-      workout_encoder.Write(workout_file_id);
-      fit::WorkoutMesg standalone_workout;
-      standalone_workout.SetSport(FIT_SPORT_CYCLING);
-      standalone_workout.SetNumValidSteps(2);
-      workout_encoder.Write(standalone_workout);
-      for (FIT_MESSAGE_INDEX step_index = 0; step_index < 2; ++step_index) {
-        fit::WorkoutStepMesg step;
-        step.SetMessageIndex(step_index);
-        step.SetDurationType(FIT_WKT_STEP_DURATION_TIME);
-        step.SetDurationValue(180000);
-        step.SetTargetType(FIT_WKT_STEP_TARGET_POWER);
-        step.SetTargetValue(0);
-        step.SetCustomTargetValueLow(target_low[step_index]);
-        step.SetCustomTargetValueHigh(target_high[step_index]);
-        workout_encoder.Write(step);
-      }
-      if (!workout_encoder.Close()) return 1;
-    }
-    std::ifstream workout_input(workout_path, std::ios::binary);
-    std::vector<char> workout_segment(std::istreambuf_iterator<char>(workout_input), {});
-    std::ofstream output(argv[1], std::ios::binary | std::ios::app);
-    output.write(workout_segment.data(), static_cast<std::streamsize>(workout_segment.size()));
-    workout_input.close();
-    std::filesystem::remove(workout_path);
-    return output.good() ? 0 : 1;
   }
   if (std::string(argv[2]) != "no-file-id") {
     fit::FileIdMesg file_id;
