@@ -1,9 +1,18 @@
 import { Link } from "@tanstack/react-router";
-import { decodeClimbingLogEntryDetailResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
+import {
+  type ClimbingLogEntryDetail,
+  decodeClimbingLogEntryDetailResponse,
+} from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ClimbingLogEntryDetails } from "../components/ClimbingLogEntryDetails.tsx";
 import { ModalDialog, ModalDialogTitle } from "../components/ModalDialog.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { trpc } from "../lib/trpc.ts";
 import { formatCellValue, formatColumnName } from "./provider-detail-format.ts";
+
+function ClimbingRecordWithHistory({ entry }: { entry: ClimbingLogEntryDetail }) {
+  const history = trpc.climbing.projectHistory.useQuery({ logEntryId: entry.id });
+  return <ClimbingLogEntryDetails entry={entry} projectHistory={history} />;
+}
 
 export function RecordDetailModal({
   state,
@@ -65,7 +74,11 @@ export function RecordDetailModal({
       )}
       {record &&
         (climbingLog ? (
-          <ClimbingLogEntryDetails entry={climbingLog} />
+          climbingLog.discipline === "rock_climbing" && climbingLog.climb?.externalId ? (
+            <ClimbingRecordWithHistory key={climbingLog.id} entry={climbingLog} />
+          ) : (
+            <ClimbingLogEntryDetails entry={climbingLog} />
+          )
         ) : (
           <>
             <div className="mb-4">

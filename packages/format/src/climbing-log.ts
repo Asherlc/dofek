@@ -1,6 +1,61 @@
 import { gradeSystemLabel } from "@dofek/training/climbing-grades";
 import type { AttemptOutcome, ClimbingAttempt, GradeComponent } from "@dofek/training/climbing-log";
+import type { ClimbingProjectHistory } from "@dofek/training/climbing-project-history";
 import { formatClimbingRopeMethod } from "./climbing-context.ts";
+import { formatDateShort } from "./format.ts";
+
+function sessionNoun(count: number) {
+  return count === 1 ? "session" : "sessions";
+}
+
+export function formatClimbingProjectHistory(history: ClimbingProjectHistory) {
+  const { firstSend, methodFirstSend, repeatBeforeFirstSend } = history;
+  const distinctMethodSend =
+    methodFirstSend &&
+    (!firstSend ||
+      methodFirstSend.date !== firstSend.date ||
+      methodFirstSend.sessionCount !== firstSend.sessionCount ||
+      methodFirstSend.method !== firstSend.method);
+  const shortDate = (date: string) => formatDateShort(date, { timeZone: "UTC" });
+  const firstSendDetails = firstSend
+    ? [
+        formatClimbingRopeMethod(firstSend.method),
+        shortDate(firstSend.date),
+        history.earlierSessionsUnknown ? "Earlier sessions unknown" : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+  const methodLabel = distinctMethodSend
+    ? formatClimbingRopeMethod(methodFirstSend.method)?.toLowerCase()
+    : null;
+  return {
+    summary: firstSend
+      ? `${firstSend.sessionCount} logged ${sessionNoun(firstSend.sessionCount)} to first recorded send`
+      : `${history.sessionCount} logged ${sessionNoun(history.sessionCount)} · ${repeatBeforeFirstSend ? "First send date unknown" : "Send unconfirmed"}`,
+    detail:
+      firstSendDetails ??
+      [
+        `${history.unsuccessfulSessionCount} unsuccessful`,
+        `${history.unknownSessionCount} ${history.unknownSessionCount === 1 ? "result" : "results"} unknown`,
+      ].join(" · "),
+    methodDetail:
+      methodFirstSend && methodLabel
+        ? `First recorded ${methodLabel} send after ${methodFirstSend.sessionCount} ${methodLabel} ${sessionNoun(methodFirstSend.sessionCount)} · ${shortDate(methodFirstSend.date)}`
+        : null,
+  };
+}
+
+const projectOutcomes = {
+  send: "Sent",
+  unsuccessful: "Unsuccessful",
+  unknown: "Result unknown",
+} as const;
+
+export function formatClimbingProjectDay(day: ClimbingProjectHistory["days"][number]): string {
+  const method = formatClimbingRopeMethod(day.method);
+  return [method, projectOutcomes[day.outcome]].filter(Boolean).join(" · ");
+}
 
 export function formatClimbingResultOutcome(
   outcome: AttemptOutcome | null,
