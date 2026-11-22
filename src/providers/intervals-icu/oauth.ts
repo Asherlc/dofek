@@ -8,6 +8,11 @@ import {
   ProviderPartialGrantError,
 } from "../auth-errors.ts";
 import type { ProviderAuthSetup } from "../types.ts";
+import {
+  createRateLimitAwareFetch,
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 
 const INTERVALS_ICU_API_BASE = "https://intervals.icu/api/v1";
 const INTERVALS_ICU_AUTHORIZE_URL = "https://intervals.icu/oauth/authorize";
@@ -30,6 +35,39 @@ const intervalsIcuTokenPayloadSchema = z.object({
 });
 
 const INTERVALS_ICU_PROVIDER_ID = "intervals.icu";
+
+/** Shared OAuth request helper using rate-limit-aware fetch with call-time globalThis.fetch for MSW compatibility. */
+async function oauthRequest(
+  operation: "token" | "revoke",
+  fetchFn: typeof globalThis.fetch,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  // Preserve original error message format for each operation
+  const messagePrefix =
+    operation === "revoke" ? "Intervals.icu disconnect" : "Intervals.icu token exchange";
+  const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+    providerId: INTERVALS_ICU_PROVIDER_ID,
+    scope: "provider",
+    createRateLimitError: (response, responseBody) =>
+      new ProviderRateLimitError({
+        message: `${messagePrefix} failed (${response.status})`,
+        providerId: INTERVALS_ICU_PROVIDER_ID,
+        statusCode: response.status,
+        responseBody,
+        scope: "provider",
+      }),
+    createServiceUnavailableError: (response, responseBody) =>
+      new ProviderServiceUnavailableError({
+        message: `${messagePrefix} failed (${response.status})`,
+        providerId: INTERVALS_ICU_PROVIDER_ID,
+        statusCode: response.status,
+        responseBody,
+        scope: "provider",
+      }),
+  });
+  return await rateLimitFetch(url, init);
+}
 
 /** Binds the Intervals.icu athlete to the user; throws if another athlete's data is retained. */
 export async function bindIntervalsIcuAthlete(
@@ -55,19 +93,26 @@ export function validateIntervalsIcuConfig(): string | null {
 }
 
 async function revokeIntervalsIcuTokens(tokens: TokenSet): Promise<void> {
-  const response = await fetch(`${INTERVALS_ICU_API_BASE}/disconnect-app`, {
-    method: "DELETE",
-    redirect: "error",
-    headers: {
-      Authorization: `Bearer ${tokens.accessToken}`,
+  const response = await oauthRequest(
+    "revoke",
+    globalThis.fetch,
+    `${INTERVALS_ICU_API_BASE}/disconnect-app`,
+    {
+      method: "DELETE",
+      redirect: "error",
+      headers: {
+        Authorization: `Bearer ${tokens.accessToken}`,
+      },
     },
-  });
+  );
 
   // Official API docs (https://intervals.icu/api/v1/docs) document 200 (revoked) and 401 (invalid bearer).
   if (response.status === 200 || response.status === 401) {
     return;
   }
 
+  // Errors are already thrown as ProviderRateLimitError or ProviderServiceUnavailableError
+  // from the oauthRequest helper for 429/503. For other statuses, throw with existing message.
   throw new Error(`Intervals.icu disconnect failed (${response.status})`);
 }
 
@@ -110,7 +155,7 @@ export function createIntervalsIcuAuthSetup(options?: { host?: string }): Provid
 
     let response: Response;
     try {
-      response = await fetch(INTERVALS_ICU_TOKEN_URL, {
+      response = await oauthRequest("token", globalThis.fetch, INTERVALS_ICU_TOKEN_URL, {
         method: "POST",
         redirect: "error",
         headers: {
@@ -119,6 +164,13 @@ export function createIntervalsIcuAuthSetup(options?: { host?: string }): Provid
         body: body.toString(),
       });
     } catch (networkError: unknown) {
+      // Preserve existing behavior: only wrap network errors, not HTTP error responses
+      if (
+        networkError instanceof ProviderRateLimitError ||
+        networkError instanceof ProviderServiceUnavailableError
+      ) {
+        throw networkError;
+      }
       throw new Error("Intervals.icu token exchange network request failed", {
         cause: networkError,
       });

@@ -312,35 +312,40 @@ describe("Intervals.icu OAuth exchangeCode", () => {
   });
 
   it("keeps private response content out of errors on upstream HTTP failure", async () => {
-    server.use(
-      http.post(TOKEN_URL, () => {
-        return new HttpResponse(
-          JSON.stringify({
-            error: "invalid_grant",
-            secret_internal_detail: "super-secret-user-email@example.com",
-            private_token: "secret-token-leak",
-          }),
-          {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }),
-    );
+    for (const status of [400, 429, 503]) {
+      let requestCount = 0;
+      server.use(
+        http.post(TOKEN_URL, () => {
+          requestCount++;
+          return new HttpResponse(
+            JSON.stringify({
+              error: "invalid_grant",
+              secret_internal_detail: "super-secret-user-email@example.com",
+              private_token: "secret-token-leak",
+            }),
+            {
+              status,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }),
+      );
 
-    const setup = requireAuthSetup();
-    const exchangeCode = requireExchangeCode(setup);
-    let error: Error | undefined;
-    try {
-      await exchangeCode("bad-code", "verifier");
-    } catch (e) {
-      if (e instanceof Error) error = e;
+      const setup = requireAuthSetup();
+      const exchangeCode = requireExchangeCode(setup);
+      let error: Error | undefined;
+      try {
+        await exchangeCode("bad-code", "verifier");
+      } catch (e) {
+        if (e instanceof Error) error = e;
+      }
+
+      expect(error).toBeDefined();
+      expect(error?.message).toBe(`Intervals.icu token exchange failed (${status})`);
+      expect(error?.message).not.toContain("super-secret");
+      expect(error?.message).not.toContain("secret-token-leak");
+      expect(requestCount).toBe(1);
     }
-
-    expect(error).toBeDefined();
-    expect(error?.message).toBe("Intervals.icu token exchange failed (400)");
-    expect(error?.message).not.toContain("super-secret");
-    expect(error?.message).not.toContain("secret-token-leak");
   });
 });
 
