@@ -6,6 +6,7 @@ import { ClimbingBoardAccount } from "../lib/climbing-board-account.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { ProviderAuthError } from "./auth-errors.ts";
+import { type ClimbLookupCandidate, resolveClimbIdentities } from "./boardsesh-climb-identity.ts";
 import type { ProviderAuthSetup, SyncProvider, SyncResult, SyncRun, TokenSet } from "./types.ts";
 
 const authUrl = "https://ws.boardsesh.com/auth/native/credentials";
@@ -67,11 +68,6 @@ const ascentMetadataSchema = z.object({
   boardseshConfidence: z.string().nullable(),
   layoutId: z.number().int().nullable().optional(),
   renderBoard: renderBoardSchema.nullable().optional(),
-});
-const climbIdentitySchema = z.object({
-  uuid: identifier,
-  boardType: identifier,
-  layoutId: z.number().int(),
 });
 const boardIdentitySchema = z.object({ uuid: identifier, name: identifier, boardType: identifier });
 const boardMetadataSchema = boardIdentitySchema.extend({
@@ -264,7 +260,7 @@ class BoardSeshClient implements ClimbingBoardClient {
     };
     const entries: BoardLogbook["entries"] = [];
     const allIds = new Set<string>();
-    const canonicalClimbIds = new Map<string, string>();
+    const candidates: ClimbLookupCandidate[] = [];
     const identityByEntry = new Map<BoardLogbook["entries"][number], string>();
     for (const boardType of boardTypes) {
       const tickData = await request(
@@ -444,40 +440,21 @@ class BoardSeshClient implements ClimbingBoardClient {
               ? {
                   layoutId: metadata.layoutId,
                   sizeId: renderBoard.sizeId,
-                  setIds: renderBoard.setIds.join(","),
+                  setIds: renderBoard.setIds,
                 }
               : null;
           const sourceIdentity = `${metadata.boardType}:${metadata.climbUuid}`;
           if (completedSend && hasConsensus && climbConfig) {
             identityByEntry.set(entry, sourceIdentity);
-          }
-          if (
-            completedSend &&
-            hasConsensus &&
-            climbConfig &&
-            !canonicalClimbIds.has(sourceIdentity)
-          ) {
-            const climbData = await request(
-              "query BoardSeshClimb($boardName: String!, $layoutId: Int!, $sizeId: Int!, $setIds: String!, $angle: Int!, $climbUuid: ID!) { authenticatedUserId climb(boardName: $boardName, layoutId: $layoutId, sizeId: $sizeId, setIds: $setIds, angle: $angle, climbUuid: $climbUuid) { uuid boardType layoutId } }",
-              {
-                boardName: metadata.boardType,
-                layoutId: climbConfig.layoutId,
-                sizeId: climbConfig.sizeId,
-                setIds: climbConfig.setIds,
-                angle: metadata.angle,
-                climbUuid: metadata.climbUuid,
-              },
-            );
-            const climb = z
-              .object({ climb: climbIdentitySchema.nullable() })
-              .parse(climbData).climb;
-            if (climb) {
-              if (climb.boardType !== metadata.boardType || climb.layoutId !== climbConfig.layoutId)
-                throw new Error(
-                  "BoardSesh returned a different climb identity; no logbook records were reconciled.",
-                );
-              canonicalClimbIds.set(sourceIdentity, climb.uuid);
-            }
+            candidates.push({
+              sourceIdentity,
+              boardName: metadata.boardType,
+              layoutId: climbConfig.layoutId,
+              sizeId: climbConfig.sizeId,
+              setIds: climbConfig.setIds,
+              angle: metadata.angle,
+              climbUuid: metadata.climbUuid,
+            });
           }
           entry.raw = z.json().parse({
             ...z.record(z.string(), z.json()).parse(entry.raw),
@@ -494,6 +471,15 @@ class BoardSeshClient implements ClimbingBoardClient {
         offset += page.items.length;
       }
     }
+    const canonicalClimbIds = candidates.length
+      ? await resolveClimbIdentities({
+          candidates,
+          fetchFn: this.#fetch,
+          accessToken: current.accessToken,
+          accountId: current.providerAccountId,
+          signal,
+        })
+      : new Map<string, string>();
     // A temporarily unresolved lookup can succeed on a later tick in this sync;
     // attach the verified ID to every exactly matched tick after the feed is read.
     for (const [entry, sourceIdentity] of identityByEntry) {

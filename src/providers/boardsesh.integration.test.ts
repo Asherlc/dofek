@@ -47,7 +47,9 @@ type IdentityMode =
   | "identity-late-success"
   | "identity-layout-mismatch";
 const isIdentityMode = (mode: string): mode is IdentityMode => mode.startsWith("identity");
-const identityPairs = (mode: IdentityMode) => {
+const identityPairs = (
+  mode: IdentityMode,
+): Array<{ uuid: string; climbUuid: string; angle?: number }> => {
   if (mode === "identity")
     return [
       { uuid: "tick-1", climbUuid: "climb-1" },
@@ -56,22 +58,22 @@ const identityPairs = (mode: IdentityMode) => {
     ];
   if (mode === "identity-unavailable")
     return [
-      { uuid: "tick-1", climbUuid: "unresolved-1" },
-      { uuid: "tick-2", climbUuid: "unresolved-1" },
+      { uuid: "tick-1", climbUuid: "unresolved-1", angle: 40 },
+      { uuid: "tick-2", climbUuid: "unresolved-1", angle: 45 },
     ];
   if (mode === "identity-late-success")
     return [
-      { uuid: "tick-1", climbUuid: "climb-1" },
-      { uuid: "tick-2", climbUuid: "climb-1" },
+      { uuid: "tick-1", climbUuid: "climb-1", angle: 40 },
+      { uuid: "tick-2", climbUuid: "climb-1", angle: 45 },
     ];
   return [{ uuid: "tick-1", climbUuid: "climb-1" }];
 };
-const identityAscent = (uuid: string, climbUuid: string, renderBoardLayout = 11) => ({
+const identityAscent = (uuid: string, climbUuid: string, renderBoardLayout = 11, angle = 40) => ({
   uuid,
   climbUuid,
   boardType: "kilter",
   isMirror: false,
-  angle: 40,
+  angle,
   climbName: "Moon Dust",
   boardId: 42,
   boardDisplayName: "Training Kilter",
@@ -151,11 +153,12 @@ describe("BoardSesh snapshot persistence", () => {
               userAscentsFeed: {
                 items: withMetadata
                   ? isIdentityMode(mode)
-                    ? identityPairs(mode).map(({ uuid, climbUuid }) =>
+                    ? identityPairs(mode).map(({ uuid, climbUuid, angle }) =>
                         identityAscent(
                           uuid,
                           climbUuid,
                           mode === "identity-layout-mismatch" ? 12 : 11,
+                          angle,
                         ),
                       )
                     : [
@@ -207,20 +210,19 @@ describe("BoardSesh snapshot persistence", () => {
               },
             },
           });
-        if (body.query.includes("BoardSeshClimb")) {
-          const climbUuid = z.object({ variables: z.object({ climbUuid: z.string() }) }).parse(body)
-            .variables.climbUuid;
-          climbRequests.push(climbUuid);
-          const firstLookup = climbRequests.filter((entry) => entry === climbUuid).length === 1;
-          return HttpResponse.json({
-            data: {
-              authenticatedUserId: "owner-1",
-              climb:
-                mode === "identity-unavailable" || (mode === "identity-late-success" && firstLookup)
-                  ? null
-                  : { uuid: "canonical-1", boardType: "kilter", layoutId: 11 },
-            },
-          });
+        if (body.query.includes("BoardSeshClimbLookup")) {
+          const data: Record<string, unknown> = { authenticatedUserId: "owner-1" };
+          for (const match of body.query.matchAll(/\bc(\d+): climb\(/g)) {
+            const index = Number(match[1]);
+            const climbUuid = String(body.variables?.[`u${index}`]);
+            climbRequests.push(climbUuid);
+            const firstLookup = climbRequests.filter((entry) => entry === climbUuid).length === 1;
+            data[`c${index}`] =
+              mode === "identity-unavailable" || (mode === "identity-late-success" && firstLookup)
+                ? null
+                : { uuid: "canonical-1", boardType: "kilter", layoutId: 11 };
+          }
+          return HttpResponse.json({ data });
         }
         if (body.query.includes("grades")) {
           requestOrder.push("grades");

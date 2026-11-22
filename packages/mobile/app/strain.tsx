@@ -527,13 +527,14 @@ export function TrainingAnalysis({
           }}
         />
       ) : null}
-      {show("climbing") && shouldShowClimbingSection && !isLoading ? (
+      {show("climbing") && !isLoading ? (
         <ClimbingTrainingCard
-          data={trainingData?.climbing}
+          data={shouldShowClimbingSection ? trainingData?.climbing : undefined}
           loading={trainingQuery.isLoading && trainingData == null}
           demonstratedGrade={climbingDemonstratedGradeQuery.data}
           demonstratedGradeLoading={climbingDemonstratedGradeQuery.isLoading}
           demonstratedGradeError={climbingDemonstratedGradeQuery.error}
+          demonstratedGradeOnly={!shouldShowClimbingSection}
         />
       ) : null}
 

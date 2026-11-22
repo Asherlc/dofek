@@ -186,7 +186,7 @@ export function ClimbingDemonstratedGrade({
         </tbody>
       </table>
       <p id={keyId} className="sr-only">
-        Insufficient evidence for a demonstrated grade
+        A dash means insufficient evidence for a demonstrated grade.
       </p>
 
       {TYPES.flatMap((type) =>

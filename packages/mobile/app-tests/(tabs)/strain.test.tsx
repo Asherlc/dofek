@@ -9,6 +9,7 @@ import {
   recentCyclingActivityFixture,
   sectionExpectations,
 } from "../../app-fixtures/(tabs)/strain-test-helpers";
+import { demonstratedGradeFixture } from "../../components/climbing-demonstrated-grade-fixture";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 import { intervalRun, runningData } from "../../components/running-training-test-helpers";
@@ -327,6 +328,24 @@ describe("StrainScreen", () => {
     expect(mockQueryState.rangeQueryCalls.training.at(-1)?.input.days).toBe(30);
   });
 
+  it("shows demonstrated grade when trainingV2 fails without cached climbing data", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training unavailable");
+    mockDemonstratedGradeQuery.mockReturnValue({
+      data: demonstratedGradeFixture,
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
+    const { default: StrainScreen } = await import("../../app/strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByRole("button", { name: "Indoor bouldering, V5, 3 climbs" })).toBeTruthy();
+    expect(screen.queryByRole("image", { name: /^Grade progression/ })).toBeNull();
+    expect(screen.getByText("Could not load training data")).toBeTruthy();
+  });
+
   it("refreshes training, intensity, polarization, and processing status together", async () => {
     const { default: StrainScreen } = await import("../../app/strain");
     render(<StrainScreen />);
@@ -639,7 +658,7 @@ describe("StrainScreen", () => {
     expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
     expect(screen.getAllByTestId("query-state-error")).toHaveLength(1);
     expect(screen.queryByText("Training Load")).toBeNull();
-    expect(screen.queryByText("Climbing")).toBeNull();
+    expect(screen.queryByRole("image", { name: /^Grade progression/ })).toBeNull();
     expect(screen.getByText("Weekly Volume")).toBeTruthy();
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error));
   });

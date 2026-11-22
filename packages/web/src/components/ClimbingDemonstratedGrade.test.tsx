@@ -41,7 +41,7 @@ describe("ClimbingDemonstratedGrade", () => {
     );
     expect(within(table).getAllByText("—")).toHaveLength(5);
 
-    const key = screen.getByText("Insufficient evidence for a demonstrated grade");
+    const key = screen.getByText("A dash means insufficient evidence for a demonstrated grade.");
     expect(key).toHaveClass("sr-only");
     expect(table).toHaveAttribute("aria-describedby", key.id);
     expect(screen.getByText("How 3:3:3 works")).toBeVisible();

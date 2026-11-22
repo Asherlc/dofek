@@ -201,31 +201,36 @@ describe("buildDemonstratedGrade evidence selection", () => {
   });
 
   it("requires clean execution and the pooled method on the same attempt id", () => {
-    const result = gradeSet([
-      // Clean send carries no method; the top-rope attempt is not a clean send.
-      observation({ attemptId: "clean", targetId: "k:1", ropeMethod: null, cleanFreeSend: true }),
+    const route = (overrides: Partial<DemonstratedGradeObservation>) =>
       observation({
-        attemptId: "tr",
-        targetId: "k:1",
-        ropeMethod: "top_rope",
-        cleanFreeSend: false,
-      }),
-      observation({ attemptId: "clean2", targetId: "k:2", ropeMethod: null, cleanFreeSend: true }),
-      observation({
-        attemptId: "tr2",
-        targetId: "k:2",
-        ropeMethod: "top_rope",
-        cleanFreeSend: false,
-      }),
-      observation({ attemptId: "clean3", targetId: "k:3", ropeMethod: null, cleanFreeSend: true }),
-      observation({
-        attemptId: "tr3",
-        targetId: "k:3",
-        ropeMethod: "top_rope",
-        cleanFreeSend: false,
-      }),
+        climbKind: "route",
+        gradeComponents: [{ value: "5.10a", system: "yds" }],
+        ...overrides,
+      });
+    const split = gradeSet([
+      // Clean send carries no method; the top-rope try is not a clean send.
+      route({ attemptId: "clean", targetId: "k:1", cleanFreeSend: true }),
+      route({ attemptId: "tr", targetId: "k:1", ropeMethod: "top_rope", cleanFreeSend: false }),
+      route({ attemptId: "clean2", targetId: "k:2", cleanFreeSend: true }),
+      route({ attemptId: "tr2", targetId: "k:2", ropeMethod: "top_rope", cleanFreeSend: false }),
+      route({ attemptId: "clean3", targetId: "k:3", cleanFreeSend: true }),
+      route({ attemptId: "tr3", targetId: "k:3", ropeMethod: "top_rope", cleanFreeSend: false }),
     ]);
-    expect(cell(result, "top_rope", "indoor").grades).toHaveLength(0);
+    expect(cell(split, "top_rope", "indoor").grades).toHaveLength(0);
+
+    const ownMethod = gradeSet(
+      [1, 2, 3].map((index) =>
+        route({
+          attemptId: `own-${index}`,
+          targetId: `k:${index}`,
+          ropeMethod: "top_rope",
+          cleanFreeSend: true,
+        }),
+      ),
+    );
+    expect(cell(ownMethod, "top_rope", "indoor").grades).toEqual([
+      expect.objectContaining({ grade: "5.10a", count: 3 }),
+    ]);
   });
 
   it("pools clean top-rope and follow sends on the same climb once into Top rope", () => {
@@ -509,13 +514,41 @@ describe("buildDemonstratedGrade grade semantics", () => {
     expect(sends.map((send) => send.provider)).toEqual(["kaya", "kaya", "kaya"]);
   });
 
-  it("ignores sends outside the window", () => {
+  it("ignores sends outside the window while counting both exact endpoints", () => {
     const result = gradeSet([
-      observation({ targetId: "k:1", climbedOn: "2026-08-21" }),
-      observation({ targetId: "k:2", climbedOn: "2026-11-22" }),
-      observation({ targetId: "k:3", climbedOn: "2026-08-22" }),
-      observation({ targetId: "k:4", climbedOn: "2026-11-21" }),
+      observation({
+        attemptId: "outside-early",
+        targetId: "k:1",
+        climbedOn: "2026-08-21",
+        displayName: "Outside early",
+      }),
+      observation({
+        attemptId: "outside-late",
+        targetId: "k:2",
+        climbedOn: "2026-11-22",
+        displayName: "Outside late",
+      }),
+      observation({
+        attemptId: "start",
+        targetId: "k:3",
+        climbedOn: "2026-08-22",
+        displayName: "Start",
+      }),
+      observation({
+        attemptId: "end",
+        targetId: "k:4",
+        climbedOn: "2026-11-21",
+        displayName: "End",
+      }),
+      observation({
+        attemptId: "middle",
+        targetId: "k:5",
+        climbedOn: "2026-10-15",
+        displayName: "Middle",
+      }),
     ]);
-    expect(cell(result, "bouldering", "indoor").grades).toHaveLength(0);
+    const grade = cell(result, "bouldering", "indoor").grades[0];
+    expect(grade).toEqual(expect.objectContaining({ count: 3 }));
+    expect(grade.sends.map((send) => send.displayName)).toEqual(["End", "Middle", "Start"]);
   });
 });

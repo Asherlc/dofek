@@ -182,12 +182,14 @@ export function ClimbingTrainingCard({
   demonstratedGrade,
   demonstratedGradeLoading = false,
   demonstratedGradeError = null,
+  demonstratedGradeOnly = false,
 }: {
   data: unknown;
   loading?: boolean;
   demonstratedGrade?: unknown;
   demonstratedGradeLoading?: boolean;
   demonstratedGradeError?: { message: string } | null;
+  demonstratedGradeOnly?: boolean;
 }) {
   const parsed = parseMobileClimbingData(data);
   const model = new ClimbingSectionModel(parsed.data);
@@ -212,8 +214,12 @@ export function ClimbingTrainingCard({
         loading={demonstratedGradeLoading}
         error={demonstratedGradeError ?? demonstratedGradeResult.error}
       />
-      <ClimbingSection model={model} loading={loading} />
-      <HangboardingSummary data={model.hangboarding} loading={loading} />
+      {demonstratedGradeOnly ? null : (
+        <>
+          <ClimbingSection model={model} loading={loading} />
+          <HangboardingSummary data={model.hangboarding} loading={loading} />
+        </>
+      )}
     </View>
   );
 }

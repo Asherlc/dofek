@@ -20,6 +20,7 @@ function importedMountainProjectRow(target: string, rating: string) {
     climb_external_id: target,
     source_completed: null,
     source_result: "Send",
+    ascent_style: "Send",
     fell_or_hung: false,
     used_aid: false,
     dabbed: false,
@@ -59,10 +60,13 @@ function boardSeshRow(input: {
           consensusDifficultyName:
             input.ascentLabel === undefined ? input.label : input.ascentLabel,
         },
-        grades:
-          input.catalogueLabel === null
-            ? undefined
-            : [{ difficultyId: input.difficulty, name: input.catalogueLabel ?? input.label }],
+        ...(input.catalogueLabel === null
+          ? {}
+          : {
+              grades: [
+                { difficultyId: input.difficulty, name: input.catalogueLabel ?? input.label },
+              ],
+            }),
       },
     },
     display_name: input.target,
@@ -71,16 +75,14 @@ function boardSeshRow(input: {
     climb_external_id: `kilter:${input.target}:normal`,
     source_completed: null,
     source_result: "Flash",
+    ascent_style: "Flash",
     fell_or_hung: false,
     used_aid: false,
     dabbed: false,
   };
 }
 
-async function boardSeshBoulder(
-  rows: ReturnType<typeof boardSeshRow>[],
-  gradeSystems?: ("v_scale" | "font")[],
-) {
+async function boardSeshBoulder(rows: unknown[], gradeSystems?: ("v_scale" | "font")[]) {
   const repository = new ClimbingDemonstratedGradeRepository(
     { execute: vi.fn().mockResolvedValue(rows) },
     "owner",
@@ -189,6 +191,41 @@ describe("ClimbingDemonstratedGradeRepository BoardSesh consensus", () => {
     const nonDegrees = rows.map((row) => ({ ...row }));
     nonDegrees[2] = { ...nonDegrees[2], wall_angle: { value: 30, unit: "radians" } };
     expect((await boardSeshBoulder(nonDegrees))?.grades).toEqual([]);
+  });
+
+  it("keeps independent evidence when persisted raw is not an object", async () => {
+    const rows = Array.from({ length: 3 }, (_, index) => ({
+      ...importedMountainProjectRow(`raw-${index}`, "V4"),
+      climb_setting: "indoor" as const,
+      log_raw: [],
+    }));
+    expect((await boardSeshBoulder(rows))?.grades[0]).toEqual(
+      expect.objectContaining({ grade: "V4", count: 3 }),
+    );
+  });
+
+  it("shares cohort identity across equivalent BoardSesh label spellings", async () => {
+    const rows = [
+      ...Array.from({ length: 2 }, (_, index) =>
+        boardSeshRow({
+          target: `catalogue-${index}`,
+          difficulty: 18,
+          label: "6b/V4",
+          ascentLabel: "6b/V4",
+          catalogueLabel: "6b/V4",
+        }),
+      ),
+      boardSeshRow({
+        target: "ascent-2",
+        difficulty: 18,
+        label: "6B / v4",
+        ascentLabel: "6B / v4",
+        catalogueLabel: null,
+      }),
+    ];
+    expect((await boardSeshBoulder(rows))?.grades[0]).toEqual(
+      expect.objectContaining({ grade: "6b", count: 3, publishedLabel: "6b/V4" }),
+    );
   });
 });
 

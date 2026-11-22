@@ -36,7 +36,8 @@ const evidenceRowSchema = z.object({
   climbed_on: z.iso.date().nullable(),
   published_grades: z.array(gradeComponentRowSchema),
   wall_angle: z.record(z.string(), z.unknown()).nullable(),
-  log_raw: z.record(z.string(), z.unknown()).nullable(),
+  log_raw: z.json(),
+  ascent_style: z.string().nullable(),
   display_name: z.string().nullable(),
   log_entry_id: z.string(),
   activity_id: z.string().nullable(),
@@ -60,6 +61,15 @@ const boardSeshAscentSchema = z.object({
 const boardSeshGradesSchema = z.array(
   z.object({ difficultyId: z.number().int(), name: z.string().min(1) }),
 );
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Provider-specific fields live only on object-shaped persisted raw JSON. */
+function rawObject(logRaw: unknown): Record<string, unknown> | null {
+  return isRecord(logRaw) ? logRaw : null;
+}
 
 const previousDay = (date: string) => {
   const value = new Date(`${date}T00:00:00.000Z`);
@@ -109,7 +119,7 @@ type BoardSeshGradeComponent = {
 
 function boardSeshConsensusGrade(
   providerId: string | null,
-  logRaw: Record<string, unknown> | null,
+  logRaw: unknown,
   climbExternalId: string | null,
   wallAngle: Record<string, unknown> | null,
   gradeSystems: ClimbingDemonstratedGradeInput["gradeSystems"],
@@ -120,7 +130,7 @@ function boardSeshConsensusGrade(
       ascent: boardSeshAscentSchema.optional(),
       grades: boardSeshGradesSchema.optional(),
     })
-    .safeParse(logRaw?.metadata);
+    .safeParse(rawObject(logRaw)?.metadata);
   if (!metadata.success) return null;
   const ascent = metadata.data.ascent;
   if (!ascent || ascent.consensusDifficulty == null) return null;
@@ -175,7 +185,7 @@ function boardSeshConsensusGrade(
       {
         ...selected,
         ...(rankingValue === undefined ? {} : { rankingValue }),
-        identity: `boardsesh:${ascent.boardType}:${ascent.consensusDifficulty}:${label.trim()}`,
+        identity: `boardsesh:${ascent.boardType}:${ascent.consensusDifficulty}:${normalized(label)}`,
         publishedLabel: label.trim(),
       },
     ],
@@ -286,6 +296,14 @@ export class ClimbingDemonstratedGradeRepository extends BaseRepository {
         ${this.dateAccessPredicate(ascentDate)}
     )`;
 
+    // One attempt-attributable result drives both eligibility and the reported
+    // ascent style: prefer the try's own label, then a log-level label only for
+    // a single whole-climb OpenBeta try.
+    const eligibleResult = sql`CASE
+      WHEN ce.provider_id = 'openbeta' AND ce.recorded_climb_attempt_count = 1
+        THEN COALESCE(raw.source_result, ce.raw->>'attemptType')
+      ELSE raw.source_result END`;
+
     const rows = await this.query(
       evidenceRowSchema,
       sql`SELECT
@@ -306,6 +324,7 @@ export class ClimbingDemonstratedGradeRepository extends BaseRepository {
           climb.external_id AS climb_external_id,
           raw.source_completed,
           raw.source_result,
+          ${eligibleResult} AS ascent_style,
           raw.fell_or_hung,
           raw.used_aid,
           raw.dabbed
@@ -330,11 +349,7 @@ export class ClimbingDemonstratedGradeRepository extends BaseRepository {
             raw.source_completed IS TRUE
             -- A log-level OpenBeta attemptType is only attributable to its own try
             -- when the canonical log recorded exactly one whole-climb attempt.
-            OR fitness.climbing_attempt_outcome(
-              CASE WHEN ce.provider_id = 'openbeta' AND ce.recorded_climb_attempt_count = 1
-                THEN COALESCE(raw.source_result, ce.raw->>'attemptType')
-                ELSE raw.source_result END
-            ) = 'completed'
+            OR fitness.climbing_attempt_outcome(${eligibleResult}) = 'completed'
           )
           AND raw.fell_or_hung = false
           AND raw.used_aid = false
@@ -345,7 +360,8 @@ export class ClimbingDemonstratedGradeRepository extends BaseRepository {
     const observations: DemonstratedGradeObservation[] = rows.map((row) => {
       // The Mountain Project display parser can strip grade modifiers and ranges.
       // Compare the original published token before treating it as an exact grade.
-      const rating = row.log_raw?.Rating;
+      const raw = rawObject(row.log_raw);
+      const rating = raw?.Rating;
       const recordedGrade =
         row.provider_id === "mountain-project" && typeof rating === "string"
           ? rating.trim().toLowerCase().split(/\s+/)[0]
@@ -386,8 +402,8 @@ export class ClimbingDemonstratedGradeRepository extends BaseRepository {
           (row.provider_id === "openbeta" &&
             row.source_completed === null &&
             row.source_result === null &&
-            row.log_raw?.attemptType == null),
-        ascentStyle: row.source_result,
+            raw?.attemptType == null),
+        ascentStyle: row.ascent_style,
         climbedOn: row.climbed_on,
         gradeComponents,
         displayName: row.display_name,

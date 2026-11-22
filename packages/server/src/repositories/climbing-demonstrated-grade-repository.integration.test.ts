@@ -22,6 +22,7 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
   const mixedBProvider = `climb-mixed-b-${randomUUID()}`;
   const anonymousProvider = `climb-anonymous-${randomUUID()}`;
   const angleProvider = `climb-angle-${randomUUID()}`;
+  const boundaryProvider = `climb-boundary-${randomUUID()}`;
   const attachmentProvider = `climb-attachment-${randomUUID()}`;
   const otherOwnerProvider = `climb-other-${randomUUID()}`;
   let context: TestContext;
@@ -136,7 +137,7 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
           climb: {
             externalId: tick.climbExternalId,
             kind: "boulder",
-            name: tick.climbUuid,
+            name: tick.ascent.climbUuid,
             setting: tick.setting,
           },
           attempts: [{ scope: "climb", qualifier: "free-flash", sourceResult: "flash" }],
@@ -161,6 +162,7 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
       [mixedBProvider, "Mixed B", userId],
       [anonymousProvider, "Anonymous", userId],
       [angleProvider, "Angle", userId],
+      [boundaryProvider, "Boundary", userId],
       [attachmentProvider, "Attachment", userId],
       [otherOwnerProvider, "Other owner", otherUserId],
     ] as const)
@@ -248,6 +250,49 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
       filters: { attemptScope: ["pitch"] },
     });
     expect(pitchOnly.cells.every((cell) => cell.grades.length === 0)).toBe(true);
+  });
+
+  it("selects evidence on both exact window bounds and rejects adjacent dates", async () => {
+    const send = (index: number, climbedOn: string) =>
+      persistClimbingLogEntries(context.db, {
+        userId,
+        providerId: boundaryProvider,
+        entries: [
+          {
+            externalId: `boundary-entry-${index}`,
+            climbedOn,
+            discipline: "rock_climbing",
+            climb: {
+              externalId: `boundary-climb-${index}`,
+              kind: "boulder",
+              name: `Boundary ${index}`,
+              setting: "indoor",
+              publishedGrades: [{ value: "V2", system: "v_scale" }],
+            },
+            attempts: [{ scope: "climb", qualifier: "free-send", sourceResult: "Send" }],
+          },
+        ],
+      });
+
+    await send(1, "2026-08-21");
+    await send(2, "2026-08-22");
+    await send(3, "2026-11-21");
+    await send(4, "2026-11-22");
+    await send(5, "2026-10-15");
+
+    const result = await repository().getDemonstratedGrade({
+      endDate: "2026-11-21",
+      sources: [boundaryProvider],
+    });
+    const grade = result.cells.find(
+      (cell) => cell.type === "bouldering" && cell.setting === "indoor",
+    )?.grades[0];
+    expect(grade).toEqual(expect.objectContaining({ grade: "V2", count: 3 }));
+    expect(grade?.sends.map((send) => send.climbedOn)).toEqual([
+      "2026-11-21",
+      "2026-10-15",
+      "2026-08-22",
+    ]);
   });
 
   it("excludes anonymous climbs without a native source ID", async () => {
@@ -474,37 +519,37 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
   });
 
   it("collapses board angle and mirror states into one native problem", async () => {
-    for (const [index, mirror] of [false, true].entries())
-      await persistBoardSeshTick(
+    // Isolated grade cohort: a mirrored pair and one other problem are only two
+    // distinct climbs, so they must not qualify until a third is added.
+    const send = (climbUuid: string, canonicalClimbUuid: string, mirror: boolean, angle: number) =>
+      persistBoardSeshTick(
         boardSeshTick({
           boardType: "kilter",
-          climbUuid: "shared-problem",
-          canonicalClimbUuid: "canonical-shared",
+          climbUuid,
+          canonicalClimbUuid,
           mirror,
-          angle: index === 0 ? 0 : 40,
-          consensusDifficulty: 18,
-          consensusDifficultyName: "6b/V4",
+          angle,
+          consensusDifficulty: 23,
+          consensusDifficultyName: "8a/V8",
         }),
       );
-    await persistBoardSeshTick(
-      boardSeshTick({
-        boardType: "kilter",
-        climbUuid: "other-problem",
-        canonicalClimbUuid: "canonical-other",
-        angle: 25,
-        consensusDifficulty: 18,
-        consensusDifficultyName: "6b/V4",
-      }),
-    );
-    const result = await repository().getDemonstratedGrade({
-      endDate: "2026-11-21",
-      sources: [boardSeshProvider],
-    });
-    const sends = result.cells
-      .flatMap((cell) => cell.grades)
-      .flatMap((grade) => grade.sends)
-      .filter((send) => send.climbExternalId?.startsWith("kilter:shared-problem"));
-    expect(new Set(sends.map((send) => send.logEntryId)).size).toBeLessThanOrEqual(1);
+    const mirroredGrade = async () => {
+      const result = await repository().getDemonstratedGrade({
+        endDate: "2026-11-21",
+        sources: [boardSeshProvider],
+      });
+      return result.cells
+        .find((cell) => cell.type === "bouldering" && cell.setting === "indoor")
+        ?.grades.find((grade) => grade.publishedLabel === "8a/V8");
+    };
+
+    await send("shared-problem", "canonical-shared", false, 0);
+    await send("shared-problem", "canonical-shared", true, 40);
+    await send("other-problem", "canonical-other", false, 25);
+    expect(await mirroredGrade()).toBeUndefined();
+
+    await send("third-problem", "canonical-third", false, 15);
+    expect(await mirroredGrade()).toEqual(expect.objectContaining({ count: 3 }));
   });
 
   it("counts a merged BoardSesh alias once and ignores unresolved ids", async () => {
@@ -863,9 +908,12 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
       endDate: "2026-11-21",
       sources: [openBetaProvider],
     });
-    expect(
-      result.cells.find((cell) => cell.type === "top_rope" && cell.setting === "outdoor")?.grades,
-    ).toEqual([expect.objectContaining({ grade: "5.9", count: 3 })]);
+    const grade = result.cells.find(
+      (cell) => cell.type === "top_rope" && cell.setting === "outdoor",
+    )?.grades[0];
+    expect(grade).toEqual(expect.objectContaining({ grade: "5.9", count: 3 }));
+    // The log-level attemptType that qualified the single try is also reported.
+    expect(grade?.sends.every((send) => send.ascentStyle === "Redpoint")).toBe(true);
   });
 
   it("reports partial coverage only when access does not cover the whole window", async () => {
