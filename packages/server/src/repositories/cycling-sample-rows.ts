@@ -20,20 +20,29 @@ export const sampleRowSchema = z.object({
   ),
 });
 
-/** Deduplicated per-second samples for canonical activity IDs, limited to the requested channels. */
+/**
+ * Deduplicated per-second samples for canonical activity IDs, limited to the requested channels.
+ * Offsets count from the analytics activity start, or from `startedAt` when the caller's interval
+ * offsets come from another store, so laps and samples share one clock origin.
+ */
 export async function loadCyclingSampleRows(
   store: Pick<ActivitySensorStore, "query">,
   userId: string,
   activityIds: string[],
   channels: ReadonlyArray<"power" | "heart_rate" | "cadence">,
+  startedAt?: string,
 ) {
   if (activityIds.length === 0) return [];
+  const origin =
+    startedAt === undefined
+      ? "activity.started_at"
+      : "parseDateTime64BestEffort({startedAt:String}, 3, 'UTC')";
   return store.query(
     sampleRowSchema,
     `/* cycling-training-metrics:samples */
             SELECT
               toString(sensor.activity_id) AS activity_id,
-              dateDiff('millisecond', activity.started_at, sensor.recorded_at) / 1000 AS elapsed_seconds,
+              dateDiff('millisecond', ${origin}, sensor.recorded_at) / 1000 AS elapsed_seconds,
               if(countIf(sensor.channel = 'power') = 0, NULL,
                 maxIf(sensor.scalar, sensor.channel = 'power')) AS power,
               if(countIf(sensor.channel = 'heart_rate') = 0, NULL,
@@ -53,8 +62,15 @@ export async function loadCyclingSampleRows(
               AND sensor.activity_id IN ({activityIds:Array(UUID)})
               AND sensor.channel IN ({channels:Array(String)})
               AND sensor.is_deleted = 0
-            GROUP BY sensor.activity_id, activity.started_at, sensor.recorded_at
+            GROUP BY sensor.activity_id, ${origin}, sensor.recorded_at
             ORDER BY sensor.activity_id, sensor.recorded_at`,
-    { userId, activityIds, channels: [...channels] },
+    {
+      userId,
+      activityIds,
+      channels: [...channels],
+      ...(startedAt === undefined
+        ? {}
+        : { startedAt: new Date(Date.parse(startedAt)).toISOString() }),
+    },
   );
 }

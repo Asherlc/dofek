@@ -616,6 +616,51 @@ describe("CyclingTrainingMetricsRepository", () => {
     ]);
   });
 
+  it("omits completion and comparison when merged laps carry conflicting plans", async () => {
+    const fitLap = (member: string, plannedSeconds: number) => ({
+      ...unknownIntervalSource,
+      member_activity_id: member,
+      interval_index: 0,
+      label: "Step 1",
+      interval_type: "lap",
+      started_at: "2026-06-15T15:00:00.000Z",
+      ended_at: "2026-06-15T15:03:00.000Z",
+      source_kind: "provider_recorded",
+      source_provider: "garmin",
+      source_activity_id: member,
+      target_power_watts: 200,
+      fit_source: "workout_step_lap",
+      planned_duration_seconds: plannedSeconds,
+      recorded_timer_duration_seconds: 179,
+    });
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([fitLap(memberActivityId, 180), fitLap(activityId, 120)]);
+    const query = vi.fn(async (_schema, text: string) =>
+      text.includes(":activities") ? [activityRow()] : text.includes(":samples") ? samples() : [],
+    );
+    const result = await new CyclingTrainingMetricsRepository(
+      { execute },
+      { query },
+      userId,
+      "UTC",
+    ).listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      modalities: [],
+      providers: [],
+      durationsSeconds: [],
+      cursor: null,
+      limit: 10,
+    });
+
+    const [interval] = result.activities[0]?.metrics.intervals ?? [];
+    expect(interval?.conflicts).toContain("plan");
+    expect(interval?.planned_comparison).toBeUndefined();
+    expect(interval?.completion_pct).toBeNull();
+  });
+
   it("compares planned laps over the exact canonical window, not whole-second elapsed time", async () => {
     // ClickHouse reports 2 elapsed seconds for a canonical window that actually ends at 2.4 s.
     const execute = vi

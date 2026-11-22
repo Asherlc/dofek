@@ -279,8 +279,15 @@ describe("getPlannedIntervalComparisons", () => {
     expect(query).toHaveBeenCalledTimes(1);
     expect(query.mock.calls[0]).toEqual([
       expect.anything(),
-      expect.stringContaining("channel IN ({channels:Array(String)})"),
-      { userId: "user", activityIds: [activityId], channels: ["power"] },
+      expect.stringMatching(
+        /dateDiff\('millisecond', parseDateTime64BestEffort\(\{startedAt:String\}, 3, 'UTC'\), sensor\.recorded_at\)/,
+      ),
+      {
+        userId: "user",
+        activityIds: [activityId],
+        channels: ["power"],
+        startedAt: "2026-06-15T00:00:00.000Z",
+      },
     ]);
     expect(first).toMatchObject({
       intervalIndex: 0,

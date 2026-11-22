@@ -197,7 +197,7 @@ function snakeMetrics(
         target_power_watts: inferred ? null : interval.targetPowerWatts,
         target_resistance: inferred ? null : (evidence?.targetResistance ?? null),
         work_recovery_kind: evidence?.workRecoveryKind ?? null,
-        completion_pct: inferred ? null : interval.completionPct,
+        completion_pct: normalized?.completionPct ?? null,
         source_member_activity_ids: evidence?.sourceMemberActivityIds ?? [],
         raw: evidence?.raw ?? null,
         ...(plan

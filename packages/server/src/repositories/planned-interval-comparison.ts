@@ -127,7 +127,7 @@ export async function getPlannedIntervalComparisons(
   ).filter(({ interval }) => interval.plan != null);
   if (eligible.length === 0) return [];
 
-  const rows = await loadCyclingSampleRows(store, userId, [window.activityId], ["power"]);
+  const rows = await loadCyclingSampleRows(store, userId, [window.activityId], ["power"], window.startedAt);
   const samples: CyclingEffortSample[] = rows.map((row) => ({
     elapsedSeconds: row.elapsed_seconds,
     powerWatts: row.stream_evidence.some(([channel]) => channel === "power")
