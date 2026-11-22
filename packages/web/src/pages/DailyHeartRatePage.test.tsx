@@ -173,8 +173,8 @@ describe("DailyHeartRatePage", () => {
 
   it("refreshes today navigation after UTC midnight", async () => {
     vi.useFakeTimers();
-    // Set fake system time just before UTC midnight on March 13 (Pacific is UTC-8,
-    // so 23:59:58 PST = 07:59:58 UTC Mar 13). Advance past UTC midnight.
+    // Just before UTC midnight on March 13; after the refresh, the page still
+    // shows March 12 while "today" is March 13, so navigation becomes available.
     vi.setSystemTime(new Date(Date.UTC(2026, 2, 12, 23, 59, 58)));
     render(createElement(DailyHeartRatePage));
 
@@ -183,8 +183,8 @@ describe("DailyHeartRatePage", () => {
 
     await act(() => vi.advanceTimersByTimeAsync(2100));
 
-    expect(screen.getByRole("button", { name: "Next day" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next day" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Today" })).not.toBeDisabled();
   });
 
   it("rejects future dates from the date input", () => {

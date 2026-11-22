@@ -5,10 +5,9 @@ function formatQueryDate(date: Date = new Date()): string {
   return formatDateYmdInTimeZone(date, "UTC");
 }
 
-function getMillisecondsUntilNextLocalMidnight(now: Date): number {
-  const nextMidnight = new Date(now);
-  nextMidnight.setHours(24, 0, 0, 50);
-  return nextMidnight.getTime() - now.getTime();
+function getMillisecondsUntilNextUtcMidnight(now: Date): number {
+  const nextMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  return nextMidnight - now.getTime();
 }
 
 export function useTodayQueryDate(): string {
@@ -21,7 +20,7 @@ export function useTodayQueryDate(): string {
       timeoutId = setTimeout(() => {
         setTodayQueryDate(formatQueryDate());
         scheduleUpdate();
-      }, getMillisecondsUntilNextLocalMidnight(new Date()));
+      }, getMillisecondsUntilNextUtcMidnight(new Date()));
     };
 
     scheduleUpdate();
