@@ -1,4 +1,4 @@
-import { formatDateYmd, formatTimeOnly, shiftDateYmd } from "@dofek/format/format";
+import { formatTimeOnly, shiftDateYmd } from "@dofek/format/format";
 import { useMemo, useState } from "react";
 import type { HeartRateSourceSeries } from "../../../server/src/routers/heart-rate.ts";
 import { DofekChart } from "../components/DofekChart.tsx";
@@ -18,8 +18,8 @@ import { trpc } from "../lib/trpc.ts";
 
 export function DailyHeartRatePage() {
   const pageLoad = usePageLoad();
-  const [date, setDate] = useState(() => formatDateYmd());
   const today = useTodayQueryDate();
+  const [date, setDate] = useState(today);
   const isToday = date === today;
   const canGoForward = date < today;
 

@@ -1,8 +1,8 @@
-import { formatDateYmd } from "@dofek/format/format";
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { useEffect, useState } from "react";
 
 function formatQueryDate(date: Date = new Date()): string {
-  return formatDateYmd(date);
+  return formatDateYmdInTimeZone(date, "UTC");
 }
 
 function getMillisecondsUntilNextLocalMidnight(now: Date): number {

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { formatDateYmd, shiftDateYmd } from "@dofek/format/format";
+import { formatDateYmd, formatDateYmdInTimeZone, shiftDateYmd } from "@dofek/format/format";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -171,24 +171,26 @@ describe("DailyHeartRatePage", () => {
     expect(mockDailyBySourceQuery.mock.calls.at(-1)?.[0]).toEqual({ date: today });
   });
 
-  it("refreshes today navigation after local midnight", async () => {
+  it("refreshes today navigation after UTC midnight", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 3, 12, 23, 59, 58));
+    // Set fake system time just before UTC midnight on March 13 (Pacific is UTC-8,
+    // so 23:59:58 PST = 07:59:58 UTC Mar 13). Advance past UTC midnight.
+    vi.setSystemTime(new Date(Date.UTC(2026, 2, 12, 23, 59, 58)));
     render(createElement(DailyHeartRatePage));
 
     expect(screen.getByRole("button", { name: "Next day" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
 
-    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    await act(() => vi.advanceTimersByTimeAsync(2100));
 
-    expect(screen.getByRole("button", { name: "Next day" })).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: "Today" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next day" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
   });
 
   it("rejects future dates from the date input", () => {
     render(createElement(DailyHeartRatePage));
 
-    const today = formatDateYmd();
+    const today = formatDateYmdInTimeZone(new Date(), "UTC");
     const futureDate = `${Number(today.slice(0, 4)) + 1}-01-01`;
     const dateInput = screen.getByLabelText("Date");
 
