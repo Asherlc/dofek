@@ -1,4 +1,5 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import type { ClimbingBestOnsight as ClimbingBestOnsightData } from "@dofek/training/climbing-best-onsight";
 import { climbingDemonstratedGradeSchema } from "@dofek/training/climbing-demonstrated-grade";
 import { climbingGradeProgressionSchema } from "@dofek/training/climbing-progression";
 import { StyleSheet, Text, View } from "react-native";
@@ -6,6 +7,7 @@ import { z } from "zod";
 import { safeParseData, safeParseRows } from "../lib/safe-parse";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
+import { ClimbingBestOnsight } from "./ClimbingBestOnsight";
 import { ClimbingDemonstratedGrade } from "./ClimbingDemonstratedGrade";
 import { ClimbingGradeProgressionChart } from "./ClimbingGradeProgressionChart";
 import { HangboardingSummary } from "./HangboardingSummary";
@@ -179,17 +181,19 @@ class ClimbingSectionModel {
 export function ClimbingTrainingCard({
   data,
   loading = false,
+  bestOnsight,
   demonstratedGrade,
   demonstratedGradeLoading = false,
   demonstratedGradeError = null,
-  demonstratedGradeOnly = false,
+  mode = "full",
 }: {
   data: unknown;
   loading?: boolean;
+  bestOnsight?: { data?: ClimbingBestOnsightData; error?: unknown; loading?: boolean };
   demonstratedGrade?: unknown;
   demonstratedGradeLoading?: boolean;
   demonstratedGradeError?: { message: string } | null;
-  demonstratedGradeOnly?: boolean;
+  mode?: "full" | "insights" | "onsight";
 }) {
   const parsed = parseMobileClimbingData(data);
   const model = new ClimbingSectionModel(parsed.data);
@@ -198,57 +202,77 @@ export function ClimbingTrainingCard({
     demonstratedGrade ?? null,
     "strain:climbing.demonstratedGrade",
   );
+  const showFullContent = mode === "full";
   return (
     <View style={styles.card}>
-      <Text style={styles.cardTitle}>Climbing</Text>
-      {parsed.error !== null ? (
-        <Text style={styles.errorText}>
-          {userFacingErrorMessage(
-            parsed.error,
-            "Climbing data could not be loaded. Please try again.",
-          )}
-        </Text>
-      ) : null}
-      <ClimbingDemonstratedGrade
-        data={demonstratedGradeResult.data}
-        loading={demonstratedGradeLoading}
-        error={demonstratedGradeError ?? demonstratedGradeResult.error}
-      />
-      {demonstratedGradeOnly ? null : (
+      {mode === "onsight" ? null : (
         <>
-          <ClimbingSection model={model} loading={loading} />
-          <HangboardingSummary data={model.hangboarding} loading={loading} />
+          <Text style={styles.cardTitle}>Climbing</Text>
+          {parsed.error !== null ? (
+            <Text style={styles.errorText}>
+              {userFacingErrorMessage(
+                parsed.error,
+                "Climbing data could not be loaded. Please try again.",
+              )}
+            </Text>
+          ) : null}
+          <ClimbingDemonstratedGrade
+            data={demonstratedGradeResult.data}
+            loading={demonstratedGradeLoading}
+            error={demonstratedGradeError ?? demonstratedGradeResult.error}
+          />
         </>
       )}
+      <ClimbingSection
+        model={model}
+        loading={loading}
+        bestOnsight={bestOnsight}
+        showFullContent={showFullContent}
+      />
+      {showFullContent ? <HangboardingSummary data={model.hangboarding} loading={loading} /> : null}
     </View>
   );
 }
 
-function ClimbingSection({ model, loading }: { model: ClimbingSectionModel; loading: boolean }) {
+function ClimbingSection({
+  model,
+  loading,
+  bestOnsight,
+  showFullContent,
+}: {
+  model: ClimbingSectionModel;
+  loading: boolean;
+  bestOnsight?: { data?: ClimbingBestOnsightData; error?: unknown; loading?: boolean };
+  showFullContent: boolean;
+}) {
   return (
     <View style={styles.climbingStack}>
-      <ClimbingGradeProgressionChart data={model.gradeProgression} loading={loading} />
-
-      <View style={styles.climbingSubsection}>
-        <Text style={styles.climbingSubsectionTitle}>Volume by Grade</Text>
-        {model.volumeRows.length === 0 ? (
-          <Text style={styles.activitiesEmpty}>No climbing volume by grade</Text>
-        ) : (
-          model.volumeRows.map((row) => (
-            <View key={`${row.climbKind}-${row.grade}`} style={styles.climbingVolumeRow}>
-              <Text style={styles.climbingGradeText}>{row.grade}</Text>
-              {(row.attempts ?? row.recordedAttempts) !== null && (
-                <Text style={styles.climbingMetaText}>
-                  {row.attempts !== null
-                    ? `${row.attempts} attempts`
-                    : `${row.recordedAttempts} recorded attempts`}
-                </Text>
-              )}
-              <Text style={styles.climbingMetaText}>{row.sends} sends</Text>
-            </View>
-          ))
-        )}
-      </View>
+      {showFullContent ? (
+        <ClimbingGradeProgressionChart data={model.gradeProgression} loading={loading} />
+      ) : null}
+      {bestOnsight ? <ClimbingBestOnsight {...bestOnsight} /> : null}
+      {showFullContent ? (
+        <View style={styles.climbingSubsection}>
+          <Text style={styles.climbingSubsectionTitle}>Volume by Grade</Text>
+          {model.volumeRows.length === 0 ? (
+            <Text style={styles.activitiesEmpty}>No climbing volume by grade</Text>
+          ) : (
+            model.volumeRows.map((row) => (
+              <View key={`${row.climbKind}-${row.grade}`} style={styles.climbingVolumeRow}>
+                <Text style={styles.climbingGradeText}>{row.grade}</Text>
+                {(row.attempts ?? row.recordedAttempts) !== null && (
+                  <Text style={styles.climbingMetaText}>
+                    {row.attempts !== null
+                      ? `${row.attempts} attempts`
+                      : `${row.recordedAttempts} recorded attempts`}
+                  </Text>
+                )}
+                <Text style={styles.climbingMetaText}>{row.sends} sends</Text>
+              </View>
+            ))
+          )}
+        </View>
+      ) : null}
     </View>
   );
 }

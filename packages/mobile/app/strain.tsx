@@ -194,6 +194,20 @@ export function TrainingAnalysis({
     undefined,
     climbingIncreaseQueryOptions,
   );
+  const bestOnsight = trpc.climbing.bestOnsight.useQuery(undefined, {
+    ...climbingIncreaseQueryOptions,
+    placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+  });
+  const previousBestOnsightDate = useRef(endDate);
+  const { refetch: refetchBestOnsight } = bestOnsight;
+  const bestOnsightEnabled = climbingIncreaseQueryOptions.enabled;
+  useEffect(() => {
+    const dateChanged = previousBestOnsightDate.current !== endDate;
+    previousBestOnsightDate.current = endDate;
+    if (!dateChanged || !bestOnsightEnabled) return;
+    void refetchBestOnsight();
+  }, [endDate, refetchBestOnsight, bestOnsightEnabled]);
+  useReportQueryError(bestOnsight);
   const climbingVolumeQuery = trpc.climbing.volumeOverTime.useQuery(
     { days, ...climbingFilters },
     {
@@ -307,6 +321,7 @@ export function TrainingAnalysis({
         utils.climbing.strengths.invalidate(),
         utils.climbing.volumeIncrease.invalidate(),
         utils.climbing.attemptIncrease.invalidate(),
+        utils.climbing.bestOnsight.invalidate(),
         utils.climbing.volumeOverTime.invalidate(),
         utils.strength.volumeOverTime.invalidate(),
         utils.strength.exerciseHistory.invalidate(),
@@ -591,14 +606,19 @@ export function TrainingAnalysis({
           }}
         />
       ) : null}
-      {show("climbing") && !isLoading ? (
+      {show("climbing") ? (
         <ClimbingTrainingCard
+          mode={isLoading ? "onsight" : shouldShowClimbingSection ? "full" : "insights"}
           data={shouldShowClimbingSection ? trainingData?.climbing : undefined}
           loading={trainingQuery.isLoading && trainingData == null}
+          bestOnsight={{
+            data: bestOnsight.data,
+            error: bestOnsight.error,
+            loading: bestOnsight.isLoading,
+          }}
           demonstratedGrade={climbingDemonstratedGradeQuery.data}
           demonstratedGradeLoading={climbingDemonstratedGradeQuery.isLoading}
           demonstratedGradeError={climbingDemonstratedGradeQuery.error}
-          demonstratedGradeOnly={!shouldShowClimbingSection}
         />
       ) : null}
 

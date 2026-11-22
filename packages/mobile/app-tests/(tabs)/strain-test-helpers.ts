@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { vi } from "vitest";
 import { defaultMockTrainingData } from "../../app-fixtures/(tabs)/strain-test-helpers";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
@@ -38,6 +39,9 @@ export const mockDemonstratedGradeQuery = vi.fn();
 export const mockDemonstratedGradeInvalidate = vi.fn();
 export const mockAttemptIncreaseQuery = vi.fn();
 export const mockAttemptIncreaseInvalidate = vi.fn();
+export const mockBestOnsightQuery = vi.fn();
+export const mockBestOnsightRefetch = vi.fn();
+export const mockBestOnsightInvalidate = vi.fn();
 type MockRangeQueryOptions = {
   enabled?: boolean;
   refetchInterval?: (query: {
@@ -180,6 +184,22 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
 }));
 
+vi.mock("../../components/providers/provider-record-detail", () => ({
+  ProviderRecordDetail: ({
+    input,
+    onClose,
+  }: {
+    input: { providerId: string; dataType: string; recordId: string };
+    onClose: () => void;
+  }) =>
+    createElement(
+      "div",
+      { role: "dialog", "aria-label": "Climb detail" },
+      createElement("span", { "data-testid": "record-detail-input" }, JSON.stringify(input)),
+      createElement("button", { type: "button", onClick: onClose }, "Close detail"),
+    ),
+}));
+
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     cycling: {
@@ -210,6 +230,7 @@ vi.mock("../../lib/trpc", () => ({
     climbing: {
       attemptIncrease: { useQuery: mockAttemptIncreaseQuery },
       volumeIncrease: { useQuery: mockVolumeIncreaseQuery },
+      bestOnsight: { useQuery: mockBestOnsightQuery },
       volumeOverTime: {
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
           mockQueryState.rangeQueryCalls.climbingVolume.push({ input, options });
@@ -313,6 +334,7 @@ vi.mock("../../lib/trpc", () => ({
       climbing: {
         attemptIncrease: { invalidate: mockAttemptIncreaseInvalidate },
         volumeIncrease: { invalidate: mockVolumeIncreaseInvalidate },
+        bestOnsight: { invalidate: mockBestOnsightInvalidate },
         volumeOverTime: { invalidate: vi.fn() },
         locationMap: { invalidate: mockLocationMapInvalidate },
         demonstratedGrade: { invalidate: mockDemonstratedGradeInvalidate },
@@ -392,6 +414,13 @@ export function resetStrainMocks() {
   mockDemonstratedGradeInvalidate.mockReset().mockResolvedValue(undefined);
   mockAttemptIncreaseQuery.mockReset().mockReturnValue({ data: undefined, error: null });
   mockAttemptIncreaseInvalidate.mockReset().mockResolvedValue(undefined);
+  mockBestOnsightQuery.mockReset().mockReturnValue({
+    data: undefined,
+    error: null,
+    refetch: mockBestOnsightRefetch,
+  });
+  mockBestOnsightRefetch.mockReset().mockResolvedValue(undefined);
+  mockBestOnsightInvalidate.mockReset().mockResolvedValue(undefined);
   mockQueryState.runningData = { ...runningData, data: [] };
   mockQueryState.runningLoading = false;
   mockQueryState.runningError = null;

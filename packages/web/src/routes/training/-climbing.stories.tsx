@@ -1,3 +1,4 @@
+import { climbingBestOnsightFixture } from "@dofek/training/fixtures/climbing-best-onsight";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -14,10 +15,12 @@ import { useMemo } from "react";
 import { expect, within } from "storybook/test";
 import { z } from "zod";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { demonstratedGradeFixture } from "../../components/climbing-demonstrated-grade-fixture.ts";
 import { climbingLocationMapFixture } from "../../components/climbing-location-map-test-helpers.ts";
 import { climbingAttachmentActivities } from "../../components/climbing-log-attachment-test-helpers.ts";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers.ts";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures.ts";
+import { climbingRecordDetailStoryData } from "../../components/fixtures/climbing-best-onsight-story-helpers.ts";
 import { trpc } from "../../lib/trpc.ts";
 import { ClimbingTab } from "./climbing.tsx";
 
@@ -50,46 +53,52 @@ const mockLink: TRPCLink<AppRouter> = () => {
             ? climbingAttachmentActivities
             : op.path === "climbing.attachClimbingLogEntry"
               ? { attached: true }
-              : op.path === "climbing.gradeProgressionV2"
-                ? climbingProgressionFixture()
-                : op.path === "climbing.volumeOverTime"
-                  ? [
-                      { week: "2026-09-28", attempts: 12, minutes: 120 },
-                      { week: "2026-10-05", attempts: 8, minutes: 90 },
-                    ]
-                  : op.path === "climbing.volumeByGrade"
-                    ? [{ ...grade, attempts: 3, recordedAttempts: 3, sends: 2 }]
-                    : op.path === "climbing.sessionSummary"
-                      ? [
-                          {
-                            activityId: "demo",
-                            date: "2026-10-04",
-                            name: "Afternoon climbing",
-                            locationName: "Crag",
-                            attempts: 3,
-                            sends: 2,
-                            hardestBoulderGrade: null,
-                            hardestBoulderGradeSortValue: null,
-                            hardestRouteGrade: "5.10a",
-                            hardestRouteGradeSortValue: 10,
-                          },
-                        ]
-                      : op.path === "activity.list"
-                        ? { items: [], totalCount: 0 }
-                        : op.path === "climbing.hangboardingSummary"
-                          ? {
-                              sessionCount: 0,
-                              totalDurationSeconds: 0,
-                              averageDurationSeconds: null,
-                              totalWorkDurationSeconds: null,
-                              totalRestDurationSeconds: null,
-                              workIntervalCount: null,
-                              averageHeartRate: null,
-                              peakHeartRate: null,
-                              latestSession: null,
-                              daily: [],
-                            }
-                          : null;
+              : op.path === "providerDetail.recordDetail"
+                ? climbingRecordDetailStoryData(op.input)
+                : op.path === "climbing.bestOnsight"
+                  ? climbingBestOnsightFixture()
+                  : op.path === "climbing.demonstratedGrade"
+                    ? demonstratedGradeFixture
+                    : op.path === "climbing.gradeProgressionV2"
+                      ? climbingProgressionFixture()
+                      : op.path === "climbing.volumeOverTime"
+                        ? [
+                            { week: "2026-09-28", attempts: 12, minutes: 120 },
+                            { week: "2026-10-05", attempts: 8, minutes: 90 },
+                          ]
+                        : op.path === "climbing.volumeByGrade"
+                          ? [{ ...grade, attempts: 3, recordedAttempts: 3, sends: 2 }]
+                          : op.path === "climbing.sessionSummary"
+                            ? [
+                                {
+                                  activityId: "demo",
+                                  date: "2026-10-04",
+                                  name: "Afternoon climbing",
+                                  locationName: "Crag",
+                                  attempts: 3,
+                                  sends: 2,
+                                  hardestBoulderGrade: null,
+                                  hardestBoulderGradeSortValue: null,
+                                  hardestRouteGrade: "5.10a",
+                                  hardestRouteGradeSortValue: 10,
+                                },
+                              ]
+                            : op.path === "activity.list"
+                              ? { items: [], totalCount: 0 }
+                              : op.path === "climbing.hangboardingSummary"
+                                ? {
+                                    sessionCount: 0,
+                                    totalDurationSeconds: 0,
+                                    averageDurationSeconds: null,
+                                    totalWorkDurationSeconds: null,
+                                    totalRestDurationSeconds: null,
+                                    workIntervalCount: null,
+                                    averageHeartRate: null,
+                                    peakHeartRate: null,
+                                    latestSession: null,
+                                    daily: [],
+                                  }
+                                : null;
     const result: OperationResultObservable<AppRouter, unknown> = {
       subscribe(observer) {
         observer.next?.({

@@ -7,7 +7,8 @@ import {
 import type { ClimbingFilters as Filters } from "@dofek/training/climbing-filters";
 import { keepPreviousData } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { ClimbingBestOnsight } from "../../components/ClimbingBestOnsight.tsx";
 import { ClimbingDemonstratedGrade } from "../../components/ClimbingDemonstratedGrade.tsx";
 import { ClimbingFilters } from "../../components/ClimbingFilters.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
@@ -44,6 +45,14 @@ export function ClimbingTab() {
     rangeInput,
     climbingQueryOptions,
   );
+  const bestOnsight = trpc.climbing.bestOnsight.useQuery(undefined, climbingQueryOptions);
+  const previousEndDate = useRef(endDate);
+  const { refetch: refetchBestOnsight } = bestOnsight;
+  useEffect(() => {
+    if (previousEndDate.current === endDate) return;
+    previousEndDate.current = endDate;
+    void refetchBestOnsight();
+  }, [endDate, refetchBestOnsight]);
   const demonstratedGrade = trpc.climbing.demonstratedGrade.useQuery(
     { endDate, filters },
     climbingQueryOptions,
@@ -145,6 +154,13 @@ export function ClimbingTab() {
               loading={gradeProgression.isLoading}
             />
           )}
+          <div className="mt-4 border-t border-border pt-4">
+            <ClimbingBestOnsight
+              data={bestOnsight.data}
+              error={bestOnsight.error}
+              loading={bestOnsight.isLoading}
+            />
+          </div>
         </Section>
 
         <Section title="Volume by Grade">

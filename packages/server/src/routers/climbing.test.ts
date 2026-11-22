@@ -141,6 +141,36 @@ describe("climbingRouter", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it("serves the best recorded onsight for each climbing type and setting", async () => {
+    const recordId = "00000000-0000-4000-8000-000000000801";
+    const { caller, execute } = makeCallerWithResponses([
+      [{ start_date: "2025-11-22", end_date: "2026-11-21" }],
+      [
+        {
+          entry_id: recordId,
+          provider_id: "kaya",
+          climbed_on: "2026-10-01",
+          climb_kind: "boulder",
+          setting: "indoor",
+          published_grades: [{ value: "V5", system: "v_scale" }],
+          reported_grades: [],
+          attempt_observations: [{ ropeMethod: null, onsight: true }],
+        },
+      ],
+    ]);
+    const result = await caller.bestOnsight();
+    expect(result.startDate).toBe("2025-11-22");
+    expect(result.endDate).toBe("2026-11-21");
+    expect(result.rows.find((row) => row.type === "bouldering")?.gym).toEqual({
+      grade: "V5",
+      gradeSystem: "v_scale",
+      providerId: "kaya",
+      recordId,
+    });
+    expect(result.rows.find((row) => row.type === "lead")?.gym).toBeNull();
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
   it("serves a fixed-window climbing volume increase", async () => {
     const { caller, execute } = makeCaller([
       { daysAgo: 7, durationMicroseconds: 28_800_000_000 },

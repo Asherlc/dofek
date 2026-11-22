@@ -82,7 +82,7 @@ describe("ClimbingTrainingCard", () => {
       <ClimbingTrainingCard
         data={undefined}
         demonstratedGrade={demonstratedGradeFixture}
-        demonstratedGradeOnly
+        mode="insights"
       />,
     );
 

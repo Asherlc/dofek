@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { climbingBestOnsightFixture } from "@dofek/training/fixtures/climbing-best-onsight";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { demonstratedGradeFixture } from "../../components/climbing-demonstrated-grade-fixture.ts";
@@ -12,6 +13,8 @@ const volumeByGradeQuery = vi.hoisted(() => vi.fn());
 const hangboardingSummaryQuery = vi.hoisted(() => vi.fn());
 const locationMapQuery = vi.hoisted(() => vi.fn());
 const strengthsQuery = vi.hoisted(() => vi.fn());
+const bestOnsightQuery = vi.hoisted(() => vi.fn());
+const bestOnsightRefetch = vi.hoisted(() => vi.fn());
 const volumeIncreaseQuery = vi.hoisted(() => vi.fn());
 const attemptIncreaseQuery = vi.hoisted(() => vi.fn());
 const trainingDaysState = vi.hoisted<{ days: number | null }>(() => ({ days: 90 }));
@@ -63,6 +66,23 @@ vi.mock("../../components/ChartDescriptionTooltip.tsx", () => ({
   ChartDescriptionTooltip: () => null,
 }));
 
+vi.mock("../../pages/ProviderRecordDetail.tsx", () => ({
+  ProviderRecordDetail: ({
+    input,
+    onClose,
+  }: {
+    input: { providerId: string; dataType: string; recordId: string };
+    onClose: () => void;
+  }) => (
+    <div role="dialog" aria-label="Climb detail">
+      <span data-testid="record-detail-input">{JSON.stringify(input)}</span>
+      <button type="button" onClick={onClose}>
+        Close detail
+      </button>
+    </div>
+  ),
+}));
+
 vi.mock("../../lib/trpc.ts", () => ({
   trpc: {
     climbing: {
@@ -71,6 +91,7 @@ vi.mock("../../lib/trpc.ts", () => ({
       volumeByGrade: { useQuery: volumeByGradeQuery },
       volumeIncrease: { useQuery: volumeIncreaseQuery },
       attemptIncrease: { useQuery: attemptIncreaseQuery },
+      bestOnsight: { useQuery: bestOnsightQuery },
       volumeOverTime: {
         useQuery: () => ({ data: [], isLoading: false, isFetching: false, error: null }),
       },
@@ -380,6 +401,13 @@ describe("ClimbingTab", () => {
     volumeByGradeQuery.mockReset();
     hangboardingSummaryQuery.mockReset();
     locationMapQuery.mockReset();
+    bestOnsightQuery.mockReset().mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+      refetch: bestOnsightRefetch,
+    });
+    bestOnsightRefetch.mockReset().mockResolvedValue(undefined);
     trainingDaysState.days = 90;
     queryDate.value = "2026-10-26";
     gradeProgressionQuery.mockReturnValue({ data: null, isLoading: false, error: null });
@@ -523,5 +551,88 @@ describe("ClimbingTab", () => {
 
     expect(screen.getByText("Error: Grade query failed")).toBeTruthy();
     expect(screen.getByText("Grade Progression component")).toBeTruthy();
+  });
+
+  it("refetches only the annual onsight result when the query date advances at midnight", async () => {
+    const ClimbingTab = await importClimbingTab();
+    const view = render(<ClimbingTab />);
+
+    expect(bestOnsightRefetch).not.toHaveBeenCalled();
+    view.rerender(<ClimbingTab />);
+    expect(bestOnsightRefetch).not.toHaveBeenCalled();
+
+    queryDate.value = "2026-10-27";
+    view.rerender(<ClimbingTab />);
+
+    expect(bestOnsightRefetch).toHaveBeenCalledTimes(1);
+    expect(bestOnsightQuery.mock.calls.every(([input]) => input === undefined)).toBe(true);
+    expect(bestOnsightQuery.mock.lastCall?.[1]).toMatchObject({
+      placeholderData: expect.any(Function),
+    });
+    expect(strengthsQuery).toHaveBeenLastCalledWith(
+      { days: 90, endDate: "2026-10-27", includeAreaMetadata: true, responseVersion: 2 },
+      expect.any(Object),
+    );
+  });
+
+  it("queries the annual onsight result independently of filters and period", async () => {
+    const ClimbingTab = await importClimbingTab();
+    const view = render(<ClimbingTab />);
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
+    trainingDaysState.days = 7;
+    view.rerender(<ClimbingTab />);
+
+    expect(bestOnsightQuery.mock.calls.length).toBeGreaterThan(0);
+    expect(bestOnsightQuery.mock.calls.every(([input]) => input === undefined)).toBe(true);
+    expect(bestOnsightQuery.mock.lastCall?.[1]).toMatchObject({
+      placeholderData: expect.any(Function),
+    });
+    expect(volumeByGradeQuery.mock.lastCall?.[0]).toMatchObject({ days: 7, types: ["lead"] });
+  });
+
+  it("opens the selected onsight send in the existing viewer and closes back to the matrix", async () => {
+    bestOnsightQuery.mockReturnValue({
+      data: climbingBestOnsightFixture(),
+      isLoading: false,
+      error: null,
+    });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    expect(screen.getByRole("heading", { name: "Best recorded onsight" })).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "Climb detail" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "5.11a, open Gym Lead send" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Climb detail" });
+    expect(within(dialog).getByTestId("record-detail-input")).toHaveTextContent(
+      JSON.stringify({
+        providerId: "kaya",
+        dataType: "climbingLogEntries",
+        recordId: "44444444-4444-4444-8444-000000000003",
+      }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close detail" }));
+    expect(screen.queryByRole("dialog", { name: "Climb detail" })).toBeNull();
+    expect(screen.getByRole("button", { name: "5.11a, open Gym Lead send" })).toBeVisible();
+  });
+
+  it("places the matrix with Grade Progression", async () => {
+    bestOnsightQuery.mockReturnValue({
+      data: climbingBestOnsightFixture(),
+      isLoading: false,
+      error: null,
+    });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+
+    const progression = screen.getByRole("heading", { name: "Grade Progression" });
+    const matrix = screen.getByRole("heading", { name: "Best recorded onsight" });
+    const volume = screen.getByRole("heading", { name: "Volume by Grade" });
+    expect(
+      progression.compareDocumentPosition(matrix) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(matrix.compareDocumentPosition(volume) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

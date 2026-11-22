@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "title": "Best recorded onsight",
+  "kind": "prototype",
+  "description": "Sample 12-month climbing results by type and setting, with grades linking to the recorded sends.",
+  "artboards": [
+    {
+      "id": "climbing-page",
+      "title": "Climbing page",
+      "file": "climbing-page.html",
+      "width": 640
+    }
+  ]
+}

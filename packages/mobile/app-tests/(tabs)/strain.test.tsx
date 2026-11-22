@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { climbingBestOnsightFixture } from "@dofek/training/fixtures/climbing-best-onsight";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -16,6 +17,9 @@ import { intervalRun, runningData } from "../../components/running-training-test
 import { trainingSections } from "../../lib/training-sections";
 import {
   mockAttemptIncreaseQuery,
+  mockBestOnsightInvalidate,
+  mockBestOnsightQuery,
+  mockBestOnsightRefetch,
   mockCaptureException,
   mockCyclingPowerProfileQuery,
   mockDecouplingInvalidate,
@@ -129,6 +133,7 @@ describe("StrainScreen", () => {
       expect(enabled.sort()).toEqual([...queries].sort());
       expect(mockVolumeIncreaseQuery.mock.lastCall?.[1]?.enabled).toBe(section === "climbing");
       expect(mockAttemptIncreaseQuery.mock.lastCall?.[1]?.enabled).toBe(section === "climbing");
+      expect(mockBestOnsightQuery.mock.lastCall?.[1]?.enabled).toBe(section === "climbing");
       if (section === "hiking") {
         expect(mockRouteComparisonQuery).toHaveBeenCalledWith(
           { days: 90 },
@@ -253,22 +258,12 @@ describe("StrainScreen", () => {
     const status = screen.getByTestId("climbing-refresh-status");
     expect(status.textContent).toBe("Updating climbing strengths…");
     expect(status.getAttribute("accessibilityliveregion")).toBe("polite");
+    expect(screen.getByText("Climbing strengths").nextElementSibling).toBe(status);
     expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
 
     mockStrengthsState.isFetching = false;
     rerender(<StrainScreen />);
     expect(screen.queryByTestId("climbing-refresh-status")).toBeNull();
-  });
-
-  it("renders the climbing refresh status inside the strengths card next to its heading", async () => {
-    mockStrengthsState.isFetching = true;
-    const { default: StrainScreen } = await import("../../app/strain");
-    render(<StrainScreen />);
-
-    const heading = screen.getByText("Climbing strengths");
-    const status = screen.getByTestId("climbing-refresh-status");
-    expect(heading.parentElement?.contains(status)).toBe(true);
-    expect(heading.nextElementSibling).toBe(status);
   });
 
   it("keeps cached strengths visible with an updating indicator while a new population loads", async () => {
@@ -391,6 +386,7 @@ describe("StrainScreen", () => {
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
     expect(mockRouteComparisonInvalidate).toHaveBeenCalledOnce();
     expect(mockRunningInvalidate).toHaveBeenCalledOnce();
+    expect(mockBestOnsightInvalidate).toHaveBeenCalledOnce();
   });
 
   it("renders the route comparison with the selected training period and opens attempts", async () => {
@@ -770,6 +766,172 @@ describe("StrainScreen", () => {
 
     expect(mockCaptureException).toHaveBeenCalledTimes(1);
     expect(mockCaptureException).toHaveBeenCalledWith(cachedError);
+  });
+
+  it("queries the annual onsight result independently of filters and the selected period", async () => {
+    const { default: StrainScreen } = await import("../../app/strain");
+    const view = render(<StrainScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters ⌄" }));
+    fireEvent.click(screen.getByRole("button", { name: "More filters" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
+    mockQueryState.timeRangePreference.days = 30;
+    view.rerender(<StrainScreen />);
+
+    expect(mockBestOnsightQuery.mock.calls.length).toBeGreaterThan(0);
+    expect(mockBestOnsightQuery.mock.calls.every(([input]) => input === undefined)).toBe(true);
+    expect(mockBestOnsightQuery.mock.lastCall?.[1]?.enabled).toBe(true);
+    expect(mockQueryState.rangeQueryCalls.training.at(-1)?.input).toMatchObject({
+      days: 30,
+      climbingFilters: { types: ["lead"] },
+    });
+  });
+
+  it("refetches only the annual onsight result when the query date advances at midnight", async () => {
+    const { default: StrainScreen } = await import("../../app/strain");
+    const view = render(<StrainScreen />);
+
+    expect(mockBestOnsightRefetch).not.toHaveBeenCalled();
+    view.rerender(<StrainScreen />);
+    expect(mockBestOnsightRefetch).not.toHaveBeenCalled();
+
+    mockQueryState.todayQueryDate = "2026-03-29";
+    view.rerender(<StrainScreen />);
+
+    expect(mockBestOnsightRefetch).toHaveBeenCalledTimes(1);
+    expect(mockBestOnsightQuery.mock.calls.every(([input]) => input === undefined)).toBe(true);
+    expect(mockBestOnsightQuery.mock.lastCall?.[1]?.enabled).toBe(true);
+  });
+
+  it("skips the midnight annual refetch while the iOS query is disabled", async () => {
+    mockQueryState.focused = false;
+    const { default: StrainScreen } = await import("../../app/strain");
+    const view = render(<StrainScreen />);
+
+    expect(mockBestOnsightQuery.mock.lastCall?.[1]?.enabled).toBe(false);
+    mockQueryState.todayQueryDate = "2026-03-29";
+    view.rerender(<StrainScreen />);
+    expect(mockBestOnsightRefetch).not.toHaveBeenCalled();
+
+    mockQueryState.focused = true;
+    view.rerender(<StrainScreen />);
+    expect(mockBestOnsightRefetch).not.toHaveBeenCalled();
+  });
+
+  it("opens the selected onsight send in the existing viewer and closes back to the matrix", async () => {
+    mockBestOnsightQuery.mockReturnValue({
+      data: climbingBestOnsightFixture(),
+      isLoading: false,
+      error: null,
+    });
+    const { default: StrainScreen } = await import("../../app/strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Best recorded onsight")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Climb detail" })).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("5.11a, open Gym Lead send"));
+
+    const dialog = screen.getByRole("dialog", { name: "Climb detail" });
+    expect(within(dialog).getByTestId("record-detail-input").textContent).toBe(
+      JSON.stringify({
+        providerId: "kaya",
+        dataType: "climbingLogEntries",
+        recordId: "44444444-4444-4444-8444-000000000003",
+      }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close detail" }));
+    expect(screen.queryByRole("dialog", { name: "Climb detail" })).toBeNull();
+    expect(screen.getByLabelText("5.11a, open Gym Lead send")).toBeTruthy();
+  });
+
+  it("keeps both independent insights exactly once when trainingV2 fails without cache", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training data failed to load");
+    mockBestOnsightQuery.mockReturnValue({
+      data: climbingBestOnsightFixture(),
+      isLoading: false,
+      error: null,
+    });
+    mockDemonstratedGradeQuery.mockReturnValue({
+      data: demonstratedGradeFixture,
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
+
+    const { default: StrainScreen } = await import("../../app/strain");
+    render(<StrainScreen />);
+
+    expect(screen.getAllByText("Training data failed to load")).toHaveLength(1);
+    expect(screen.getAllByText("Best recorded onsight")).toHaveLength(1);
+    expect(screen.getByLabelText("5.11a, open Gym Lead send")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Indoor bouldering, V5, 3 climbs" })).toHaveLength(
+      1,
+    );
+    expect(screen.queryByRole("image", { name: /^Grade progression/ })).toBeNull();
+    expect(screen.queryByText("Volume by Grade")).toBeNull();
+  });
+
+  it("shows the standalone annual loading state once when trainingV2 fails without cache", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training data failed to load");
+    mockBestOnsightQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+
+    const { TrainingAnalysis } = await import("../../app/strain");
+    render(<TrainingAnalysis section="climbing" isFocused />);
+
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(screen.queryByText("Volume by Grade")).toBeNull();
+  });
+
+  it("shows the standalone annual error once when trainingV2 fails without cache", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Training data failed to load");
+    mockBestOnsightQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error("Annual onsights unavailable"),
+    });
+
+    const { TrainingAnalysis } = await import("../../app/strain");
+    render(<TrainingAnalysis section="climbing" isFocused />);
+
+    expect(screen.getByText("Annual onsights unavailable")).toBeTruthy();
+    expect(screen.queryByText("Volume by Grade")).toBeNull();
+  });
+
+  it("keeps the open onsight detail when training finishes loading", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isLoading = true;
+    mockBestOnsightQuery.mockReturnValue({
+      data: climbingBestOnsightFixture(),
+      isLoading: false,
+      error: null,
+    });
+
+    const { TrainingAnalysis } = await import("../../app/strain");
+    const view = render(<TrainingAnalysis section="climbing" isFocused />);
+
+    expect(screen.getAllByText("Best recorded onsight")).toHaveLength(1);
+    expect(screen.getByLabelText("5.11a, open Gym Lead send")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("5.11a, open Gym Lead send"));
+    const dialog = screen.getByRole("dialog", { name: "Climb detail" });
+    const detailBefore = within(dialog).getByTestId("record-detail-input").textContent;
+    mockTrainingState.data = structuredClone(defaultMockTrainingData());
+    mockTrainingState.isLoading = false;
+    view.rerender(<TrainingAnalysis section="climbing" isFocused />);
+    expect(
+      within(screen.getByRole("dialog", { name: "Climb detail" })).getByTestId(
+        "record-detail-input",
+      ).textContent,
+    ).toBe(detailBefore);
+    expect(screen.getAllByText("Best recorded onsight")).toHaveLength(1);
+    expect(screen.getByText("Volume by Grade")).toBeTruthy();
   });
 });
 

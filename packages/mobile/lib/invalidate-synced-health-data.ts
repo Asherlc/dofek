@@ -5,6 +5,7 @@ const HEALTH_SYNC_INITIAL_FETCH_PATHS = new Set([
   "cycling.decoupling",
   "climbing.volumeIncrease",
   "climbing.attemptIncrease",
+  "climbing.bestOnsight",
 ]);
 
 const SYNCED_HEALTH_DATA_QUERY_PATHS = new Set([

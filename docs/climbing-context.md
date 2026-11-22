@@ -265,6 +265,10 @@ range start and pagination.
 
 The current filters independently select kind, scope, rope method, solo, aid, actual protection, advertised protection, and setting, including explicit false and unknown values. See the [filter contract](../packages/training/src/climbing-filters.ts).
 
+**Best recorded onsight** on the climbing training pages shows the highest confirmed whole-climb onsight grade for each climbing type in the gym and outdoors. The fixed 12-month window uses the logged ascent date and ends on the user's local calendar day. A grade opens the exact send in Dofek's record viewer. Ranking uses a compatible published grade when available and a compatible ascent-reported grade otherwise. A record needs a known setting and, for routes, a rope method on the qualifying attempt. [Server calculation](../packages/server/src/repositories/climbing-best-onsight-repository.ts)
+
+The 12-month window follows Draper et al.'s study of self-reported best onsight sport-lead grades in competitive climbers. Dofek displays the highest grade in the available records for each type and setting. [Draper et al.](https://pubmed.ncbi.nlm.nih.gov/21491325/)
+
 ## Maintenance cutover
 
 Existing installations require the quiesced, bounded [climbing-log model cutover](climbing-log-model-cutover.md). Fresh databases can apply preparation and finalization directly because they have no legacy records. Conversion gates preserve source evidence before removing old storage; see [0146](../drizzle/0146_climbing_log_model_prepare.sql) and [0147](../drizzle/0147_climbing_log_model_finalize.sql).

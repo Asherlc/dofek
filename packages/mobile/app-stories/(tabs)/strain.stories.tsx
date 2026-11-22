@@ -1,3 +1,4 @@
+import { climbingBestOnsightFixture } from "@dofek/training/fixtures/climbing-best-onsight";
 import { sportVolumeMetricSchema, sportVolumeMetrics } from "@dofek/training/sport-volume";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -14,12 +15,14 @@ import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
 } from "../../app-fixtures/(tabs)/processing-status-story-fixture";
+import { demonstratedGradeFixture } from "../../components/climbing-demonstrated-grade-fixture";
 import { climbingLocationMapFixture } from "../../components/climbing-location-map-fixtures";
 import {
   climbingAttachmentActivities,
   climbingAttachmentSafeAreaMetrics,
 } from "../../components/climbing-log-attachment-test-helpers";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
+import { createClimbingRecordDetailLink } from "../../components/fixtures/climbing-best-onsight-story-helpers";
 import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 import { runningData } from "../../components/running-training-test-helpers";
 import { trpc } from "../../lib/trpc";
@@ -32,6 +35,8 @@ const STRAIN_COMPANION_RESPONSES = {
   "climbing.attachClimbingLogEntry": { attached: true },
   "climbing.locationMap": climbingLocationMapFixture,
   "climbing.strengths": climbingStrengthsFixture,
+  "climbing.bestOnsight": climbingBestOnsightFixture(),
+  "climbing.demonstratedGrade": demonstratedGradeFixture,
   "climbing.volumeIncrease": {
     status: "increase",
     recentMinutes: 300,
@@ -321,6 +326,11 @@ function createSeededProviders(
     climbingStrengthsFixture,
   );
 
+  queryClient.setQueryData(
+    [["climbing", "bestOnsight"], { type: "query" }],
+    climbingBestOnsightFixture(),
+  );
+
   const processingStatus = seedReadyProcessingStatus(queryClient, [
     "activity",
     "recovery",
@@ -354,6 +364,7 @@ function MockProviders({
       queryClient: seededProviders.queryClient,
       trpcClient: trpc.createClient({
         links: [
+          createClimbingRecordDetailLink(),
           createSportVolumeStoryLink(),
           ...(trainingUnavailable ? [createTrainingFailureStoryLink()] : []),
           createProcessingStatusStoryLink(

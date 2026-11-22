@@ -6,6 +6,7 @@ describe("invalidateSyncedHealthData", () => {
   it.each([
     ["climbing", "volumeIncrease"],
     ["climbing", "attemptIncrease"],
+    ["climbing", "bestOnsight"],
     ["activity", "byId"],
     ["cycling", "decoupling"],
   ])(
@@ -42,6 +43,7 @@ describe("invalidateSyncedHealthData", () => {
       [["cycling", "decoupling"], { type: "query" }],
       [["climbing", "volumeIncrease"], { type: "query" }],
       [["climbing", "attemptIncrease"], { type: "query" }],
+      [["climbing", "bestOnsight"], { type: "query" }],
       [["calendar", "weekListV2"], { type: "query" }],
       [["calendar", "activityOverview"], { type: "query" }],
       [["activity", "list"], { type: "query" }],
