@@ -1,4 +1,4 @@
-import { summarizeIntervalPower } from "@dofek/training/cycling-workout-metrics";
+import { summarizeIntervalPower } from "@dofek/training/cycling-interval-power";
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import type { ActivitySensorStore } from "./activity-repository.ts";

@@ -29,13 +29,14 @@ vi.mock("../trpc.ts", async () => {
       scopeByAccessWindow?: boolean;
     }) => {
       cachedQueryOptions.push(options);
-      return trpc.procedure;
+      return trpc.procedure.meta(options);
     },
     CacheTTL: { LONG: 3_600_000 },
   };
 });
 
 import { CyclingAnalyticsRepository } from "../repositories/cycling-analytics-repository.ts";
+import { CyclingDecouplingRepository } from "../repositories/cycling-decoupling-repository.ts";
 import { CyclingDurabilityRepository } from "../repositories/cycling-durability-repository.ts";
 import { cyclingRouter } from "./cycling.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
@@ -54,6 +55,22 @@ function makeContext() {
 }
 
 describe("cyclingRouter", () => {
+  it("passes the selected decoupling range to the repository", async () => {
+    const getTrend = vi
+      .spyOn(CyclingDecouplingRepository.prototype, "getTrend")
+      .mockResolvedValue({ workoutName: null, rides: [] });
+    try {
+      const caller = createCaller(makeContext());
+      await expect(caller.decoupling({ days: 30 })).resolves.toEqual({
+        workoutName: null,
+        rides: [],
+      });
+      expect(getTrend.mock.calls[0]?.[0].days).toBe(30);
+    } finally {
+      getTrend.mockRestore();
+    }
+  });
+
   it("uses the selected number of local dates for the power profile", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-01T00:30:00Z"));
@@ -81,7 +98,7 @@ describe("cyclingRouter", () => {
   });
 
   it("scopes the power profile cache to the access window", () => {
-    expect(cachedQueryOptions).toContainEqual({
+    expect(cyclingRouter._def.procedures.powerProfile._def.meta).toEqual({
       maxAge: 3_600_000,
       expiresAt: "localDayBoundary",
       scopeByAccessWindow: true,
@@ -112,6 +129,14 @@ describe("cyclingRouter", () => {
     } finally {
       getComparison.mockRestore();
     }
+  });
+
+  it("scopes the decoupling cache by the caller's access window", () => {
+    expect(cyclingRouter._def.procedures.decoupling._def.meta).toEqual({
+      maxAge: 3_600_000,
+      expiresAt: "localDayBoundary",
+      scopeByAccessWindow: true,
+    });
   });
 
   it("versions the performance cache contract", () => {

@@ -27,6 +27,7 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
     input: "custom",
   },
   "cycling.activities": { defaultDays: 90, routerFile: "cycling.ts", input: "custom" },
+  "cycling.decoupling": { defaultDays: 90, routerFile: "cycling.ts", input: "days" },
   "cycling.durability": { defaultDays: 90, routerFile: "cycling.ts", input: "custom" },
   "cycling.performance": { defaultDays: 90, routerFile: "cycling.ts", input: "days" },
   "cycling.powerProfile": { defaultDays: 90, routerFile: "cycling.ts", input: "days" },

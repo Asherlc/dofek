@@ -849,3 +849,24 @@ timestamp and priority in the shared web/mobile chart and zone path; the
 covers a reported-heart-rate stream across a gap in beat intervals. WHOOP
 describes independent heart-rate and interval availability in its
 [research FAQ, page 4](https://sensorlab.arizona.edu/sites/default/files/2023-05/WHOOP%20Unite%20Research%20FAQs_0.pdf#page=4).
+
+### Repeated cycling workout decoupling
+
+The in-app repeat-ride view adapts the published power-to-heart-rate
+decoupling equation for imported workouts. A matching workout identity
+establishes that the workout was repeated. Steady effort and test conditions
+are unverified. See the [training calculation](../training/README.md#cycling-power-to-heart-rate-decoupling)
+for the equation source and coverage rules.
+
+The protected `cycling.decoupling` query uses the selected Cycling date range
+and the user's activity entitlement. It reads up to 25 recent canonical cycling
+ride candidates from exact provider workout identities associated with current
+activity members. It evaluates canonical power and heart-rate samples inside
+each ride's recorded elapsed interval. The query excludes known estimated
+signals, including Strava power explicitly flagged as estimated on the
+contributing member, and retains unknown measurement provenance.
+
+The result contains the most recent qualifying workout series with at least
+two rides and reports each ride's local date, modality, elapsed duration,
+decoupling, paired means, and coverage. Sparse or missing signals, insufficient
+repeats, and the candidate limit can leave the result empty.

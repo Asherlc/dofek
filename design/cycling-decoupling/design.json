@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "title": "Cycling · Power-to-heart-rate decoupling",
+  "kind": "prototype",
+  "description": "Two eligibility states for the proposed Cycling trend. The repeat-ride view uses sample data.",
+  "artboards": [
+    {
+      "id": "repeat-rides",
+      "title": "Repeat-ride adaptation",
+      "file": "repeat-rides.html",
+      "width": 960,
+      "group": "Eligibility"
+    },
+    {
+      "id": "published-protocol",
+      "title": "Published protocol only",
+      "file": "published-protocol.html",
+      "width": 960,
+      "group": "Eligibility"
+    }
+  ]
+}

@@ -31,6 +31,7 @@ import { ClimbingStrengths } from "../components/ClimbingStrengths";
 import { ClimbingTrainingCard } from "../components/ClimbingTrainingCard";
 import { CyclingDurability } from "../components/CyclingDurability";
 import { CyclingPowerProfile } from "../components/CyclingPowerProfile";
+import { CyclingDecouplingChart } from "../components/charts/CyclingDecouplingChart";
 import { VerticalAscentChart } from "../components/charts/VerticalAscentChart";
 import { DaySelector } from "../components/DaySelector";
 import { EstimatedStrengthCard } from "../components/EstimatedStrengthCard";
@@ -100,6 +101,15 @@ export function TrainingAnalysis({
   useEffect(() => {
     hasCommittedHydratedRange.current = isHydrated;
   }, [isHydrated]);
+
+  const decouplingQuery = trpc.cycling.decoupling.useQuery(
+    { days },
+    {
+      enabled: isHydrated && show("cycling"),
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  useReportQueryError(decouplingQuery);
 
   const trainingQuery = trpc.mobileDashboard.trainingV2.useQuery(
     { days, endDate, ...(Object.keys(climbingFilters).length ? { climbingFilters } : {}) },
@@ -290,6 +300,7 @@ export function TrainingAnalysis({
     invalidate: () =>
       Promise.all([
         utils.mobileDashboard.trainingV2.invalidate(),
+        utils.cycling.decoupling.invalidate(),
         utils.running.dynamicsV2.invalidate(),
         utils.climbing.locationMap.invalidate(),
         utils.climbing.demonstratedGrade.invalidate(),
@@ -437,6 +448,13 @@ export function TrainingAnalysis({
           profile={parsedCyclingPowerProfile.data}
           error={cyclingPowerProfile.error ?? parsedCyclingPowerProfile.error}
           loading={cyclingPowerProfile.isLoading}
+        />
+      ) : null}
+      {show("cycling") ? (
+        <CyclingDecouplingChart
+          data={decouplingQuery.data}
+          loading={decouplingQuery.isLoading}
+          error={decouplingQuery.error}
         />
       ) : null}
       {show("hiking") ? <RouteComparisonCard days={days} enabled={isHydrated} /> : null}
