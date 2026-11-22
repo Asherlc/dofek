@@ -3,6 +3,10 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+// Each test boots a full nested Vitest run (~3-5s alone). CI runs it alongside the entire parallel
+// unit suite, where CPU contention exceeded the previous 15s cap (job 137104627159).
+const DIAGNOSTIC_RUNNER_TIMEOUT_MS = 60_000;
+
 function captureUntilHardStop(
   config: string,
   signal: AbortSignal,
@@ -161,7 +165,7 @@ export default defineConfig({ test: { reporters: [new ObservedReporter()], proje
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 15_000);
+  }, DIAGNOSTIC_RUNNER_TIMEOUT_MS);
   it("flushes a real hook start before a hard stop", async ({ signal }) => {
     const dir = mkdtempSync(path.join(process.cwd(), "src/test/diagnostic-runner-"));
     const testFile = path.join(dir, "stalled.integration.test.ts");
@@ -222,5 +226,5 @@ export default defineConfig({
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  }, 15_000);
+  }, DIAGNOSTIC_RUNNER_TIMEOUT_MS);
 });
