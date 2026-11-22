@@ -352,6 +352,7 @@ describe("dataset contracts", () => {
       "running",
       "dashboard",
       "providerDetail",
+      "sleep.lateWorkouts",
     ]);
     expect(requiredCdcEvidence(activity ?? DATASET_CONTRACTS[0], ["relational"])).toEqual([
       { kind: "peerdb_marker", flowName: "dofek_fitness_raw_analytics" },
