@@ -335,6 +335,27 @@ describe("streamFitFile", () => {
     expect(onWorkoutStructureBatch).not.toHaveBeenCalled();
   });
 
+  it("times out if the decoder goes silent after a workout structure batch", async () => {
+    vi.useFakeTimers();
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+
+    const streamPromise = streamFitFile("activity.fit", noopConsumer());
+    decoder.send(metadataMessage());
+    await decoder.waitForAcknowledgement(1);
+    decoder.send({ type: "workout-structure", messages: [{ messageType: "lap", raw: {} }] });
+    await decoder.waitForAcknowledgement(2);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const rejectionExpectation = expect(streamPromise).rejects.toThrow(
+      "Native FIT decoder was idle for 120000ms",
+    );
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(decoder.child.kill).toHaveBeenCalledWith("SIGKILL");
+    await rejectionExpectation;
+  });
+
   it("rejects device batches before metadata", async () => {
     const decoder = simulatedDecoder();
     mockSpawn.mockReturnValue(decoder.child);
