@@ -34,6 +34,7 @@ import { LateWorkoutSleepCard } from "../components/LateWorkoutSleepCard";
 import { MetricCard } from "../components/MetricCard";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../components/QueryStatePanel";
+import { RecordedDailyMetrics } from "../components/RecordedDailyMetrics";
 import { SleepSourceReview } from "../components/SleepSourceReview";
 import { trpc } from "../lib/trpc";
 import { useProcessingStatus } from "../lib/useProcessingStatus";
@@ -137,6 +138,7 @@ export default function SleepScreen() {
     selectedDate ? { date: selectedDate } : undefined,
   );
   const consistencyQuery = trpc.recovery.sleepConsistency.useQuery({ days });
+  const recordedQuery = trpc.dailyMetrics.recorded.useQuery({ days, group: "sleep" });
   const processingStatus = useProcessingStatus({ datasets: ["sleep"] });
   const today = formatDateYmd(new Date());
   const lateWorkouts = trpc.sleep.lateWorkouts.useQuery(
@@ -335,6 +337,19 @@ export default function SleepScreen() {
 
       {/* Trend range, grouped with the trend content below the independently browsed night. */}
       <DaySelector days={days} onChange={setDays} />
+
+      {recordedQuery.isError && !recordedQuery.data ? (
+        <QueryStatePanel
+          variant="error"
+          message={userFacingErrorMessage(recordedQuery.error)}
+          onRetry={() => {
+            void recordedQuery.refetch();
+          }}
+          retryLabel="Retry provider-reported sleep data"
+          retrying={recordedQuery.isFetching}
+        />
+      ) : null}
+      <RecordedDailyMetrics rows={recordedQuery.data} />
 
       {isLoading ? (
         <View style={styles.loadingContainer}>

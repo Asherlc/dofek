@@ -428,6 +428,10 @@ display unit and format dates, but they render the supplied direction and summar
 a trend from the observations. The responsive chart selects one exercise at a time so long exercise
 lists stay readable without hiding the time axis.
 
+### Strength exercise order evidence
+
+`strength.exerciseHistory` pairs each exercise's estimated-strength observations with optional Crimpd order evidence in one selected-range response, and keeps order-only lifts when no estimate exists. The repository reads only active, user-scoped Crimpd member workouts, verifies the raw `ACTIVITY_ORDER`, `SET_ORDER`, and `LOG_ID` positions, and requires completed sets with finite recorded `RESISTANCE` and `WEIGHT_UNIT` (`KG` or `LBS`) values. Loads stay in their recorded unit. The contract is defined in [strength-exercise-history.ts](src/contracts/strength-exercise-history.ts); source fields follow the [Crimpd set export](https://crimpd.com/docs/data-export/#setscsv).
+
 ### MCP activity and cycling analytics
 
 The read-only MCP keeps the existing `get_activity_streams` and

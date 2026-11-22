@@ -15,6 +15,7 @@ import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { RecordedDailyMetrics } from "../components/RecordedDailyMetrics.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepDataSourcesTable } from "../components/SleepDataSourcesTable.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
@@ -90,6 +91,11 @@ export function SleepPage() {
   const stagesByDate = trpc.sleep.stagesByDate.useQuery(
     selectedDate ? { date: selectedDate } : undefined,
   );
+  const recorded = trpc.dailyMetrics.recorded.useQuery({
+    ...selectedRangeQueryInput(days),
+    endDate,
+    group: "sleep",
+  });
   const insightsQuery = trpc.insights.compute.useQuery({
     ...minimumSelectedRangeQueryInput(days, 90),
     endDate,
@@ -112,9 +118,13 @@ export function SleepPage() {
   // Night stages, the trend, insights, and processing status can all fail from
   // the same offline condition. Group only visible failures so one notice is
   // shown and every matching copy is suppressed.
-  const connectionFailures = [stagesByDate, sleepData, insightsQuery, processingStatus].filter(
-    (query) => query.error != null && isConnectionFailure(query.error),
-  );
+  const connectionFailures = [
+    stagesByDate,
+    sleepData,
+    recorded,
+    insightsQuery,
+    processingStatus,
+  ].filter((query) => query.error != null && isConnectionFailure(query.error));
   const sharedConnectionFailure = connectionFailures.length > 1;
   const isSharedConnectionFailure = (error: unknown) =>
     sharedConnectionFailure && isConnectionFailure(error);
@@ -173,6 +183,11 @@ export function SleepPage() {
           }
           loading={processingStatus.isLoading}
         />
+
+        <RecordedDailyMetrics rows={recorded.data} />
+        {recorded.isError && !recorded.data && !isSharedConnectionFailure(recorded.error) && (
+          <QueryStatePanel error={recorded.error} height={72} />
+        )}
 
         <PageSection title="Night’s Stages">
           <div className="mb-3 flex flex-wrap items-center gap-2">

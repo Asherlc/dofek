@@ -30,11 +30,17 @@ export const providerDataGeneration = fitness.table(
       .references(() => userProfile.id, { onDelete: "cascade" }),
     providerId: text("provider_id").notNull(),
     currentGeneration: bigint("current_generation", { mode: "number" }).notNull().default(0),
+    sourceAccountDigest: text("source_account_digest"),
+    sourceAccountGeneration: bigint("source_account_generation", { mode: "number" }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.providerId] }),
     check("provider_data_generation_nonnegative", sql`${table.currentGeneration} >= 0`),
+    check(
+      "provider_data_generation_source_account_pair",
+      sql`(${table.sourceAccountDigest} IS NULL) = (${table.sourceAccountGeneration} IS NULL)`,
+    ),
   ],
 );
 

@@ -350,8 +350,12 @@ describe("providerDetailRouter", () => {
   // ── PROVIDER_ACCOUNT_TABLES ──
 
   describe("PROVIDER_ACCOUNT_TABLES", () => {
-    it("contains 16 child tables", () => {
-      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(16);
+    it("includes planned workouts in the provider account erasure inventory", () => {
+      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.planned_workout");
+    });
+
+    it("contains 17 child tables", () => {
+      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(17);
     });
 
     it("includes all required child tables", () => {

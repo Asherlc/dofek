@@ -139,7 +139,7 @@ vi.mock("./shared.ts", () => ({
 }));
 
 import { captureException } from "dofek/lib/error-reporting";
-import { ProviderConnectionError } from "dofek/providers/auth-errors";
+import { ProviderConnectionError, ProviderPartialGrantError } from "dofek/providers/auth-errors";
 import { MissingEmailForSignupError } from "../../auth/account-linking.ts";
 import { handleOAuth2Callback } from "./data-provider-callback.ts";
 
@@ -264,6 +264,53 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       },
     ]);
   }
+
+  it.each([
+    ["first connection", null],
+    ["replace reconnect", { accessToken: "old-access", providerAccountId: "account-1" }],
+  ])("shows missing scopes for a partial grant on %s", async (_kind, existing) => {
+    useRegistrationReplacement();
+    mockLoadTokens.mockResolvedValue(existing);
+    mockExchangeCode.mockRejectedValue(new ProviderPartialGrantError("Garmin", ["CALENDAR:READ"]));
+
+    const { req, res } = createMockReqRes({ code: "code", state: "state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Missing: CALENDAR:READ"));
+    expect(mockPersistProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("uses the provider operation fence for a pull provider with replace reconnects", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "wahoo",
+        name: "Pull provider",
+        authSetup: () => ({
+          oauthConfig: { clientId: "client", tokenUrl: "https://provider.test/token" },
+          exchangeCode: mockExchangeCode,
+          reconnectStrategy: "replace",
+          revokeExistingTokens: mockRevokeExistingTokens,
+        }),
+      },
+    ]);
+    mockOauthStateStore.get.mockResolvedValue({
+      providerId: "wahoo",
+      intent: "data",
+      userId: "user-1",
+    });
+    mockLoadTokens.mockResolvedValue(null);
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockWithProviderOperationFence).toHaveBeenCalledWith(
+      expect.anything(),
+      "user-1",
+      "wahoo",
+      expect.any(Function),
+    );
+  });
 
   it.each(["data", "login"])(
     "reports permission confirmation failures safely for %s callbacks",

@@ -12,7 +12,11 @@ let mockSleepData: Record<string, unknown> | undefined;
 let mockSleepError: Error | null;
 let mockProcessingError: Error | null;
 let mockConsistencyData: Record<string, unknown>[] = [];
-const sleepMocks = vi.hoisted(() => ({ stagesByDate: vi.fn(), lateWorkouts: vi.fn() }));
+const sleepMocks = vi.hoisted(() => ({
+  stagesByDate: vi.fn(),
+  lateWorkouts: vi.fn(),
+  recorded: vi.fn(),
+}));
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -34,8 +38,16 @@ vi.mock("../lib/trpc", () => ({
       stagesByDate: { useQuery: sleepMocks.stagesByDate },
       lateWorkouts: { useQuery: sleepMocks.lateWorkouts },
     },
+    dailyMetrics: {
+      recorded: { useQuery: sleepMocks.recorded },
+    },
   },
 }));
+
+vi.mock("../lib/units", async () => {
+  const { UnitConverter } = await import("@dofek/format/units");
+  return { useUnitConverter: () => new UnitConverter("metric") };
+});
 
 vi.mock("@react-native-community/datetimepicker", () => ({
   default: ({
@@ -114,6 +126,13 @@ describe("SleepScreen", () => {
     mockSleepError = null;
     mockProcessingError = null;
     mockConsistencyData = [];
+    sleepMocks.recorded.mockReturnValue({
+      data: undefined,
+      error: null,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
     mockUseWindowDimensions.mockReturnValue({
       width: 390,
       height: 844,
@@ -185,6 +204,30 @@ describe("SleepScreen", () => {
     sleepMocks.lateWorkouts.mockReturnValue(fresh);
     rerender(<SleepScreen />);
     expect(screen.getByText("Heart-rate samples are incomplete.")).toBeTruthy();
+  });
+
+  it("shows reported sleep duration even when there are no sleep records", async () => {
+    sleepMocks.recorded.mockReturnValue({
+      data: [
+        {
+          date: "2026-03-01",
+          metric: "sleep_duration_reported",
+          value: 27000,
+          unit: "s",
+          providerId: "intervals.icu",
+          sourceName: null,
+        },
+      ],
+      error: null,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    const { default: SleepScreen } = await import("../app/sleep");
+    render(<SleepScreen />);
+    expect(sleepMocks.recorded).toHaveBeenCalledWith(expect.objectContaining({ group: "sleep" }));
+    expect(screen.getByText("7h 30m")).toBeTruthy();
+    expect(screen.getByText("Measurements may include data from Garmin devices.")).toBeTruthy();
   });
 
   it("shows the server error instead of the empty state when loading fails", async () => {

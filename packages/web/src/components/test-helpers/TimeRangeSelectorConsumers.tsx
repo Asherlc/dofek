@@ -135,6 +135,7 @@ vi.mock("../../lib/trpc.ts", () => {
       dailyMetrics: {
         hrvBaseline: recordQuery("dailyMetrics.hrvBaseline"),
         list: recordQuery("dailyMetrics.list"),
+        recorded: recordQuery("dailyMetrics.recorded"),
         trends: recordQuery("dailyMetrics.trends", bodyTrend),
       },
       insights: {

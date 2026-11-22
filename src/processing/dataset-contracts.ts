@@ -454,6 +454,9 @@ const PROVIDER_DATASET_CAPABILITIES: Readonly<Record<string, readonly Processing
   ziva: ["nutrition", "providers"],
   fitbit: ["activity", "hiking", "cycling", "sleep", "recovery", "training", "body", "providers"],
   garmin: ["activity", "hiking", "cycling", "sleep", "recovery", "training", "body", "providers"],
+  // Calendar events stay in the existing relational provider scope; no separate CDC flow or
+  // processing dataset is introduced for them.
+  "intervals.icu": ["activity", "hiking", "cycling", "recovery", "training", "body", "providers"],
   komoot: ["activity", "hiking", "cycling", "recovery", "training", "providers"],
   mapmyfitness: ["activity", "hiking", "cycling", "recovery", "training", "providers"],
   oura: ["activity", "sleep", "recovery", "training", "providers"],

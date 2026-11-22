@@ -31,8 +31,8 @@ export const sectionExpectations = {
   },
   running: { queries: ["running", "sportVolume"], cards: ["Running", "Weekly Volume"] },
   strength: {
-    queries: ["training", "strengthVolume", "loggedSets"],
-    cards: ["Strength Volume", "Sets and performance"],
+    queries: ["training", "strengthVolume", "loggedSets", "strengthHistory"],
+    cards: ["Strength Volume", "Sets and performance", "Estimated single-rep strength"],
   },
   hiking: { queries: ["sportVolume"], cards: ["Route comparison", "Weekly Volume"] },
   climbing: {

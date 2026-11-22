@@ -46,6 +46,7 @@ describe("invalidateSyncedHealthData", () => {
       [["activity", "byId"], { input: { id: "ride" }, type: "query" }],
       [["food", "byDateV2"], { type: "query" }],
       [["processing", "status"], { type: "query" }],
+      [["dailyMetrics", "recorded"], { type: "query" }],
       [["nutritionAnalytics", "adaptiveTdee"], { type: "query" }],
       [["nutritionAnalytics", "macroRatios"], { type: "query" }],
       [["nutritionAnalytics", "micronutrientAdequacyV2"], { type: "query" }],
