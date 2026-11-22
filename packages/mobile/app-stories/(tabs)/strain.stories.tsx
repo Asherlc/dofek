@@ -15,13 +15,13 @@ import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
 } from "../../app-fixtures/(tabs)/processing-status-story-fixture";
-import { createClimbingRecordDetailLink } from "../../components/fixtures/climbing-best-onsight-story-helpers";
 import { climbingLocationMapFixture } from "../../components/climbing-location-map-fixtures";
 import {
   climbingAttachmentActivities,
   climbingAttachmentSafeAreaMetrics,
 } from "../../components/climbing-log-attachment-test-helpers";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
+import { createClimbingRecordDetailLink } from "../../components/fixtures/climbing-best-onsight-story-helpers";
 import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 import { runningData } from "../../components/running-training-test-helpers";
 import { trpc } from "../../lib/trpc";

@@ -15,11 +15,11 @@ import { useMemo } from "react";
 import { expect, within } from "storybook/test";
 import { z } from "zod";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { climbingRecordDetailStoryData } from "../../components/fixtures/climbing-best-onsight-story-helpers.ts";
 import { climbingLocationMapFixture } from "../../components/climbing-location-map-test-helpers.ts";
 import { climbingAttachmentActivities } from "../../components/climbing-log-attachment-test-helpers.ts";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers.ts";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures.ts";
+import { climbingRecordDetailStoryData } from "../../components/fixtures/climbing-best-onsight-story-helpers.ts";
 import { trpc } from "../../lib/trpc.ts";
 import { ClimbingTab } from "./climbing.tsx";
 
