@@ -1,13 +1,23 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, McpServer } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cyclingTrainingMetricsOutputSchema } from "./cycling-training-metrics-output.ts";
+import {
+  cyclingTrainingMetricsOutputSchema,
+  cyclingTrainingMetricsToolOutputSchema,
+  lambertsTestResultSchema,
+} from "./cycling-training-metrics-output.ts";
 
-const mocks = vi.hoisted(() => ({ listRange: vi.fn() }));
+const mocks = vi.hoisted(() => ({ listRange: vi.fn(), lambertsListRange: vi.fn() }));
 
 vi.mock("../repositories/cycling-training-metrics-repository.ts", () => ({
   CyclingTrainingMetricsRepository: vi.fn(function vitestConstructor() {
     return { listRange: mocks.listRange };
+  }),
+}));
+
+vi.mock("../repositories/lamberts-test-repository.ts", () => ({
+  LambertsTestRepository: vi.fn(function vitestConstructor() {
+    return { listRange: mocks.lambertsListRange };
   }),
 }));
 
@@ -194,12 +204,73 @@ function page() {
   };
 }
 
+function lambertsPage() {
+  const stage = (stage: 1 | 2 | 3, target: 60 | 80 | 90, watts: number) => ({
+    stage,
+    target_maximum_heart_rate_pct: target,
+    mean_power_watts: watts,
+    mean_heart_rate_bpm: 150 + stage * 5,
+    mean_cadence_rpm: 90,
+    mean_speed_meters_per_second: 8,
+    perceived_exertion: null,
+  });
+  const test = (day: number, watts: number) => ({
+    activity_id: `00000000-0000-4000-8000-0000000000${String(day).padStart(2, "0")}` as const,
+    source_activity_id:
+      `00000000-0000-4000-8000-0000000001${String(day).padStart(2, "0")}` as const,
+    source_provider: "wahoo",
+    source_name: "FIT File",
+    date: `2026-11-${String(day).padStart(2, "0")}`,
+    started_at: `2026-11-${String(day).padStart(2, "0")}T15:00:00.000Z`,
+    modality: "indoor",
+    source_providers: ["wahoo", "strava"],
+    source_devices: ["kickr"],
+    sample_source_providers: ["wahoo"],
+    power_measurement_kinds: ["direct" as const],
+    heart_rate_maximum: { configured_bpm: 190, measurement_method: "unknown" as const },
+    stages: [stage(1, 60, 120), stage(2, 80, watts), stage(3, 90, watts + 60)],
+    recovery: {
+      observed_heart_rate_drop_bpm: 44,
+      non_pedaling: true,
+      seated_upright: null,
+    },
+  });
+  const earliest = test(7, 222);
+  const latest = test(21, 230);
+  return {
+    protocol: "lamberts_submaximal_cycle_test" as const,
+    range: { start_date: "2026-11-01", end_date: "2026-11-21", timezone: "UTC" },
+    total_tests: 3,
+    tests: [latest, test(14, 225)],
+    next_cursor: "next-lamberts-page",
+    comparison: {
+      earliest: {
+        activity_id: earliest.activity_id,
+        date: earliest.date,
+        started_at: earliest.started_at,
+        stage_2_mean_power_watts: 222,
+        stage_3_mean_power_watts: 282,
+      },
+      latest: {
+        activity_id: latest.activity_id,
+        date: latest.date,
+        started_at: latest.started_at,
+        stage_2_mean_power_watts: 230,
+        stage_3_mean_power_watts: 290,
+      },
+      stage_2_mean_watts_change: 8,
+      stage_3_mean_watts_change: 8,
+    },
+  };
+}
+
 describe("get_cycling_training_metrics", () => {
   let client: Client;
   let server: McpServer;
 
   beforeEach(async () => {
     mocks.listRange.mockReset().mockResolvedValue(page());
+    mocks.lambertsListRange.mockReset().mockResolvedValue(lambertsPage());
     server = new McpServer({ name: "cycling-training-metrics-test", version: "1.0.0" });
     registerCyclingTrainingMetricsTool(server, {
       db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
@@ -330,6 +401,97 @@ describe("get_cycling_training_metrics", () => {
         arguments: { start_date: "2026-07-01", end_date: "2026-06-30" },
       }),
     ).resolves.toMatchObject({ isError: true });
+  });
+
+  it("uses the Lamberts repository and strict alternate output when the opt-in is set", async () => {
+    const result = await client.callTool({
+      name: "get_cycling_training_metrics",
+      arguments: {
+        start_date: "2026-11-01",
+        end_date: "2026-11-21",
+        test_protocol: "lamberts_submaximal_cycle_test",
+        modalities: ["indoor"],
+        providers: ["wahoo"],
+        cursor: "page-two",
+        limit: 2,
+      },
+    });
+
+    expect(mocks.listRange).not.toHaveBeenCalled();
+    expect(mocks.lambertsListRange).toHaveBeenCalledWith({
+      startDate: "2026-11-01",
+      endDate: "2026-11-21",
+      modalities: ["indoor"],
+      providers: ["wahoo"],
+      cursor: "page-two",
+      limit: 2,
+    });
+    const parsed = lambertsTestResultSchema.parse(
+      cyclingTrainingMetricsToolOutputSchema.parse(result.structuredContent).result,
+    );
+    expect(parsed.protocol).toBe("lamberts_submaximal_cycle_test");
+    expect(parsed.total_tests).toBe(3);
+    expect(parsed.tests).toHaveLength(2);
+    expect(parsed.tests[0]).toMatchObject({
+      activity_id: "00000000-0000-4000-8000-000000000021",
+      heart_rate_maximum: { configured_bpm: 190, measurement_method: "unknown" },
+      stages: [
+        expect.objectContaining({ stage: 1, target_maximum_heart_rate_pct: 60 }),
+        expect.objectContaining({ stage: 2, target_maximum_heart_rate_pct: 80 }),
+        expect.objectContaining({ stage: 3, target_maximum_heart_rate_pct: 90 }),
+      ],
+    });
+    expect(parsed.next_cursor).toBe("next-lamberts-page");
+    expect(parsed.comparison).toMatchObject({
+      stage_2_mean_watts_change: 8,
+      stage_3_mean_watts_change: 8,
+    });
+  });
+
+  it("keeps the legacy repository and wire shape when the opt-in is absent", async () => {
+    const result = await client.callTool({
+      name: "get_cycling_training_metrics",
+      arguments: { start_date: "2026-06-01", end_date: "2026-06-30" },
+    });
+    expect(mocks.lambertsListRange).not.toHaveBeenCalled();
+    expect(
+      cyclingTrainingMetricsOutputSchema.parse(result.structuredContent).result.activities,
+    ).toHaveLength(1);
+  });
+
+  it("rejects an unknown test protocol", async () => {
+    await expect(
+      client.callTool({
+        name: "get_cycling_training_metrics",
+        arguments: {
+          start_date: "2026-06-01",
+          end_date: "2026-06-30",
+          test_protocol: "some_other_test",
+        },
+      }),
+    ).resolves.toMatchObject({ isError: true });
+    expect(mocks.lambertsListRange).not.toHaveBeenCalled();
+  });
+
+  it("shares date validation with the Lamberts mode", async () => {
+    await expect(
+      client.callTool({
+        name: "get_cycling_training_metrics",
+        arguments: {
+          start_date: "2026-07-01",
+          end_date: "2026-06-30",
+          test_protocol: "lamberts_submaximal_cycle_test",
+        },
+      }),
+    ).resolves.toMatchObject({ isError: true });
+    expect(mocks.lambertsListRange).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown protocol field in the Lamberts wire shape", () => {
+    const result = lambertsPage();
+    expect(lambertsTestResultSchema.safeParse({ ...result, protocol: "other" }).success).toBe(
+      false,
+    );
   });
 
   it.each([
