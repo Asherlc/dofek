@@ -175,6 +175,44 @@ describe("get_overview_insights", () => {
     });
   });
 
+  it("carries explanations, confounders, and evidence estimate labels when present", async () => {
+    mocks.computeInsights.mockResolvedValue([
+      insight({
+        id: "sleep-steps",
+        type: "conditional",
+        confidence: "emerging",
+        explanation: "Higher step counts coincided with more sleep.",
+        confounders: ["weekend", "training_load"],
+        evidence: {
+          relationship: "descriptive_association",
+          label: "Descriptive association",
+          method: "Observed-group mean comparison using Welch's t-test.",
+          estimateLabel: "+10 bpm",
+        },
+      }),
+    ]);
+
+    const result = await client.callTool({
+      name: "get_overview_insights",
+      arguments: { end_date: "2026-06-15" },
+    });
+    if (result.isError) throw new Error(JSON.stringify(result.content));
+
+    const parsed = overviewInsightsOutputSchema.parse(result.structuredContent);
+    expect(parsed.result.insights[0]).toMatchObject({
+      id: "sleep-steps",
+      explanation: "Higher step counts coincided with more sleep.",
+      confounders: ["weekend", "training_load"],
+      evidence: {
+        relationship: "descriptive_association",
+        label: "Descriptive association",
+        method: "Observed-group mean comparison using Welch's t-test.",
+        estimate_label: "+10 bpm",
+      },
+    });
+    expect(parsed.result.insights[0]?.evidence).not.toHaveProperty("observation_window");
+  });
+
   it("forwards the authenticated user, explicit timezone, and fixed 90-day window", async () => {
     await client.callTool({
       name: "get_overview_insights",
