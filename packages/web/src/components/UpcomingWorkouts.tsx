@@ -152,6 +152,13 @@ function StepList({
   return (
     <ul className={depth === 0 ? "space-y-1" : "ml-4 space-y-1 border-l border-border pl-3"}>
       {withPlannedWorkoutStepKeys(steps).map(([step, key]) => {
+        if (step.kind === "unsupported") {
+          return (
+            <li key={key} className="text-sm text-subtle">
+              {"Some steps aren't available."}
+            </li>
+          );
+        }
         if (step.kind === "repeat") {
           return (
             <li key={key} className="text-sm text-muted">

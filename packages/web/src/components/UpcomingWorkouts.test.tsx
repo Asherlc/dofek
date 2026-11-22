@@ -42,6 +42,48 @@ describe("UpcomingWorkouts", () => {
     ).toBe("true");
   });
 
+  it("shows a notice for unsupported steps after expanding the disclosure", () => {
+    render(
+      <UpcomingWorkouts
+        days={[
+          {
+            date: "2026-03-18",
+            workouts: [
+              {
+                id: "partial",
+                providerId: "intervals.icu",
+                title: "Partial plan",
+                description: null,
+                sportType: "cycling",
+                startTime: null,
+                steps: [
+                  {
+                    kind: "step",
+                    text: "Warm up",
+                    durationSeconds: 600,
+                    distanceMeters: null,
+                    targets: [],
+                  },
+                  { kind: "unsupported" },
+                ],
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByText("Some steps aren't available.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Workout steps" }));
+    expect(screen.getByText("Some steps aren't available.")).toBeDefined();
+  });
+
+  it("does not show the notice when every step is supported", () => {
+    render(<UpcomingWorkouts days={plannedWorkoutDays} />);
+    fireEvent.click(screen.getByRole("button", { name: "Workout steps" }));
+    expect(screen.queryByText("Some steps aren't available.")).toBeNull();
+  });
+
   it("does not repeat the sport in metadata when it is the fallback title", () => {
     render(
       <UpcomingWorkouts

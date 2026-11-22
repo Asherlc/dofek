@@ -144,6 +144,13 @@ function StepList({
   return (
     <View style={depth > 0 ? styles.nestedSteps : undefined}>
       {withPlannedWorkoutStepKeys(steps).map(([step, key]) => {
+        if (step.kind === "unsupported") {
+          return (
+            <Text key={key} style={styles.stepText}>
+              {"Some steps aren't available."}
+            </Text>
+          );
+        }
         if (step.kind === "repeat") {
           return (
             <View key={key} style={styles.stepRow}>
