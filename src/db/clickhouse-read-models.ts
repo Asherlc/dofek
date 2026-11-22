@@ -464,6 +464,23 @@ SELECT
 FROM analytics.v_activity`;
 }
 
+const DAILY_METRICS_PROJECTED_COLUMNS = [
+  "hrv",
+  "spo2_avg",
+  "respiratory_rate_avg",
+  "steps",
+  "distance_km",
+  "flights_climbed",
+  "exercise_minutes",
+  "walking_speed",
+  "walking_step_length",
+  "walking_double_support_pct",
+  "walking_asymmetry_pct",
+  "walking_steadiness",
+  "stand_hours",
+  "skin_temp_c",
+];
+
 function buildDailyMetricsReadModelSql(): string {
   return `${standardViewHeader("analytics.v_daily_metrics")}
 WITH
@@ -471,6 +488,8 @@ active_daily_metrics AS (
   SELECT *
   FROM postgres_fitness.daily_metrics FINAL
   WHERE _peerdb_is_deleted = 0
+    -- Parents that only anchor date-only catalog values (e.g. Intervals.icu weight) project nothing.
+    AND (${DAILY_METRICS_PROJECTED_COLUMNS.map((column) => `${column} IS NOT NULL`).join("\n      OR ")})
 ),
 active_provider_priority AS (
   SELECT *

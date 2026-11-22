@@ -23,6 +23,8 @@ let mockTimeRangePreference = {
   setDays: vi.fn(),
 };
 const mockRecoveryInvalidate = vi.fn();
+const mockRecordedInvalidate = vi.fn();
+const mockRecordedQuery = vi.fn();
 const mockRecoveryRefetch = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 const mockRouterPush = vi.fn();
@@ -118,12 +120,19 @@ vi.mock("../../lib/trpc", () => ({
         },
       },
     },
+    dailyMetrics: {
+      recorded: {
+        useQuery: (input: unknown, options: { enabled?: boolean }) =>
+          mockRecordedQuery(input, options),
+      },
+    },
     processing: {
       status: {
         useQuery: () => ({ data: undefined, isLoading: false, error: null }),
       },
     },
     useUtils: () => ({
+      dailyMetrics: { recorded: { invalidate: mockRecordedInvalidate } },
       mobileDashboard: {
         recovery: { invalidate: mockRecoveryInvalidate },
       },
@@ -210,6 +219,16 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
       setDays: vi.fn(),
     };
     sparkLinePropsCalls = [];
+    mockRecordedInvalidate.mockReset();
+    mockRecordedInvalidate.mockResolvedValue(undefined);
+    mockRecordedQuery.mockReset();
+    mockRecordedQuery.mockReturnValue({
+      data: undefined,
+      error: null,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
     mockRecoveryInvalidate.mockReset();
     mockRecoveryRefetch.mockReset();
     mockProcessingStatusInvalidate.mockReset();
@@ -385,6 +404,48 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
 
     expect(mockRecoveryInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
+  });
+
+  it("shows provider-reported body rows independently of recovery data and refreshes them", async () => {
+    mockRecordedQuery.mockReturnValue({
+      data: [
+        {
+          date: "2026-03-01",
+          metric: "weight",
+          value: 70,
+          unit: "kg",
+          providerId: "intervals.icu",
+          sourceName: null,
+        },
+      ],
+      error: new Error("recorded refresh failed"),
+      isError: true,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    mockRecoveryError = new Error("recovery failed");
+
+    const { default: RecoveryScreen } = await import("../../app/recovery");
+    render(<RecoveryScreen body />);
+
+    expect(mockRecordedQuery).toHaveBeenCalledWith(
+      expect.objectContaining({ days: 30, group: "body" }),
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(screen.getByText("70.0 kg")).toBeTruthy();
+    expect(screen.getByText("Measurements may include data from Garmin devices.")).toBeTruthy();
+    expect(screen.getByText("Provider-reported body data could not refresh")).toBeTruthy();
+    await mockRefreshInvalidate?.();
+    expect(mockRecordedInvalidate).toHaveBeenCalledWith(expect.objectContaining({ group: "body" }));
+  });
+
+  it("does not request body observations on the recovery screen", async () => {
+    const { default: RecoveryScreen } = await import("../../app/recovery");
+    render(<RecoveryScreen />);
+    expect(mockRecordedQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enabled: false }),
+    );
   });
 
   it("keeps day selector visible while recovery data is loading", async () => {

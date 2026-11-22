@@ -32,6 +32,7 @@ import { CyclingDurability } from "../components/CyclingDurability";
 import { CyclingPowerProfile } from "../components/CyclingPowerProfile";
 import { VerticalAscentChart } from "../components/charts/VerticalAscentChart";
 import { DaySelector } from "../components/DaySelector";
+import { EstimatedStrengthCard } from "../components/EstimatedStrengthCard";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget";
 import { ProgressiveOverloadCards } from "../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../components/QueryStatePanel";
@@ -189,7 +190,15 @@ export function TrainingAnalysis({
   useReportQueryError(climbingVolumeIncrease);
   useReportQueryError(climbingAttemptIncrease);
   useReportQueryError(climbingVolumeQuery);
+  const strengthHistoryQuery = trpc.strength.exerciseHistory.useQuery(
+    { days },
+    {
+      enabled: isHydrated && show("strength"),
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
   useReportQueryError(strengthVolumeQuery);
+  useReportQueryError(strengthHistoryQuery);
   const hrZonesQuery = trpc.training.hrZones.useQuery(
     { days },
     {
@@ -268,6 +277,7 @@ export function TrainingAnalysis({
         utils.climbing.attemptIncrease.invalidate(),
         utils.climbing.volumeOverTime.invalidate(),
         utils.strength.volumeOverTime.invalidate(),
+        utils.strength.exerciseHistory.invalidate(),
         utils.strength.loggedSetComparison.invalidate(),
         utils.training.hrZones.invalidate(),
         utils.training.sportVolume.invalidate(),
@@ -286,6 +296,7 @@ export function TrainingAnalysis({
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -455,6 +466,11 @@ export function TrainingAnalysis({
           {strengthVolumeQuery.data ? (
             <TrainingVolumeChart sport="strength" data={strengthVolumeQuery.data} />
           ) : null}
+          <EstimatedStrengthCard
+            rows={strengthHistoryQuery.data ?? []}
+            loading={strengthHistoryQuery.isLoading}
+            error={strengthHistoryQuery.error?.message ?? null}
+          />
         </>
       ) : null}
       {show("climbing") ? (

@@ -21,6 +21,7 @@ import { HealthStatusCards } from "../components/HealthStatusCards";
 import { MetricCard } from "../components/MetricCard";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
+import { RecordedDailyMetrics } from "../components/RecordedDailyMetrics";
 import {
   formatHealthCardComparison,
   formatHealthCardComparisonDelta,
@@ -69,6 +70,13 @@ export default function RecoveryScreen({ body = false }: { body?: boolean }) {
     { days, endDate },
     {
       enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  const recordedQuery = trpc.dailyMetrics.recorded.useQuery(
+    { days, endDate, group: "body" },
+    {
+      enabled: body && isHydrated,
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
@@ -149,6 +157,7 @@ export default function RecoveryScreen({ body = false }: { body?: boolean }) {
     invalidate: () =>
       Promise.all([
         utils.mobileDashboard.recovery.invalidate(),
+        utils.dailyMetrics.recorded.invalidate({ days, endDate, group: "body" }),
         utils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
@@ -189,6 +198,25 @@ export default function RecoveryScreen({ body = false }: { body?: boolean }) {
           retryLabel={body ? "Retry body data" : "Retry recovery data"}
           retrying={recoveryQuery.isFetching}
         />
+      ) : null}
+
+      {body ? (
+        <>
+          {recordedQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              title={`Provider-reported body data ${recordedQuery.data == null ? "is unavailable" : "could not refresh"}`}
+              message={getQueryErrorMessage(recordedQuery.error)}
+              minHeight={96}
+              onRetry={() => {
+                void recordedQuery.refetch();
+              }}
+              retryLabel="Retry provider-reported body data"
+              retrying={recordedQuery.isFetching}
+            />
+          ) : null}
+          <RecordedDailyMetrics rows={recordedQuery.data} />
+        </>
       ) : null}
 
       {recoveryData != null && (

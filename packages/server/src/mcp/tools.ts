@@ -48,6 +48,7 @@ import {
   assertNutritionSummaryDateRange,
   toNutritionSummaryOutput,
 } from "./nutrition-summary-output.ts";
+import { registerOverviewInsightsTool } from "./overview-insights-tool.ts";
 import { registerPerformanceComparisonTool } from "./performance-comparison-tool.ts";
 import { listProviderStatuses } from "./provider-status.ts";
 import { registerRecoveryTrainingSeriesTool } from "./recovery-training-series-tool.ts";
@@ -274,6 +275,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
   );
   registerTrainingLoadTool(server, context);
+  registerOverviewInsightsTool(server, context);
   registerRecoveryTrainingSeriesTool(server, context);
   registerRepeatedEffortsTool(server, context);
   registerPerformanceComparisonTool(server, context);

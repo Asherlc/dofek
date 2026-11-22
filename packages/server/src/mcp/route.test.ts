@@ -998,6 +998,9 @@ describe("createMcpRouter", () => {
     expectedSchemes.get_recovery_training_series = [
       { type: "oauth2", scopes: ["health:read", "activity:read", "nutrition:read"] },
     ];
+    expectedSchemes.get_overview_insights = [
+      { type: "oauth2", scopes: ["health:read", "activity:read", "nutrition:read"] },
+    ];
     expect(
       Object.fromEntries(tools.map((tool) => [tool.name, tool._meta.securitySchemes])),
     ).toEqual(expectedSchemes);
@@ -1316,6 +1319,7 @@ describe("createMcpRouter", () => {
       "get_strength_sessions",
       "get_strength_progression",
       "get_nutrition_summary",
+      "get_overview_insights",
       "get_body_metrics",
       "list_providers",
       "render_health_explorer",
@@ -1421,6 +1425,10 @@ describe("createMcpRouter", () => {
       {
         name: "get_nutrition_summary",
         path: ["result", "[]", "excluded_providers"],
+      },
+      {
+        name: "get_overview_insights",
+        path: ["result", "insights", "[]", "effect_size"],
       },
       {
         name: "get_body_metrics",
