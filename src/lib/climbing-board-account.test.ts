@@ -60,3 +60,39 @@ describe("board sync error reporting", () => {
     });
   });
 });
+
+describe("stored raw loader", () => {
+  async function loadStored(externalIds: string[], rows: Record<string, unknown>[]) {
+    const { db } = createMockDatabase({ executeResult: rows });
+    let loaded: Map<string, unknown> | undefined;
+    const account = new ClimbingBoardAccount("tension", "Tension Board", "https://example.com", {
+      login: vi.fn(),
+      fetchLogbook: vi.fn(async (_tokens, _persist, _signal, storedRaw) => {
+        loaded = await storedRaw?.(externalIds);
+        return { entries: [], absentExternalIds: [], authoritative: false };
+      }),
+    });
+    await account.sync(
+      new SyncRun({
+        db,
+        userId: "board-owner",
+        window: SyncWindow.full(new Date("2026-11-01T00:00:00Z")),
+      }),
+    );
+    return { loaded, execute: vi.mocked(db.execute) };
+  }
+
+  it("returns stored raw records by external ID", async () => {
+    const { loaded } = await loadStored(
+      ["tick-1"],
+      [{ external_id: "tick-1", raw: { metadata: { ascent: {} } } }],
+    );
+    expect(loaded).toEqual(new Map([["tick-1", { metadata: { ascent: {} } }]]));
+  });
+
+  it("does not query when there are no external IDs", async () => {
+    const { loaded, execute } = await loadStored([], []);
+    expect(loaded).toEqual(new Map());
+    expect(execute).not.toHaveBeenCalled();
+  });
+});

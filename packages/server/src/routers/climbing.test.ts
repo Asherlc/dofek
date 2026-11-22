@@ -12,7 +12,7 @@ import {
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import type { ClimbingStrengthsObservation } from "../services/climbing-strengths.ts";
 import { observation } from "../services/climbing-strengths-test-helpers.ts";
-import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore, makeTestCaller } from "./test-helpers.ts";
 
 const { signActivityImage, readActivityImage } = vi.hoisted(() => ({
   signActivityImage: vi.fn(
@@ -93,29 +93,22 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 import { climbingRouter } from "./climbing.ts";
 
 const createCaller = createTestCallerFactory(climbingRouter);
+const callerContext = { userId: "user-1", timezone: "America/Los_Angeles" };
 
 function makeCaller(rows: Record<string, unknown>[] = []) {
   const execute = vi.fn().mockResolvedValue(rows);
-  const caller = createCaller({
-    db: { execute },
-    userId: "user-1",
-    timezone: "America/Los_Angeles",
-  });
+  const caller = createCaller({ db: { execute }, ...callerContext });
   return { caller, execute };
 }
 
 function makeCallerWithResponses(responses: Record<string, unknown>[][]) {
-  const execute = vi.fn();
-  for (const response of responses) execute.mockResolvedValueOnce(response);
-  execute.mockResolvedValue([]);
   const sensorStore = makeMockSensorStore();
-  const caller = createCaller({
-    db: { execute },
-    userId: "user-1",
-    timezone: "America/Los_Angeles",
+  const result = makeTestCaller(createCaller, responses, (db) => ({
+    db,
+    ...callerContext,
     sensorStore,
-  });
-  return { caller, execute, sensorStore };
+  }));
+  return { ...result, sensorStore };
 }
 
 const groupId = "00000000-0000-4000-8000-000000000701";
@@ -912,6 +905,11 @@ describe("climbingRouter", () => {
     await expect(caller.volumeByGrade({ days: 90 })).resolves.toEqual([]);
     await expect(caller.sessionSummary({ days: 90 })).resolves.toEqual([]);
     expect(execute).toHaveBeenCalledTimes(8);
+    const demonstrated = await caller.demonstratedGrade({ endDate: "2026-11-21" });
+    expect(demonstrated).toMatchObject({ startDate: "2026-08-22", endDate: "2026-11-21" });
+    expect(demonstrated.cells.map(({ grades }) => grades)).toEqual(
+      Array.from({ length: 8 }, () => []),
+    );
   });
 
   it("returns a controlled error when climbing data cannot load", async () => {

@@ -1,10 +1,12 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { climbingDemonstratedGradeSchema } from "@dofek/training/climbing-demonstrated-grade";
 import { climbingGradeProgressionSchema } from "@dofek/training/climbing-progression";
 import { StyleSheet, Text, View } from "react-native";
 import { z } from "zod";
 import { safeParseData, safeParseRows } from "../lib/safe-parse";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
+import { ClimbingDemonstratedGrade } from "./ClimbingDemonstratedGrade";
 import { ClimbingGradeProgressionChart } from "./ClimbingGradeProgressionChart";
 import { HangboardingSummary } from "./HangboardingSummary";
 
@@ -177,12 +179,25 @@ class ClimbingSectionModel {
 export function ClimbingTrainingCard({
   data,
   loading = false,
+  demonstratedGrade,
+  demonstratedGradeLoading = false,
+  demonstratedGradeError = null,
+  demonstratedGradeOnly = false,
 }: {
   data: unknown;
   loading?: boolean;
+  demonstratedGrade?: unknown;
+  demonstratedGradeLoading?: boolean;
+  demonstratedGradeError?: { message: string } | null;
+  demonstratedGradeOnly?: boolean;
 }) {
   const parsed = parseMobileClimbingData(data);
   const model = new ClimbingSectionModel(parsed.data);
+  const demonstratedGradeResult = safeParseData(
+    climbingDemonstratedGradeSchema.nullable(),
+    demonstratedGrade ?? null,
+    "strain:climbing.demonstratedGrade",
+  );
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>Climbing</Text>
@@ -194,8 +209,17 @@ export function ClimbingTrainingCard({
           )}
         </Text>
       ) : null}
-      <ClimbingSection model={model} loading={loading} />
-      <HangboardingSummary data={model.hangboarding} loading={loading} />
+      <ClimbingDemonstratedGrade
+        data={demonstratedGradeResult.data}
+        loading={demonstratedGradeLoading}
+        error={demonstratedGradeError ?? demonstratedGradeResult.error}
+      />
+      {demonstratedGradeOnly ? null : (
+        <>
+          <ClimbingSection model={model} loading={loading} />
+          <HangboardingSummary data={model.hangboarding} loading={loading} />
+        </>
+      )}
     </View>
   );
 }

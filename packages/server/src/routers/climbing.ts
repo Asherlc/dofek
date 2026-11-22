@@ -1,5 +1,9 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { climbingCatalogueContextSchema } from "@dofek/training/climbing-catalogue";
+import {
+  climbingDemonstratedGradeSchema,
+  demonstratedGradeInputSchema,
+} from "@dofek/training/climbing-demonstrated-grade";
 import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { climbingLocationMapSchema } from "@dofek/training/climbing-location-map";
 import { climbingResponseVersionSchema } from "@dofek/training/climbing-log-response";
@@ -21,6 +25,7 @@ import { activityImagesOutputSchema } from "../repositories/activity-images-repo
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { climbingAttemptIncreaseSchema } from "../repositories/climbing-attempt-increase.ts";
 import { ClimbingCatalogueRepository } from "../repositories/climbing-catalogue-repository.ts";
+import { ClimbingDemonstratedGradeRepository } from "../repositories/climbing-demonstrated-grade-repository.ts";
 import { ClimbingImagesRepository } from "../repositories/climbing-images-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import { ClimbingProjectHistoryRepository } from "../repositories/climbing-project-history-repository.ts";
@@ -324,6 +329,27 @@ export const climbingRouter = router({
           queryCache.invalidateByPrefix(`${ctx.userId}:calendar.weekListV2:`),
         ]);
         return { attached: true as const };
+      }),
+    ),
+
+  demonstratedGrade: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    outputSchema: climbingDemonstratedGradeSchema,
+    keyVersion: "climbing-demonstrated-grade-v1",
+    scopeByAccessWindow: true,
+  })
+    .input(demonstratedGradeInputSchema)
+    .output(climbingDemonstratedGradeSchema)
+    .query(({ ctx, input }) =>
+      runClimbingQuery(async () => {
+        const preference = await loadClimbingGradePreference(ctx.db, ctx.userId);
+        return new ClimbingDemonstratedGradeRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+          preference,
+        ).getDemonstratedGrade(input);
       }),
     ),
 
