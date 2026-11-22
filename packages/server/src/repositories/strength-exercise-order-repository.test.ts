@@ -618,5 +618,300 @@ describe("StrengthExerciseOrderRepository", () => {
       const orders = await repo.getExerciseOrders(90);
       expect(orders.size).toBe(0);
     });
+
+    // Verification-depth tests for the strict parsers and projection guards.
+    const rawWith = (overrides: Record<string, unknown>) => ({
+      ...makeRow().raw,
+      ...overrides,
+    });
+    const pullUpKey = strengthExerciseIdentityKey({
+      exerciseName: "Weighted Pull Up",
+      equipment: null,
+    });
+
+    it("trims surrounding whitespace in positions, resistance and weight unit", async () => {
+      const bench = makeRow({
+        exercise_name: "Bench Press",
+        exercise_index: 0,
+        raw: rawWith({
+          ACTIVITY_ORDER: " 1 ",
+          SET_ORDER: " 1 ",
+          RESISTANCE: " 80 ",
+          WEIGHT_UNIT: " kg ",
+        }),
+      });
+      const pullUp = makeRow({
+        exercise_index: 1,
+        raw: rawWith({
+          ACTIVITY_ORDER: "2",
+          SET_ORDER: "1",
+          RESISTANCE: " 20 ",
+          WEIGHT_UNIT: " kg ",
+        }),
+      });
+
+      const { repo } = makeRepository([bench, pullUp]);
+      const orders = await repo.getExerciseOrders(90);
+      expect(orders.get(pullUpKey)?.evidence.baseline.sets).toEqual([
+        { position: 1, resistance: 20, unit: "KG", reps: 5 },
+      ]);
+    });
+
+    it("rejects non-exact numeric position tokens", async () => {
+      for (const badToken of ["2junk", "x2", "2.0", [2]]) {
+        const bench = makeRow({
+          exercise_name: "Bench Press",
+          exercise_index: 0,
+          raw: rawWith({ ACTIVITY_ORDER: "1", SET_ORDER: "1" }),
+        });
+        const pullUp = makeRow({
+          exercise_index: 1,
+          raw: rawWith({ ACTIVITY_ORDER: badToken, SET_ORDER: "1" }),
+        });
+
+        const { repo } = makeRepository([bench, pullUp]);
+        const orders = await repo.getExerciseOrders(90);
+        expect(orders.size, `token ${String(badToken)}`).toBe(0);
+      }
+    });
+
+    it("rejects non-exact resistance tokens", async () => {
+      for (const badToken of ["x20", "20junk"]) {
+        const bench = makeRow({
+          exercise_name: "Bench Press",
+          exercise_index: 0,
+          raw: rawWith({ ACTIVITY_ORDER: "1", SET_ORDER: "1", RESISTANCE: "80" }),
+        });
+        const pullUp = makeRow({
+          exercise_index: 1,
+          raw: rawWith({ ACTIVITY_ORDER: "2", SET_ORDER: "1", RESISTANCE: badToken }),
+        });
+
+        const { repo } = makeRepository([bench, pullUp]);
+        const orders = await repo.getExerciseOrders(90);
+        expect(orders.size, `token ${badToken}`).toBe(0);
+      }
+    });
+
+    it("rejects zero reps and unparseable resistance or weight unit per set", async () => {
+      const bench = makeRow({
+        exercise_name: "Bench Press",
+        exercise_index: 0,
+        raw: rawWith({ ACTIVITY_ORDER: "1", SET_ORDER: "1", RESISTANCE: "80" }),
+      });
+      const zeroReps = makeRow({
+        exercise_index: 1,
+        reps: 0,
+        raw: rawWith({ ACTIVITY_ORDER: "2", SET_ORDER: "1", RESISTANCE: "20" }),
+      });
+      const junkResistance = makeRow({
+        exercise_name: "Dip",
+        exercise_index: 2,
+        raw: rawWith({ ACTIVITY_ORDER: "3", SET_ORDER: "1", RESISTANCE: "junk" }),
+      });
+      const junkUnit = makeRow({
+        exercise_name: "Squat",
+        exercise_index: 3,
+        raw: rawWith({ ACTIVITY_ORDER: "4", SET_ORDER: "1", RESISTANCE: "60", WEIGHT_UNIT: "OZ" }),
+      });
+      const nonRecordRaw = makeRow({
+        exercise_name: "Curl",
+        exercise_index: 4,
+        raw: "not-a-record",
+      });
+
+      const { repo } = makeRepository([bench, zeroReps, junkResistance, junkUnit, nonRecordRaw]);
+      const orders = await repo.getExerciseOrders(90);
+      expect(orders.has(pullUpKey)).toBe(false);
+      expect(
+        orders.has(strengthExerciseIdentityKey({ exerciseName: "Dip", equipment: null })),
+      ).toBe(false);
+      expect(
+        orders.has(strengthExerciseIdentityKey({ exerciseName: "Squat", equipment: null })),
+      ).toBe(false);
+      expect(
+        orders.has(strengthExerciseIdentityKey({ exerciseName: "Curl", equipment: null })),
+      ).toBe(false);
+      expect(orders.size).toBe(0);
+    });
+
+    it("drops an occurrence whose sets mix weight units", async () => {
+      const bench = makeRow({
+        exercise_name: "Bench Press",
+        exercise_index: 0,
+        raw: rawWith({ ACTIVITY_ORDER: "1", SET_ORDER: "1", RESISTANCE: "80" }),
+      });
+      const kgSet = makeRow({
+        exercise_index: 1,
+        set_index: 0,
+        raw: rawWith({ ACTIVITY_ORDER: "2", SET_ORDER: "1", RESISTANCE: "20", WEIGHT_UNIT: "KG" }),
+      });
+      const lbsSet = makeRow({
+        exercise_index: 1,
+        set_index: 1,
+        raw: rawWith({ ACTIVITY_ORDER: "2", SET_ORDER: "2", RESISTANCE: "45", WEIGHT_UNIT: "LBS" }),
+      });
+
+      const { repo } = makeRepository([bench, kgSet, lbsSet]);
+      const orders = await repo.getExerciseOrders(90);
+      expect(orders.has(pullUpKey)).toBe(false);
+    });
+
+    it("sorts loaded sets and keeps every valid set of an occurrence", async () => {
+      const bench = makeRow({
+        exercise_name: "Bench Press",
+        exercise_index: 0,
+        raw: rawWith({ ACTIVITY_ORDER: "1", SET_ORDER: "1", RESISTANCE: "80" }),
+      });
+      const laterSet = makeRow({
+        exercise_index: 1,
+        set_index: 1,
+        raw: rawWith({ ACTIVITY_ORDER: "2", SET_ORDER: "2", RESISTANCE: "25" }),
+      });
+      const earlierSet = makeRow({
+        exercise_index: 1,
+        set_index: 0,
+        raw: rawWith({ ACTIVITY_ORDER: "2", SET_ORDER: "1", RESISTANCE: "20" }),
+      });
+
+      const { repo } = makeRepository([bench, laterSet, earlierSet]);
+      const orders = await repo.getExerciseOrders(90);
+      expect(orders.get(pullUpKey)?.evidence.baseline.sets).toEqual([
+        { position: 1, resistance: 20, unit: "KG", reps: 5 },
+        { position: 2, resistance: 25, unit: "KG", reps: 5 },
+      ]);
+    });
+
+    it("rejects workouts with a mismatched source log id or position token", async () => {
+      const bench = makeRow({
+        exercise_name: "Bench Press",
+        exercise_index: 0,
+        raw: rawWith({ ACTIVITY_ORDER: "1", SET_ORDER: "1", RESISTANCE: "80" }),
+      });
+      for (const pullUp of [
+        makeRow({
+          exercise_index: 1,
+          raw: rawWith({ LOG_ID: "wrong", ACTIVITY_ORDER: "2", SET_ORDER: "1", RESISTANCE: "20" }),
+        }),
+        makeRow({
+          exercise_index: 1,
+          raw: rawWith({ ACTIVITY_ORDER: "5", SET_ORDER: "1", RESISTANCE: "20" }),
+        }),
+        makeRow({
+          exercise_index: 1,
+          raw: rawWith({ ACTIVITY_ORDER: "2", SET_ORDER: "5", RESISTANCE: "20" }),
+        }),
+      ]) {
+        const { repo } = makeRepository([bench, pullUp]);
+        const orders = await repo.getExerciseOrders(90);
+        expect(orders.has(pullUpKey)).toBe(false);
+      }
+    });
+
+    it("rejects a duplicated exercise position even when a baseline precedes it", async () => {
+      const bench = makeRow({
+        exercise_name: "Bench Press",
+        exercise_index: 0,
+        raw: rawWith({ ACTIVITY_ORDER: "1", SET_ORDER: "1", RESISTANCE: "80" }),
+      });
+      const duplicate = () =>
+        makeRow({
+          exercise_index: 1,
+          raw: rawWith({ ACTIVITY_ORDER: "2", SET_ORDER: "1", RESISTANCE: "20" }),
+        });
+
+      const { repo } = makeRepository([bench, duplicate(), duplicate()]);
+      const orders = await repo.getExerciseOrders(90);
+      expect(orders.size).toBe(0);
+    });
+
+    it("does not mark a first exercise as a baseline because of a later exercise", async () => {
+      const pullUpFirst = makeRow({
+        exercise_index: 0,
+        raw: rawWith({ ACTIVITY_ORDER: "1", SET_ORDER: "1", RESISTANCE: "20" }),
+      });
+      const dipLater = makeRow({
+        exercise_name: "Dip",
+        exercise_index: 1,
+        raw: rawWith({ ACTIVITY_ORDER: "2", SET_ORDER: "1", RESISTANCE: "10" }),
+      });
+
+      const { repo } = makeRepository([pullUpFirst, dipLater]);
+      const orders = await repo.getExerciseOrders(90);
+      expect(orders.has(pullUpKey)).toBe(false);
+    });
+
+    it("orders sessions by time even when rows arrive newest first", async () => {
+      const junePullUp = makeRow({
+        canonical_activity_id: "act-2",
+        workout_date: "2026-06-01",
+        started_at: "2026-06-01T10:00:00Z",
+        member_external_id: "ext-2",
+        exercise_index: 0,
+        raw: rawWith({ LOG_ID: "ext-2", ACTIVITY_ORDER: "1", SET_ORDER: "1", RESISTANCE: "25" }),
+      });
+      const mayBench = makeRow({
+        canonical_activity_id: "act-1",
+        workout_date: "2026-05-01",
+        started_at: "2026-05-01T10:00:00Z",
+        member_external_id: "ext-1",
+        exercise_name: "Bench Press",
+        exercise_index: 0,
+        raw: rawWith({ LOG_ID: "ext-1", ACTIVITY_ORDER: "1", SET_ORDER: "1", RESISTANCE: "80" }),
+      });
+      const mayPullUp = makeRow({
+        canonical_activity_id: "act-1",
+        workout_date: "2026-05-01",
+        started_at: "2026-05-01T10:00:00Z",
+        member_external_id: "ext-1",
+        exercise_index: 1,
+        raw: rawWith({ LOG_ID: "ext-1", ACTIVITY_ORDER: "2", SET_ORDER: "1", RESISTANCE: "20" }),
+      });
+
+      const { repo } = makeRepository([junePullUp, mayBench, mayPullUp]);
+      const orders = await repo.getExerciseOrders(90);
+      expect(orders.get(pullUpKey)?.evidence).toEqual({
+        source: "Crimpd",
+        baseline: {
+          activityId: "act-1",
+          date: "2026-05-01",
+          position: 2,
+          sets: [{ position: 1, resistance: 20, unit: "KG", reps: 5 }],
+        },
+        earlier: {
+          activityId: "act-2",
+          date: "2026-06-01",
+          position: 1,
+          sets: [{ position: 1, resistance: 25, unit: "KG", reps: 5 }],
+        },
+      });
+    });
+
+    it("does not compare a baseline when the latest session did not move earlier", async () => {
+      const session = (activityId: string, date: string, startedAt: string) => [
+        makeRow({
+          canonical_activity_id: activityId,
+          workout_date: date,
+          started_at: startedAt,
+          exercise_name: "Bench Press",
+          exercise_index: 0,
+          raw: rawWith({ ACTIVITY_ORDER: "1", SET_ORDER: "1", RESISTANCE: "80" }),
+        }),
+        makeRow({
+          canonical_activity_id: activityId,
+          workout_date: date,
+          started_at: startedAt,
+          exercise_index: 1,
+          raw: rawWith({ ACTIVITY_ORDER: "2", SET_ORDER: "1", RESISTANCE: "20" }),
+        }),
+      ];
+
+      const { repo } = makeRepository([
+        ...session("act-1", "2026-05-01", "2026-05-01T10:00:00Z"),
+        ...session("act-2", "2026-06-01", "2026-06-01T10:00:00Z"),
+      ]);
+      const orders = await repo.getExerciseOrders(90);
+      expect(orders.get(pullUpKey)?.evidence.earlier).toBeNull();
+    });
   });
 });
