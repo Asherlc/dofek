@@ -2,6 +2,7 @@ import {
   createRateLimitAwareFetch,
   ProviderRateLimitError,
   ProviderServiceUnavailableError,
+  parseRetryAfterHeader,
 } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../../auth/oauth.ts";
@@ -56,6 +57,7 @@ async function oauthRequest(
         statusCode: response.status,
         responseBody,
         scope: "provider",
+        retryAfterSeconds: parseRetryAfterHeader(response.headers.get("Retry-After")),
       }),
     createServiceUnavailableError: (response, responseBody) =>
       new ProviderServiceUnavailableError({
@@ -64,6 +66,7 @@ async function oauthRequest(
         statusCode: response.status,
         responseBody,
         scope: "provider",
+        retryAfterSeconds: parseRetryAfterHeader(response.headers.get("Retry-After")),
       }),
   });
   return await rateLimitFetch(url, init);

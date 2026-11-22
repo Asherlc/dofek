@@ -1,3 +1,7 @@
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -411,6 +415,52 @@ describe("Intervals.icu OAuth exchangeCode", () => {
       expect(error?.message).not.toContain("secret-token-leak");
       expect(requestCount).toBe(1);
     }
+  });
+
+  it("preserves the Retry-After delay on a throttled token exchange", async () => {
+    server.use(
+      http.post(
+        TOKEN_URL,
+        () => new HttpResponse(null, { status: 429, headers: { "Retry-After": "30" } }),
+      ),
+    );
+
+    const exchangeCode = requireExchangeCode(requireAuthSetup());
+    let error: unknown;
+    try {
+      await exchangeCode("code", "verifier");
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    if (!(error instanceof ProviderRateLimitError)) throw new Error("Expected a rate limit error");
+    expect(error.retryAfterSeconds).toBe(30);
+    expect(error.message).toBe("Intervals.icu token exchange failed (429)");
+  });
+
+  it("preserves the Retry-After delay when the token endpoint is unavailable", async () => {
+    server.use(
+      http.post(
+        TOKEN_URL,
+        () => new HttpResponse(null, { status: 503, headers: { "Retry-After": "45" } }),
+      ),
+    );
+
+    const exchangeCode = requireExchangeCode(requireAuthSetup());
+    let error: unknown;
+    try {
+      await exchangeCode("code", "verifier");
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    if (!(error instanceof ProviderServiceUnavailableError)) {
+      throw new Error("Expected a service unavailable error");
+    }
+    expect(error.retryAfterSeconds).toBe(45);
+    expect(error.message).toBe("Intervals.icu token exchange failed (503)");
   });
 });
 
