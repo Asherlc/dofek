@@ -39780,9 +39780,12 @@ Local qualification and CI are separate from production throughput acceptance. T
   queue retains an all-types catch-up after the failure, so subsequent
   deliveries can repeat broad work. The reason HealthKit returned code zero
   and the energy attributable to each background path remain unresolved.
-  [Native workout query](../packages/mobile/modules/health-kit/ios/HealthKitModule.swift#L492) ·
+  [Original native workout query](https://github.com/Asherlc/dofek/blob/cbb3f591803f34bfc82bed6326d874149c9dd6e6/packages/mobile/modules/health-kit/ios/HealthKitModule.swift#L529) ·
   [Observer queue](../packages/mobile/lib/background-health-kit-sync.ts#L201).
-- **Follow-up.** Reproduce the failing effort query on a physical iPhone and
-  check that an effort query failure leaves unrelated Apple Health imports
-  progressing. Compare locked-device background activity before and after
-  the repair under similar coverage.
+- **Follow-up.** Reproduce the failing effort query on a physical iPhone
+  before restoring effort acquisition. Compare locked-device background
+  activity before and after the rollback under similar coverage.
+- **Code mitigation.** Restored the prior iOS workout query and removed the
+  effort read permission. A workout resync preserves existing ratings. The
+  fix requires a new native iOS build. Physical-device validation of the
+  battery impact remains pending.

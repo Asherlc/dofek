@@ -115,15 +115,6 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertTrue(readTypes.contains(HKSeriesType.workoutRoute()))
     }
 
-    func testReadTypesContainsReportedWorkoutEffortScore() {
-        guard #available(iOS 18.0, macOS 15.0, *),
-              let effortType = HKQuantityType.quantityType(forIdentifier: .workoutEffortScore)
-        else {
-            return
-        }
-        XCTAssertTrue(readTypes.contains(effortType))
-    }
-
     func testReadTypesContainsClinicalTypes() {
         #if os(iOS)
         let clinicalIdentifiers: [HKClinicalTypeIdentifier] = [
@@ -153,9 +144,6 @@ final class HealthKitTypesTests: XCTestCase {
     func testReadTypesTotalCount() {
         // 54 quantity types + 5 category types + 1 workout type + 1 workout route = 61
         var expectedCount = 61
-        if #available(iOS 18.0, macOS 15.0, *) {
-            expectedCount += 1 // reported workout effort score
-        }
         #if os(iOS)
         expectedCount += 7 // allergy, condition, immunization, lab, medication, procedure, vital
         if #available(iOS 16.4, *) { expectedCount += 1 } // clinicalNote
