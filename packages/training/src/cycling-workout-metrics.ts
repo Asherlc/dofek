@@ -297,6 +297,39 @@ function pairedEfficiency(
   };
 }
 
+/**
+ * Indexes of the 1 Hz timestamps `t` with `start <= t < end`: `ceil` of each exact bound, clamped
+ * into the stream. A window with no timestamp is empty; it is never sliced from the end.
+ */
+export function selectIntervalSamples(
+  length: number,
+  interval: Pick<CyclingWorkoutIntervalInput, "startOffsetSeconds" | "endOffsetSeconds">,
+) {
+  const startOffsetSeconds = Math.min(length, Math.max(0, Math.ceil(interval.startOffsetSeconds)));
+  const endOffsetSeconds = Math.max(
+    startOffsetSeconds,
+    Math.min(length, Math.ceil(interval.endOffsetSeconds)),
+  );
+  return { startOffsetSeconds, endOffsetSeconds };
+}
+
+/**
+ * Gap-aware mean over the selected 1 Hz timestamps of a resampled power stream. Missing seconds
+ * are skipped, a measured zero stays zero, and no measured sample is null.
+ */
+export function summarizeIntervalPower(
+  powerValues: ReadonlyArray<number | null>,
+  interval: Pick<CyclingWorkoutIntervalInput, "startOffsetSeconds" | "endOffsetSeconds">,
+) {
+  const selected = selectIntervalSamples(powerValues.length, interval);
+  const mean = average(powerValues.slice(selected.startOffsetSeconds, selected.endOffsetSeconds));
+  return {
+    ...selected,
+    meanPowerWatts: mean,
+    averagePowerWatts: mean == null ? null : round(mean),
+  };
+}
+
 function intervalMetrics(
   interval: CyclingWorkoutIntervalInput,
   source: "recorded" | "inferred",
@@ -305,10 +338,12 @@ function intervalMetrics(
   cadence: Array<number | null>,
   computedPower: CyclingWorkoutPowerMetrics,
 ) {
-  const start = Math.max(0, Math.floor(interval.startOffsetSeconds));
-  const end = Math.min(power.length, Math.ceil(interval.endOffsetSeconds));
-  const powerSlice = power.slice(start, end);
-  const averagePower = average(powerSlice);
+  const {
+    startOffsetSeconds: start,
+    endOffsetSeconds: end,
+    meanPowerWatts: averagePower,
+    averagePowerWatts,
+  } = summarizeIntervalPower(power, interval);
   const targetPower = interval.targetPowerWatts ?? null;
   return {
     index: interval.index,
@@ -318,7 +353,7 @@ function intervalMetrics(
     startOffsetSeconds: start,
     endOffsetSeconds: end,
     durationSeconds: Math.max(0, end - start),
-    averagePowerWatts: averagePower == null ? null : round(averagePower),
+    averagePowerWatts,
     normalizedPowerWatts: computedPower.normalizedPowerWatts,
     averageHeartRateBpm: (() => {
       const value = average(heartRate.slice(start, end));
@@ -472,8 +507,10 @@ export function prepareCyclingWorkoutMetrics(
             minimumWorkSeconds: 30,
           },
     powerWindows: intervalInputs.map((interval) => {
-      const start = Math.max(0, Math.floor(interval.startOffsetSeconds));
-      const end = Math.min(durationSeconds, Math.ceil(interval.endOffsetSeconds));
+      const { startOffsetSeconds: start, endOffsetSeconds: end } = selectIntervalSamples(
+        durationSeconds,
+        interval,
+      );
       return {
         samples: power.values
           .slice(start, end)

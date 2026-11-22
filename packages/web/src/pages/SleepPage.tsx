@@ -10,6 +10,7 @@ import {
 } from "../components/CorrelationCard.tsx";
 import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { Hypnogram } from "../components/Hypnogram.tsx";
+import { LateWorkoutSleepCard } from "../components/LateWorkoutSleepCard.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
@@ -73,7 +74,20 @@ export function SleepPage() {
   const endDate = useTodayQueryDate();
   const [selectedDate, setSelectedDate] = useState<string>();
 
-  const sleepData = trpc.sleep.list.useQuery({ ...selectedRangeQueryInput(days), endDate });
+  const range = { ...selectedRangeQueryInput(days), endDate };
+  const sleepData = trpc.sleep.list.useQuery(range);
+  const lateWorkouts = trpc.sleep.lateWorkouts.useQuery(range, {
+    meta: { persist: false },
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: "always",
+  });
+  // Entitlement and history bounds can change between fetches for the same account.
+  const canShowLateWorkouts =
+    lateWorkouts.isFetchedAfterMount &&
+    lateWorkouts.isSuccess &&
+    lateWorkouts.fetchStatus === "idle";
   const stagesByDate = trpc.sleep.stagesByDate.useQuery(
     selectedDate ? { date: selectedDate } : undefined,
   );
@@ -262,34 +276,35 @@ export function SleepPage() {
           </PageSection>
         )}
 
-        {/* Sleep Insights */}
-        {insightsQuery.isError &&
-          !insightsQuery.data &&
-          !isSharedConnectionFailure(insightsQuery.error) && (
-            <PageSection title="Sleep Insights" card={false}>
-              <QueryStatePanel error={insightsQuery.error} height={72} />
-            </PageSection>
-          )}
-
-        {insightsQuery.isLoading && (
-          <PageSection title="Sleep Insights" card={false}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {["s1", "s2"].map((id) => (
-                <CorrelationCardSkeleton key={id} />
-              ))}
-            </div>
-          </PageSection>
-        )}
-
-        {!insightsQuery.isLoading && sleepInsights.length > 0 && (
-          <PageSection title="Sleep Insights" card={false}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {sleepInsights.map((insight) => (
-                <CorrelationCard key={insight.id} insight={insight} />
-              ))}
-            </div>
-          </PageSection>
-        )}
+        <PageSection title="Sleep Insights" card={false}>
+          <div className="space-y-3">
+            <LateWorkoutSleepCard
+              data={canShowLateWorkouts ? lateWorkouts.data : undefined}
+              error={lateWorkouts.error}
+              isLoading={lateWorkouts.isPending}
+              isFetching={!canShowLateWorkouts && lateWorkouts.data !== undefined}
+            />
+            {insightsQuery.isError &&
+              !insightsQuery.data &&
+              !isSharedConnectionFailure(insightsQuery.error) && (
+                <QueryStatePanel error={insightsQuery.error} height={72} />
+              )}
+            {insightsQuery.isLoading && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {["s1", "s2"].map((id) => (
+                  <CorrelationCardSkeleton key={id} />
+                ))}
+              </div>
+            )}
+            {!insightsQuery.isLoading && sleepInsights.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {sleepInsights.map((insight) => (
+                  <CorrelationCard key={insight.id} insight={insight} />
+                ))}
+              </div>
+            )}
+          </div>
+        </PageSection>
       </PageLayout>
     </ChartRangeProvider>
   );

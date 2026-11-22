@@ -394,6 +394,12 @@ export const activityInterval = fitness.table(
     targetPowerWatts: real("target_power_watts"),
     targetResistance: real("target_resistance"),
     workRecoveryKind: text("work_recovery_kind", { enum: ["work", "recovery"] }),
+    /** Set only for rows owned by the FIT importer's Workout Step / Lap link. */
+    fitSource: text("fit_source", { enum: ["workout_step_lap"] }),
+    plannedDurationSeconds: doublePrecision("planned_duration_seconds"),
+    recordedTimerDurationSeconds: doublePrecision("recorded_timer_duration_seconds"),
+    targetPowerMinWatts: real("target_power_min_watts"),
+    targetPowerMaxWatts: real("target_power_max_watts"),
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -416,6 +422,32 @@ export const activityInterval = fitness.table(
     check(
       "activity_interval_work_recovery_kind",
       sql`${table.workRecoveryKind} IS NULL OR ${table.workRecoveryKind} IN ('work', 'recovery')`,
+    ),
+    check(
+      "activity_interval_fit_source",
+      sql`${table.fitSource} IS NULL OR ${table.fitSource} = 'workout_step_lap'`,
+    ),
+    check(
+      "activity_interval_fit_plan",
+      sql`(
+        ${table.fitSource} IS NULL
+        AND ${table.plannedDurationSeconds} IS NULL
+        AND ${table.recordedTimerDurationSeconds} IS NULL
+        AND ${table.targetPowerMinWatts} IS NULL
+        AND ${table.targetPowerMaxWatts} IS NULL
+      ) OR (
+        ${table.fitSource} IS NOT NULL AND ${table.fitSource} = 'workout_step_lap'
+        AND ${table.sourceKind} IS NOT NULL AND ${table.sourceKind} = 'provider_recorded'
+        AND ${table.endedAt} IS NOT NULL AND ${table.endedAt} > ${table.startedAt}
+        AND ${table.plannedDurationSeconds} IS NOT NULL AND ${table.plannedDurationSeconds} > 0
+        AND (${table.recordedTimerDurationSeconds} IS NULL OR ${table.recordedTimerDurationSeconds} >= 0)
+        AND ((${table.targetPowerMinWatts} IS NULL) = (${table.targetPowerMaxWatts} IS NULL))
+        AND (${table.targetPowerMinWatts} IS NULL OR (
+          ${table.targetPowerMinWatts} < ${table.targetPowerMaxWatts}
+          AND ${table.targetPowerWatts} IS NULL
+        ))
+        AND (${table.targetPowerMinWatts} IS NOT NULL OR ${table.targetPowerWatts} IS NOT NULL)
+      )`,
     ),
   ],
 );

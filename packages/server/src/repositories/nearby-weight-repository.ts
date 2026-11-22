@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  type AccessWindow,
+  clickHouseAccessParams,
+  clickHouseAccessPredicate,
+} from "../billing/entitlement.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import {
   type DirectWeightObservation,
@@ -14,6 +19,7 @@ const weightRowSchema = z.object({
   weight_kg: z.coerce.number(),
   provider_id: z.string(),
   external_id: z.string().nullable(),
+  record_id: z.uuid().optional(),
 });
 
 /** Select body-weight evidence near a local calendar date from canonical measurements. */
@@ -23,7 +29,9 @@ export async function loadDirectWeightObservations(
   timezone: string,
   startDate: string,
   endDate: string,
+  options?: { includeRecordId?: boolean; accessWindow?: AccessWindow },
 ): Promise<DirectWeightObservation[]> {
+  const access = clickHouseAccessPredicate(options?.accessWindow, "body.recorded_at");
   const rows = await store.query(
     weightRowSchema,
     `/* nearby-weight:observations */
@@ -32,17 +40,23 @@ export async function loadDirectWeightObservations(
         formatDateTime(body.recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at,
         body.weight_kg,
         body.provider_id,
-        body.external_id
+        body.external_id${options?.includeRecordId ? ", toString(body.id) AS record_id" : ""}
       FROM analytics.v_body_measurement AS body
       WHERE body.user_id = {userId:UUID}
         AND body.weight_kg IS NOT NULL
-        AND body.weight_kg > 0
+        AND body.weight_kg > 0${access ? `\n        ${access}` : ""}
         AND toDate(toTimeZone(body.recorded_at, {timezone:String})) BETWEEN
           addDays(toDate({startDate:String}), -${MAX_NEARBY_WEIGHT_DAYS})
           AND addDays(toDate({endDate:String}), ${MAX_NEARBY_WEIGHT_DAYS})
       ORDER BY body.recorded_at ASC
       SETTINGS prefer_column_name_to_alias = 1`,
-    { userId, timezone, startDate, endDate },
+    {
+      userId,
+      timezone,
+      startDate,
+      endDate,
+      ...clickHouseAccessParams(options?.accessWindow, timezone),
+    },
   );
   return rows.map((row) => ({
     date: row.date,
@@ -52,6 +66,7 @@ export async function loadDirectWeightObservations(
     measurementKind: "direct",
     provider: row.provider_id,
     sourceRecordId: row.external_id,
+    ...(row.record_id ? { recordId: row.record_id } : {}),
   }));
 }
 

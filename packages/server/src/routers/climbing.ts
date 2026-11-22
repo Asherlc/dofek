@@ -7,6 +7,7 @@ import {
 import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { climbingLocationMapSchema } from "@dofek/training/climbing-location-map";
 import { climbingResponseVersionSchema } from "@dofek/training/climbing-log-response";
+import { climbingProjectHistorySchema } from "@dofek/training/climbing-project-history";
 import { climbingStrengthsSchema } from "@dofek/training/climbing-strengths";
 import { TRPCError } from "@trpc/server";
 import { createActivityImageUrl, readActivityImageObject } from "dofek/activity-images/storage";
@@ -27,6 +28,7 @@ import { ClimbingCatalogueRepository } from "../repositories/climbing-catalogue-
 import { ClimbingDemonstratedGradeRepository } from "../repositories/climbing-demonstrated-grade-repository.ts";
 import { ClimbingImagesRepository } from "../repositories/climbing-images-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
+import { ClimbingProjectHistoryRepository } from "../repositories/climbing-project-history-repository.ts";
 import {
   type ClimbingGradeProgressionRow,
   type ClimbingGradeProgressionV2Row,
@@ -112,6 +114,25 @@ async function runClimbingQuery<T>(query: () => Promise<T>): Promise<T> {
 }
 
 export const climbingRouter = router({
+  projectHistory: protectedProcedure
+    .input(z.object({ logEntryId: z.guid() }))
+    .output(climbingProjectHistorySchema.nullable())
+    .query(({ ctx, input }) =>
+      runClimbingQuery(async () => {
+        const repository = new ClimbingProjectHistoryRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+        );
+        const history = await repository.getProjectHistory(input.logEntryId);
+        if (history === undefined) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Climbing log not found" });
+        }
+        return history;
+      }),
+    ),
+
   catalogueContext: protectedProcedure
     .input(z.object({ id: z.guid() }))
     .output(climbingCatalogueContextSchema)

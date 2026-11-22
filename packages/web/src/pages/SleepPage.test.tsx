@@ -1,7 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { matchedLateWorkoutSleep } from "../components/late-workout-sleep-fixtures.ts";
 
 type QueryResult<T> = {
   data: T | undefined;
@@ -16,6 +18,7 @@ function queryResult<T>(data: T | undefined): QueryResult<T> {
 
 const mocks = vi.hoisted(() => ({
   sleepList: vi.fn(),
+  lateWorkouts: vi.fn(),
   latestStages: vi.fn(),
   stagesByDate: vi.fn(),
   insights: vi.fn(),
@@ -27,6 +30,7 @@ vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     sleep: {
       list: { useQuery: mocks.sleepList },
+      lateWorkouts: { useQuery: mocks.lateWorkouts },
       latestStages: { useQuery: mocks.latestStages },
       stagesByDate: { useQuery: mocks.stagesByDate },
     },
@@ -125,9 +129,70 @@ describe("SleepPage", () => {
     mocks.stagesByDate.mockImplementation((input?: { date?: string }) =>
       queryResult({ date: input?.date ?? "2026-03-28", stages: [] }),
     );
+    mocks.lateWorkouts.mockReturnValue(queryResult(undefined));
     mocks.insights.mockReturnValue(queryResult([]));
     mocks.recorded.mockReturnValue(queryResult([]));
     mocks.processing.mockReturnValue(queryResult(undefined));
+  });
+
+  it("shows late workouts inside Sleep Insights without global correlations", async () => {
+    const { SleepPage } = await import("./SleepPage.tsx");
+    render(<SleepPage />);
+    expect(
+      within(screen.getByRole("region", { name: "Sleep Insights" })).getByText(
+        "Late workouts & sleep",
+      ),
+    ).toBeTruthy();
+    expect(mocks.lateWorkouts).toHaveBeenCalledWith(
+      { days: 30, endDate: "2026-03-31" },
+      {
+        meta: { persist: false },
+        staleTime: 0,
+        refetchOnMount: "always",
+        refetchOnWindowFocus: "always",
+        refetchOnReconnect: "always",
+      },
+    );
+  });
+
+  it("requires fresh authorization before showing late-workout evidence from the cache", async () => {
+    const cached = {
+      data: matchedLateWorkoutSleep,
+      isFetchedAfterMount: false,
+      isSuccess: true,
+      fetchStatus: "idle",
+      error: null,
+    };
+    mocks.lateWorkouts.mockReturnValue(cached);
+    const { SleepPage } = await import("./SleepPage.tsx");
+    const { rerender } = render(<SleepPage />);
+
+    expect(screen.queryByRole("button", { name: "View nights" })).toBeNull();
+
+    const fresh = { ...cached, isFetchedAfterMount: true };
+    mocks.lateWorkouts.mockReturnValue(fresh);
+    rerender(<SleepPage />);
+    fireEvent.click(screen.getByRole("button", { name: "View nights" }));
+    fireEvent.click(screen.getByRole("button", { name: /Nov 10/ }));
+    expect(screen.getByText("Heart-rate samples are incomplete.")).toBeTruthy();
+
+    mocks.lateWorkouts.mockReturnValue({ ...fresh, fetchStatus: "paused" });
+    rerender(<SleepPage />);
+    expect(screen.queryByText("Heart-rate samples are incomplete.")).toBeNull();
+    expect(screen.getByText("Refreshing night evidence…")).toBeTruthy();
+
+    mocks.lateWorkouts.mockReturnValue({
+      ...fresh,
+      isSuccess: false,
+      error: new Error("Could not recheck sleep access."),
+    });
+    rerender(<SleepPage />);
+    expect(screen.getByText("Could not recheck sleep access.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /nights$/ })).toBeNull();
+
+    mocks.lateWorkouts.mockReturnValue(fresh);
+    rerender(<SleepPage />);
+    expect(screen.getByText("Heart-rate samples are incomplete.")).toBeTruthy();
   });
 
   it("maps canonical sleep rows and shows only usable sleep insights", async () => {

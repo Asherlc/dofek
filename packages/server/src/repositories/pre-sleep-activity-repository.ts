@@ -15,6 +15,23 @@ const activityRowSchema = z.object({
 });
 
 type ActivityRow = z.infer<typeof activityRowSchema>;
+type WorkoutWindowAccess = { startDate: string; endDate: string; timezone: string };
+const workoutRowSchema = activityRowSchema.extend({
+  provider_type: z.string(),
+  fit_members: z.array(
+    z.object({
+      id: z.string(),
+      started_at: z.iso.datetime(),
+      ended_at: z.iso.datetime().nullable(),
+    }),
+  ),
+});
+
+export interface WorkoutWindow {
+  previousWake: { sessionId: string; endedAt: string };
+  activities: Omit<z.infer<typeof workoutRowSchema>, "sleep_id" | "matches_filter">[];
+}
+
 type WakeWindow = {
   sleep_id: string;
   previous_id: string;
@@ -137,16 +154,19 @@ function summarizeWindow(
   };
 }
 
-export async function listPreSleepActivities(
+type ActivityFilters = {
+  providers: readonly string[];
+  modalities: readonly string[];
+  canonicalTypes: readonly string[];
+};
+
+async function readWakeWindows<Row extends ActivityRow>(
   db: Pick<Database, "execute">,
   userId: string,
   episodes: readonly SleepEpisode[],
-  timezone: string,
-  filters: {
-    providers: readonly string[];
-    modalities: readonly string[];
-    canonicalTypes: readonly string[];
-  },
+  filters: ActivityFilters,
+  rowSchema: z.ZodType<Row>,
+  access?: WorkoutWindowAccess,
 ) {
   const chronological = [...episodes].sort(
     (left, right) =>
@@ -157,6 +177,11 @@ export async function listPreSleepActivities(
     const previous = chronological[index - 1]?.timing;
     if (!previous?.ended_at || Date.parse(previous.ended_at) >= Date.parse(timing.started_at)) {
       return [];
+    }
+    if (access) {
+      if (previous.elapsed_minutes === null) return [];
+      const wakeDate = analysisLocalClock(previous.ended_at, access.timezone).date;
+      if (wakeDate < access.startDate || wakeDate > access.endDate) return [];
     }
     const calendarDays =
       (Date.parse(timing.local_start_date) -
@@ -177,7 +202,7 @@ export async function listPreSleepActivities(
       ? []
       : await executeWithSchema(
           db,
-          activityRowSchema,
+          rowSchema,
           sql`
     SELECT
       wake.sleep_id,
@@ -193,25 +218,94 @@ export async function listPreSleepActivities(
         AND (cardinality(${sql.param(filters.canonicalTypes)}::text[]) = 0
           OR a.canonical_type::text = ANY(${sql.param(filters.canonicalTypes)}::text[]))
       ) AS matches_filter
+      ${
+        access
+          ? sql`, a.provider_type,
+        COALESCE((
+          SELECT jsonb_agg(jsonb_build_object(
+            'id', fit.id,
+            'started_at', to_char(fit.started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+            'ended_at', to_char(fit.ended_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+          ) ORDER BY fit.id)
+          FROM fitness.activity fit
+          WHERE fit.id = ANY(a.member_activity_ids) AND fit.user_id = a.user_id
+            AND fit.provider_id = 'fit-file' AND fit.deleted_at IS NULL AND fit.provider_absent_at IS NULL
+            AND jsonb_typeof(fit.raw -> 'session') = 'object'
+            AND (fit.started_at AT TIME ZONE ${access.timezone})::date
+              BETWEEN ${access.startDate}::date AND ${access.endDate}::date
+        ), '[]'::jsonb) AS fit_members`
+          : sql.empty()
+      }
     FROM jsonb_to_recordset(${JSON.stringify(windows)}::jsonb)
       AS wake(sleep_id uuid, wake_at timestamptz, sleep_start timestamptz)
     JOIN fitness.v_activity a ON a.user_id = ${userId}::uuid
       AND a.started_at < wake.sleep_start
       AND (a.ended_at > wake.wake_at OR a.started_at >= wake.wake_at)
+      ${
+        access
+          ? sql`AND (a.started_at AT TIME ZONE ${access.timezone})::date
+        BETWEEN ${access.startDate}::date AND ${access.endDate}::date`
+          : sql.empty()
+      }
     ORDER BY wake.sleep_id, a.started_at, a.id
   `,
         );
-  const bySleep = new Map<string, ActivityRow[]>();
+  const bySleep = new Map<string, Row[]>();
   for (const row of rows) {
     const group = bySleep.get(row.sleep_id) ?? [];
     group.push(row);
     bySleep.set(row.sleep_id, group);
   }
   const windowBySleep = new Map(windows.map((window) => [window.sleep_id, window]));
+  return { bySleep, windowBySleep };
+}
+
+export async function listPreSleepActivities(
+  db: Pick<Database, "execute">,
+  userId: string,
+  episodes: readonly SleepEpisode[],
+  timezone: string,
+  filters: ActivityFilters,
+) {
+  const { bySleep, windowBySleep } = await readWakeWindows(
+    db,
+    userId,
+    episodes,
+    filters,
+    activityRowSchema,
+  );
   return new Map(
     episodes.map(({ timing }) => {
       const id = timing.selected_session_id;
       return [id, summarizeWindow(windowBySleep.get(id), bySleep.get(id) ?? [], timezone)];
     }),
+  );
+}
+
+/** Reads owned candidate records inside the same access scope as the sleep episode reader. */
+export async function listWorkoutWindows(
+  db: Pick<Database, "execute">,
+  userId: string,
+  episodes: readonly SleepEpisode[],
+  access: WorkoutWindowAccess,
+): Promise<Map<string, WorkoutWindow>> {
+  const { bySleep, windowBySleep } = await readWakeWindows(
+    db,
+    userId,
+    episodes.filter(({ timing }) => !timing.is_nap),
+    { providers: [], modalities: [], canonicalTypes: [] },
+    workoutRowSchema,
+    access,
+  );
+  return new Map(
+    [...windowBySleep].map(([id, window]) => [
+      id,
+      {
+        previousWake: { sessionId: window.previous_id, endedAt: window.wake_at },
+        activities: (bySleep.get(id) ?? []).map(
+          ({ sleep_id: _sleepId, matches_filter: _matchesFilter, ...row }) => row,
+        ),
+      },
+    ]),
   );
 }

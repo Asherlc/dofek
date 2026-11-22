@@ -130,6 +130,31 @@ describe("dataset contracts", () => {
     expect(training?.analyticsModels).toContain("activity_heart_rate_distribution");
   });
 
+  it.each(["activity", "metric_stream"])(
+    "rebuilds the FIT heart-rate model and refreshes Sleep after %s changes",
+    (dataType) => {
+      const activity = datasetsForProvider("fit-file", [dataType]).find(
+        (contract) => contract.key === "activity",
+      );
+      expect(activity?.analyticsModels).toContain("activity_fit_heart_rate");
+      expect(
+        buildProcessingCacheEvents({
+          runId: "fit-rebuild",
+          targets: [{ operationId: "fit-import", datasetKey: "activity", userId: "fit-user" }],
+          outcomes: [
+            {
+              userId: "fit-user",
+              path: "sleep.lateWorkouts",
+              status: "succeeded",
+              errorMessage: null,
+            },
+            { userId: "fit-user", path: "sleep.list", status: "failed", errorMessage: "unrelated" },
+          ],
+        }),
+      ).toMatchObject([{ status: "succeeded" }]);
+    },
+  );
+
   it("keeps training incomplete until exact heart-rate distribution processing finishes", () => {
     const training = DATASET_CONTRACTS.find((contract) => contract.key === "training");
     if (!training) throw new Error("Missing training dataset contract");
@@ -327,6 +352,7 @@ describe("dataset contracts", () => {
       "running",
       "dashboard",
       "providerDetail",
+      "sleep.lateWorkouts",
     ]);
     expect(requiredCdcEvidence(activity ?? DATASET_CONTRACTS[0], ["relational"])).toEqual([
       { kind: "peerdb_marker", flowName: "dofek_fitness_raw_analytics" },
