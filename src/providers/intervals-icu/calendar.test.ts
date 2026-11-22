@@ -1,6 +1,6 @@
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   buildCalendarQueryWindows,
   fetchPlannedWorkouts,
@@ -90,6 +90,20 @@ describe("buildCalendarQueryWindows", () => {
     expect(
       buildCalendarQueryWindows({ from: "2026-03-08", to: "2026-03-08" }, { chunkDays: 365 }),
     ).toEqual([{ oldest: "2026-03-08", newest: "2026-03-08" }]);
+  });
+
+  it("rejects zero, negative, and fractional chunk sizes but accepts one day", () => {
+    for (const chunkDays of [0, -1, 1.5]) {
+      expect(() =>
+        buildCalendarQueryWindows({ from: "2026-03-01", to: "2026-03-31" }, { chunkDays }),
+      ).toThrow("Calendar chunk size must be a positive integer");
+    }
+    expect(
+      buildCalendarQueryWindows({ from: "2026-03-01", to: "2026-03-02" }, { chunkDays: 1 }),
+    ).toEqual([
+      { oldest: "2026-03-01", newest: "2026-03-01" },
+      { oldest: "2026-03-02", newest: "2026-03-02" },
+    ]);
   });
 });
 
@@ -200,6 +214,66 @@ describe("fetchPlannedWorkouts", () => {
     ).rejects.toThrow();
   });
 
+  it("keeps events whose start day equals a single-day chunk's exact bounds", async () => {
+    captureRequests({ "2026-03-10": [event(1, "2026-03-10")] });
+    const result = await fetchPlannedWorkouts(client, {
+      strict: { from: "2026-03-10", to: "2026-03-10" },
+      chunkDays: 1,
+    });
+    expect(result.events.map((item) => item.id)).toEqual([1]);
+  });
+
+  it("excludes events whose start day falls after the requested window", async () => {
+    captureRequests({ "2026-03-01": [event(1, "2026-04-05")] });
+    const result = await fetchPlannedWorkouts(client, {
+      strict: { from: "2026-03-01", to: "2026-03-31" },
+      chunkDays: 365,
+    });
+    expect(result.events).toEqual([]);
+  });
+
+  it("accepts string athlete ids and rejects an empty one", async () => {
+    captureRequests({ "2026-03-01": [event("i123", "2026-03-10")] });
+    await expect(
+      fetchPlannedWorkouts(client, {
+        strict: { from: "2026-03-01", to: "2026-03-31" },
+        chunkDays: 365,
+      }),
+    ).resolves.toMatchObject({ events: [{ id: "i123" }] });
+
+    captureRequests({ "2026-03-01": [event("", "2026-03-10")] });
+    await expect(
+      fetchPlannedWorkouts(client, {
+        strict: { from: "2026-03-01", to: "2026-03-31" },
+        chunkDays: 365,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it.each([
+    "2026-03-10junk",
+    "2026-3-10",
+    "abcd-03-10",
+    "2026-ab-10",
+    "2026-03-1",
+    "2026-03-ab",
+    "2026-03-10T29:30:00",
+    "2026-03-10T0a:30:00",
+    "2026-03-10T24:30:00",
+    "2026-03-10T06:69:00",
+    "2026-03-10T06:3a:00",
+    "2026-03-10T06:30:69",
+    "2026-03-10T06:30:6a",
+  ])("rejects malformed start_date_local %s at the vendor boundary", async (value) => {
+    captureRequests({ "2026-03-01": [event(1, "2026-03-10", { start_date_local: value })] });
+    await expect(
+      fetchPlannedWorkouts(client, {
+        strict: { from: "2026-03-01", to: "2026-03-31" },
+        chunkDays: 365,
+      }),
+    ).rejects.toThrow();
+  });
+
   it("honors an aborted signal", async () => {
     const controller = new AbortController();
     controller.abort();
@@ -209,6 +283,29 @@ describe("fetchPlannedWorkouts", () => {
         strict: { from: "2026-03-01", to: "2026-03-31" },
         chunkDays: 365,
         signal: controller.signal,
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+describe("vendor event schema (fresh module)", () => {
+  it("accepts a valid WORKOUT event and rejects malformed vendor fields", async () => {
+    vi.resetModules();
+    const { fetchPlannedWorkouts: fetchFresh } = await import("./calendar.ts");
+
+    captureRequests({ "2026-03-01": [event(1, "2026-03-10")] });
+    await expect(
+      fetchFresh(client, {
+        strict: { from: "2026-03-01", to: "2026-03-31" },
+        chunkDays: 365,
+      }),
+    ).resolves.toMatchObject({ events: [{ id: 1 }] });
+
+    captureRequests({ "2026-03-01": [{ id: 1, category: "RUN", start_date_local: "2026-03-10" }] });
+    await expect(
+      fetchFresh(client, {
+        strict: { from: "2026-03-01", to: "2026-03-31" },
+        chunkDays: 365,
       }),
     ).rejects.toThrow();
   });
@@ -260,6 +357,17 @@ describe("toPlannedWorkoutEvents", () => {
       { externalId: "3", startDate: "2026-03-12", startTime: null },
       { externalId: "4", startDate: "2026-03-13", startTime: null },
       { externalId: "5", startDate: "2026-03-14", startTime: "07:00:00" },
+    ]);
+  });
+
+  it("normalizes a short HH:MM clock to HH:MM:SS and accepts a time without seconds", () => {
+    const raw = [
+      event(6, "2026-03-15", { start_date_local: "2026-03-15T07:30" }),
+      event(7, "2026-03-16", { start_date_local: "2026-03-16" }),
+    ];
+    expect(toPlannedWorkoutEvents(raw)).toMatchObject([
+      { externalId: "6", startTime: "07:30:00" },
+      { externalId: "7", startTime: null },
     ]);
   });
 });
