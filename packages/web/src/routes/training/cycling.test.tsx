@@ -99,6 +99,12 @@ const emptyQuery = { data: [], isLoading: false, error: null };
 vi.mock("../../lib/trpc.ts", () => ({
   trpc: {
     cycling: {
+      powerProfile: {
+        useQuery: (input: unknown) => ({
+          ...recordQuery("cycling.powerProfile")(input),
+          data: undefined,
+        }),
+      },
       performance: {
         useQuery: (input: { days: number | null }) => {
           const period = (watts: number, cp: number) => ({
@@ -394,6 +400,7 @@ describe("CyclingTab", () => {
     await renderCyclingTab();
 
     expect(state.queryCalls).toEqual([
+      { name: "cycling.powerProfile", input: { days: 365 } },
       { name: "cycling.performance", input: { days: 365 } },
       {
         name: "cycling.activities",
@@ -414,6 +421,7 @@ describe("CyclingTab", () => {
     await renderCyclingTab();
 
     expect(state.queryCalls).toEqual([
+      { name: "cycling.powerProfile", input: { days: null } },
       { name: "cycling.performance", input: { days: null } },
       {
         name: "cycling.activities",
@@ -435,6 +443,7 @@ describe("CyclingTab", () => {
     fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     expect(state.queryCalls).toEqual([
+      { name: "cycling.powerProfile", input: { days: null } },
       { name: "cycling.performance", input: { days: null } },
       {
         name: "cycling.activities",

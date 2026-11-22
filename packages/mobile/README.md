@@ -93,6 +93,11 @@ The separate standard Bluetooth heart-rate monitor still uses an in-memory
 
 ## Project Structure
 
+Training → Cycling shows the demonstrated power profile for the selected range.
+Disclosed rows link to ride details and the body-weight records used for W/kg.
+The threshold point shows the effective date of the configured FTP. The
+[shared server query](../server/src/routers/cycling.ts) also serves the web screen.
+
 Activity-list cards use the stored cycling modality to show training stats instead
 of distance and elevation for indoor and virtual rides, including reported zeros.
 The [metric strip](components/ActivityMetricStrip.tsx) and activity accessibility

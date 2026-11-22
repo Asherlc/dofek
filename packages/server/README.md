@@ -455,6 +455,15 @@ are calculated in one bounded ClickHouse query over deduplicated activity sensor
 returning raw samples to the model. Formula and historical-refresh details are documented in
 [`analytics/README.md`](../../analytics/README.md#cycling-power-duration-semantics-and-refresh).
 
+`get_cycling_power_profile` uses the same inclusive date inputs and `activity:read` scope.
+It returns the best demonstrated 5-second, 1-minute, and 5-minute efforts plus cycling FTP
+configured as of the selected end date. The profile uses
+[Coggan's four inputs](https://www.trainingpeaks.com/blog/power-profiling/) and reports
+maximal test status as unverified. It prefers directly measured power, uses recorded
+power with unknown measurement method when needed, and excludes known estimates.
+It ranks the existing per-ride curve winners and exposes supporting ride and weight
+record IDs. The `cycling.powerProfile` query serves the same profile to the apps.
+
 `get_threshold_history` requires `activity:read`, a date range and cursor pagination.
 It returns the canonical computed eFTP history, including the supporting effort,
 effective time, model version and unquantified physiological uncertainty.

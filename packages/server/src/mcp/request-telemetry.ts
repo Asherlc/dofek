@@ -22,6 +22,7 @@ const mcpToolNames = new Set([
   "get_climbing_sessions",
   "get_cycling_performance",
   "get_cycling_power_curve",
+  "get_cycling_power_profile",
   "get_cycling_training_metrics",
   "get_daily_health_summary",
   "get_data_coverage",

@@ -1,10 +1,12 @@
 import { formatDateMedium, formatNumber } from "@dofek/format/format";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
+import { keepPreviousData } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import type { ComponentProps } from "react";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { CyclingDurability } from "../../components/CyclingDurability.tsx";
-
+import { CyclingPowerProfile } from "../../components/CyclingPowerProfile.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
@@ -55,10 +57,26 @@ interface PeriodEstimateEvidence {
 
 function CyclingTab() {
   const { days } = useTrainingDays();
-  return <CyclingContent key={days ?? "all"} days={days} />;
+  const profile = trpc.cycling.powerProfile.useQuery(
+    { days },
+    { ...TRAINING_SLOW_QUERY_OPTIONS, placeholderData: keepPreviousData },
+  );
+  return (
+    <CyclingContent
+      key={days ?? "all"}
+      days={days}
+      profile={{ profile: profile.data, error: profile.error, loading: profile.isLoading }}
+    />
+  );
 }
 
-function CyclingContent({ days }: { days: TimeRangeDays }) {
+function CyclingContent({
+  days,
+  profile,
+}: {
+  days: TimeRangeDays;
+  profile: ComponentProps<typeof CyclingPowerProfile>;
+}) {
   const performance = trpc.cycling.performance.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
   const activityAnalytics = trpc.cycling.activities.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
 
@@ -134,8 +152,8 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
         </Section>
       )}
 
+      <CyclingPowerProfile {...profile} />
       <CyclingDurability days={days} />
-
       {!performanceUnavailable && (
         <>
           {estimateEvidence && (
