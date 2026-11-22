@@ -35,9 +35,26 @@ SELECT
   (SELECT r.walking_step_length FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.walking_step_length IS NOT NULL ORDER BY r.activity_prio ASC LIMIT 1) AS walking_step_length,
   (SELECT r.walking_double_support_pct FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.walking_double_support_pct IS NOT NULL ORDER BY r.activity_prio ASC LIMIT 1) AS walking_double_support_pct,
   (SELECT r.walking_asymmetry_pct FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.walking_asymmetry_pct IS NOT NULL ORDER BY r.activity_prio ASC LIMIT 1) AS walking_asymmetry_pct,
-  (SELECT r.walking_steadiness FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.walking_steadiness IS NOT NULL ORDER BY r.activity_prio ASC LIMIT 1) AS walking_steadiness,
+  (SELECT r.walking_steadiness FROM ranked r WHERE r.date = dm.date AND r.user_id = dm.user_id AND r.walking_steadiness IS NOT NULL ORDER BY r.recovery_prio ASC LIMIT 1) AS walking_steadiness,
   array_agg(DISTINCT dm.provider_id ORDER BY dm.provider_id) AS source_providers
 FROM fitness.daily_metrics dm
+-- Catalog-only parents (date-only daily_metric_value anchors) project nothing and stay out.
+WHERE (dm.hrv IS NOT NULL
+    OR dm.spo2_avg IS NOT NULL
+    OR dm.respiratory_rate_avg IS NOT NULL
+    OR dm.skin_temp_c IS NOT NULL
+    OR dm.steps IS NOT NULL
+    OR dm.active_energy_kcal IS NOT NULL
+    OR dm.basal_energy_kcal IS NOT NULL
+    OR dm.distance_km IS NOT NULL
+    OR dm.flights_climbed IS NOT NULL
+    OR dm.exercise_minutes IS NOT NULL
+    OR dm.stand_hours IS NOT NULL
+    OR dm.walking_speed IS NOT NULL
+    OR dm.walking_step_length IS NOT NULL
+    OR dm.walking_double_support_pct IS NOT NULL
+    OR dm.walking_asymmetry_pct IS NOT NULL
+    OR dm.walking_steadiness IS NOT NULL)
 GROUP BY dm.date, dm.user_id;
 
 --> statement-breakpoint

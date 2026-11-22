@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  bindProviderSourceAccount,
   createProviderDataDeletionRequest,
   findProviderDataDeletionRequest,
   getProviderDataGenerations,
   listPendingProviderDataDeletionRequests,
+  markProviderDataDeletionCompleted,
   markProviderDataDeletionFailed,
 } from "./provider-data-deletion.ts";
 import { providerDataDeletionOutbox, providerDataGeneration } from "./schema/events.ts";
@@ -125,5 +127,43 @@ describe("provider data deletion persistence (integration)", () => {
 
     expect(requests.map((request) => request.eventId)).not.toContain(fencedEventId);
     expect(requests.map((request) => request.eventId)).toContain(visibleEventId);
+  });
+});
+
+describe("provider source account binding (integration)", () => {
+  let context: TestContext;
+  const userId = "40000000-0000-4000-8000-000000000001";
+
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await context.db.insert(userProfile).values({ id: userId, name: "Binding User" });
+  }, 120_000);
+
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+
+  it("accepts the same account, rejects another until deletion completes, then accepts it", async () => {
+    expect(await bindProviderSourceAccount(context.db, userId, "intervals.icu", "i1")).toBe(true);
+    expect(await bindProviderSourceAccount(context.db, userId, "intervals.icu", "i1")).toBe(true);
+    expect(await bindProviderSourceAccount(context.db, userId, "intervals.icu", "i2")).toBe(false);
+
+    const eventId = randomUUID();
+    await createProviderDataDeletionRequest(context.db, userId, "intervals.icu", eventId);
+    expect(await bindProviderSourceAccount(context.db, userId, "intervals.icu", "i2")).toBe(false);
+
+    await markProviderDataDeletionCompleted(context.db, eventId);
+    expect(await bindProviderSourceAccount(context.db, userId, "intervals.icu", "i2")).toBe(true);
+  });
+
+  it("keeps a binding moved to a newer generation when a stale completion replays", async () => {
+    const eventId = randomUUID();
+    await createProviderDataDeletionRequest(context.db, userId, "intervals.icu", eventId);
+    await markProviderDataDeletionCompleted(context.db, eventId);
+    expect(await bindProviderSourceAccount(context.db, userId, "intervals.icu", "i3")).toBe(true);
+    await context.db.execute(sql`UPDATE fitness.provider_data_deletion_outbox
+      SET status = 'dispatched' WHERE event_id = ${eventId}::uuid`);
+    await markProviderDataDeletionCompleted(context.db, eventId);
+    expect(await bindProviderSourceAccount(context.db, userId, "intervals.icu", "i4")).toBe(false);
   });
 });

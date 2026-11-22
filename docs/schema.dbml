@@ -1745,10 +1745,13 @@ table fitness.provider_data_generation {
   user_id uuid [not null]
   provider_id text [not null]
   current_generation bigint [not null, default: 0]
+  source_account_digest text
+  source_account_generation bigint
   updated_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
     (user_id, provider_id) [pk]
+
 
   }
 }
@@ -1773,6 +1776,25 @@ table fitness.sync_log {
     (provider_id, data_type, synced_at) [name: 'sync_log_provider_type_idx']
     synced_at [name: 'sync_log_synced_at_idx']
 
+  }
+}
+
+table fitness.planned_workout {
+  user_id uuid [not null]
+  provider_id text [not null]
+  external_id text [not null]
+  start_date date [not null]
+  start_time time
+  title text
+  description text
+  sport_type text
+  workout_doc jsonb
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, provider_id, external_id) [pk]
+    (user_id, start_date) [name: 'planned_workout_user_date_idx']
   }
 }
 
@@ -2348,6 +2370,10 @@ ref provider_data_generation_user_id_user_profile_id_fk: fitness.provider_data_g
 ref sync_log_provider_id_provider_id_fk: fitness.sync_log.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref sync_log_user_id_user_profile_id_fk: fitness.sync_log.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref planned_workout_user_id_user_profile_id_fk: fitness.planned_workout.user_id > fitness.user_profile.id [delete: cascade, update: no action]
+
+ref planned_workout_provider_id_provider_id_fk: fitness.planned_workout.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref external_client_owner_user_id_user_profile_id_fk: fitness.external_client.owner_user_id > fitness.user_profile.id [delete: cascade, update: no action]
 

@@ -21,6 +21,7 @@ import {
 } from "../../app-fixtures/(tabs)/activities-test-setup";
 import { branchingActivitySourceTree } from "../../app-fixtures/activity-source-tree";
 import { activityImageFixture } from "../../components/activity-images-test-helpers";
+import { plannedWorkoutDays } from "../../components/UpcomingWorkouts.fixtures.ts";
 
 const { default: ActivitiesScreen } = await import("../../app/(tabs)/activities");
 const connectionMessage = "We couldn't reach the server. Check your connection and try again.";
@@ -38,6 +39,21 @@ function renderLiveActivityList(fetch: NonNullable<typeof activityMocks.livePage
 }
 
 describe("ActivitiesScreen", () => {
+  it("renders the upcoming schedule beside an empty completed activity list", () => {
+    activityMocks.mockUpcomingQuery = {
+      ...activityMocks.mockUpcomingQuery,
+      data: plannedWorkoutDays,
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByText("Upcoming workouts")).toBeDefined();
+    expect(screen.getByText("Threshold intervals")).toBeDefined();
+    expect(screen.getByText("Planned")).toBeDefined();
+    expect(activityMocks.upcomingQueryInput).toBeUndefined();
+    expect(screen.getByText(/No activities in the last/)).toBeDefined();
+  });
+
   it("searches recorded locations, chooses a nearby place, and loads more results", () => {
     const fetchNextPage = vi.fn();
     if (activityMocks.mockOverviewQuery.data) {

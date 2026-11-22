@@ -3,8 +3,12 @@ import { z } from "zod";
 import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
 import { HEALTH_METRIC_EVIDENCE_WINDOW_DAYS } from "../contracts/mobile-dashboard-contracts.ts";
 import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
-import { dateWindowStartString } from "../lib/date-window.ts";
+import { dateWindowStartString, selectedDateRangeInput } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import {
+  DailyMetricsRecordedRepository,
+  recordedDailyMetricSchema,
+} from "../repositories/daily-metrics-recorded-repository.ts";
 import {
   DailyMetricsRepository,
   HRV_BASELINE_WARMUP_DAYS,
@@ -55,6 +59,19 @@ export const dailyMetricsRouter = router({
       return repo.list(range.days, input.endDate);
     },
   ),
+
+  /** Date-only recorded observations (weight, resting heart rate, reported sleep duration). */
+  recorded: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(selectedDateRangeInput(30).extend({ group: z.enum(["body", "sleep"]) }))
+    .output(z.array(recordedDailyMetricSchema))
+    .query(({ ctx, input }) =>
+      new DailyMetricsRecordedRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).listRecorded(input.group, input.days, input.endDate),
+    ),
 
   latest: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
     const repo = new DailyMetricsRepository(

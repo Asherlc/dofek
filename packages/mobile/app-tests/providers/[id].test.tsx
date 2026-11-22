@@ -360,6 +360,8 @@ const mockInvalidateProviderStats = vi.fn();
 const mockInvalidateDataHealth = vi.fn();
 const mockInvalidateAvailableDataTypes = vi.fn();
 const mockInvalidateRecords = vi.fn();
+const mockInvalidateRecordedDailyMetrics = vi.fn();
+const mockInvalidateUpcomingWorkouts = vi.fn();
 const mockInvalidateDetailLogs = vi.fn();
 const mockInvalidateLogs = vi.fn();
 const mockInvalidateSensorSnapshot = vi.fn();
@@ -444,6 +446,8 @@ vi.mock("../../lib/trpc", () => ({
         records: { invalidate: mockInvalidateRecords },
         logs: { invalidate: mockInvalidateDetailLogs },
       },
+      dailyMetrics: { recorded: { invalidate: mockInvalidateRecordedDailyMetrics } },
+      calendar: { upcomingWorkouts: { invalidate: mockInvalidateUpcomingWorkouts } },
       settings: {
         get: {
           getData: mockSettingsGetGetData,
@@ -635,6 +639,8 @@ describe("ProviderDetailScreen", () => {
     mockInvalidateDataHealth.mockReset();
     mockInvalidateAvailableDataTypes.mockReset();
     mockInvalidateRecords.mockReset();
+    mockInvalidateRecordedDailyMetrics.mockReset();
+    mockInvalidateUpcomingWorkouts.mockReset();
     mockInvalidateDetailLogs.mockReset();
     mockInvalidateLogs.mockReset();
     mockInvalidateSensorSnapshot.mockReset();
@@ -1269,6 +1275,8 @@ describe("ProviderDetailScreen", () => {
 
         expect(screen.getByText("Sync complete")).toBeTruthy();
         expect(mockSyncStatusFetch).toHaveBeenCalledTimes(2);
+        expect(mockInvalidateRecordedDailyMetrics).toHaveBeenCalledOnce();
+        expect(mockInvalidateUpcomingWorkouts).toHaveBeenCalledOnce();
       } finally {
         vi.useRealTimers();
       }

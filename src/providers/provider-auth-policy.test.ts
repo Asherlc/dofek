@@ -44,6 +44,8 @@ const OAUTH_APP_ENV_VARS = [
   "ZIVA_CLIENT_ID",
   "ZIVA_CLIENT_SECRET",
   "SUUNTO_SUBSCRIPTION_KEY",
+  "INTERVALS_ICU_CLIENT_ID",
+  "INTERVALS_ICU_CLIENT_SECRET",
 ] as const;
 
 describe("registered provider per-user auth policy", () => {
