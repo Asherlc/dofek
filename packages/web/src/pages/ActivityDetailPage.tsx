@@ -27,6 +27,7 @@ import { MetricsChart } from "./activity-detail/components/ActivityDetailCharts.
 import { ActivityHeader } from "./activity-detail/components/ActivityDetailHeader.tsx";
 import { DeleteActivityButton } from "./activity-detail/components/DeleteActivityButton.tsx";
 import { ElevationChart } from "./activity-detail/components/ElevationChart.tsx";
+import { PlannedIntervalComparison } from "./activity-detail/components/PlannedIntervalComparison.tsx";
 import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
 import { StrengthExerciseBreakdown } from "./activity-detail/components/StrengthExerciseBreakdown.tsx";
 import { UnattachedClimbingLogEntries } from "./activity-detail/components/UnattachedClimbingLogEntries.tsx";
@@ -66,6 +67,10 @@ export function ActivityDetailPage() {
     hrZones.isFetching ||
     powerZones.isFetching ||
     powerWork.isFetching;
+  const plannedIntervals = trpc.intervals.plannedByActivity.useQuery(
+    { activityId: id },
+    { enabled: isCycling },
+  );
   const route = trpc.activity.route.useQuery(
     { id, maxPoints: 500 },
     {
@@ -321,6 +326,11 @@ export function ActivityDetailPage() {
           )}
         </Section>
       )}
+
+      {isCycling && plannedIntervals.error && !plannedIntervals.data ? (
+        <QueryStatePanel error={plannedIntervals.error} height={72} />
+      ) : null}
+      {isCycling ? <PlannedIntervalComparison rows={plannedIntervals.data ?? []} /> : null}
 
       {isStrengthActivity &&
         (strengthExercises.isLoading || strengthExercises.error || exercises.length > 0) && (

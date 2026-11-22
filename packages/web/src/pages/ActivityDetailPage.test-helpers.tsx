@@ -1,3 +1,4 @@
+import type { PlannedIntervalInput } from "@dofek/format/planned-interval";
 import type { UnitSystem } from "@dofek/format/units";
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { render } from "@testing-library/react";
@@ -308,6 +309,14 @@ export const mockPowerWorkUseQuery = vi.fn(
     coverage: { coveredSeconds: number; coveragePct: number };
   }> => ({ data: undefined, error: null, isError: false, isLoading: false }),
 );
+export const mockPlannedIntervalsUseQuery = vi.fn(
+  (_input?: unknown, _options?: unknown): MockQueryResult<PlannedIntervalInput[]> => ({
+    data: [],
+    error: null,
+    isError: false,
+    isLoading: false,
+  }),
+);
 export const mockMetricSourcesUseQuery = vi.fn(
   (): MockQueryResult<ActivityMetricSources> => ({
     data: [],
@@ -351,6 +360,7 @@ export const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
+    intervals: { plannedByActivity: { useQuery: mockPlannedIntervalsUseQuery } },
     activity: {
       images: { useQuery: mockImagesUseQuery },
       byId: { useQuery: mockActivityByIdUseQuery },
@@ -545,6 +555,13 @@ export function resetActivityDetailPageMocks() {
     isLoading: false,
   });
   mockPowerZonesUseQuery.mockReset();
+  mockPlannedIntervalsUseQuery.mockReset();
+  mockPlannedIntervalsUseQuery.mockReturnValue({
+    data: [],
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
   mockPowerWorkUseQuery.mockReset();
   mockPowerWorkUseQuery.mockReturnValue({
     data: undefined,

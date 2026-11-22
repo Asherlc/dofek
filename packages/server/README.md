@@ -491,6 +491,13 @@ coverage prerequisites are documented in
 [`@dofek/training`](../training/README.md#cycling-workout-metrics). Normalized power follows the
 [TrainingPeaks calculation](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).
 
+For a cycling lap explicitly linked to a timed Workout Step in the same FIT Activity file,
+`get_cycling_training_metrics` can return a `planned_comparison`. The comparison preserves a
+point or range in watts, planned duration, recorded lap timer duration, and the gap-aware average
+of available power samples. The activity detail clients read the same evidence through
+`intervals.plannedByActivity`. Conflicting plans are omitted from the comparison and retained
+in the source evidence. See the [FIT import requirements](../../src/fit/README.md#structured-cycling-intervals).
+
 Set `test_protocol` to `lamberts_submaximal_cycle_test` to compare recorded Lamberts tests
 in the selected dates. Eligibility requires a named FIT cycling workout whose prescribed stages
 and linked laps match the original protocol, including calibration and recovery. The range uses

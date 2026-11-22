@@ -127,6 +127,11 @@ function intervalRow(
     target_resistance: 50,
     work_recovery_kind: "work",
     raw: { stable: true },
+    fit_source: null,
+    planned_duration_seconds: null,
+    recorded_timer_duration_seconds: null,
+    target_power_min_watts: null,
+    target_power_max_watts: null,
     ...overrides,
   };
 }
@@ -1511,7 +1516,11 @@ describe("cycling effort metric loading", () => {
       async (schema, statement: string, params: Record<string, unknown> = {}) => {
         let rows: unknown[];
         if (statement.includes("cycling-training-metrics:samples")) {
-          expect(params).toEqual({ userId: "user", activityIds: [activityA, activityB] });
+          expect(params).toEqual({
+            userId: "user",
+            activityIds: [activityA, activityB],
+            channels: ["power", "heart_rate", "cadence"],
+          });
           rows = coreRows;
         } else if (statement.includes("cycling-training-metrics:power-curve")) {
           expect(params).toEqual({
