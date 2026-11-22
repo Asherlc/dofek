@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
+import { bindProviderSourceAccount } from "../../../../src/db/provider-data-deletion.ts";
 import { runningRaceResult } from "../../../../src/db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { deleteProviderAuthorization } from "../../../../src/db/tokens.ts";
@@ -438,6 +439,13 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
     expect(selectedClinicalRecordCount?.count).toBe(0);
     expect(retainedProviderClinicalRecordCount?.count).toBe(1);
     expect(secondUserClinicalRecordCount?.count).toBe(1);
+  });
+
+  it("keeps deletion available when only a retained source-account binding remains", async () => {
+    await bindProviderSourceAccount(testContext.db, userId, "intervals.icu", "i123");
+    const repository = new ProviderDetailRepository(testContext.db, userId, noRetainedMetricStream);
+
+    await expect(repository.canDeleteProviderData("intervals.icu")).resolves.toBe(true);
   });
 
   it("authorizes canonical deletion from retained rows after disconnect and emits its outbox event", async () => {

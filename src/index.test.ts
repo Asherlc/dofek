@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mockBuildAuthorizationUrl,
+  mockDatabaseTransaction,
   mockDbExecute,
   mockEnsureProvider,
   mockEnsureProvidersRegistered,
   mockExecFile,
+  mockGenerateCodeChallenge,
+  mockGenerateCodeVerifier,
   mockGetAllProviders,
   mockImportAppleHealthFile,
   mockLoggerError,
@@ -12,6 +15,7 @@ import {
   mockRunMetricStreamClickHouseSinkFromEnv,
   mockSaveTokens,
   mockWaitForAuthCode,
+  mockWithProviderOperationFence,
 } from "./cli-test/test-helpers.ts";
 
 // Prevent main()'s auto-call from exiting the process (same pattern as worker.test.ts)
@@ -287,6 +291,153 @@ describe("handleAuthCommand", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("https://custom-auth.example.com"),
     );
+  });
+
+  it("builds a PKCE challenge and passes the verifier to the exchange", async () => {
+    const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
+    const oauthConfig = {
+      redirectUri: "http://localhost:9876/callback",
+      usePkce: true,
+    };
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "intervals.icu",
+        name: "Intervals.icu",
+        authSetup: () => ({ oauthConfig, exchangeCode: mockExchangeCode }),
+        validate: () => null,
+      },
+    ]);
+    mockWaitForAuthCode.mockResolvedValue({ code: "auth-code-123", cleanup: mockCleanup });
+
+    const code = await handleAuthCommand(["node", "index.ts", "auth", "intervals.icu"]);
+
+    expect(code).toBe(0);
+    expect(mockGenerateCodeVerifier).toHaveBeenCalled();
+    expect(mockGenerateCodeChallenge).toHaveBeenCalledWith("test-code-verifier");
+    expect(mockBuildAuthorizationUrl).toHaveBeenCalledWith(oauthConfig, {
+      codeChallenge: "test-code-challenge",
+    });
+    expect(mockExchangeCode).toHaveBeenCalledWith("auth-code-123", "test-code-verifier");
+  });
+
+  it("preserves a provider-supplied authorization URL with PKCE", async () => {
+    const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "intervals.icu",
+        name: "Intervals.icu",
+        authSetup: () => ({
+          oauthConfig: { redirectUri: "http://localhost:9876/callback", usePkce: true },
+          authUrl: "https://custom-auth.example.com/authorize",
+          exchangeCode: mockExchangeCode,
+        }),
+        validate: () => null,
+      },
+    ]);
+    mockWaitForAuthCode.mockResolvedValue({ code: "auth-code-123", cleanup: mockCleanup });
+
+    await handleAuthCommand(["node", "index.ts", "auth", "intervals.icu"]);
+
+    expect(mockBuildAuthorizationUrl).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("https://custom-auth.example.com/authorize"),
+    );
+  });
+
+  it("rejects a changed athlete inside the fenced persistence transaction", async () => {
+    const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
+    const mockAssertCanConnect = vi
+      .fn()
+      .mockRejectedValue(new Error("delete the existing Intervals.icu provider data first"));
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "intervals.icu",
+        name: "Intervals.icu",
+        authSetup: () => ({
+          oauthConfig: { redirectUri: "http://localhost:9876/callback", usePkce: true },
+          exchangeCode: mockExchangeCode,
+          assertCanConnect: mockAssertCanConnect,
+        }),
+        validate: () => null,
+      },
+    ]);
+    mockWaitForAuthCode.mockResolvedValue({ code: "auth-code-123", cleanup: mockCleanup });
+
+    await expect(handleAuthCommand(["node", "index.ts", "auth", "intervals.icu"])).rejects.toThrow(
+      "delete the existing Intervals.icu provider data first",
+    );
+
+    expect(mockWithProviderOperationFence).toHaveBeenCalledWith(
+      expect.any(Object),
+      "test-user",
+      "intervals.icu",
+      expect.any(Function),
+    );
+    expect(mockAssertCanConnect).toHaveBeenCalledWith(expect.any(Object), "test-user", mockTokens);
+    expect(mockEnsureProvider).not.toHaveBeenCalled();
+    expect(mockSaveTokens).not.toHaveBeenCalled();
+  });
+
+  it("keeps legacy auth setups on the direct ensureProvider/saveTokens path", async () => {
+    const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
+          exchangeCode: mockExchangeCode,
+        }),
+        validate: () => null,
+      },
+    ]);
+    mockWaitForAuthCode.mockResolvedValue({ code: "auth-code-123", cleanup: mockCleanup });
+
+    await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
+
+    expect(mockWithProviderOperationFence).not.toHaveBeenCalled();
+    expect(mockEnsureProvider).toHaveBeenCalledWith(
+      expect.any(Object),
+      "strava",
+      "Strava",
+      undefined,
+      "test-user",
+    );
+    expect(mockSaveTokens).toHaveBeenCalledWith(
+      expect.any(Object),
+      "strava",
+      mockTokens,
+      "test-user",
+    );
+  });
+
+  it("uses the fenced transaction for replace-only reconnect strategies", async () => {
+    const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
+          exchangeCode: mockExchangeCode,
+          reconnectStrategy: "replace",
+        }),
+        validate: () => null,
+      },
+    ]);
+    mockWaitForAuthCode.mockResolvedValue({ code: "auth-code-123", cleanup: mockCleanup });
+
+    await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
+
+    expect(mockWithProviderOperationFence).toHaveBeenCalledWith(
+      expect.any(Object),
+      "test-user",
+      "strava",
+      expect.any(Function),
+    );
+    expect(mockDatabaseTransaction).toHaveBeenCalled();
+    expect(mockEnsureProvider).toHaveBeenCalled();
+    expect(mockSaveTokens).toHaveBeenCalled();
   });
 
   it("detects http callback URL and passes https: false", async () => {

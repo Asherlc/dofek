@@ -122,6 +122,11 @@ async function doRegisterProviders() {
       "zos-app",
       () => import("../providers/zos-app/provider.ts").then((m) => new m.ZosAppProvider()),
     ],
+    [
+      "intervals.icu",
+      () =>
+        import("../providers/intervals-icu/provider.ts").then((m) => new m.IntervalsIcuProvider()),
+    ],
   ] as const;
 
   for (const [name, loadProvider] of providers) {

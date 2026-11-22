@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   latestStages: vi.fn(),
   stagesByDate: vi.fn(),
   insights: vi.fn(),
+  recorded: vi.fn(),
   processing: vi.fn(),
 }));
 
@@ -29,6 +30,7 @@ vi.mock("../lib/trpc.ts", () => ({
       latestStages: { useQuery: mocks.latestStages },
       stagesByDate: { useQuery: mocks.stagesByDate },
     },
+    dailyMetrics: { recorded: { useQuery: mocks.recorded } },
     insights: { compute: { useQuery: mocks.insights } },
     processing: { status: { useQuery: mocks.processing } },
   },
@@ -124,6 +126,7 @@ describe("SleepPage", () => {
       queryResult({ date: input?.date ?? "2026-03-28", stages: [] }),
     );
     mocks.insights.mockReturnValue(queryResult([]));
+    mocks.recorded.mockReturnValue(queryResult([]));
     mocks.processing.mockReturnValue(queryResult(undefined));
   });
 
@@ -319,6 +322,33 @@ describe("SleepPage", () => {
     ]) {
       expect(screen.getByText(message)).toBeTruthy();
     }
+  });
+
+  it("shows reported sleep duration and an error only when the optional query has no data", async () => {
+    mocks.recorded.mockReturnValue(
+      queryResult([
+        {
+          date: "2026-03-01",
+          metric: "sleep_duration_reported",
+          value: 27000,
+          unit: "s",
+          providerId: "intervals.icu",
+          sourceName: null,
+        },
+      ]),
+    );
+    const { SleepPage } = await import("./SleepPage.tsx");
+    const { unmount } = render(<SleepPage />);
+    expect(screen.getByText("7h 30m")).toBeTruthy();
+    unmount();
+
+    mocks.recorded.mockReturnValue({
+      ...queryResult(undefined),
+      error: new Error("Reported sleep unavailable"),
+      isError: true,
+    });
+    render(<SleepPage />);
+    expect(screen.getByText("Reported sleep unavailable")).toBeTruthy();
   });
 
   it("keeps cached results visible during background refresh errors", async () => {

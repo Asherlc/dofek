@@ -42,6 +42,8 @@ const APPLICATION_ENVIRONMENT_KEYS = [
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
   "GOOGLE_REDIRECT_URI",
+  "INTERVALS_ICU_CLIENT_ID",
+  "INTERVALS_ICU_CLIENT_SECRET",
   "KOMOOT_CLIENT_ID",
   "KOMOOT_CLIENT_SECRET",
   "MAPMYFITNESS_CLIENT_ID",
@@ -452,6 +454,29 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       const environment = parseEnv(readFileSync(artifact, "utf8"));
       expect(environment, `${service} environment`).not.toHaveProperty("ZIVA_CLIENT_ID");
       expect(environment, `${service} environment`).not.toHaveProperty("ZIVA_CLIENT_SECRET");
+    }
+  });
+
+  it("routes optional Intervals.icu app credentials only to application services", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(sourcePath, dotenv(completeDeployEnvironment()));
+
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+    for (const artifact of [paths.web, paths.webPreMigration, paths.worker]) {
+      expect(parseEnv(readFileSync(artifact, "utf8"))).toMatchObject({
+        INTERVALS_ICU_CLIENT_ID: "intervals_icu_client_id-value",
+        INTERVALS_ICU_CLIENT_SECRET: "intervals_icu_client_secret-value",
+      });
+    }
+
+    for (const [service, artifact] of Object.entries(paths)) {
+      if (["web", "webPreMigration", "worker"].includes(service)) continue;
+      const environment = parseEnv(readFileSync(artifact, "utf8"));
+      expect(environment, `${service} environment`).not.toHaveProperty("INTERVALS_ICU_CLIENT_ID");
+      expect(environment, `${service} environment`).not.toHaveProperty(
+        "INTERVALS_ICU_CLIENT_SECRET",
+      );
     }
   });
 
