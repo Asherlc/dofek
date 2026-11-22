@@ -3,9 +3,8 @@ import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import { createFileRoute } from "@tanstack/react-router";
 import { AerobicEfficiencyChart } from "../../components/AerobicEfficiencyChart.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
-import { CyclingDurability } from "../../components/CyclingDurability.tsx";
-
 import { CyclingDecouplingChart } from "../../components/CyclingDecouplingChart.tsx";
+import { CyclingDurability } from "../../components/CyclingDurability.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
