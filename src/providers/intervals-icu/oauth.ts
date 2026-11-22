@@ -1,3 +1,8 @@
+import {
+  createRateLimitAwareFetch,
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../../auth/oauth.ts";
 import { getOAuthRedirectUri } from "../../auth/oauth.ts";
@@ -8,11 +13,6 @@ import {
   ProviderPartialGrantError,
 } from "../auth-errors.ts";
 import type { ProviderAuthSetup } from "../types.ts";
-import {
-  createRateLimitAwareFetch,
-  ProviderRateLimitError,
-  ProviderServiceUnavailableError,
-} from "@dofek/provider-http/rate-limit";
 
 const INTERVALS_ICU_API_BASE = "https://intervals.icu/api/v1";
 const INTERVALS_ICU_AUTHORIZE_URL = "https://intervals.icu/oauth/authorize";
