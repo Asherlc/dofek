@@ -66,7 +66,10 @@ export function Dashboard() {
     days: overviewDays,
     endDate,
   });
-  const insightsQuery = trpc.insights.compute.useQuery({ days: overviewDays, endDate });
+  const insightsQuery = trpc.insights.compute.useQuery(
+    { days: overviewDays, endDate },
+    { refetchOnWindowFocus: true },
+  );
   const processingStatus = useProcessingStatus({
     datasets: ["activity", "sleep", "recovery", "training", "body"],
   });
@@ -181,7 +184,7 @@ export function Dashboard() {
     <QueryStatePanel variant="loading" height={160} />
   ) : insightsQuery.error ? (
     sharedConnectionFailure && isConnectionFailure(insightsQuery.error) ? null : (
-      <QueryStatePanel error={insightsQuery.error} height={160} />
+      <QueryStatePanel error={insightsQuery.error} height={topInsight ? 72 : 160} />
     )
   ) : !insightsQuery.isFetched ? (
     <QueryStatePanel variant="loading" height={160} />

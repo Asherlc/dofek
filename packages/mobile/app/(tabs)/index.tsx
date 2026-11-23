@@ -2,7 +2,10 @@ import { formatDurationMinutes } from "@dofek/format/format";
 import { formatSummaryDateContext } from "@dofek/format/summary-date-context";
 import { isConnectionFailure, userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
-import { useRouter } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { getQueryKey } from "@trpc/react-query";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Animated, { Easing, FadeInUp } from "react-native-reanimated";
 import { Card } from "../../components/Card";
@@ -26,7 +29,11 @@ export default function OverviewScreen() {
   const endDate = useTodayQueryDate();
   const overviewInput = { days: overviewDays, endDate };
   const overviewOptions = { placeholderData: <Data,>(previous: Data | undefined) => previous };
-  const insightsQuery = trpc.insights.compute.useQuery(overviewInput, overviewOptions);
+  const insightsQuery = trpc.insights.compute.useQuery(overviewInput, {
+    ...overviewOptions,
+    refetchOnWindowFocus: "always",
+    refetchOnMount: true,
+  });
   const trendsQuery = trpc.dailyMetrics.trends.useQuery(overviewInput, overviewOptions);
   const heartRateQuery = trpc.dailyMetrics.hrvBaseline.useQuery(overviewInput, overviewOptions);
 
@@ -42,6 +49,17 @@ export default function OverviewScreen() {
   const anomalyQuery = trpc.anomalyDetection.check.useQuery(
     { endDate },
     { staleTime: 10 * 60 * 1000, enabled: dashboardData != null },
+  );
+
+  const queryClient = useQueryClient();
+  useFocusEffect(
+    useCallback(() => {
+      const queryKey = getQueryKey(trpc.insights.compute, { days: overviewDays, endDate }, "query");
+      void queryClient.refetchQueries(
+        { queryKey, exact: true, type: "active", stale: true },
+        { cancelRefetch: false },
+      );
+    }, [queryClient, endDate]),
   );
 
   const lastNight = dashboardData?.sleep?.lastNight;

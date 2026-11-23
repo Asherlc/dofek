@@ -321,13 +321,16 @@ describe("Dashboard", () => {
     );
   });
 
-  it("uses a 90-day evidence window", () => {
+  it("uses a 90-day evidence window and refreshes insights on window focus", () => {
     render(<Dashboard />);
 
     const overviewRange = { days: 90, endDate: "2026-05-27" };
     expect(mockTrendsQuery).toHaveBeenCalledWith(overviewRange);
     expect(mockHeartRateBaselineQuery).toHaveBeenCalledWith(overviewRange);
-    expect(mockInsightsQuery).toHaveBeenCalledWith(overviewRange);
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      overviewRange,
+      expect.objectContaining({ refetchOnWindowFocus: true }),
+    );
     expect(mockDashboardEvidenceOverview).toHaveBeenCalledWith(
       expect.objectContaining({ days: 90, endDate: "2026-05-27" }),
     );
@@ -380,6 +383,33 @@ describe("Dashboard", () => {
         name: "Recomputing daily metrics is taking longer than expected",
       }),
     ).toBeTruthy();
+  });
+
+  it("uses a compact error panel while a cached insight stays visible", () => {
+    mockInsightsQuery.mockReturnValue({
+      data: [
+        {
+          id: "cached-insight",
+          type: "correlation",
+          confidence: "strong",
+          metric: "Heart Rate Variability",
+          action: "Sleep consistency",
+          message: "Cached sleep consistency relationship",
+          detail: "90-day correlation",
+          whenTrue: { mean: 1, n: 90 },
+          whenFalse: { mean: 0, n: 90 },
+          effectSize: 0.72,
+          pValue: 0.01,
+        },
+      ],
+      isLoading: false,
+      isFetched: true,
+      error: new Error("Insight service unavailable"),
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getByTestId("query-state-error").style.minHeight).toBe("72px");
   });
 
   it("uses a loading panel while insights are loading", () => {

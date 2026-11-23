@@ -7,6 +7,7 @@ import {
   formatDashboardRange,
   trendPositionLabel,
 } from "./DashboardEvidenceOverview.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to, ...props }: HTMLAttributes<HTMLAnchorElement> & { to: string }) => (
@@ -478,6 +479,39 @@ describe("DashboardEvidenceOverview", () => {
 
     expect(screen.getByText("60").className).toContain("text-danger");
     expect(higherResult.container.innerHTML).toContain('stroke="var(--color-danger)"');
+  });
+
+  it("shows a compact server error panel above a cached relationship", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={90}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
+        topInsight={{
+          id: "cached-insight",
+          type: "correlation",
+          confidence: "strong",
+          metric: "Heart Rate Variability",
+          action: "Sleep consistency",
+          message: "Cached sleep consistency relationship",
+          detail: "90-day correlation",
+          whenTrue: { mean: 1, n: 90 },
+          whenFalse: { mean: 0, n: 90 },
+          effectSize: 0.72,
+          pValue: 0.01,
+        }}
+        insightError={
+          <QueryStatePanel error={new Error("Insight service unavailable")} height={72} />
+        }
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("Insight service unavailable")).toBeTruthy();
+    expect(screen.getByText("Cached sleep consistency relationship")).toBeTruthy();
+    expect(screen.getByTestId("query-state-error").nextElementSibling?.textContent).toContain(
+      "Cached sleep consistency relationship",
+    );
   });
 
   it("shows insight errors instead of falling back to a fake empty correlation", () => {

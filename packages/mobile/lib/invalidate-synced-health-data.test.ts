@@ -9,6 +9,7 @@ describe("invalidateSyncedHealthData", () => {
     ["climbing", "bestOnsight"],
     ["activity", "byId"],
     ["cycling", "decoupling"],
+    ["insights", "compute"],
   ])(
     "refreshes %s.%s when its first fetch overlaps a completed sync",
     async (router, procedure) => {
@@ -54,6 +55,7 @@ describe("invalidateSyncedHealthData", () => {
       [["nutritionAnalytics", "adaptiveTdee"], { type: "query" }],
       [["nutritionAnalytics", "macroRatios"], { type: "query" }],
       [["nutritionAnalytics", "micronutrientAdequacyV2"], { type: "query" }],
+      [["insights", "compute"], { type: "query" }],
     ];
     const unrelatedKey = [["settings", "get"], { type: "query" }];
 
