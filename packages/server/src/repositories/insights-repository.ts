@@ -15,6 +15,7 @@ import {
   type RangeDays,
 } from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { fetchBodyCompRows } from "./body-clickhouse.ts";
 import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
@@ -44,7 +45,7 @@ export class InsightsRepository {
 
   async computeInsights(days: RangeDays, endDate: string) {
     const metricWindowStart = dateWindowStartStringOrUndefined(endDate, days);
-    const activityDate = sql`(started_at AT TIME ZONE ${this.#timezone})::date`;
+    const activityDate = postgresActivityCalendarDate(sql`activity`, this.#timezone);
     const [metricRows, restingHeartRateRows, sleep, activities, nutrition, bodyComp] =
       await Promise.all([
         this.#sensorStore.query(
@@ -104,12 +105,12 @@ export class InsightsRepository {
         executeWithSchema(
           this.#db,
           activityRowSchema,
-          sql`SELECT ${activityDate} AS date, started_at, ended_at, canonical_type
-            FROM fitness.v_activity
-            WHERE user_id = ${this.#userId}
+          sql`SELECT ${activityDate} AS date, activity.started_at, activity.ended_at, activity.canonical_type
+            FROM fitness.v_activity AS activity
+            WHERE activity.user_id = ${this.#userId}
               ${dateWindowStartPredicate(activityDate, endDate, days)}
               AND ${activityDate} <= ${dateWindowEnd(endDate)}
-            ORDER BY started_at ASC`,
+            ORDER BY activity.started_at ASC`,
         ),
         executeWithSchema(
           this.#db,

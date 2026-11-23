@@ -178,9 +178,21 @@ export async function fetchSleepNights(
   const orderDirection = input.order === "desc" ? "DESC" : "ASC";
   const limitClause = input.limit != null ? "\nLIMIT {limit:UInt32}" : "";
   const wakeDate = input.dateBasis === "wake";
+  const wakeTime =
+    "coalesce(sleep.ended_at, addMinutes(sleep.started_at, ifNull(sleep.duration_minutes, 0)))";
   const dateExpression = wakeDate
-    ? "toDate(toTimeZone(coalesce(sleep.ended_at, addMinutes(sleep.started_at, ifNull(sleep.duration_minutes, 0))), {timezone:String}))"
+    ? `toDate(toTimeZone(${wakeTime}, {timezone:String}))`
     : "sleep.date";
+  const wakeUtcDate = `toDate(${wakeTime}, 'UTC')`;
+  // The local wake date is at most one day from the indexed UTC wake date.
+  const wakeIndexClause = wakeDate
+    ? `${clickHouseDateRangePredicate({ expression: wakeUtcDate, days: input.days, operator: ">=" })}
+      AND ${wakeUtcDate} <= addDays(toDate({endDate:String}), 1)`
+    : "";
+  // Keep the latest sleep version even when its wake date moved outside the index range.
+  const exactFinalIndexSetting = wakeDate
+    ? "\nSETTINGS use_skip_indexes_if_final_exact_mode = 1"
+    : "";
   const sleepLowerBoundClause = clickHouseDateRangePredicate({
     expression: dateExpression,
     days: input.days,
@@ -210,10 +222,11 @@ export async function fetchSleepNights(
     FROM analytics.daily_sleep AS sleep FINAL
     WHERE sleep.user_id = {userId:UUID}
       AND sleep.is_deleted = 0
+      ${wakeIndexClause}
       ${sleepLowerBoundClause}
       AND ${dateExpression} <= toDate({endDate:String})
       ${dateAccessWindowClause(input.accessWindow)}
-    ORDER BY sleep.date ${orderDirection}${limitClause}`,
+    ORDER BY sleep.date ${orderDirection}${limitClause}${exactFinalIndexSetting}`,
     {
       userId: input.userId,
       endDate: input.endDate,

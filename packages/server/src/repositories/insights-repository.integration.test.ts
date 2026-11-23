@@ -163,3 +163,56 @@ describe("InsightsRepository exact local dates", () => {
     },
   );
 });
+
+describe("InsightsRepository canonical workout dates", () => {
+  let context: TestContext;
+
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await context.db.execute(sql`INSERT INTO fitness.provider (id, name, user_id) VALUES
+      ('mountain-project', 'Mountain Project', ${TEST_USER_ID}),
+      ('whoop', 'WHOOP', ${TEST_USER_ID})
+      ON CONFLICT (id) DO NOTHING`);
+    await context.db.execute(sql`INSERT INTO fitness.activity
+      (id, user_id, provider_id, external_id, canonical_type, provider_type,
+       started_at, ended_at, local_time_source, start_utc_offset_minutes, end_utc_offset_minutes)
+      VALUES
+        (gen_random_uuid(), ${TEST_USER_ID}, 'mountain-project', 'date-only', 'climbing', 'climbing',
+          '2026-02-19T00:00:00Z', NULL, 'unknown', NULL, NULL),
+        (gen_random_uuid(), ${TEST_USER_ID}, 'whoop', 'source-start', 'cycling', 'cycling',
+          '2026-02-19T06:00:00Z', '2026-02-19T07:00:00Z', 'provider_offset', 540, 540),
+        (gen_random_uuid(), ${TEST_USER_ID}, 'whoop', 'after-source-end', 'cycling', 'cycling',
+          '2026-03-10T22:30:00Z', '2026-03-10T23:30:00Z', 'provider_offset', 540, 540),
+        (gen_random_uuid(), ${TEST_USER_ID}, 'whoop', 'source-end', 'cycling', 'cycling',
+          '2026-03-11T07:30:00Z', '2026-03-11T08:30:00Z', 'provider_offset', -480, -480)`);
+  });
+
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+
+  it("filters and projects the source date at both window boundaries", async () => {
+    const repository = new InsightsRepository(context.db, TEST_USER_ID, zone, {
+      query: async () => [],
+    });
+    const execute = vi.spyOn(context.db, "execute");
+    try {
+      await repository.computeInsights(days, endDate);
+
+      const queries = await Promise.all(execute.mock.results.map(({ value }) => value));
+      const workouts = queries.flat().filter((row) => "canonical_type" in row);
+      expect(
+        workouts.map((row) => {
+          const { date, started_at } = activityRowSchema.parse(row);
+          return { date, startedAt: new Date(started_at).toISOString() };
+        }),
+      ).toEqual([
+        { date: "2026-02-19", startedAt: "2026-02-19T00:00:00.000Z" },
+        { date: "2026-02-19", startedAt: "2026-02-19T06:00:00.000Z" },
+        { date: "2026-03-10", startedAt: "2026-03-11T07:30:00.000Z" },
+      ]);
+    } finally {
+      execute.mockRestore();
+    }
+  });
+});

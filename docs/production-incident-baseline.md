@@ -39819,38 +39819,37 @@ Local qualification and CI are separate from production throughput acceptance. T
 
 - **Impact and evidence.** One signed-in web Overview showed an empty Key
   relationship card for August 26 through November 23. Production served
-  the web build from PR #3461. At 14:44:51 UTC Axiom recorded an
-  `insights.compute` cache miss with a 3,230 ms procedure duration and
-  HTTP 200 for the enclosing batch. A browser reload at 14:47 UTC returned
-  an empty list and reproduced the card.
+  the web build from PR #3461. Axiom trace `0427d18404f25c0ebf95e68ebe3bcbfa`
+  records a 3,230 ms cache miss for `insights.compute` at 14:44:51 UTC and
+  HTTP 200 for the enclosing batch. In Axiom, filter `dofek-logs` and
+  `dofek-traces` by that `trace_id` in the November 23 14:44:45–14:45:00 UTC
+  window. The log contains `procedure=insights.compute` and the HTTP span is
+  `POST /api/trpc`.
+  [Axiom trace and log queries](axiom-observability-runbook.md#queries) ·
   [Refresh PR](https://github.com/Asherlc/dofek/pull/3461) ·
   [Production release](https://github.com/Asherlc/dofek/actions/runs/45118269517).
-- **Cause and validation.** A read-only replay of the deployed repository
-  for the same account in `America/Los_Angeles` bypassed the request cache.
-  The November 23 calculation joined 91 calendar dates. No candidate
-  passed the engine's statistical filters. The windows ending November 21
-  and 22 also returned zero candidates, and the window ending November 16
-  returned one eligible candidate.
+- **Cause and validation.** The integration regression reproduces date
+  assignment and filtering across an inclusive historical window. The
+  previous queries used UTC dates for workouts and sleep, and workouts and
+  nutrition could include inputs after the requested end date. An empty
+  result can occur when the engine finds no relationship that meets the
+  evidence threshold.
   [Repository](../packages/server/src/repositories/insights-repository.ts) ·
+  [Executable replay](../packages/server/src/repositories/insights-repository.integration.test.ts) ·
   [Statistical filters](../packages/server/src/insights/engine.ts).
-- **Remaining issue and follow-up.** The joined dates included August 25
-  for the November 23 window and dates after November 16 for the historical
-  replay. A diagnostic restricted candidate selection to the advertised
-  dates and returned zero eligible candidates for November 23 and two for
-  November 16. Enforce the advertised date boundaries and clarify the
-  empty-state message. This investigation made no runtime changes.
-  [Date helpers](../packages/server/src/lib/date-window.ts) ·
-  [Input join](../packages/server/src/insights/data-join.ts).
-- **Fix awaiting release.** The Overview reads workouts by local start
-  date and sleep by local wake date, and caps nutrition at the same
+- **Fix awaiting release.** The Overview reads workouts by their canonical
+  local start date and sleep by local wake date, and caps nutrition at the same
   inclusive end date. The server cache key changed so refreshes use the
   corrected calculation. The web and iOS cards explain when no
   relationship meets the evidence threshold. The regression fixture
   crosses a daylight-saving change and includes workouts and nutrition
-  after the historical end date. A read-only replay with the corrected
-  code returned zero eligible candidates for November 23 and one for
-  November 16.
-  [Repository regression](../packages/server/src/repositories/insights-repository.integration.test.ts).
+  after the historical end date. A ClickHouse minmax index on the UTC wake
+  date prunes older sleep data while the exact local filter controls which
+  nights qualify. The regression also verifies that an older version stays
+  excluded when a correction moves its wake date outside the window.
+  [Repository regression](../packages/server/src/repositories/insights-repository.integration.test.ts) ·
+  [Indexed sleep regression](../packages/server/src/repositories/clickhouse-sleep-repository.integration.test.ts) ·
+  [ClickHouse index materialization](https://clickhouse.com/docs/reference/statements/alter/skipping-index#materialize-index).
 
 ## 2026-11-23 — Overview PR validation failed in unit and integration checks
 

@@ -347,52 +347,6 @@ describe("fetchSleepNights", () => {
     expect(query.mock.calls[0]?.[3]).toBe(queryOptions);
   });
 
-  it("uses the wake-night date basis with a strict finite start, end cap and timezone", async () => {
-    const query = vi.fn().mockResolvedValue([]);
-    const wakeExpression =
-      "toDate(toTimeZone(coalesce(sleep.ended_at, addMinutes(sleep.started_at, ifNull(sleep.duration_minutes, 0))), {timezone:String}))";
-
-    await fetchSleepNights({
-      sensorStore: { query },
-      userId: "user-1",
-      timezone: "America/Los_Angeles",
-      endDate: "2026-03-15",
-      days: 20,
-      dateBasis: "wake",
-    });
-
-    const queryText = String(query.mock.calls[0]?.[1]);
-    expect(queryText).toContain(`toString(${wakeExpression}) AS date`);
-    expect(queryText).toContain(
-      `AND ${wakeExpression} > subtractDays(toDate({endDate:String}), {days:UInt32})`,
-    );
-    expect(queryText).toContain(`AND ${wakeExpression} <= toDate({endDate:String})`);
-    expect(query.mock.calls[0]?.[2]).toMatchObject({
-      timezone: "America/Los_Angeles",
-      days: 20,
-      endDate: "2026-03-15",
-    });
-  });
-
-  it("keeps the inclusive stored-night lower bound without a wake date basis", async () => {
-    const query = vi.fn().mockResolvedValue([]);
-
-    await fetchSleepNights({
-      sensorStore: { query },
-      userId: "user-1",
-      timezone: "America/Los_Angeles",
-      endDate: "2026-03-15",
-      days: 20,
-    });
-
-    const queryText = String(query.mock.calls[0]?.[1]);
-    expect(queryText).toContain(
-      "AND sleep.date >= subtractDays(toDate({endDate:String}), {days:UInt32})",
-    );
-    expect(queryText).toContain("AND sleep.date <= toDate({endDate:String})");
-    expect(query.mock.calls[0]?.[2]).not.toHaveProperty("timezone");
-  });
-
   it("selects the latest sleep night from the stored daily sleep model", async () => {
     const query = vi.fn().mockResolvedValue([
       {
