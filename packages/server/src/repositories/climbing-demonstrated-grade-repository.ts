@@ -30,7 +30,7 @@ const evidenceRowSchema = z.object({
   attempt_id: z.string(),
   target_id: z.string(),
   provider: z.string(),
-  provider_id: z.string().nullable(),
+  provider_id: z.string(),
   climb_kind: z.enum(["boulder", "route"]),
   climb_setting: z.enum(["indoor", "outdoor"]).nullable(),
   rope_method: z.enum(["lead", "top_rope", "follow", "unroped"]).nullable(),
@@ -410,7 +410,7 @@ export class ClimbingDemonstratedGradeRepository extends BaseRepository {
         climbedOn: row.climbed_on,
         gradeComponents,
         displayName: climbingLogEntryName({
-          providerId: row.provider_id ?? undefined,
+          providerId: row.provider_id,
           raw: row.log_raw,
           title: row.title,
           climb: { name: row.climb_name, kind: row.climb_kind },
@@ -418,7 +418,7 @@ export class ClimbingDemonstratedGradeRepository extends BaseRepository {
         logEntryId: row.log_entry_id,
         activityId: row.activity_id,
         climbExternalId: row.climb_external_id,
-        sourceUrl: climbingSourceLinks(row.provider_id ?? "", row.log_raw)[0]?.url ?? null,
+        sourceUrl: climbingSourceLinks(row.provider_id, row.log_raw)[0]?.url ?? null,
       };
     });
 
