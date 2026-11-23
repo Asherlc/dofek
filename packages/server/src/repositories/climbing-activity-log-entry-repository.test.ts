@@ -8,6 +8,7 @@ import {
   climbingAttemptFixture,
   climbingBoardSeshGradeSortFixtures,
   climbingClimbFixture,
+  climbingConsolidationCases,
   climbingGradeSortFixtures,
   climbingLogDatabaseFixture,
   climbingLogEntryFixture,
@@ -377,25 +378,12 @@ describe("ClimbingActivityLogEntryRepository", () => {
       });
     },
   );
-  it.each([
-    [37.89228, 1],
-    [38, 2],
-  ])("checks area pins when consolidating same-name climbs at %s", async (latitude, count) => {
-    const recorded = [
-      [named("kaya"), 37.89226],
-      [named("kaya-export", "20000000-0000-4000-8000-000000000011"), latitude],
-    ] as const;
-    const entries = recorded.map(([log, sourceLatitude]) => {
-      if (!log.climb) throw new Error("Expected climb fixture");
-      const areaPath = log.climb.areaPath.map((area) => ({
-        ...area,
-        id: log.id,
-        coordinates: { latitude: sourceLatitude, longitude: -122.27231 },
-      }));
-      return { ...log, climb: { ...log.climb, areaPath } };
-    });
-    expect(await repository(entries).getActivityLogEntries("activity")).toHaveLength(count);
-  });
+  it.each(climbingConsolidationCases())(
+    "consolidates same-name climbs with $scenario",
+    async ({ entries, count }) => {
+      expect(await repository(entries).getActivityLogEntries("activity")).toHaveLength(count);
+    },
+  );
   it("retains distinct recorded times from consolidated sources", async () => {
     const api = named("kaya");
     api.externalId = "kaya:ascent:123";
