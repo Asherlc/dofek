@@ -278,6 +278,36 @@ describe("initBackgroundHealthKitSync", () => {
     expect(querySleepSamples).toHaveBeenCalledTimes(1);
   });
 
+  it("retains startup catch-up when a registration delivery fails after setup", async () => {
+    const workouts = createDeferred<Awaited<ReturnType<typeof queryWorkouts>>>();
+    vi.mocked(queryWorkouts).mockReturnValueOnce(workouts.promise);
+    mockSetupBackgroundObservers.mockImplementationOnce(async () => {
+      mockAddSampleUpdateListener.mock.calls[0][0]({
+        typeIdentifier: "HKWorkoutTypeIdentifier",
+        updateId: "during-registration",
+      });
+      return true;
+    });
+    await initBackgroundHealthKitSync(createMockClient());
+    workouts.reject(new Error("Workout delivery failed"));
+    await vi.waitFor(() => {
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["during-registration"], false);
+    });
+    mockAddSampleUpdateListener.mock.calls[0][0]({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      updateId: "next-delivery",
+    });
+    await vi.waitFor(() => {
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["next-delivery"], true);
+    });
+    expect(queryDailyStatistics).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierStepCount",
+      expect.any(String),
+      expect.any(String),
+    );
+    expect(querySleepSamples).toHaveBeenCalledOnce();
+  });
+
   it("logs monotonic structured stage duration and context", async () => {
     vi.useFakeTimers();
     const firstStage = createDeferred<[]>();

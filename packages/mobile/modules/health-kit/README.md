@@ -158,11 +158,14 @@ and empty HealthKit results do not establish whether read access was denied
 Each native observer delivery receives a unique update ID and retains its
 HealthKit sample type. The native module observes only the quantity, sleep,
 workout, and workout-route types consumed by the sync pipeline. JavaScript
-places each delivery in a single-flight queue, processes only the delivered
-type or types, and reports the batch result through `completeObserverUpdates`.
-Updates delivered during a running sync remain pending for the next serialized
-sync. Re-registration, JavaScript teardown, and Expo module destruction stop
-the queries and complete every callback still pending.
+places each delivery in a single-flight queue and reports the batch result
+through `completeObserverUpdates`. Startup schedules a full catch-up. After
+a failed attempt, the next delivery includes the unfinished types. A type
+counts as complete after its query, uploads, and any required anchor commits
+succeed. Step count, workouts, and workout routes also depend on the shared
+running-step sync. Updates received during an attempt stay queued for the next
+serialized sync. Re-registration, JavaScript teardown, and Expo module
+destruction stop the queries and complete every callback still pending.
 
 A native 25-second expiration completes an update exactly once and records the
 expired update ID, HealthKit sample type, and monotonic callback age as a Sentry

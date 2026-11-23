@@ -28,7 +28,7 @@ interface SyncContext {
   >;
   trpcClient: SyncTrpcClient;
   lifetime: AbortSignal;
-  pendingCatchUp: Set<string>;
+  readonly pendingCatchUp: Set<string>;
 }
 
 let subscription: EventSubscription | null = null;
@@ -218,9 +218,9 @@ async function drainSyncQueue(): Promise<void> {
 
   syncing = true;
   setObserverSyncInProgress(true);
-  let drainAgain = true;
+  let succeeded = false;
   try {
-    const succeeded = await performHealthKitSync(
+    succeeded = await performHealthKitSync(
       context.trpcClient,
       [...unfinished],
       (typeIdentifier) => unfinished.delete(typeIdentifier),
@@ -233,33 +233,25 @@ async function drainSyncQueue(): Promise<void> {
         : undefined,
       context.manualController,
     );
-    if (!succeeded && isCurrentContext(context)) {
-      context.pendingCatchUp = unfinished;
-      drainAgain = false;
-    }
-    if (isCurrentContext(context) && updateIds.length > 0) {
-      acknowledgeObserverUpdates(updateIds, succeeded);
-    }
   } catch (error) {
-    if (isCurrentContext(context)) {
-      context.pendingCatchUp = unfinished;
-      drainAgain = false;
-    }
     captureException(error, {
       source: TAG,
       operation: "drainSyncQueue",
     });
-    if (isCurrentContext(context) && updateIds.length > 0) {
-      acknowledgeObserverUpdates(updateIds, false);
-    }
   } finally {
+    if (isCurrentContext(context)) {
+      if (!succeeded) {
+        for (const typeIdentifier of unfinished) context.pendingCatchUp.add(typeIdentifier);
+      }
+      if (updateIds.length > 0) acknowledgeObserverUpdates(updateIds, succeeded);
+    }
     syncing = undefined;
     setObserverSyncInProgress(
       Boolean(currentSyncContext?.pendingCatchUp.size) || pendingUpdates.size > 0,
     );
   }
 
-  if (drainAgain) await drainSyncQueue();
+  if (succeeded || !isCurrentContext(context)) await drainSyncQueue();
 }
 
 /**
@@ -334,7 +326,9 @@ export async function initBackgroundHealthKitSync(
   }
   if (!isCurrentContext(context)) return;
   logger.info(TAG, "Background observers registered");
-  context.pendingCatchUp = new Set(BACKGROUND_HEALTH_KIT_TYPES);
+  for (const typeIdentifier of BACKGROUND_HEALTH_KIT_TYPES) {
+    context.pendingCatchUp.add(typeIdentifier);
+  }
   void drainSyncQueue();
 
   logger.info(TAG, "Init complete, listening for HealthKit updates");
