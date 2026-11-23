@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Health Monitor</title>
+    <link rel="stylesheet" href="health-monitor.css">
+  </head>
+  <body class="compact">
+    <main aria-labelledby="health-monitor-heading">
+      <header class="section-heading">
+        <h1 id="health-monitor-heading" data-dc-id="heading">Health monitor</h1>
+        <p>Sample readings</p>
+      </header>
+      <div class="monitor" data-dc-id="health-monitor">
+        <details name="health-monitor">
+          <summary data-dc-id="hrv">
+            <span class="identity">
+              <span class="metric">Heart rate variability (HRV)</span>
+              <span class="status good">Moving as intended</span>
+            </span>
+            <span class="reading"><span>64</span> <span class="unit">ms</span></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <dl class="comparison" data-dc-id="hrv-detail">
+            <dt>Recent average</dt>
+            <dd>60 ms</dd>
+          </dl>
+        </details>
+        <details name="health-monitor">
+          <summary data-dc-id="resting-heart-rate">
+            <span class="identity">
+              <span class="metric">Resting heart rate</span>
+              <span class="status neutral">Near baseline</span>
+            </span>
+            <span class="reading"><span>58</span> <span class="unit">bpm</span></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <dl class="comparison" data-dc-id="resting-heart-rate-detail">
+            <dt>Usual range</dt>
+            <dd>55–61 bpm</dd>
+          </dl>
+        </details>
+        <details name="health-monitor">
+          <summary data-dc-id="respiratory-rate">
+            <span class="identity">
+              <span class="metric">Respiratory rate</span>
+              <span class="status high">Far above baseline</span>
+            </span>
+            <span class="reading"><span>15.2</span> <span class="unit">breaths/min</span></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <dl class="comparison" data-dc-id="respiratory-rate-detail">
+            <dt>Usual range</dt>
+            <dd>12.1–13.3 breaths/min</dd>
+          </dl>
+        </details>
+        <details name="health-monitor">
+          <summary data-dc-id="sleep-efficiency">
+            <span class="identity">
+              <span class="metric">Sleep efficiency</span>
+              <span class="status warning">Notably below baseline</span>
+            </span>
+            <span class="reading"><span>83.1</span><span class="unit">%</span></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <dl class="comparison" data-dc-id="sleep-efficiency-detail">
+            <dt>Usual range</dt>
+            <dd>87–94%</dd>
+          </dl>
+        </details>
+        <details name="health-monitor">
+          <summary data-dc-id="blood-oxygen">
+            <span class="identity">
+              <span class="metric">Blood oxygen saturation (SpO₂)</span>
+              <span class="status neutral">Near baseline</span>
+            </span>
+            <span class="reading"><span>97</span><span class="unit">%</span></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <dl class="comparison" data-dc-id="blood-oxygen-detail">
+            <dt>Usual range</dt>
+            <dd>95–98%</dd>
+          </dl>
+        </details>
+        <details name="health-monitor">
+          <summary data-dc-id="steps">
+            <span class="identity">
+              <span class="metric">Steps</span>
+              <span class="status neutral">Near baseline</span>
+            </span>
+            <span class="reading">6,214</span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <dl class="comparison" data-dc-id="steps-detail">
+            <dt>Usual range</dt>
+            <dd>5,100–7,400</dd>
+          </dl>
+        </details>
+        <details name="health-monitor">
+          <summary data-dc-id="skin-temperature">
+            <span class="identity">
+              <span class="metric">Skin temperature</span>
+              <span class="status neutral">Near baseline</span>
+            </span>
+            <span class="reading"><span>94.2</span><span class="unit">°F</span></span>
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <dl class="comparison" data-dc-id="skin-temperature-detail">
+            <dt>Usual range</dt>
+            <dd>92.9–94.7°F</dd>
+          </dl>
+        </details>
+      </div>
+    </main>
+  </body>
+</html>

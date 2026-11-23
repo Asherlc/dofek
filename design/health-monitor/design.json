@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "title": "Health Monitor · Compact rows",
+  "kind": "prototype",
+  "description": "Compare the existing Health Monitor with a compact list at narrow and wide widths.",
+  "artboards": [
+    {
+      "id": "current",
+      "title": "Current · 56 px rows",
+      "file": "current.html",
+      "width": 390,
+      "group": "Phone width"
+    },
+    {
+      "id": "compact",
+      "title": "Compact · 44 px rows",
+      "file": "compact.html",
+      "width": 390,
+      "group": "Phone width"
+    },
+    {
+      "id": "wide",
+      "title": "Compact · Wide",
+      "file": "wide.html",
+      "width": 640
+    }
+  ]
+}
