@@ -1,5 +1,36 @@
 # Production Incident Baseline
 
+## 2026-11-23 — Sleep heart-rate refresh consumes ClickHouse CPU
+
+- **Impact.** The scheduled sleep refresh competed with other work on the
+  four-core OCI host. At inspection the host had about 14 GiB of available
+  memory. The two main sleep heart-rate statements accounted for 21,135 of
+  38,720 CPU seconds reported by completed initial ClickHouse queries over
+  24 hours. User-facing latency and availability impact were unmeasured.
+- **Root cause.** The window and sample models joined each candidate heart-rate
+  sample to workouts by user before checking timestamp overlap. In the latest
+  profiled run of each model, that join built from roughly 5,000 workout rows
+  and took 111–123 seconds. The sample model also applied its user/day filter
+  as a join after reading the sensor table. On 16 recent windows, moving that
+  filter into the sensor read reduced the plan from 12,681 to 1,177 sensor
+  granules. [Window model](../analytics/models/read_models/sleep_heart_rate_window.sql#L252)
+  · [Sample model](../analytics/models/read_models/sleep_heart_rate_sample.sql#L159)
+  · [ClickHouse query plans](https://clickhouse.com/docs/reference/statements/explain)
+  · [ClickHouse processor profiles](https://clickhouse.com/docs/reference/system-tables/processors_profile_log)
+- **Validation and mitigation.** Read-only probes first selected active
+  workouts that could overlap each sleep window, then checked exact sample
+  timestamps against those workouts. The sample probe also applied the
+  user/day filter at the sensor read. The window probe took 1.75 seconds and
+  matched stored counts for all 16 windows. The sample probe took 2.15 seconds
+  and matched the stored count and checksum of 730,989 active samples. An
+  original window query restricted to three recent windows hit the probe's
+  24-second limit. These probes left the scheduled models unchanged.
+- **Remaining risk and follow-up.** The scheduled refresh still incurs this
+  CPU cost. Before rollout, cover empty windows, late data, deletions,
+  and workout overlaps at sleep boundaries in real ClickHouse tests. After
+  rollout, compare query CPU, rows read, and refresh completion across
+  scheduled cycles. The probes exercised active windows only.
+
 ## 2026-11-18 — Vertical-Life search and detail disagree on a crag's broader area
 
 - **Impact.** Sentry reported 29 occurrences of `DOFEK-SERVER-89` from
