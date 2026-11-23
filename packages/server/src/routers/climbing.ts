@@ -351,7 +351,7 @@ export const climbingRouter = router({
   demonstratedGrade: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingDemonstratedGradeSchema,
-    keyVersion: "climbing-demonstrated-grade-v1",
+    keyVersion: "climbing-demonstrated-grade-v2",
     scopeByAccessWindow: true,
   })
     .input(demonstratedGradeInputSchema)
