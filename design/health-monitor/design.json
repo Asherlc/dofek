@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "title": "Health Monitor · Compact rows",
+  "title": "Health Monitor · Layout options",
   "kind": "prototype",
-  "description": "Compare the existing Health Monitor with a compact list at narrow and wide widths.",
+  "description": "Compare three tile layouts with the current and compact Health Monitor lists.",
   "artboards": [
     {
       "id": "current",
@@ -23,6 +23,27 @@
       "title": "Compact · Wide",
       "file": "wide.html",
       "width": 640
+    },
+    {
+      "id": "highlights-and-tiles",
+      "title": "Highlights + readings",
+      "file": "highlights-and-tiles.html",
+      "width": 390,
+      "group": "Tile layouts"
+    },
+    {
+      "id": "metric-tiles",
+      "title": "Equal-weight tiles",
+      "file": "metric-tiles.html",
+      "width": 390,
+      "group": "Tile layouts"
+    },
+    {
+      "id": "changes-only",
+      "title": "Changes only",
+      "file": "changes-only.html",
+      "width": 390,
+      "group": "Tile layouts"
     }
   ]
 }

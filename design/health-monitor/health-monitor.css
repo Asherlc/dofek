@@ -156,7 +156,7 @@ summary:focus-visible {
   transform: rotate(45deg);
 }
 
-details[open] .chevron {
+details[open] > summary .chevron {
   transform: rotate(135deg);
 }
 

@@ -1,0 +1,175 @@
+.tile-layout {
+  --tile-gap: 8px;
+  --tile-radius: 14px;
+}
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--tile-gap);
+}
+
+.tile {
+  --tone: var(--muted);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--tile-radius);
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.tile.good {
+  --tone: var(--positive);
+}
+
+.tile.high {
+  --tone: var(--high);
+}
+
+.tile.warning {
+  --tone: var(--warning);
+}
+
+.highlights .tile {
+  border-color: color-mix(in srgb, var(--tone) 42%, var(--border));
+  background: color-mix(in srgb, var(--tone) 9%, var(--surface));
+}
+
+.tile > summary {
+  min-height: 5rem;
+  grid-template:
+    "metric metric" auto
+    "reading chevron" auto
+    "status status" 1fr / minmax(0, 1fr) 8px;
+  align-content: start;
+  gap: 4px 5px;
+  padding: 7px 11px;
+}
+
+.tile .metric {
+  grid-area: metric;
+}
+
+.tile .reading {
+  grid-area: reading;
+  align-self: baseline;
+  font-size: 1.375rem;
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+  text-align: start;
+}
+
+.highlights .reading {
+  font-size: 1.5rem;
+}
+
+.tile :is(.metric, .status, .reading),
+.tile-detail {
+  overflow-wrap: anywhere;
+}
+
+.tile .unit {
+  letter-spacing: 0;
+}
+
+.tile > summary .status {
+  grid-area: status;
+  align-self: start;
+}
+
+.tile .status {
+  color: var(--tone);
+}
+
+.tile .chevron {
+  grid-area: chevron;
+}
+
+.tile-detail {
+  margin: 0 11px 9px;
+  border-top: 1px solid var(--border);
+  padding-top: 7px;
+}
+
+.tile-detail .status {
+  margin: 0 0 6px;
+}
+
+.tile-detail .comparison {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.other-readings,
+.more-readings {
+  margin-top: 12px;
+}
+
+.other-readings h2 {
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.small-tiles {
+  grid-template-columns: repeat(auto-fit, minmax(min(5.5rem, 100%), 1fr));
+}
+
+.small-tiles > .tile > summary {
+  min-height: 3.875rem;
+  grid-template:
+    "metric metric" minmax(1.8em, 1fr)
+    "reading chevron" auto / minmax(0, 1fr) 8px;
+  align-items: end;
+  gap: 2px;
+  padding: 6px 8px 7px;
+}
+
+.small-tiles .metric {
+  align-self: start;
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+
+.small-tiles .reading {
+  font-size: 1.125rem;
+}
+
+.small-tiles .chevron {
+  align-self: center;
+}
+
+.more-readings > summary {
+  grid-template-columns: minmax(0, 1fr) 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--tile-radius);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding-inline: 11px;
+}
+
+.more-readings > summary:hover {
+  background: var(--hover);
+}
+
+.more-readings > .tile-grid {
+  margin-top: var(--tile-gap);
+}
+
+.more-readings:not([open]) .when-open,
+.more-readings[open] .when-closed {
+  display: none;
+}
+
+@media (min-width: 28rem) {
+  .all-readings {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
