@@ -184,7 +184,7 @@ export function Dashboard() {
     <QueryStatePanel variant="loading" height={160} />
   ) : insightsQuery.error ? (
     sharedConnectionFailure && isConnectionFailure(insightsQuery.error) ? null : (
-      <QueryStatePanel error={insightsQuery.error} height={160} />
+      <QueryStatePanel error={insightsQuery.error} height={topInsight ? 72 : 160} />
     )
   ) : !insightsQuery.isFetched ? (
     <QueryStatePanel variant="loading" height={160} />

@@ -23,6 +23,10 @@ export function useIsFocused(): boolean {
   return true;
 }
 
+export function useFocusEffect(callback: React.EffectCallback): void {
+  React.useEffect(callback, [callback]);
+}
+
 export function useLocalSearchParams(): Record<string, string | string[] | undefined> {
   return {};
 }

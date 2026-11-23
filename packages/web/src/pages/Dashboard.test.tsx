@@ -385,6 +385,33 @@ describe("Dashboard", () => {
     ).toBeTruthy();
   });
 
+  it("uses a compact error panel while a cached insight stays visible", () => {
+    mockInsightsQuery.mockReturnValue({
+      data: [
+        {
+          id: "cached-insight",
+          type: "correlation",
+          confidence: "strong",
+          metric: "Heart Rate Variability",
+          action: "Sleep consistency",
+          message: "Cached sleep consistency relationship",
+          detail: "90-day correlation",
+          whenTrue: { mean: 1, n: 90 },
+          whenFalse: { mean: 0, n: 90 },
+          effectSize: 0.72,
+          pValue: 0.01,
+        },
+      ],
+      isLoading: false,
+      isFetched: true,
+      error: new Error("Insight service unavailable"),
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getByTestId("query-state-error").style.minHeight).toBe("72px");
+  });
+
   it("uses a loading panel while insights are loading", () => {
     mockInsightsQuery.mockReturnValue({
       data: undefined,

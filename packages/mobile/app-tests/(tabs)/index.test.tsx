@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { overviewEvidenceFixture } from "../../app-fixtures/(tabs)/overview-evidence";
 
 const mockRouterPush = vi.fn();
+const mockInsightsRefetch = vi.fn(() => Promise.resolve());
+let capturedFocusEffect: (() => void) | undefined;
 const mockDashboardRefetch = vi.fn(() => Promise.resolve());
 const mockAnomalyRefetch = vi.fn(() => Promise.resolve());
 const mockDashboardUseQuery = vi.fn();
@@ -35,6 +37,9 @@ const mockInsightsQuery = vi.fn();
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
+  useFocusEffect: (callback: () => void) => {
+    capturedFocusEffect = callback;
+  },
 }));
 
 vi.mock("../../lib/trpc", () => ({
@@ -113,6 +118,7 @@ vi.mock("../../lib/trpc", () => ({
     },
     useUtils: () => ({
       invalidate: mockInvalidate,
+      insights: { compute: { refetch: mockInsightsRefetch } },
       processing: { status: { invalidate: vi.fn() } },
     }),
   },
@@ -207,6 +213,8 @@ describe("TodayScreen independent loading states", () => {
     mockRouterPush.mockClear();
     mockDashboardRefetch.mockClear();
     mockInvalidate.mockClear();
+    mockInsightsRefetch.mockClear();
+    capturedFocusEffect = undefined;
     mockDataHealthUseQuery.mockClear();
     mockDataHealthRefetch.mockClear();
     mockUseRefresh.mockClear();
@@ -637,6 +645,23 @@ describe("TodayScreen independent loading states", () => {
         refetchOnWindowFocus: "always",
         refetchOnMount: true,
       }),
+    );
+  });
+
+  it("refetches the exact stale insights query when the Overview tab regains focus", async () => {
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    render(<OverviewScreen />);
+
+    const overviewInput = mockInsightsQuery.mock.calls[0]?.[0];
+    expect(overviewInput).toEqual({ days: 90, endDate: expect.any(String) });
+    expect(capturedFocusEffect).toBeTypeOf("function");
+
+    capturedFocusEffect?.();
+
+    expect(mockInsightsRefetch).toHaveBeenCalledWith(
+      overviewInput,
+      { exact: true, type: "active", stale: true },
+      { cancelRefetch: false },
     );
   });
 

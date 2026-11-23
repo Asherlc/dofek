@@ -2,7 +2,8 @@ import { formatDurationMinutes } from "@dofek/format/format";
 import { formatSummaryDateContext } from "@dofek/format/summary-date-context";
 import { isConnectionFailure, userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Animated, { Easing, FadeInUp } from "react-native-reanimated";
 import { Card } from "../../components/Card";
@@ -46,6 +47,17 @@ export default function OverviewScreen() {
   const anomalyQuery = trpc.anomalyDetection.check.useQuery(
     { endDate },
     { staleTime: 10 * 60 * 1000, enabled: dashboardData != null },
+  );
+
+  const utils = trpc.useUtils();
+  useFocusEffect(
+    useCallback(() => {
+      void utils.insights.compute.refetch(
+        { days: overviewDays, endDate },
+        { exact: true, type: "active", stale: true },
+        { cancelRefetch: false },
+      );
+    }, [utils, endDate]),
   );
 
   const lastNight = dashboardData?.sleep?.lastNight;
