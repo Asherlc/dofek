@@ -118,11 +118,17 @@ extension WhoopBleConnectionManager {
         recordConnectionEvent("disconnected", peripheralId: peripheralId, error: error)
         wasStreaming = wasStreaming || state == .streaming
         let shouldReconnect = autoReconnect
+        let isRecoveryCancellation = state == .disconnecting && shouldReconnect
 
         cleanup()
 
         publishDisconnection(peripheralId: peripheralId, error: error)
-        finishConnect(.failure(.disconnected(error?.localizedDescription)))
+        // Entering .disconnecting already settled the owner via finishConnect; only
+        // waiters that joined during native cancellation remain, and those belong to
+        // the automatic reconnect this disconnect precedes.
+        if !isRecoveryCancellation {
+            finishConnect(.failure(.disconnected(error?.localizedDescription)))
+        }
 
         if shouldReconnect {
             autoReconnect = true

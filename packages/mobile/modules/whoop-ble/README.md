@@ -161,8 +161,12 @@ have a ten-second deadline after Bluetooth connects. Apple describes the system'
 `connect()` for the same strap returns immediately if it is ready or streaming.
 During native connection setup, including a restored connection, it waits for
 notification readiness. If that caller's wait expires, native recovery and any
-setup deadline continue. A new explicit connection has ten seconds to reach
-readiness. `retryConnection()` acknowledges an existing or newly initiated
+setup deadline continue. When automatic recovery is cancelling a failed setup,
+a call for the same strap also waits for the reconnect. The matching
+[Core Bluetooth disconnect callback](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/cancelperipheralconnection(_:))
+leaves the caller pending until notifications are ready, setup fails, or the
+caller's own deadline expires. A new explicit connection has ten seconds to
+reach readiness. `retryConnection()` acknowledges an existing or newly initiated
 connection. To confirm capture has resumed, check
 new data notifications and parsed sample timestamps. See Apple's
 [Core Bluetooth state restoration guide](https://developer.apple.com/library/archive/documentation/NetworkingInternetWeb/Conceptual/CoreBluetooth_concepts/CoreBluetoothBackgroundProcessingForIOSApps/PerformingTasksWhileYourAppIsInTheBackground.html).

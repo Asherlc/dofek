@@ -11,7 +11,6 @@ import { executeWithSchema } from "../db/typed-sql.ts";
 import { AuroraBoardProvider } from "../providers/aurora-board.ts";
 import { DecoyProvider } from "../providers/decoy.ts";
 import { GrasshopperProvider } from "../providers/grasshopper.ts";
-import { KilterProvider } from "../providers/kilter.ts";
 import { SoillProvider } from "../providers/soill.ts";
 import { SyncRun } from "../providers/sync-run.ts";
 import { SyncWindow } from "../providers/sync-window.ts";
@@ -83,6 +82,7 @@ const bid = {
 const server = createIntegrationMswFixture();
 
 describe("board account canonical persistence", () => {
+  let KilterProvider: typeof import("../providers/kilter.ts").KilterProvider;
   let context: TestContext;
   let logs: unknown;
   let syncedLogs: Array<typeof syncedLog>;
@@ -90,6 +90,10 @@ describe("board account canonical persistence", () => {
   let pageIndex: number;
 
   beforeAll(async () => {
+    // Earlier suites can load Kilter with the real SDK in this shared worker.
+    // Keep the already registered MSW fixture and reimport Kilter with the SDK mock.
+    vi.resetModules();
+    ({ KilterProvider } = await import("../providers/kilter.ts"));
     context = await setupTestDatabase();
     server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await context.db.execute(

@@ -39851,3 +39851,51 @@ Local qualification and CI are separate from production throughput acceptance. T
   code returned zero eligible candidates for November 23 and one for
   November 16.
   [Repository regression](../packages/server/src/repositories/insights-repository.integration.test.ts).
+
+## 2026-11-22 — WHOOP Bluetooth startup reconnect on a new iOS build
+
+- **Impact.** At 19:29:32 Pacific, TestFlight build `1795402168` reported one
+  handled `Error: Disconnected` during background WHOOP startup sync. The
+  startup connection request failed for one user. Native streaming resumed
+  345 ms after the disconnect. [Sentry event](https://east-bay-software.sentry.io/issues/7862510884/events/be99543b8b874956a8442b5840695ce5/)
+  · [TestFlight upload](https://github.com/Asherlc/dofek/actions/runs/45104042610/job/137461189371).
+- **Cause and evidence.** Axiom's `dofek-logs` recorded the restored connection
+  timing out in service discovery at `03:29:32.326 UTC`. The explicit startup
+  connection request reached the native manager in `disconnecting` at
+  `03:29:32.334 UTC`, where the manager rejects the request with `Disconnected`.
+  The same launch finished downloading an Expo update about one second before
+  the error and was still running the build's embedded bundle. The reason
+  service discovery stalled is unresolved. [Axiom query guide](axiom-observability-runbook.md#queries)
+  · [Deployed connection guard](https://github.com/Asherlc/dofek/blob/b69aa23852017d61b79f0f859d2a9dee7ee073be/packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift#L168-L178)
+  · [Expo update behavior](https://docs.expo.dev/eas-update/download-updates/).
+- **Recovery and follow-up.** The existing automatic reconnect restored
+  streaming at `03:29:32.686 UTC` on the same bundle. Axiom's next capture
+  snapshot recorded fresh Bluetooth samples. If the alert recurs, inspect
+  whether native streaming recovers and whether uploads catch up. [Deployed reconnect path](https://github.com/Asherlc/dofek/blob/b69aa23852017d61b79f0f859d2a9dee7ee073be/packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager%2BCoreBluetooth.swift#L113-L132).
+
+## 2026-11-23 — Overview PR validation failed in unit and integration checks
+
+- **Impact and evidence.** PR #3465 was blocked. The server unit run expected
+  `insights-evidence-v1` and `AND started_at >` after the route had changed to
+  `insights-evidence-v2` and local calendar dates. The stale expectations
+  also prevented the three Stryker jobs from starting mutation testing.
+  [Unit log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137796538544) ·
+  [Stryker log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137797168711).
+- **Independent integration failure.** Shard 1 reported
+  `Kilter Board app sync failed: Connection aborted` in ten
+  climbing-board persistence tests. The server API suite registered
+  providers first in the shared Vitest worker. The climbing-board suite
+  reused the cached Kilter module bound to the real SDK, bypassing its
+  approved PowerSync fixture. The same two-file order reproduced all ten
+  failures locally.
+  [Integration log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137797003483) ·
+  [Vitest module cache API](https://vitest.dev/api/vi.html#vi-resetmodules).
+- **Fix and local verification.** The Overview unit tests now cover the
+  current cache key and local date query contract. The persistence suite
+  resets the module cache and imports Kilter after installing the existing
+  SDK fixture. The ordered integration pair passed all 60 tests, and
+  600 focused unit and mobile tests passed. All three changed-line
+  Stryker selections completed locally. The sleep query scored 100% on
+  its five active mutants. The changes are limited to test code. Include
+  the router tests in future Overview cache or range changes and
+  validate the climbing-board fixture after the server suite.
