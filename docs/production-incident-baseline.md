@@ -39760,3 +39760,57 @@ Local qualification and CI are separate from production throughput acceptance. T
 
 - The shared unit assertions passed on PR #3444. The changed-line coverage step reported `Failure. Coverage is below 80%.` Its test project did not exercise the new Sleep response schema, leaving seven of 22 applicable changed lines uncovered and the total at 68%. Seven colocated tests now exercise valid evidence, unavailable load, empty access, and invalid input. The focused shared run covered all seven schema lines. [Shared unit job](https://github.com/Asherlc/dofek/actions/runs/44957479605/job/137009557871).
 - The spell check rejected `massagetherapy`, the normalized activity key, and `Leota`, the study author's surname. Both terms belong in the existing dictionary. The coverage threshold and spell-check scope are unchanged. The failures delayed PR validation. Production was unaffected. [Spell check job](https://github.com/Asherlc/dofek/actions/runs/44957479605/job/137008857843).
+
+## 2026-11-22 — iOS background battery usage during Apple Health sync failures
+
+- **Impact.** A phone reported 43% battery usage for Dofek by 14:25 Pacific,
+  with 10 hours 19 minutes of background activity, zero on-screen time, and
+  poor cellular coverage. The user reported that Dofek was idle without a
+  workout recording. [Apple battery usage guide](https://support.apple.com/guide/iphone/understand-iphone-battery-usage-health-iphd453d043a/ios).
+- **Evidence.** Axiom's `dofek-logs` dataset recorded 895 HealthKit observer
+  update events and 42 sync starts from one account between 08:00 and 22:25
+  UTC. Thirty-three attempts failed with `queryWorkouts.effort failed` and
+  `com.apple.healthkit:0`. The first and last of those failures occurred at
+  14:08 and 22:09 UTC. The same query failure appeared 44 times on November 21
+  Pacific time, after the cycling-effort import merged, and zero times on
+  November 19 or 20. [Axiom query guide](axiom-observability-runbook.md#queries) ·
+  [Cycling-effort import PR](https://github.com/Asherlc/dofek/pull/3437).
+- **Cause and unresolved questions.** The native workout query rejects the
+  result when the workout-effort relationship query throws. The observer
+  queue retains an all-types catch-up after the failure, so subsequent
+  deliveries can repeat broad work. The reason HealthKit returned code zero
+  and the energy attributable to each background path remain unresolved.
+  [Original native workout query](https://github.com/Asherlc/dofek/blob/cbb3f591803f34bfc82bed6326d874149c9dd6e6/packages/mobile/modules/health-kit/ios/HealthKitModule.swift#L529) ·
+  [Observer queue](../packages/mobile/lib/background-health-kit-sync.ts#L201).
+- **Follow-up.** Reproduce the failing effort query on a physical iPhone
+  before restoring effort acquisition. Compare locked-device background
+  activity before and after the rollback under similar coverage.
+- **Code mitigation.** Restored the prior iOS workout query and removed the
+  effort read permission. A workout resync preserves existing ratings. The
+  fix requires a new native iOS build. Physical-device validation of the
+  battery impact remains pending.
+
+## 2026-11-22 — Overview retained an empty relationship card
+
+- **Impact and evidence.** A signed-in web Overview showed “No insights to
+  display.” Reloading the same tab populated the card for the same 90-day
+  window. At 01:51:31 UTC on November 23, Axiom recorded a cache miss for
+  `insights.compute` with a total procedure duration of 2,806 ms and HTTP 200
+  for the enclosing tRPC request. The report covered one account. iOS was
+  inspected in code.
+- **Cause and mitigation.** Both clients disable refresh on focus by default,
+  and the Overview insight query inherits this setting. A local query-observer
+  reproduction retained the cached empty result on focus and fetched the
+  available result after enabling focus refresh for the query. The input
+  state that produced the original empty result is unknown. Reloading the
+  production tab cleared the observed symptom. [Web query defaults](../packages/web/src/lib/query-client.ts) ·
+  [iOS query defaults](../packages/mobile/lib/query-client.ts).
+- **Fix and validation.** The Overview refreshes insights when its web tab
+  becomes visible, when the iOS app returns to the foreground, or when iOS
+  opens the Overview with stale results. Completing an iOS health sync also
+  refreshes insights and restarts an overlapping initial request.
+  Focused web and mobile tests passed, including the empty and error states.
+  Verify the change in production after deployment.
+  [Web Overview](../packages/web/src/pages/Dashboard.tsx) ·
+  [iOS Overview](../packages/mobile/app/(tabs)/index.tsx) ·
+  [iOS sync refresh list](../packages/mobile/lib/invalidate-synced-health-data.ts).

@@ -4,7 +4,7 @@ import { formatHealthProvenanceSource } from "@dofek/providers/health-provenance
 import { Ionicons } from "@expo/vector-icons";
 import type { HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
 interface HealthStatusCardsProps {
@@ -32,6 +32,20 @@ function displayValue(
   formatValue: HealthStatusCardsProps["formatValue"],
 ): string {
   return metric.valueText ?? (formatValue ? formatValue(metric) : defaultFormatValue(metric));
+}
+
+const compactRespiratoryUnit = " breaths/min";
+
+function compactReading(metric: HealthStatusMetric, value: string) {
+  if (metric.metric === "respiratory_rate" && value.endsWith(compactRespiratoryUnit)) {
+    return (
+      <>
+        {value.slice(0, -compactRespiratoryUnit.length)}
+        <Text style={styles.compactUnit}>{compactRespiratoryUnit}</Text>
+      </>
+    );
+  }
+  return value;
 }
 
 function statusSymbol(status: HealthStatusMetric["statusToken"]): string {
@@ -97,13 +111,15 @@ export function HealthStatusCards({
   formatComparisonDelta,
 }: HealthStatusCardsProps) {
   const [expandedMetric, setExpandedMetric] = useState<HealthStatusMetric["metric"] | null>(null);
+  const { fontScale } = useWindowDimensions();
+  const stacked = fontScale > 1;
 
   if (metrics.length === 0) return null;
 
   return (
     <View style={compact ? styles.groupedContainer : styles.container}>
       {compact ? null : <Text style={styles.heading}>HEALTH STATUS</Text>}
-      {metrics.map((metric, index) => {
+      {metrics.map((metric) => {
         const baseline = metric.baselineText;
         const expanded = expandedMetric === metric.metric;
         const blocked = metric.baselineProgress.blocker !== null;
@@ -115,55 +131,65 @@ export function HealthStatusCards({
           return (
             <View
               key={metric.metric}
-              style={[styles.groupedRow, index > 0 ? styles.rowDivider : null]}
+              style={[styles.tile, stacked ? styles.tileStacked : styles.tileHalf]}
             >
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${metric.label}, ${value}, ${interpretation}. ${expanded ? "Hide" : "Show"} details`}
-                aria-expanded={expanded}
-                onPress={toggle}
-                style={styles.rowPressable}
-              >
-                <View style={styles.rowLeading}>
-                  <Text style={styles.label}>{metric.label}</Text>
-                  <Text style={[styles.status, { color: statusColor(metric.statusColor) }]}>
+              <View style={styles.tileCard}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${metric.label}, ${value}, ${interpretation}. ${expanded ? "Hide" : "Show"} details`}
+                  aria-expanded={expanded}
+                  onPress={toggle}
+                  style={styles.tilePressable}
+                >
+                  <Text style={styles.tileLabel}>{metric.label}</Text>
+                  <View style={styles.tileReadingRow}>
+                    <Text style={styles.compactValue}>{compactReading(metric, value)}</Text>
+                    <Ionicons
+                      name={expanded ? "chevron-up" : "chevron-down"}
+                      size={16}
+                      color={colors.textTertiary}
+                      accessible={false}
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.status,
+                      {
+                        color:
+                          metric.statusToken === "near_baseline"
+                            ? colors.textTertiary
+                            : statusColor(metric.statusColor),
+                      },
+                    ]}
+                  >
                     {interpretation}
                   </Text>
-                </View>
-                <View style={styles.rowTrailing}>
-                  <Text style={styles.compactValue}>{value}</Text>
-                  <Ionicons
-                    name={expanded ? "chevron-up" : "chevron-down"}
-                    size={16}
-                    color={colors.textTertiary}
-                    accessible={false}
-                  />
-                </View>
-              </Pressable>
-              {blocked || expanded ? (
-                <View style={styles.rowFooter}>
-                  {blocked ? (
-                    <View
-                      accessibilityLabel={`${metric.label} baseline progress`}
-                      style={styles.progress}
-                    >
-                      {metric.baselineProgress.blocker !== "syncing" ? (
-                        <Text style={styles.action}>{metric.baselineProgress.action}</Text>
-                      ) : null}
-                    </View>
-                  ) : null}
-                  {expanded
-                    ? expandedDetails(
-                        metric,
-                        baseline,
-                        blocked,
-                        formatComparisonValue,
-                        formatComparisonDelta,
-                        true,
-                      )
-                    : null}
-                </View>
-              ) : null}
+                </Pressable>
+                {blocked || expanded ? (
+                  <View style={styles.rowFooter}>
+                    {blocked ? (
+                      <View
+                        accessibilityLabel={`${metric.label} baseline progress`}
+                        style={styles.progress}
+                      >
+                        {metric.baselineProgress.blocker !== "syncing" ? (
+                          <Text style={styles.action}>{metric.baselineProgress.action}</Text>
+                        ) : null}
+                      </View>
+                    ) : null}
+                    {expanded
+                      ? expandedDetails(
+                          metric,
+                          baseline,
+                          blocked,
+                          formatComparisonValue,
+                          formatComparisonDelta,
+                          true,
+                        )
+                      : null}
+                  </View>
+                ) : null}
+              </View>
             </View>
           );
         }
@@ -247,46 +273,55 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   groupedContainer: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    overflow: "hidden",
-  },
-  groupedRow: {
-    paddingHorizontal: spacing.md,
-  },
-  rowDivider: {
-    borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  rowPressable: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
+  },
+  tile: {
+    padding: spacing.xs,
+  },
+  tileHalf: {
+    flexBasis: "50%",
+    maxWidth: "50%",
+  },
+  tileStacked: {
+    flexBasis: "100%",
+    maxWidth: "100%",
+  },
+  tileCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    gap: spacing.xs,
+  },
+  tilePressable: {
+    gap: spacing.xs,
+    minHeight: 44,
+    padding: spacing.sm,
+  },
+  tileReadingRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.xs,
     justifyContent: "space-between",
-    minHeight: 56,
-    paddingVertical: spacing.sm,
   },
   rowFooter: {
     paddingBottom: spacing.sm,
-  },
-  rowLeading: {
-    flexShrink: 1,
-    gap: spacing.xs,
-  },
-  rowTrailing: {
-    alignItems: "center",
-    flexDirection: "row",
-    flexShrink: 1,
-    gap: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.xs,
   },
   compactValue: {
     color: colors.text,
     flexShrink: 1,
-    fontSize: 18,
+    fontSize: 20,
     fontVariant: ["tabular-nums"],
     fontWeight: "600",
-    textAlign: "right",
+    minWidth: 0,
+  },
+  compactUnit: {
+    color: colors.textSecondary,
+    fontSize: 11,
   },
   card: {
     backgroundColor: colors.surface,
@@ -313,6 +348,13 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     letterSpacing: 0.4,
     textTransform: "uppercase",
+  },
+  tileLabel: {
+    color: colors.textSecondary,
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 17,
   },
   value: {
     color: colors.text,

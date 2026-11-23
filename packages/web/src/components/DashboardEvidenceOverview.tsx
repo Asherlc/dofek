@@ -156,39 +156,40 @@ export function DashboardEvidenceOverview({
       <div className="grid gap-3 lg:grid-cols-2">
         {hideInsightCard ? null : (
           <EvidenceCard eyebrow={`Key ${relationshipHeading.toLowerCase()}`}>
-            {insightError ? (
-              insightError
-            ) : (
-              <div>
-                <h3 className="text-base font-medium leading-snug text-foreground">
-                  {topInsight?.message ?? "Sleep consistency + Heart Rate Variability"}
-                </h3>
-                <div className="mt-5 grid grid-cols-[0.7fr_1fr] items-end gap-4">
-                  <div>
-                    <p className="mt-1 font-mono text-4xl font-bold tabular-nums text-accent">
-                      {relationshipValue}
-                    </p>
-                    <p className="mt-1 text-xs font-semibold text-accent">
-                      {evidence?.label?.trim() || "Descriptive relationship"}
-                    </p>
+            <div className="space-y-4">
+              {insightError}
+              {topInsight || !insightError ? (
+                <div>
+                  <h3 className="text-base font-medium leading-snug text-foreground">
+                    {topInsight?.message ?? "Sleep consistency + Heart Rate Variability"}
+                  </h3>
+                  <div className="mt-5 grid grid-cols-[0.7fr_1fr] items-end gap-4">
+                    <div>
+                      <p className="mt-1 font-mono text-4xl font-bold tabular-nums text-accent">
+                        {relationshipValue}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-accent">
+                        {evidence?.label?.trim() || "Descriptive relationship"}
+                      </p>
+                    </div>
+                    <MiniChartFrame data={topInsight ? insightChartPoints : []}>
+                      {topInsight ? (
+                        <MiniScatter
+                          points={insightChartPoints}
+                          labels={{
+                            xAxis: topInsight.action,
+                            xMetric: topInsight.action,
+                            yAxis: topInsight.metric,
+                            yMetric: topInsight.metric,
+                          }}
+                        />
+                      ) : null}
+                    </MiniChartFrame>
                   </div>
-                  <MiniChartFrame data={topInsight ? insightChartPoints : []}>
-                    {topInsight ? (
-                      <MiniScatter
-                        points={insightChartPoints}
-                        labels={{
-                          xAxis: topInsight.action,
-                          xMetric: topInsight.action,
-                          yAxis: topInsight.metric,
-                          yMetric: topInsight.metric,
-                        }}
-                      />
-                    ) : null}
-                  </MiniChartFrame>
+                  {evidence && <InsightEvidenceDetails evidence={evidence} className="mt-4" />}
                 </div>
-                {evidence && <InsightEvidenceDetails evidence={evidence} className="mt-4" />}
-              </div>
-            )}
+              ) : null}
+            </div>
           </EvidenceCard>
         )}
         {hideTrendCard ? null : (

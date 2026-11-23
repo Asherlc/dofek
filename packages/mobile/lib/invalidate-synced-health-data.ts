@@ -8,6 +8,7 @@ const HEALTH_SYNC_INITIAL_FETCH_PATHS = new Set([
   "climbing.bestOnsight",
   "trainingProgression.strength",
   "trainingProgression.cycling",
+  "insights.compute",
 ]);
 
 const SYNCED_HEALTH_DATA_QUERY_PATHS = new Set([

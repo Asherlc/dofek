@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 
+import { formatDateYmd } from "@dofek/format/format";
 import type { UnitSystem } from "@dofek/format/units";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
+import { render as baseRender, fireEvent, screen, waitFor } from "@testing-library/react";
+import { getQueryKey } from "@trpc/react-query";
 import { healthStatusMetricSchema } from "dofek-server/mobile-dashboard-contracts";
+import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { overviewEvidenceFixture } from "../../app-fixtures/(tabs)/overview-evidence";
 import {
@@ -11,6 +15,7 @@ import {
 } from "../../components/training-progression-fixture";
 
 const mockRouterPush = vi.fn();
+let capturedFocusEffect: (() => void) | undefined;
 const mockDashboardRefetch = vi.fn(() => Promise.resolve());
 const mockAnomalyRefetch = vi.fn(() => Promise.resolve());
 const mockDashboardUseQuery = vi.fn();
@@ -48,89 +53,103 @@ const mockTrainingProgressionStrengthQuery = vi.fn(
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
-}));
-
-vi.mock("../../lib/trpc", () => ({
-  trpc: {
-    trainingProgression: { strength: { useQuery: mockTrainingProgressionStrengthQuery } },
-    dailyMetrics: {
-      trends: { useQuery: mockTrendsQuery },
-      hrvBaseline: { useQuery: mockHeartRateQuery },
-    },
-    insights: { compute: { useQuery: mockInsightsQuery } },
-    mobileDashboard: {
-      dashboard: {
-        useQuery: (...parameters: unknown[]) => {
-          mockDashboardUseQuery(...parameters);
-          return {
-            data: mockDashboardData,
-            isLoading: mockDashboardLoading,
-            isFetching: mockDashboardFetching,
-            isError: !!mockDashboardError,
-            error: mockDashboardError,
-            refetch: mockDashboardRefetch,
-          };
-        },
-      },
-      dashboardV2: {
-        useQuery: (...parameters: unknown[]) => {
-          mockDashboardV2UseQuery(...parameters);
-          return {
-            data: mockDashboardData,
-            isLoading: mockDashboardLoading,
-            isFetching: mockDashboardFetching,
-            isPaused: mockDashboardPaused,
-            isError: !!mockDashboardError,
-            error: mockDashboardError,
-            refetch: mockDashboardRefetch,
-          };
-        },
-      },
-    },
-    anomalyDetection: {
-      check: {
-        useQuery: (...parameters: unknown[]) => {
-          mockAnomalyUseQuery(...parameters);
-          return {
-            data: mockAnomalyData,
-            isLoading: false,
-            isError: false,
-            error: null,
-            refetch: mockAnomalyRefetch,
-          };
-        },
-      },
-    },
-    processing: {
-      status: {
-        useQuery: (...parameters: unknown[]) => {
-          mockDataHealthUseQuery(...parameters);
-          return {
-            data: mockDataHealthData,
-            isLoading: false,
-            isError: false,
-            error: mockDataHealthError,
-            refetch: mockDataHealthRefetch,
-          };
-        },
-      },
-      triggerSync: {
-        useMutation: () => ({
-          mutate: vi.fn(),
-          mutateAsync: vi.fn(() => Promise.resolve({ jobId: "test-job" })),
-        }),
-      },
-      activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
-      dismiss: {
-        useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
-      },
-    },
-    useUtils: () => ({
-      invalidate: mockInvalidate,
-      processing: { status: { invalidate: vi.fn() } },
-    }),
+  useFocusEffect: (callback: () => void) => {
+    capturedFocusEffect = callback;
   },
 }));
+
+vi.mock("../../lib/trpc", async () => {
+  const actual = await vi.importActual<typeof import("../../lib/trpc")>("../../lib/trpc");
+  return {
+    trpc: {
+      trainingProgression: { strength: { useQuery: mockTrainingProgressionStrengthQuery } },
+      dailyMetrics: {
+        trends: { useQuery: mockTrendsQuery },
+        hrvBaseline: { useQuery: mockHeartRateQuery },
+      },
+      insights: {
+        compute: new Proxy(actual.trpc.insights.compute, {
+          get(target, property, receiver) {
+            return property === "useQuery"
+              ? mockInsightsQuery
+              : Reflect.get(target, property, receiver);
+          },
+        }),
+      },
+      mobileDashboard: {
+        dashboard: {
+          useQuery: (...parameters: unknown[]) => {
+            mockDashboardUseQuery(...parameters);
+            return {
+              data: mockDashboardData,
+              isLoading: mockDashboardLoading,
+              isFetching: mockDashboardFetching,
+              isError: !!mockDashboardError,
+              error: mockDashboardError,
+              refetch: mockDashboardRefetch,
+            };
+          },
+        },
+        dashboardV2: {
+          useQuery: (...parameters: unknown[]) => {
+            mockDashboardV2UseQuery(...parameters);
+            return {
+              data: mockDashboardData,
+              isLoading: mockDashboardLoading,
+              isFetching: mockDashboardFetching,
+              isPaused: mockDashboardPaused,
+              isError: !!mockDashboardError,
+              error: mockDashboardError,
+              refetch: mockDashboardRefetch,
+            };
+          },
+        },
+      },
+      anomalyDetection: {
+        check: {
+          useQuery: (...parameters: unknown[]) => {
+            mockAnomalyUseQuery(...parameters);
+            return {
+              data: mockAnomalyData,
+              isLoading: false,
+              isError: false,
+              error: null,
+              refetch: mockAnomalyRefetch,
+            };
+          },
+        },
+      },
+      processing: {
+        status: {
+          useQuery: (...parameters: unknown[]) => {
+            mockDataHealthUseQuery(...parameters);
+            return {
+              data: mockDataHealthData,
+              isLoading: false,
+              isError: false,
+              error: mockDataHealthError,
+              refetch: mockDataHealthRefetch,
+            };
+          },
+        },
+        triggerSync: {
+          useMutation: () => ({
+            mutate: vi.fn(),
+            mutateAsync: vi.fn(() => Promise.resolve({ jobId: "test-job" })),
+          }),
+        },
+        activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
+        dismiss: {
+          useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+        },
+      },
+      useUtils: () => ({
+        invalidate: mockInvalidate,
+        processing: { status: { invalidate: vi.fn() } },
+      }),
+    },
+  };
+});
 
 vi.mock("../../lib/useRefresh", () => ({
   useRefresh: (options: unknown) => mockUseRefresh(options),
@@ -178,6 +197,14 @@ vi.mock("../../theme", () => ({
   spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
   duration: { fast: 150, normal: 300, slow: 500, countUp: 800, chart: 1200, heartbeat: 3000 },
 }));
+
+function render(ui: ReactElement, queryClient: QueryClient = new QueryClient()) {
+  return baseRender(ui, {
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    ),
+  });
+}
 
 describe("TodayScreen independent loading states", () => {
   beforeEach(() => {
@@ -228,6 +255,7 @@ describe("TodayScreen independent loading states", () => {
     });
     mockDashboardRefetch.mockClear();
     mockInvalidate.mockClear();
+    capturedFocusEffect = undefined;
     mockDataHealthUseQuery.mockClear();
     mockDataHealthRefetch.mockClear();
     mockUseRefresh.mockClear();
@@ -373,7 +401,9 @@ describe("TodayScreen independent loading states", () => {
     rerender(<OverviewScreen />);
 
     expect(screen.getByRole("button", { name: "Open last night sleep details" })).toBeTruthy();
-    expect(screen.getByText("14.0 breaths/min")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Respiratory rate/ }).textContent).toContain(
+      "14.0 breaths/min",
+    );
     expect(screen.getByText("92.0%")).toBeTruthy();
     expect(screen.getByText("52 bpm")).toBeTruthy();
     expect(screen.getAllByText("Waiting for a connection")).toHaveLength(2);
@@ -706,6 +736,51 @@ describe("TodayScreen independent loading states", () => {
       expect.anything(),
       expect.objectContaining({ enabled: true }),
     );
+  });
+
+  it("refreshes insights on foreground and refreshes stale insights on mount", async () => {
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    render(<OverviewScreen />);
+
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        placeholderData: expect.any(Function),
+        refetchOnWindowFocus: "always",
+        refetchOnMount: true,
+      }),
+    );
+  });
+
+  it("refetches the exact stale insights query when the Overview tab regains focus", async () => {
+    const actualTrpc = await vi.importActual<typeof import("../../lib/trpc")>("../../lib/trpc");
+    const input = { days: 90, endDate: formatDateYmd() };
+    const queryKey = getQueryKey(actualTrpc.trpc.insights.compute, input, "query");
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(queryKey, [], { updatedAt: Date.now() - 301000 });
+    const queryFn = vi.fn().mockResolvedValue(overviewEvidenceFixture.insights.data);
+    const observer = new QueryObserver(queryClient, {
+      queryKey,
+      queryFn,
+      staleTime: 300000,
+      refetchOnMount: false,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+      render(<OverviewScreen />, queryClient);
+
+      expect(capturedFocusEffect).toBeTypeOf("function");
+      capturedFocusEffect?.();
+
+      await waitFor(() => {
+        expect(queryClient.getQueryData(queryKey)).toEqual(overviewEvidenceFixture.insights.data);
+      });
+      expect(queryFn).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+      queryClient.clear();
+    }
   });
 
   it("shows anomaly alerts from the standalone anomaly query", async () => {

@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import type { InsightEvidence } from "dofek-server/types";
 import { DashboardEvidenceOverview } from "./DashboardEvidenceOverview";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 function withRouter(Story: () => React.ReactNode) {
   const rootRoute = createRootRoute({ component: Outlet });
@@ -106,6 +107,13 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const CachedInsightWithRefreshError: Story = {
+  name: "Cached insight with refresh error",
+  args: {
+    insightError: <QueryStatePanel error={new Error("Insight service unavailable")} height={72} />,
+  },
+};
 
 export const SmoothedRecentTrend: Story = {
   name: "Smoothed 90-day resting heart rate trend",

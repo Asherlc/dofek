@@ -442,6 +442,54 @@ describe("HealthStatusCards compact grouped summary", () => {
     expect(within(rows[0]).queryByText(/baseline 50 ms/)).toBeNull();
     expect(within(rows[1]).getByText("7,640")).toBeTruthy();
     expect(within(rows[1]).getByText("Steps")).toBeTruthy();
+
+    const renderedOrder = rows[0].textContent ?? "";
+    expect(renderedOrder.indexOf("Heart Rate Variability (HRV)")).toBeLessThan(
+      renderedOrder.indexOf("52 ms"),
+    );
+    expect(renderedOrder.indexOf("52 ms")).toBeLessThan(renderedOrder.indexOf("Near baseline"));
+  });
+
+  it("keeps one compact tile open at a time while preserving each tile's details", () => {
+    const hrvExplanation = "HRV is close to your usual range.";
+    const stepsExplanation = "Steps is close to your usual range.";
+    const hrv = compactMetric({
+      metric: "hrv",
+      label: "Heart Rate Variability (HRV)",
+      explanation: hrvExplanation,
+    });
+    const steps = compactMetric({
+      metric: "steps",
+      label: "Steps",
+      valueText: "7,640",
+      baselineText: "7,640",
+      explanation: stepsExplanation,
+    });
+    render(<HealthStatusCards compact metrics={[hrv, steps]} />);
+
+    const hrvButton = screen.getByRole("button", {
+      name: /Heart Rate Variability \(HRV\), 52 ms, Near baseline\. Show details/,
+    });
+    const stepsButton = screen.getByRole("button", {
+      name: /Steps, 7,640, Near baseline\. Show details/,
+    });
+
+    fireEvent.click(hrvButton);
+    expect(hrvButton.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText(hrvExplanation)).toBeTruthy();
+    expect(screen.queryByText(stepsExplanation)).toBeNull();
+
+    fireEvent.click(stepsButton);
+    expect(hrvButton.getAttribute("aria-expanded")).toBe("false");
+    expect(stepsButton.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.queryByText(hrvExplanation)).toBeNull();
+    expect(screen.getByText(stepsExplanation)).toBeTruthy();
+
+    fireEvent.click(hrvButton);
+    expect(hrvButton.getAttribute("aria-expanded")).toBe("true");
+    expect(stepsButton.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText(hrvExplanation)).toBeTruthy();
+    expect(screen.queryByText(stepsExplanation)).toBeNull();
   });
 
   it("shows the concise status in the row and moves exact baseline and evidence into expanded details", () => {

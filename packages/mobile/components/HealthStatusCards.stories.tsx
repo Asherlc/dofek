@@ -324,8 +324,9 @@ export const FarFromBaseline: Story = {
 
 export const CompactDashboardMetrics: Story = {
   args: {
+    compact: true,
     metrics: [
-      {
+      overviewMetric({
         metric: "hrv",
         label: "Heart Rate Variability (HRV)",
         value: 51.5,
@@ -337,7 +338,6 @@ export const CompactDashboardMetrics: Story = {
         direction: "above",
         intent: "higher",
         statusToken: "moving_as_intended",
-        statusColor: "positive",
         statusLabel: "Moving as intended",
         evaluationRule: "Above your baseline, where higher values support this metric",
         explanation: "Heart Rate Variability (HRV) is above your baseline.",
@@ -347,10 +347,52 @@ export const CompactDashboardMetrics: Story = {
           observedDays: 5,
           windowDays: 7,
         },
-        comparison: null,
-        baselineProgress: readyBaselineProgress,
-      },
-      {
+      }),
+      overviewMetric({
+        metric: "resting_heart_rate",
+        label: "Resting Heart Rate",
+        value: 58,
+        valueText: "58 bpm",
+        baseline: 60,
+        baselineText: "60 bpm",
+        statusToken: "near_baseline",
+        statusLabel: "Near baseline",
+        explanation: "Resting Heart Rate is close to your usual range.",
+      }),
+      overviewMetric({
+        metric: "respiratory_rate",
+        label: "Respiratory Rate",
+        value: 15.2,
+        valueText: "15.2 breaths/min",
+        baseline: 12.7,
+        baselineText: "12.7 breaths/min",
+        deviation: 2.4,
+        direction: "above",
+        statusToken: "far_from_baseline",
+        statusColor: "danger",
+        statusLabel: "Far above baseline",
+        evaluationRule:
+          "Well outside your usual range: at least 2 standard deviations from baseline",
+        explanation: "Respiratory Rate is well above your usual range.",
+      }),
+      overviewMetric({
+        metric: "sleep_efficiency",
+        label: "Sleep Efficiency",
+        value: 83.1,
+        valueText: "83.1%",
+        baseline: 90,
+        baselineText: "90%",
+        deviation: -1.6,
+        direction: "below",
+        intent: "higher",
+        statusToken: "notable_deviation",
+        statusColor: "warning",
+        statusLabel: "Notably below baseline",
+        evaluationRule:
+          "Outside your usual range: 1 to less than 2 standard deviations from baseline",
+        explanation: "Sleep Efficiency is below your usual range.",
+      }),
+      overviewMetric({
         metric: "steps",
         label: "Steps",
         value: 7640,
@@ -358,18 +400,15 @@ export const CompactDashboardMetrics: Story = {
         baseline: 7640,
         baselineText: "7,640",
         sampleDeviation: 500,
-        deviation: 0,
-        direction: "aligned",
-        intent: "neutral",
-        statusToken: "near_baseline",
-        statusColor: "positive",
-        statusLabel: "Near baseline",
-        evaluationRule: "Within your usual range: less than 1 standard deviation from baseline",
         explanation: "Steps is close to your usual range.",
-        provenance: null,
-        comparison: null,
-        baselineProgress: readyBaselineProgress,
-      },
+      }),
     ],
   },
+  decorators: [
+    (Story) => (
+      <View style={{ width: "100%", maxWidth: 390, padding: 16 }}>
+        <Story />
+      </View>
+    ),
+  ],
 };

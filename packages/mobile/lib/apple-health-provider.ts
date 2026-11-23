@@ -217,6 +217,7 @@ export class AppleHealthSyncService {
   async syncObserverChanges(options: {
     typeIdentifiers: readonly string[];
     onStage?: SyncOptions["onStage"];
+    onTypeComplete?: (typeIdentifier: string) => void;
     assertCanContinue?: () => Promise<void>;
   }): Promise<SyncResult> {
     return this.#runAndRecordSync(
@@ -229,6 +230,7 @@ export class AppleHealthSyncService {
           minimumSampleDate,
           typeIdentifiers: options.typeIdentifiers,
           onStage: options.onStage,
+          onTypeComplete: options.onTypeComplete,
           assertCanContinue: options.assertCanContinue,
         });
       },

@@ -41,7 +41,9 @@ extension WhoopBleBackgroundUploaderTests {
         let firstRetry = try XCTUnwrap(transport.requests.dropFirst().first)
         XCTAssertEqual(firstRetry.2, initial.2)
         XCTAssertEqual(try Data(contentsOf: firstRetry.1), initialBody)
-        transport.onCompletion?(initial.2, 408, Data(), (initialAttempt, initial.0.url, 1, "test"), nil)
+        transport.onCompletion?(initial.2, 408, Data(), WhoopUploadCompletionContext(
+            attempt: initialAttempt, responseURL: initial.0.url, taskIdentifier: 1, transportPath: "test"
+        ), nil)
         try settle(uploader)
         XCTAssertEqual(try uploader.diagnostics()["http408ResponseCount"] as? Int, 1)
         transport.complete(1, status: 408, body: "")
@@ -195,13 +197,12 @@ extension WhoopBleBackgroundUploaderTests {
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "new", headers: [:])
         try settle(uploader)
         let requestIndex = try XCTUnwrap(transport.requests.indices.last)
-        let identity = transport.requests[requestIndex].2
         transport.complete(requestIndex, status: 600); try settle(uploader)
         XCTAssertEqual(errors.count, 2)
         XCTAssertEqual(try uploader.diagnostics()["http5xxResponseCount"] as? Int, 0)
 
         try uploader.flush(); try settle(uploader)
-        transport.failOnePath(identity: identity, error: URLError(.timedOut))
+        transport.fail(try XCTUnwrap(transport.requests.indices.last), error: URLError(.timedOut))
         try settle(uploader)
         XCTAssertEqual(errors.count, 3, "A timeout without an HTTP 5xx response remains an exception")
         XCTAssertEqual(try uploader.diagnostics()["http5xxResponseCount"] as? Int, 0)
