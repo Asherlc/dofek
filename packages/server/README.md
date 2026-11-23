@@ -91,8 +91,9 @@ and [mobile training screen](../mobile/app/strain.tsx).
   the nearest coordinate-bearing Area in the selected source graph; consolidation
   retains that graph's map ownership. See the [map contract](../training/src/climbing-map.ts).
   The [location resolver](src/services/climbing-location-resolution.ts) groups
-  indoor gym Areas using corroborating names and coordinates and fills missing
-  log locations only from an unambiguous exact source session. It computes the
+  indoor gyms using names and coordinates and outdoor Areas using local
+  ancestry and available coordinates. It fills missing indoor log locations
+  only from an unambiguous exact source session. It computes the
   existing response grouping, path and map fields without writing source facts
   or adding a display label; see [location rules](../../docs/climbing-context.md#ownership-and-location).
   Both use the same [grade display conversion](./src/repositories/climbing-grade-display.ts).

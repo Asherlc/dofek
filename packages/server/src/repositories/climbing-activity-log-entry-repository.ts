@@ -1,12 +1,15 @@
+import { catalogueAreasAreNearby } from "@dofek/climbing-catalogue/matching";
 import type { ClimbingChartAnnotation } from "@dofek/training/climbing-chart";
 import {
   type ClimbingGradePreference,
   DEFAULT_CLIMBING_GRADE_PREFERENCE,
 } from "@dofek/training/climbing-grades";
 import {
+  type Area,
   areaSchema,
   type ClimbingAttempt,
   climbingAttemptSchema,
+  climbingLogEntryAreaPath,
   climbingLogEntrySchema,
 } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
@@ -46,7 +49,6 @@ const databaseRowSchema = z.object({
   climb: climbingLogClimbDetailSchema.nullable(),
   areaPath: z.array(areaSchema),
   logAreaId: z.guid().nullable(),
-  areaGroupId: z.guid().nullable(),
   freeSend: z.boolean().nullable(),
   attempts: z.array(
     z
@@ -154,7 +156,8 @@ function identity(log: ClimbingLogEntryDetail): string | null {
     normalized(log.displayGrade),
     normalized(log.climb.name),
     log.climb.areaPath.map((area) => normalized(area.name)),
-    log.areaGroupId ?? null,
+    climbingLogEntryAreaPath(log).map((area) => normalized(area.name)),
+    log.climb.setting === "indoor" ? ["indoor", log.areaGroupId ?? null] : null,
     targets,
   ]);
 }
@@ -220,7 +223,7 @@ function consolidate(logs: HydratedLogEntry[]): HydratedLogEntry[] {
   const output: HydratedLogEntry[] = [];
   const groups = new Map<
     string,
-    { log: HydratedLogEntry; providers: Set<string>; sources: Set<string> }[]
+    { log: HydratedLogEntry; providers: Set<string>; sources: Set<string>; areaPins: Area[] }[]
   >();
   const completeness = (log: ClimbingLogEntryDetail) => [
     Number(log.recordedClimbOutcome !== null),
@@ -237,18 +240,27 @@ function consolidate(logs: HydratedLogEntry[]): HydratedLogEntry[] {
       continue;
     }
     const candidates = groups.get(key) ?? [];
-    const match = candidates.find((candidate) => !candidate.providers.has(log.providerId));
+    const leafArea =
+      log.climb?.setting === "indoor" ? undefined : climbingLogEntryAreaPath(log).at(-1);
+    const match = candidates.find(
+      (candidate) =>
+        !candidate.providers.has(log.providerId) &&
+        (!leafArea?.coordinates ||
+          candidate.areaPins.every((area) => catalogueAreasAreNearby(leafArea, area))),
+    );
     if (!match) {
       candidates.push({
         log,
         providers: new Set([log.providerId]),
         sources: new Set(log.sourceName ? [log.sourceName] : []),
+        areaPins: leafArea?.coordinates ? [leafArea] : [],
       });
       groups.set(key, candidates);
       output.push(log);
       continue;
     }
     match.providers.add(log.providerId);
+    if (leafArea?.coordinates) match.areaPins.push(leafArea);
     if (log.sourceName) match.sources.add(log.sourceName);
     const left = completeness(log);
     const right = completeness(match.log);
@@ -472,7 +484,6 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         ) ORDER BY pitch.number NULLS LAST,pitch.id) FROM fitness.pitch AS pitch WHERE pitch.climb_id=catalogue.id),'[]'::jsonb)
       ) END AS climb,
       entry.area_path AS "areaPath", entry.log_area_id AS "logAreaId",
-      location.group_id AS "areaGroupId",
       entry.free_send AS "freeSend",
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id',attempt.id,'climbingLogEntryId',attempt.climbing_log_entry_id,'scope',attempt.scope,'pitchId',attempt.pitch_id,
@@ -485,8 +496,6 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       ) ORDER BY attempt.attempt_index NULLS LAST,attempt.created_at,attempt.id) FROM fitness.v_climbing_attempt AS attempt WHERE attempt.climbing_log_entry_id=entry.id),'[]'::jsonb) AS attempts
       FROM fitness.v_climbing_log_entry AS entry
       LEFT JOIN fitness.climb AS catalogue ON catalogue.id=entry.climb_id
-      LEFT JOIN fitness.area AS location ON location.id=COALESCE(entry.log_area_id,catalogue.area_id)
-        AND location.user_id=entry.user_id
       LEFT JOIN fitness.activity AS attached ON attached.id=entry.activity_id AND attached.user_id=entry.user_id
       LEFT JOIN fitness.v_activity_group AS grouped ON grouped.user_id=entry.user_id AND attached.id=ANY(grouped.member_activity_ids)
       WHERE entry.user_id=${this.userId}::uuid AND ${predicate} ${eligibility}
@@ -522,7 +531,6 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         raw: climbingDetailRaw(row.log),
         climb: row.climb,
         areaPath: row.areaPath,
-        areaGroupId: row.areaGroupId,
         mapLocation: mapLocation(row.climb, row.areaPath, row.logAreaId),
         photoLogEntryId:
           row.log.providerId === "kaya" && row.log.externalId?.startsWith("kaya:ascent:")

@@ -30,7 +30,117 @@ function indoorLog(number: number, providerId: string, name: string | null, lati
   };
 }
 
+const kayaWall = ["Berkeley", "Indian Rock", "Picnic Table Wall"];
+const mountainProjectWall = [
+  "California",
+  "San Francisco Bay Area",
+  "East Bay Area",
+  "Berkeley",
+  "Indian Rock Park",
+  "Picnic Table Wall",
+];
+
+function outdoorLog(
+  id: string,
+  providerId: string,
+  names: string[],
+  coordinates: Area["coordinates"] = null,
+) {
+  const log = climbingLogEntryFixture({ id, providerId });
+  const areaPath = names.map((name, index) => ({
+    id: `${providerId}:${names.slice(0, index + 1).join("/")}`,
+    userId: log.userId,
+    providerId,
+    externalId: null,
+    name,
+    parentAreaId: null,
+    coordinates: index === names.length - 1 ? coordinates : null,
+  }));
+  return {
+    ...log,
+    climb: {
+      ...climbingClimbFixture(providerId),
+      kind: "boulder" as const,
+      setting: providerId === "kaya" ? ("outdoor" as const) : null,
+      areaPath,
+    },
+  };
+}
+
 describe("resolveClimbingLocations", () => {
+  it("groups all five Picnic Table Wall entries and keeps the neighboring Ape separate", () => {
+    const logs = [
+      outdoorLog("Picnic Traverse", "kaya", kayaWall),
+      outdoorLog("Ape Overhang", "kaya", ["Berkeley", "Indian Rock", "Ape"]),
+      outdoorLog("The Roof", "mountain-project", mountainProjectWall),
+      outdoorLog("Overhang Variations", "kaya", kayaWall),
+      outdoorLog("Face Variations", "kaya", kayaWall),
+      outdoorLog("Left Route", "mountain-project", mountainProjectWall),
+    ];
+    const resolved = resolveClimbingLocations(logs);
+    const groups = groupClimbingLogEntriesByArea(resolved);
+    expect(
+      groups.map((group) => [group.area?.name, group.entries.map((item) => item.entryNumber)]),
+    ).toEqual([
+      ["Picnic Table Wall", [1, 3, 4, 5, 6]],
+      ["Ape", [2]],
+    ]);
+    expect(resolved.map((log) => log.climb.areaPath)).toEqual(
+      logs.map((log) => log.climb.areaPath),
+    );
+    expect(resolveClimbingLocations(logs.toReversed()).map((log) => log.areaGroupId)).toEqual(
+      resolved.map((log) => log.areaGroupId).reverse(),
+    );
+  });
+
+  it.each([
+    [["Berkeley", "Mortar Rock", "Picnic Table Wall"], null],
+    [["Berkeley Park", "Indian Rock Park", "Picnic Table Wall"], null],
+    [["Indian Rock Park", "Picnic Table Wall"], null],
+    [mountainProjectWall, { latitude: 38, longitude: -122.27231 }],
+    [kayaWall, { latitude: 38, longitude: -122.27231 }],
+  ] as const)(
+    "keeps a conflicting or insufficient outdoor path separate: %j %j",
+    (path, coordinates) => {
+      const first = outdoorLog("first", "kaya", kayaWall, {
+        latitude: 37.89226,
+        longitude: -122.27231,
+      });
+      const second = outdoorLog("second", "mountain-project", [...path], coordinates);
+      expect(groupClimbingLogEntriesByArea(resolveClimbingLocations([first, second]))).toHaveLength(
+        2,
+      );
+    },
+  );
+
+  it("accepts nearby outdoor wall pins with one matching parent", () => {
+    const first = outdoorLog("first", "kaya", kayaWall, {
+      latitude: 37.89226,
+      longitude: -122.27231,
+    });
+    const second = outdoorLog(
+      "second",
+      "mountain-project",
+      ["Indian Rock Park", "Picnic Table Wall"],
+      {
+        latitude: 37.89228,
+        longitude: -122.27231,
+      },
+    );
+    expect(groupClimbingLogEntriesByArea(resolveClimbingLocations([first, second]))).toHaveLength(
+      1,
+    );
+  });
+
+  it("rejects competing outdoor matches from the same source", () => {
+    const logs = [
+      outdoorLog("first", "kaya", kayaWall),
+      outdoorLog("second", "mountain-project", mountainProjectWall),
+      outdoorLog("third", "mountain-project", ["Another region", ...mountainProjectWall]),
+    ];
+    expect(groupClimbingLogEntriesByArea(resolveClimbingLocations(logs))).toHaveLength(3);
+  });
+
   it("keeps identical walls in different neighboring gym ancestries separate in either order", () => {
     const first = indoorLog(1, "first", "Main Wall");
     const second = indoorLog(2, "second", "Main Wall", 37.8165);
@@ -129,6 +239,34 @@ describe("resolveClimbingLocations", () => {
     );
   });
 
+  it("uses known gym context when another log at that source area has no setting", () => {
+    const kaya = indoorLog(1, "kaya", "Touchstone Pacific Pipe");
+    const board = indoorLog(2, "boardsesh", "Pacific Pipe Climbing");
+    const unknownSetting = {
+      ...kaya,
+      id: "unknown-setting",
+      climb: { ...kaya.climb, setting: null },
+    };
+    const logs = [kaya, board, unknownSetting];
+    for (const order of [logs, logs.toReversed()]) {
+      expect(groupClimbingLogEntriesByArea(resolveClimbingLocations(order))).toHaveLength(1);
+    }
+  });
+
+  it("keeps an area with conflicting recorded settings separate from other providers", () => {
+    const kaya = indoorLog(1, "kaya", "Touchstone Pacific Pipe");
+    const board = indoorLog(2, "boardsesh", "Pacific Pipe Climbing");
+    const outdoor = {
+      ...kaya,
+      id: "outdoor",
+      climb: { ...kaya.climb, setting: "outdoor" as const },
+    };
+    const logs = [kaya, board, outdoor];
+    for (const order of [logs, logs.toReversed()]) {
+      expect(groupClimbingLogEntriesByArea(resolveClimbingLocations(order))).toHaveLength(2);
+    }
+  });
+
   it.each([
     ["Movement Granite Valley", "Granite Valley Climbing", 37.8165],
     ["The Front", "Front Climbing Club", 37.8165],
@@ -181,7 +319,7 @@ describe("resolveClimbingLocations", () => {
       { ...first, climb: { ...first.climb, setting: "outdoor" as const } },
       { ...second, climb: { ...second.climb, setting: "outdoor" as const } },
     ]);
-    expect(resolved.every((log) => !log.areaGroupId)).toBe(true);
+    expect(groupClimbingLogEntriesByArea(resolved)).toHaveLength(2);
   });
 
   it("rejects two possible gym identities from the same provider", () => {
@@ -202,20 +340,6 @@ describe("resolveClimbingLocations", () => {
     expect(groupClimbingLogEntriesByArea(resolved)).toHaveLength(3);
   });
 
-  it("preserves explicit membership and never joins conflicting explicit groups", () => {
-    const first = { ...indoorLog(1, "first", "Pacific Pipe"), areaGroupId: "explicit-one" };
-    const second = { ...indoorLog(2, "second", "Pacific Pipe"), areaGroupId: "explicit-two" };
-    expect(resolveClimbingLocations([first, second]).map((log) => log.areaGroupId)).toEqual([
-      "explicit-one",
-      "explicit-two",
-    ]);
-    const ungrouped = indoorLog(3, "third", "Pacific Pipe");
-    expect(resolveClimbingLocations([first, ungrouped]).map((log) => log.areaGroupId)).toEqual([
-      "explicit-one",
-      "explicit-one",
-    ]);
-  });
-
   it("fills missing session locations without changing the raw log or recorded board", () => {
     const known = { ...indoorLog(1, "boardsesh", "Pacific Pipe"), raw: { sessionId: "session" } };
     const unknown = {
@@ -231,21 +355,6 @@ describe("resolveClimbingLocations", () => {
       mapLocation: { objectId: known.id, providerId: "boardsesh", scope: "area" },
     });
     expect(unknown.areaPath).toEqual([]);
-  });
-
-  it("uses resolved gym identity when a session has differently named source areas", () => {
-    const first = {
-      ...indoorLog(1, "boardsesh", "Pacific Pipe"),
-      raw: { sessionId: "session" },
-      areaGroupId: "explicit",
-    };
-    const second = {
-      ...indoorLog(2, "boardsesh", "Another board"),
-      raw: { sessionId: "session" },
-      areaGroupId: "explicit",
-    };
-    const unknown = { ...indoorLog(3, "boardsesh", null), raw: { sessionId: "session" } };
-    expect(resolveClimbingLocations([first, second, unknown])[2]?.areaGroupId).toBe("explicit");
   });
 
   it.each([

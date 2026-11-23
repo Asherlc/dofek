@@ -1,4 +1,8 @@
-import { climbingAttemptSchema, climbingLogEntrySchema } from "@dofek/training/climbing-log";
+import {
+  type ClimbSetting,
+  climbingAttemptSchema,
+  climbingLogEntrySchema,
+} from "@dofek/training/climbing-log";
 import type { ClimbingProjectHistory } from "@dofek/training/climbing-project-history";
 import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts.ts";
 import type { ActivityRow } from "../models/activity.ts";
@@ -66,7 +70,6 @@ export function climbingLogDatabaseFixture(detail: ClimbingLogEntryDetail) {
     climb: detail.climb,
     areaPath: detail.areaPath ?? detail.climb?.areaPath ?? [],
     logAreaId: detail.areaPath?.at(-1)?.id ?? null,
-    areaGroupId: detail.areaGroupId ?? null,
     freeSend: detail.freeSend,
     attempts: detail.attempts.map((attempt) => climbingAttemptSchema.strip().parse(attempt)),
   };
@@ -194,6 +197,140 @@ export function climbingNamedLogEntryFixture(
     ],
   });
 }
+
+type ConsolidationSource = readonly [
+  providerId: string,
+  latitude: number | null,
+  recordedAreaName?: string,
+];
+
+export function climbingConsolidationCases() {
+  function logs(setting: ClimbSetting | null, sources: readonly ConsolidationSource[]) {
+    return sources.map(([providerId, latitude, recordedAreaName], index) => {
+      const id = `20000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`;
+      const log = climbingNamedLogEntryFixture(providerId, id);
+      const sourceArea = log.climb?.areaPath[0];
+      if (!log.climb || !sourceArea) throw new Error("Expected a climb with a catalogue area");
+      const area = {
+        ...sourceArea,
+        id: `20000000-0000-4000-8000-${String(index + 20).padStart(12, "0")}`,
+        externalId: `area-${index}`,
+        coordinates: latitude === null ? null : { latitude, longitude: -122.27231 },
+      };
+      const climbId = `20000000-0000-4000-8000-${String(index + 30).padStart(12, "0")}`;
+      const recordedArea =
+        recordedAreaName === undefined
+          ? undefined
+          : {
+              ...area,
+              id: `20000000-0000-4000-8000-${String(index + 40).padStart(12, "0")}`,
+              externalId: `recorded-area-${index}`,
+              name: recordedAreaName,
+            };
+      return {
+        ...log,
+        externalId: `log-${index}`,
+        activityId: "20000000-0000-4000-8000-000000000099",
+        climbId,
+        climb: {
+          ...log.climb,
+          id: climbId,
+          externalId: `climb-${index}`,
+          setting,
+          areaId: area.id,
+          areaPath: [area],
+        },
+        attempts: [
+          climbingAttemptFixture(id, {
+            id: `20000000-0000-4000-8000-${String(index + 50).padStart(12, "0")}`,
+            ropeMethod: "lead",
+          }),
+        ],
+        areaPath: recordedArea ? [recordedArea] : undefined,
+      };
+    });
+  }
+
+  return [
+    {
+      scenario: "nearby pins with an unspecified setting",
+      entries: logs(null, [
+        ["kaya", 37.892],
+        ["kaya-export", 37.8927],
+      ]),
+      count: 1,
+    },
+    {
+      scenario: "distant pins with an unspecified setting",
+      entries: logs(null, [
+        ["kaya", 37.892],
+        ["kaya-export", 37.9],
+      ]),
+      count: 2,
+    },
+    {
+      scenario: "different recorded wall names",
+      entries: logs("outdoor", [
+        ["kaya", null, "North Wall"],
+        ["kaya-export", null, "South Wall"],
+      ]),
+      count: 2,
+    },
+    {
+      scenario: "same-name gyms without pins",
+      entries: logs("indoor", [
+        ["kaya", null],
+        ["kaya-export", null],
+      ]),
+      count: 2,
+    },
+    {
+      scenario: "one resolved gym with pins 150 metres apart",
+      entries: logs("indoor", [
+        ["kaya", 37.892],
+        ["kaya-export", 37.89335],
+      ]),
+      count: 1,
+    },
+    {
+      scenario: "ambiguous outdoor display groups",
+      entries: logs("outdoor", [
+        ["kaya", null],
+        ["kaya", null],
+        ["kaya-export", null],
+      ]),
+      count: 2,
+    },
+    {
+      scenario: "a third pin near one contributor and far from the other",
+      entries: logs("outdoor", [
+        ["kaya", 37.892],
+        ["kaya-export", 37.8927],
+        ["openbeta", 37.8913],
+      ]),
+      count: 2,
+    },
+    {
+      scenario: "a missing first pin followed by conflicting pins",
+      entries: logs("outdoor", [
+        ["kaya", null],
+        ["kaya-export", 37.892],
+        ["openbeta", 37.9],
+      ]),
+      count: 2,
+    },
+    {
+      scenario: "a missing middle pin between nearby pins",
+      entries: logs("outdoor", [
+        ["kaya", 37.892],
+        ["kaya-export", null],
+        ["openbeta", 37.8927],
+      ]),
+      count: 1,
+    },
+  ];
+}
+
 export function climbingBoardSeshGradeFixture({
   id = "20000000-0000-4000-8000-000000000001",
   climbId = "20000000-0000-4000-8000-000000000003",
