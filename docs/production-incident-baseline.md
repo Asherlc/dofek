@@ -39790,6 +39790,31 @@ Local qualification and CI are separate from production throughput acceptance. T
   fix requires a new native iOS build. Physical-device validation of the
   battery impact remains pending.
 
+## 2026-11-22 — Overview retained an empty relationship card
+
+- **Impact and evidence.** A signed-in web Overview showed “No insights to
+  display.” Reloading the same tab populated the card for the same 90-day
+  window. At 01:51:31 UTC on November 23, Axiom recorded a cache miss for
+  `insights.compute` with a total procedure duration of 2,806 ms and HTTP 200
+  for the enclosing tRPC request. The report covered one account. iOS was
+  inspected in code.
+- **Cause and mitigation.** Both clients disable refresh on focus by default,
+  and the Overview insight query inherits this setting. A local query-observer
+  reproduction retained the cached empty result on focus and fetched the
+  available result after enabling focus refresh for the query. The input
+  state that produced the original empty result is unknown. Reloading the
+  production tab cleared the observed symptom. [Web query defaults](../packages/web/src/lib/query-client.ts) ·
+  [iOS query defaults](../packages/mobile/lib/query-client.ts).
+- **Fix and validation.** The Overview refreshes insights when its web tab
+  becomes visible, when the iOS app returns to the foreground, or when iOS
+  opens the Overview with stale results. Completing an iOS health sync also
+  refreshes insights and restarts an overlapping initial request.
+  Focused web and mobile tests passed, including the empty and error states.
+  Verify the change in production after deployment.
+  [Web Overview](../packages/web/src/pages/Dashboard.tsx) ·
+  [iOS Overview](../packages/mobile/app/(tabs)/index.tsx) ·
+  [iOS sync refresh list](../packages/mobile/lib/invalidate-synced-health-data.ts).
+
 ## 2026-11-22 — WHOOP Bluetooth startup reconnect on a new iOS build
 
 - **Impact.** At 19:29:32 Pacific, TestFlight build `1795402168` reported one
