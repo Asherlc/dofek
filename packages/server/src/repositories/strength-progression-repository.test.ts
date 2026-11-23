@@ -68,6 +68,88 @@ const input = {
 };
 
 describe("StrengthProgressionRepository", () => {
+  it("combines matching dumbbell histories and counts a mirrored set once", async () => {
+    const first = { ...baseRow, equipment: "Dumbbell", weight_kg: 20 };
+    const mirror = {
+      ...first,
+      exercise_id: "00000000-0000-4000-8000-000000000200",
+      exercise_name: "Bench Press - Dumbbell",
+      equipment: "DUMBBELL",
+      set_activity_id: "00000000-0000-4000-8000-000000000012",
+      set_id: "00000000-0000-4000-8000-000000000102",
+      set_provider: "whoop",
+    };
+    const later = {
+      ...mirror,
+      activity_id: "00000000-0000-4000-8000-000000000002",
+      session_date: "2026-07-02",
+      set_id: "00000000-0000-4000-8000-000000000103",
+      weight_kg: 25,
+    };
+    const repeated = {
+      ...later,
+      exercise_id: first.exercise_id,
+      exercise_name: first.exercise_name,
+      equipment: first.equipment,
+      exercise_index: 1,
+      set_id: "00000000-0000-4000-8000-000000000104",
+      weight_kg: 22,
+    };
+    const result = await new StrengthProgressionRepository(
+      executeDb([first, mirror, later, repeated]),
+      baseRow.activity_id,
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(result.exercises).toHaveLength(1);
+    expect(result.exercises[0]).toMatchObject({
+      exerciseId: first.exercise_id,
+      exerciseIds: [mirror.exercise_id, first.exercise_id],
+      exerciseName: "Bench Press",
+      equipment: "Dumbbell",
+      totalLoggedSets: 3,
+      comparisons: [
+        {
+          reps: 5,
+          observedDates: 2,
+          first: { setId: first.set_id, weightKg: 20, sourceProviders: ["strong", "whoop"] },
+          latest: { setId: later.set_id, weightKg: 25, sourceProviders: ["whoop"] },
+        },
+      ],
+    });
+  });
+
+  it.each([
+    ["Bicep Curl", "Dumbbell", " BICEP  CURL - Dumbbell ", " dumbbell ", 1],
+    ["Press", "İp", "Press - İp", "İp", 1],
+    ["Chest Fly", "Dumbbell", "Bench Fly - Dumbbell", "DUMBBELL", 1],
+    ["Chest Fly", "Machine", "Bench Fly - Machine", "MACHINE", 2],
+    ["Chest Fly", null, "Bench Fly - Dumbbell", "DUMBBELL", 2],
+    ["Bench Press", "Barbell", "Bench Press - Dumbbell", "DUMBBELL", 2],
+    ["Bench Press", "Barbell", "Bench Press - Dumbbell", "BARBELL", 2],
+    ["Overhead Press", "Dumbbell", "Overhead Press - Seated - Dumbbell", "DUMBBELL", 2],
+  ])(
+    "keeps the correct choices for %s (%s) and %s (%s)",
+    async (exerciseName, equipment, aliasName, aliasEquipment, expectedChoices) => {
+      const rows = [
+        { ...baseRow, exercise_name: exerciseName, equipment },
+        {
+          ...baseRow,
+          activity_id: "00000000-0000-4000-8000-000000000002",
+          exercise_id: "00000000-0000-4000-8000-000000000202",
+          exercise_name: aliasName,
+          equipment: aliasEquipment,
+        },
+      ];
+      const result = await new StrengthProgressionRepository(
+        executeDb(rows),
+        baseRow.activity_id,
+        "UTC",
+      ).listLoggedSetComparison(null);
+      expect(result.exercises).toHaveLength(expectedChoices);
+      expect(result.exercises).toContainEqual(expect.objectContaining({ exerciseName, equipment }));
+    },
+  );
+
   it("preserves each supplied provider and exercise predicate and returns its evidence", async () => {
     const db = executeDb([baseRow]);
     const repo = new StrengthProgressionRepository(db, baseRow.activity_id, "UTC");

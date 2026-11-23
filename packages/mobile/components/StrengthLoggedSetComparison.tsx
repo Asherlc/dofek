@@ -31,8 +31,17 @@ export function StrengthLoggedSetComparison({
   const [reps, setReps] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
   const exercise =
-    data?.exercises.find((item) => item.exerciseId === exerciseKey) ?? data?.exercises[0];
-  const progressionRow = progressionRows?.find((row) => row.exerciseId === exercise?.exerciseId);
+    data?.exercises.find(
+      (item) =>
+        exerciseKey !== null &&
+        (item.exerciseId === exerciseKey || item.exerciseIds?.includes(exerciseKey)),
+    ) ?? data?.exercises[0];
+  const progressionRow = exercise
+    ? progressionRows?.find(
+        (row) =>
+          row.exerciseId === exercise.exerciseId || exercise.exerciseIds?.includes(row.exerciseId),
+      )
+    : undefined;
   const comparison =
     exercise?.comparisons.find((item) => item.reps === reps) ?? exercise?.comparisons[0];
   const weight = (value: number) => formatMeasurementText(units.formatWeight(value));

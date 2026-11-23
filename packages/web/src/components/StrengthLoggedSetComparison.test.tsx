@@ -109,6 +109,37 @@ it("shows a flat benchmark status for the selected lift", () => {
   ).toBeTruthy();
 });
 
+it("preserves a selected alias and shows the newest matching progression evidence", () => {
+  const { rerender } = render(<StrengthLoggedSetComparison data={loggedSetFixture} />);
+  fireEvent.change(screen.getByRole("combobox", { name: "Exercise and equipment" }), {
+    target: { value: "dumbbell" },
+  });
+  const exercises = loggedSetFixture.exercises.map((exercise) =>
+    exercise.exerciseId === "dumbbell"
+      ? {
+          ...exercise,
+          exerciseId: "dumbbell-current",
+          exerciseIds: ["dumbbell", "dumbbell-current"],
+        }
+      : exercise,
+  );
+  rerender(
+    <StrengthLoggedSetComparison
+      data={{ ...loggedSetFixture, exercises }}
+      progressionRows={[
+        { ...repImprovementRow, exerciseId: "dumbbell", equipment: "Dumbbell" },
+        { ...repImprovementWithoutBadge, exerciseId: "dumbbell-current" },
+      ]}
+    />,
+  );
+  expect(screen.getByRole("combobox", { name: "Exercise and equipment" })).toHaveProperty(
+    "value",
+    "dumbbell-current",
+  );
+  const status = within(screen.getByRole("region", { name: "Training progression status" }));
+  expect(status.getByText("Ready to progress")).toBeTruthy();
+});
+
 it("keeps the comparison usable when no progression rows match", () => {
   render(<StrengthLoggedSetComparison data={loggedSetFixture} progressionRows={[]} />);
   expect(screen.queryByRole("region", { name: "Training progression status" })).toBeNull();

@@ -69,6 +69,35 @@ describe("mobile query persistence", () => {
     expect(restoredClient.getQueryData(queryKey)).toEqual(data);
   });
 
+  it("discards mobile query caches containing pre-merge strength exercise choices", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const userId = "strength-owner";
+    const queryKey = [["strength", "loggedSetComparison"], { input: { days: 30 }, type: "query" }];
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(queryKey, {
+      exercises: [
+        { exerciseName: "Bench Press", equipment: "Dumbbell" },
+        { exerciseName: "Bench Press - Dumbbell", equipment: "DUMBBELL" },
+      ],
+    });
+    await AsyncStorage.setItem(
+      `dofek-query-cache:${userId}`,
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: `${userId}:v29`,
+        clientState: dehydrate(seedClient),
+      }),
+    );
+    const restoredClient = createQueryClient();
+    await persistQueryClientRestore({
+      queryClient: restoredClient,
+      persister: createMobileQueryPersister(userId),
+      maxAge: QUERY_CACHE_MAX_AGE_MS,
+      buster: mobileQueryCacheBuster(userId),
+    });
+    expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+  });
+
   it("discards mobile query caches without server-computed sleep interval durations", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "sleep-owner";

@@ -338,6 +338,51 @@ describe("StrengthProgressionRepository database semantics", () => {
       status: "unavailable",
     });
   });
+
+  it("returns a single dumbbell bench history across provider aliases", async () => {
+    const dumbbellBench = randomUUID();
+    const mirroredBench = randomUUID();
+    await context.db.execute(sql`
+      INSERT INTO fitness.exercise (id, name, equipment) VALUES
+        (${dumbbellBench}::uuid, 'Horizontal Press Fixture', 'Dumbbell'),
+        (${mirroredBench}::uuid, 'Horizontal Press Fixture - Dumbbell', 'DUMBBELL')
+    `);
+    await context.db.execute(sql`
+      INSERT INTO fitness.strength_set (
+        activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps
+      ) VALUES
+        (${firstActivity}::uuid, ${dumbbellBench}::uuid, 1, 0, 'working', 20, 6),
+        (${mirrorActivity}::uuid, ${mirroredBench}::uuid, 1, 0, 'working', 20, 6),
+        (${latestActivity}::uuid, ${mirroredBench}::uuid, 1, 0, 'working', 25, 6)
+    `);
+
+    const { exercises } = await new StrengthProgressionRepository(
+      context.db,
+      userId,
+      "UTC",
+    ).listLoggedSetComparison(null);
+    expect(exercises).toMatchObject([
+      { exerciseName: "Bench Press", exerciseId: benchExercise, equipment: "Barbell" },
+      {
+        exerciseId: dumbbellBench,
+        exerciseName: "Horizontal Press Fixture",
+        equipment: "Dumbbell",
+        totalLoggedSets: 2,
+        comparisons: [
+          {
+            reps: 6,
+            observedDates: 2,
+            first: {
+              date: "2026-05-01",
+              weightKg: 20,
+              sourceProviders: [primaryProvider, mirrorProvider].sort(),
+            },
+            latest: { date: "2026-07-01", weightKg: 25, sourceProviders: [primaryProvider] },
+          },
+        ],
+      },
+    ]);
+  });
 });
 
 describe("StrengthProgressionRepository strength evidence", () => {
