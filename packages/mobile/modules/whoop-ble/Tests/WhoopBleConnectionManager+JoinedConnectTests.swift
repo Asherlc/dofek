@@ -122,14 +122,20 @@ final class WhoopBleJoinedConnectTests: XCTestCase {
         }
 
         var cancellingResults: [Result<Bool, WhoopBleConnectionError>] = []
+        var otherStrapResults: [Result<Bool, WhoopBleConnectionError>] = []
         var retryResults: [Bool] = []
+        manager.connect(peripheralId: UUID().uuidString) { otherStrapResults.append($0) }
         manager.connect(peripheralId: peripheral.identifier.uuidString) { cancellingResults.append($0) }
         manager.retryConnection { retryResults.append($0) }
         manager.syncOnBleQueue {
-            guard case .failure(.disconnected) = cancellingResults.first else {
-                return XCTFail("Expected connect to fail while the native attempt cancels")
+            XCTAssertTrue(
+                cancellingResults.isEmpty,
+                "An explicit connect during native cancellation joins the pending attempt"
+            )
+            XCTAssertEqual(otherStrapResults.count, 1)
+            if case .failure(.disconnected) = otherStrapResults.first {} else {
+                XCTFail("Expected a different strap to stay rejected during native cancellation")
             }
-            XCTAssertEqual(cancellingResults.count, 1)
             XCTAssertEqual(retryResults, [true])
             XCTAssertEqual(peripheral.connections, 0)
             manager.handlePeripheralDisconnected(peripheral, error: nil)
@@ -137,7 +143,85 @@ final class WhoopBleJoinedConnectTests: XCTestCase {
             XCTAssertEqual(manager.state, .connecting)
             XCTAssertNil(manager.handshakeTimeoutWorkItem)
             XCTAssertEqual(results.count, 1)
+            XCTAssertTrue(cancellingResults.isEmpty, "The joined caller stays pending through the cancellation disconnect")
+
+            manager.handlePeripheralConnected(peripheral)
+            manager.setState(.subscribing)
+            XCTAssertEqual(makeReady(manager), true)
+            XCTAssertEqual(cancellingResults.count, 1)
+            if case .success(true) = cancellingResults.first {} else {
+                XCTFail("Expected the joined caller to succeed when the retried attempt becomes ready")
+            }
         }
+    }
+
+    func testWaiterJoinedDuringNativeCancellationReceivesNextAttemptFailure() {
+        let (manager, peripheral) = restore()
+        var transientResults: [Result<Bool, WhoopBleConnectionError>] = []
+        manager.connect(peripheralId: peripheral.identifier.uuidString) { transientResults.append($0) }
+        manager.syncOnBleQueue {
+            manager.handlePeripheralConnected(peripheral)
+            manager.abortHandshake(for: peripheral, with: .serviceDiscoveryFailed("temporary"))
+            XCTAssertEqual(transientResults.count, 1)
+            XCTAssertEqual(manager.state, .disconnecting)
+            peripheral.state = .disconnecting
+        }
+
+        var joiningResults: [Result<Bool, WhoopBleConnectionError>] = []
+        manager.connect(peripheralId: peripheral.identifier.uuidString) { joiningResults.append($0) }
+        manager.syncOnBleQueue {
+            XCTAssertTrue(joiningResults.isEmpty)
+            manager.handlePeripheralDisconnected(peripheral, error: nil)
+            XCTAssertEqual(manager.state, .connecting)
+            XCTAssertTrue(joiningResults.isEmpty, "The joined caller stays pending through the cancellation disconnect")
+            manager.handlePeripheralConnected(peripheral)
+            manager.abortHandshake(for: peripheral, with: .serviceDiscoveryFailed("second"))
+            XCTAssertEqual(joiningResults.count, 1)
+            if case .failure(.serviceDiscoveryFailed("second")) = joiningResults.first {} else {
+                XCTFail("Expected the retried attempt's setup failure to settle the joined caller")
+            }
+        }
+    }
+
+    func testWaiterJoinedDuringNativeCancellationKeepsOriginalDeadline() {
+        let timeout: TimeInterval = 0.2
+        let (manager, peripheral) = restore(connectTimeoutSeconds: timeout)
+        manager.syncOnBleQueue {
+            manager.handlePeripheralConnected(peripheral)
+            manager.abortHandshake(for: peripheral, with: .serviceDiscoveryFailed("temporary"))
+            XCTAssertEqual(manager.state, .disconnecting)
+            peripheral.state = .disconnecting
+        }
+
+        var joiningResults: [Result<Bool, WhoopBleConnectionError>] = []
+        manager.connect(peripheralId: peripheral.identifier.uuidString) { joiningResults.append($0) }
+
+        // The waiter's deadline starts at connect time. The disconnect lands halfway
+        // through it and the checkpoint follows 0.15s later, past the original
+        // deadline and ahead of any deadline the automatic reconnect would set.
+        let pending = expectation(description: "joined waiter pending before the disconnect")
+        manager.bleQueue.asyncAfter(deadline: .now() + (timeout / 2 - 0.05)) {
+            XCTAssertTrue(joiningResults.isEmpty, "The joined waiter stays pending until the disconnect")
+            pending.fulfill()
+        }
+
+        let expired = expectation(description: "joined waiter expired on its original deadline")
+        manager.bleQueue.asyncAfter(deadline: .now() + timeout / 2) {
+            manager.handlePeripheralDisconnected(peripheral, error: nil)
+            manager.bleQueue.asyncAfter(deadline: .now() + 0.15) {
+                XCTAssertEqual(joiningResults.count, 1)
+                if case .failure(.timeout) = joiningResults.first {} else {
+                    XCTFail("Expected the original deadline to time out the joined waiter")
+                }
+                XCTAssertEqual(manager.state, .connecting)
+                XCTAssertEqual(peripheral.connections, 1)
+                XCTAssertNil(manager.handshakeTimeoutWorkItem)
+                XCTAssertTrue(manager.autoReconnect)
+                expired.fulfill()
+            }
+        }
+
+        wait(for: [pending, expired], timeout: 2)
     }
 
     func testIntentionalDisconnectSettlesWaiterBeforeCompletionAndIgnoresLateCallbacks() {
