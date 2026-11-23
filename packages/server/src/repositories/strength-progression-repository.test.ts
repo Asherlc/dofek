@@ -913,4 +913,21 @@ describe("StrengthProgressionRepository", () => {
       }),
     ]);
   });
+
+  it("bounds the strength evidence read to 56 days and the caller access window", async () => {
+    const db = executeDb([]);
+    const repo = new StrengthProgressionRepository(db, "00000000-0000-4000-8000-00009000", "UTC", {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2026-10-01",
+      endDateExclusive: "2026-11-01",
+    });
+    await repo.getStrengthProgression();
+    const text = queryText(db.execute.mock.calls[0]?.[0]);
+    expect(text).toContain("training_progression_strength");
+    expect(text).toContain("56");
+    expect(text).toContain("2026-10-01");
+    expect(text).toContain("2026-11-01");
+  });
 });

@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "title": "Dofek · Training progression",
+  "kind": "prototype",
+  "description": "Three mobile concepts that show training status and the logged evidence behind it, using sample strength and cycling data.",
+  "artboards": [
+    {
+      "id": "daily-brief",
+      "title": "Daily Brief",
+      "file": "daily-brief.html",
+      "width": 390,
+      "height": 720
+    },
+    {
+      "id": "lift-detail",
+      "title": "Lift Detail",
+      "file": "lift-detail.html",
+      "width": 390,
+      "height": 720
+    },
+    {
+      "id": "cycling-session",
+      "title": "Cycling Session",
+      "file": "cycling-session.html",
+      "width": 390,
+      "height": 720
+    }
+  ],
+  "tweaks": [
+    {
+      "id": "appearance",
+      "label": "Appearance",
+      "type": "select",
+      "var": "--artboard-appearance",
+      "options": [
+        {
+          "label": "Dark",
+          "value": "dark"
+        },
+        {
+          "label": "Light",
+          "value": "light"
+        }
+      ],
+      "default": "dark"
+    },
+    {
+      "id": "card-corners",
+      "label": "Card corners",
+      "type": "range",
+      "var": "--insight-radius",
+      "min": 0,
+      "max": 28,
+      "step": 1,
+      "unit": "px",
+      "default": 17
+    }
+  ]
+}

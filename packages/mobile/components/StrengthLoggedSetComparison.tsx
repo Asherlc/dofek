@@ -5,24 +5,34 @@ import type { LoggedSetComparison } from "dofek-server/types";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { openExternalUrl } from "../lib/open-external-url";
+import {
+  type StrengthProgressionRow,
+  strengthEvidenceSummary,
+  strengthHeadline,
+} from "../lib/training-progression";
 import { colors } from "../theme";
 import { QueryStatePanel } from "./QueryStatePanel";
+import { StrengthProgressionEvidence } from "./StrengthProgressionEvidence";
+import { TrainingProgressionStatusCard } from "./TrainingProgressionStatusCard";
 export function StrengthLoggedSetComparison({
   data,
   loading = false,
   error,
   units,
+  progressionRows,
 }: {
   data?: LoggedSetComparison;
   loading?: boolean;
   error?: { message: string } | null;
   units: UnitConverter;
+  progressionRows?: StrengthProgressionRow[];
 }) {
   const [exerciseKey, setExerciseKey] = useState<string | null>(null);
   const [reps, setReps] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
   const exercise =
     data?.exercises.find((item) => item.exerciseId === exerciseKey) ?? data?.exercises[0];
+  const progressionRow = progressionRows?.find((row) => row.exerciseId === exercise?.exerciseId);
   const comparison =
     exercise?.comparisons.find((item) => item.reps === reps) ?? exercise?.comparisons[0];
   const weight = (value: number) => formatMeasurementText(units.formatWeight(value));
@@ -60,6 +70,14 @@ export function StrengthLoggedSetComparison({
               </Pressable>
             ))}
           </View>
+          {progressionRow ? (
+            <TrainingProgressionStatusCard
+              status={progressionRow.status}
+              headline={strengthHeadline(progressionRow)}
+              summary={strengthEvidenceSummary(progressionRow)}
+              details={<StrengthProgressionEvidence row={progressionRow} units={units} />}
+            />
+          ) : null}
           {exercise.comparisons.length > 1 ? (
             <View style={styles.choices}>
               {exercise.comparisons.map((item) => (

@@ -1,11 +1,12 @@
 import { formatSpO2Measurement } from "@dofek/format/format";
 import { isConnectionFailure } from "@dofek/format/user-facing-error";
+import { Link } from "@tanstack/react-router";
 import { baselineRelativeMetricSchema } from "dofek-server/baseline-relative-metrics";
 import {
   type HealthStatusMetric,
   healthStatusMetricSchema,
 } from "dofek-server/mobile-dashboard-contracts";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { z } from "zod";
 import type { Insight } from "../components/CorrelationCard.tsx";
 import { DashboardEvidenceOverview } from "../components/DashboardEvidenceOverview.tsx";
@@ -13,9 +14,16 @@ import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { StrengthProgressionEvidence } from "../components/StrengthProgressionEvidence.tsx";
+import { TrainingProgressionStatusCard } from "../components/TrainingProgressionStatusCard.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { usePageLoadDomSection } from "../lib/page-load-context.tsx";
+import {
+  firstStatusRow,
+  strengthEvidenceSummary,
+  strengthHeadline,
+} from "../lib/training-progression.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
@@ -70,6 +78,15 @@ export function Dashboard() {
     { days: overviewDays, endDate },
     { refetchOnWindowFocus: true },
   );
+  const strengthProgression = trpc.trainingProgression.strength.useQuery();
+  const previousStrengthProgressionDate = useRef(endDate);
+  const { refetch: refetchStrengthProgression } = strengthProgression;
+  useEffect(() => {
+    const dateChanged = previousStrengthProgressionDate.current !== endDate;
+    previousStrengthProgressionDate.current = endDate;
+    if (!dateChanged) return;
+    void refetchStrengthProgression();
+  }, [endDate, refetchStrengthProgression]);
   const processingStatus = useProcessingStatus({
     datasets: ["activity", "sleep", "recovery", "training", "body"],
   });
@@ -78,8 +95,11 @@ export function Dashboard() {
     insightsQuery.error,
     heartRateBaseline.error,
     processingStatus.error,
+    strengthProgression.error,
   ].filter((error) => error != null && isConnectionFailure(error));
   const sharedConnectionFailure = connectionFailures.length > 1;
+  const strengthProgressionErrorHidden =
+    sharedConnectionFailure && isConnectionFailure(strengthProgression.error);
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
     : undefined;
@@ -96,6 +116,7 @@ export function Dashboard() {
       })[0];
   }, [insightsQuery.data]);
 
+  const latestStrengthStatus = firstStatusRow(strengthProgression.data);
   const healthMetrics = useMemo(() => buildHealthMetrics(trendData), [trendData]);
   const restingHeartRateStatus = healthMetrics.find(
     (metric) => metric.metric === "resting_heart_rate",
@@ -206,6 +227,25 @@ export function Dashboard() {
         }
         loading={processingStatus.isLoading}
       />
+      {strengthProgression.error && !strengthProgressionErrorHidden ? (
+        <QueryStatePanel
+          error={strengthProgression.error}
+          height={latestStrengthStatus ? 72 : 160}
+        />
+      ) : null}
+      {latestStrengthStatus ? (
+        <TrainingProgressionStatusCard
+          status={latestStrengthStatus.status}
+          headline={strengthHeadline(latestStrengthStatus)}
+          summary={strengthEvidenceSummary(latestStrengthStatus)}
+          details={<StrengthProgressionEvidence row={latestStrengthStatus} />}
+          action={
+            <Link to="/training/strength" className="text-accent">
+              Open Strength
+            </Link>
+          }
+        />
+      ) : null}
       <DashboardEvidenceOverview
         days={overviewDays}
         endDate={endDate}

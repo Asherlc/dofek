@@ -17,6 +17,10 @@ export const Route = createLazyFileRoute("/training/strength")({
 
 function StrengthTab() {
   const { days } = useTrainingDays();
+  const progression = trpc.trainingProgression.strength.useQuery(
+    undefined,
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
   const loggedSets = trpc.strength.loggedSetComparison.useQuery(selectedRangeQueryInput(days), {
     ...TRAINING_SLOW_QUERY_OPTIONS,
     placeholderData: keepPreviousData,
@@ -40,10 +44,15 @@ function StrengthTab() {
 
   return (
     <>
+      {progression.error ? <QueryStatePanel error={progression.error} height={72} /> : null}
+      {progression.isLoading && !progression.data ? (
+        <QueryStatePanel variant="loading" height={72} contextLabel="Strength progression" />
+      ) : null}
       <StrengthLoggedSetComparison
         data={loggedSets.data}
         loading={loggedSets.isLoading}
         error={loggedSets.error}
+        progressionRows={progression.data}
       />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Strength Volume">

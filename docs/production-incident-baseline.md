@@ -39835,3 +39835,21 @@ Local qualification and CI are separate from production throughput acceptance. T
   streaming at `03:29:32.686 UTC` on the same bundle. Axiom's next capture
   snapshot recorded fresh Bluetooth samples. If the alert recurs, inspect
   whether native streaming recovers and whether uploads catch up. [Deployed reconnect path](https://github.com/Asherlc/dofek/blob/b69aa23852017d61b79f0f859d2a9dee7ee073be/packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager%2BCoreBluetooth.swift#L113-L132).
+
+## 2026-11-23 — Progression PR exposed Kilter test isolation
+
+- Integration shard 1 on PR #3464 reported ten Kilter persistence failures
+  with `Kilter Board app sync failed: Connection aborted`. The failures blocked
+  PR validation. Production was unaffected. [Failed integration job](https://github.com/Asherlc/dofek/actions/runs/45198554695/job/137777375758).
+- The shard ran the server entry-point suite before the board fixture. The
+  server suite loaded Kilter in the shared Vitest worker before the fixture
+  mocked the PowerSync database. A local run in the same order reproduced
+  all ten failures.
+- The board fixture now captures the setup-owned MSW instance before resetting
+  the module cache. Its provider imports then pick up the approved PowerSync
+  mock. Both suites passed all 60 tests in the failing order with retries
+  disabled, real PostgreSQL, and the original MSW listener.
+  [Board fixture](../src/lib/climbing-board-account.integration.test.ts).
+- **Remaining risk and follow-up.** Other fixtures that mock dependencies
+  already imported into a shared worker can still depend on suite order. If the
+  failure recurs, reproduce the shard order and check mock and MSW ownership.

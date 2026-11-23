@@ -9,6 +9,10 @@ import { healthStatusMetricSchema } from "dofek-server/mobile-dashboard-contract
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { overviewEvidenceFixture } from "../../app-fixtures/(tabs)/overview-evidence";
+import {
+  repImprovementRow,
+  repImprovementWithoutBadge,
+} from "../../components/training-progression-fixture";
 
 const mockRouterPush = vi.fn();
 let capturedFocusEffect: (() => void) | undefined;
@@ -37,6 +41,20 @@ const mockDataHealthRefetch = vi.fn(() => Promise.resolve());
 const mockTrendsQuery = vi.fn();
 const mockHeartRateQuery = vi.fn();
 const mockInsightsQuery = vi.fn();
+const mockStrengthRefetch = vi.fn(() => Promise.resolve());
+const mockTodayQueryDate = vi.hoisted(() => ({ current: "" }));
+const mockTrainingProgressionStrengthQuery = vi.fn(
+  (): { data: unknown; isLoading: boolean; error: unknown; refetch?: () => Promise<void> } => ({
+    data: undefined,
+    isLoading: false,
+    error: null,
+    refetch: mockStrengthRefetch,
+  }),
+);
+
+vi.mock("../../lib/useTodayQueryDate", () => ({
+  useTodayQueryDate: () => mockTodayQueryDate.current || formatDateYmd(),
+}));
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
@@ -49,6 +67,7 @@ vi.mock("../../lib/trpc", async () => {
   const actual = await vi.importActual<typeof import("../../lib/trpc")>("../../lib/trpc");
   return {
     trpc: {
+      trainingProgression: { strength: { useQuery: mockTrainingProgressionStrengthQuery } },
       dailyMetrics: {
         trends: { useQuery: mockTrendsQuery },
         hrvBaseline: { useQuery: mockHeartRateQuery },
@@ -194,6 +213,7 @@ function render(ui: ReactElement, queryClient: QueryClient = new QueryClient()) 
 
 describe("TodayScreen independent loading states", () => {
   beforeEach(() => {
+    mockTodayQueryDate.current = "";
     for (const query of [mockTrendsQuery, mockHeartRateQuery, mockInsightsQuery]) {
       query.mockReset();
       query.mockReturnValue({ isLoading: false, error: null, refetch: vi.fn() });
@@ -232,12 +252,100 @@ describe("TodayScreen independent loading states", () => {
     mockProviderGuideError = null;
     mockDashboardError = null;
     mockRouterPush.mockClear();
+    mockStrengthRefetch.mockClear();
+    mockTrainingProgressionStrengthQuery.mockReset().mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+      refetch: mockStrengthRefetch,
+    });
     mockDashboardRefetch.mockClear();
     mockInvalidate.mockClear();
     capturedFocusEffect = undefined;
     mockDataHealthUseQuery.mockClear();
     mockDataHealthRefetch.mockClear();
     mockUseRefresh.mockClear();
+  });
+
+  it("shows one latest eligible strength status and opens the strength evidence", async () => {
+    mockTrainingProgressionStrengthQuery.mockReturnValue({
+      data: [repImprovementWithoutBadge, repImprovementRow],
+      isLoading: false,
+      error: null,
+    });
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    render(<OverviewScreen />);
+    expect(screen.getByLabelText("Training status: Ready to progress")).toBeTruthy();
+    expect(
+      screen.getByLabelText("Training progression status: Bench press · Barbell"),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByText("Open Strength"));
+    expect(mockRouterPush).toHaveBeenCalledWith({
+      pathname: "/training/[section]",
+      params: { section: "strength" },
+    });
+  });
+
+  it("refetches strength progression when the query date advances without an extra initial fetch", async () => {
+    mockTrainingProgressionStrengthQuery.mockReturnValue({
+      data: [repImprovementRow],
+      isLoading: false,
+      error: null,
+      refetch: mockStrengthRefetch,
+    });
+    mockTodayQueryDate.current = "2026-03-21";
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    const { rerender } = render(<OverviewScreen />);
+    expect(mockStrengthRefetch).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Training status: Ready to progress")).toBeTruthy();
+
+    mockTodayQueryDate.current = "2026-03-22";
+    rerender(<OverviewScreen />);
+
+    expect(mockStrengthRefetch).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Training status: Ready to progress")).toBeTruthy();
+  });
+
+  it("discloses dated strength evidence on Home without navigating", async () => {
+    mockTrainingProgressionStrengthQuery.mockReturnValue({
+      data: [repImprovementRow],
+      isLoading: false,
+      error: null,
+      refetch: mockStrengthRefetch,
+    });
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    render(<OverviewScreen />);
+    expect(screen.queryByText(/Nov 20, 2026/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "See recorded sets" }));
+    expect(screen.getByText(/Nov 20, 2026 · 10 reps at 60.0 kg/)).toBeTruthy();
+    expect(screen.getByText(/Nov 3, 2026 · 8 reps at 60.0 kg/)).toBeTruthy();
+    expect(screen.getAllByText(/WHOOP \(Cloud\)/).length).toBe(2);
+    expect(mockRouterPush).not.toHaveBeenCalled();
+  });
+
+  it("shows a strength refresh error while keeping the cached status visible", async () => {
+    mockTrainingProgressionStrengthQuery.mockReturnValue({
+      data: [repImprovementRow],
+      isLoading: false,
+      error: new Error("Could not refresh strength progression"),
+      refetch: mockStrengthRefetch,
+    });
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    render(<OverviewScreen />);
+    expect(screen.getByText("Could not refresh strength progression")).toBeTruthy();
+    expect(screen.getByLabelText("Training status: Ready to progress")).toBeTruthy();
+  });
+
+  it("keeps the overview usable when no strength status is available", async () => {
+    mockTrainingProgressionStrengthQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+    });
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    render(<OverviewScreen />);
+    expect(screen.queryByLabelText("Training status: Ready to progress")).toBeNull();
+    expect(screen.getByText("Overview")).toBeTruthy();
   });
 
   it("shows the web overview evidence and opens the matching Body section", async () => {
@@ -743,6 +851,7 @@ describe("TodayScreen independent loading states", () => {
 
     expect(mockDashboardRefetch).toHaveBeenCalledOnce();
     expect(mockAnomalyRefetch).toHaveBeenCalledOnce();
+    expect(mockStrengthRefetch).toHaveBeenCalledOnce();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 

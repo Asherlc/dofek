@@ -46,6 +46,7 @@ import { useActivityClimbing } from "../../components/activity/useActivityClimbi
 import { useActivityMapHover } from "../../components/activity/useActivityMapHover";
 import { useActivityMetrics } from "../../components/activity/useActivityMetrics";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
+import { CyclingProgressionEvidence } from "../../components/CyclingProgressionEvidence";
 import { CyclingThresholdDetails } from "../../components/CyclingThresholdDetails";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MapProcessingState } from "../../components/MapProcessingState";
@@ -54,6 +55,7 @@ import { ProviderRecordDetailModal } from "../../components/providers/provider-r
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { RouteMap } from "../../components/RouteMap";
 import { ScreenSections } from "../../components/ScreenSections";
+import { TrainingProgressionStatusCard } from "../../components/TrainingProgressionStatusCard";
 import { UnattachedClimbingLogEntries } from "../../components/UnattachedClimbingLogEntries";
 import { type ActivityExportFormat, downloadActivityExport } from "../../lib/activity-export";
 import { useAuth } from "../../lib/auth-context";
@@ -267,6 +269,8 @@ function ActivityDetailScreen({ id }: { id: string }) {
         trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.calendar.calendarData.invalidate(),
+        trpcUtils.trainingProgression.strength.reset(),
+        trpcUtils.trainingProgression.cycling.reset(),
       ]);
       router.back();
     },
@@ -314,6 +318,10 @@ function ActivityDetailScreen({ id }: { id: string }) {
   const plannedIntervals = trpc.intervals.plannedByActivity.useQuery(
     { activityId: id ?? "" },
     { enabled: !!id && isCycling },
+  );
+  const cyclingProgression = trpc.trainingProgression.cycling.useQuery(
+    { activityId: id ?? "" },
+    { enabled: isCycling && !!id },
   );
   const route = trpc.activity.route.useQuery(
     { id: id ?? "", maxPoints: 200 },
@@ -659,6 +667,20 @@ function ActivityDetailScreen({ id }: { id: string }) {
           )}
           {isCycling && <PlannedIntervalComparison rows={plannedIntervals.data ?? []} />}
           <ActivityPerceivedExertion value={activity.perceivedExertion} />
+          {isCycling && cyclingProgression.error ? (
+            <QueryStatePanel variant="error" message={cyclingProgression.error.message} />
+          ) : null}
+          {isCycling && cyclingProgression.isLoading && !cyclingProgression.data ? (
+            <QueryStatePanel variant="loading" minHeight={72} />
+          ) : null}
+          {isCycling && cyclingProgression.data ? (
+            <TrainingProgressionStatusCard
+              status={cyclingProgression.data.status}
+              headline="Cycling progression"
+              summary="Two rides had similar interval duration and power at moderate whole-ride effort."
+              details={<CyclingProgressionEvidence result={cyclingProgression.data} />}
+            />
+          ) : null}
 
           {isHangboardingActivity && (
             <View style={hangboardingStyles.container}>

@@ -2,6 +2,7 @@ import type { PlannedIntervalInput } from "@dofek/format/planned-interval";
 import type { UnitSystem } from "@dofek/format/units";
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { render } from "@testing-library/react";
+import type { AppRouterOutputs } from "dofek-server/router";
 import type { ReactNode } from "react";
 import { vi } from "vitest";
 import type {
@@ -317,6 +318,19 @@ export const mockPlannedIntervalsUseQuery = vi.fn(
     isLoading: false,
   }),
 );
+
+type CyclingProgression = AppRouterOutputs["trainingProgression"]["cycling"];
+export const mockTrainingProgressionCyclingUseQuery = vi.fn(
+  (
+    _input?: { activityId: string },
+    _options?: { enabled?: boolean },
+  ): MockQueryResult<CyclingProgression> => ({
+    data: null,
+    error: null,
+    isError: false,
+    isLoading: false,
+  }),
+);
 export const mockMetricSourcesUseQuery = vi.fn(
   (): MockQueryResult<ActivityMetricSources> => ({
     data: [],
@@ -361,6 +375,7 @@ export const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     intervals: { plannedByActivity: { useQuery: mockPlannedIntervalsUseQuery } },
+    trainingProgression: { cycling: { useQuery: mockTrainingProgressionCyclingUseQuery } },
     activity: {
       images: { useQuery: mockImagesUseQuery },
       byId: { useQuery: mockActivityByIdUseQuery },
@@ -558,6 +573,13 @@ export function resetActivityDetailPageMocks() {
   mockPlannedIntervalsUseQuery.mockReset();
   mockPlannedIntervalsUseQuery.mockReturnValue({
     data: [],
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
+  mockTrainingProgressionCyclingUseQuery.mockReset();
+  mockTrainingProgressionCyclingUseQuery.mockReturnValue({
+    data: null,
     error: null,
     isError: false,
     isLoading: false,

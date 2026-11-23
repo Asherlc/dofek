@@ -53,6 +53,7 @@ import {
   resetActivityDetailMocks,
   routeMocks,
 } from "../../components/activity/activity-detail-test-helpers";
+import { cyclingProgressionFixture } from "../../components/CyclingProgressionEvidence.stories";
 import { RouteMap } from "../../components/RouteMap";
 import type { AuthUser } from "../../lib/auth";
 import type { useAuth } from "../../lib/auth-context";
@@ -448,6 +449,8 @@ describe("ActivityDetailScreen", () => {
       expect(mocks.calendarWeekListInvalidate).toHaveBeenCalledOnce();
       expect(mocks.calendarActivityOverviewInvalidate).toHaveBeenCalledOnce();
       expect(mocks.calendarDataInvalidate).toHaveBeenCalledOnce();
+      expect(mocks.trainingProgressionStrengthReset).toHaveBeenCalledOnce();
+      expect(mocks.trainingProgressionCyclingReset).toHaveBeenCalledOnce();
       expect(mocks.routerBack).toHaveBeenCalledOnce();
     });
   });
@@ -1263,4 +1266,76 @@ it("keeps the performance section empty when no metric is available", () => {
 
   expect(screen.queryByRole("button", { name: /^Performance metrics:/ })).toBeNull();
   expect(screen.queryByRole("button", { name: /View .* data/ })).toBeNull();
+});
+
+it("enables the cycling progression query only for cycling activities", () => {
+  mocks.byIdQuery.mockReturnValue(defaultObserver(yogaActivity));
+  renderActivityDetail();
+
+  expect(getQueryEnabledFlag(mocks.trainingProgressionCyclingQuery.mock.calls.at(-1)?.[1])).toBe(
+    false,
+  );
+  expect(screen.queryByText("Ready to progress")).toBeNull();
+});
+
+it("shows ready cycling evidence with both dated rides and session effort separated", async () => {
+  mocks.trainingProgressionCyclingQuery.mockReturnValue(defaultObserver(cyclingProgressionFixture));
+  renderActivityDetail();
+
+  expect(getQueryEnabledFlag(mocks.trainingProgressionCyclingQuery.mock.calls.at(-1)?.[1])).toBe(
+    true,
+  );
+  expect(await screen.findByText("Ready to progress")).toBeTruthy();
+  expect(screen.getByText("Cycling progression")).toBeTruthy();
+  fireEvent.click(screen.getByText("See interval evidence"));
+  expect(screen.getByText(/Selected ride/)).toBeTruthy();
+  expect(screen.getByText(/Comparison ride/)).toBeTruthy();
+  expect(screen.getAllByText("Session effort: 4/10")).toHaveLength(2);
+  expect(screen.getAllByText(/220 W/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/218 W/).length).toBeGreaterThan(0);
+});
+
+it("shows a compact loading panel while cycling progression loads without a cache", () => {
+  mocks.trainingProgressionCyclingQuery.mockReturnValue({
+    ...defaultObserver(null),
+    isLoading: true,
+  });
+  renderActivityDetail();
+
+  expect(document.querySelectorAll('[testid="query-state-loading"]')).toHaveLength(1);
+  expect(screen.queryByText("Ready to progress")).toBeNull();
+});
+
+it("keeps cached cycling evidence visible while it reloads", () => {
+  mocks.trainingProgressionCyclingQuery.mockReturnValue({
+    ...defaultObserver(cyclingProgressionFixture),
+    isLoading: true,
+  });
+  renderActivityDetail();
+
+  expect(document.querySelectorAll('[testid="query-state-loading"]')).toHaveLength(0);
+  expect(screen.getByText("Ready to progress")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "See interval evidence" }));
+  expect(screen.getByText(/Work 1:.*220 W/)).toBeTruthy();
+  expect(screen.getByText(/Work 1:.*218 W/)).toBeTruthy();
+  expect(screen.getAllByText("Session effort: 4/10")).toHaveLength(2);
+});
+
+it("shows no progression panel once a null result arrives successfully", () => {
+  mocks.trainingProgressionCyclingQuery.mockReturnValue(defaultObserver(null));
+  renderActivityDetail();
+
+  expect(document.querySelectorAll('[testid="query-state-loading"]')).toHaveLength(0);
+  expect(screen.queryByText("Ready to progress")).toBeNull();
+});
+
+it("keeps the recorded Session effort when cycling evidence is empty", () => {
+  mocks.byIdQuery.mockReturnValue(
+    defaultObserver({ ...baseCyclingActivity, perceivedExertion: 7 }),
+  );
+  renderActivityDetail();
+
+  expect(screen.getByLabelText("Session perceived exertion")).toBeTruthy();
+  expect(screen.getByText("7/10")).toBeTruthy();
+  expect(screen.queryByText("Ready to progress")).toBeNull();
 });
