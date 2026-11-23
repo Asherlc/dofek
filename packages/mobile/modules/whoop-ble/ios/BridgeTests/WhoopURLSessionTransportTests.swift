@@ -4,6 +4,12 @@ import XCTest
 
 final class WhoopURLSessionTransportTests: XCTestCase {
     func testOneSystemTransferSurvivesRepeatedSubmission() async throws {
+        try await verifySingleTransfer(acceptedEncodings: "br, GZIP", gzipAccepted: true)
+        try await verifySingleTransfer(acceptedEncodings: "br, gzip;q=0.8", gzipAccepted: true)
+        try await verifySingleTransfer(acceptedEncodings: "br, gzip;q=0", gzipAccepted: false)
+    }
+
+    private func verifySingleTransfer(acceptedEncodings: String, gzipAccepted: Bool) async throws {
         let started = expectation(description: "One OS-managed transfer starts")
         started.assertForOverFulfill = true
         let completion = expectation(description: "Current attempt receives the acknowledgment")
@@ -23,7 +29,7 @@ final class WhoopURLSessionTransportTests: XCTestCase {
             XCTAssertEqual(context.attempt, 2)
             XCTAssertEqual(context.responseURL, request.url)
             XCTAssertEqual(context.transportPath, "background")
-            XCTAssertTrue(context.acceptsGzip)
+            XCTAssertEqual(context.acceptsGzip, gzipAccepted)
             XCTAssertNotNil(context.taskIdentifier)
             completion.fulfill()
         }
@@ -35,7 +41,7 @@ final class WhoopURLSessionTransportTests: XCTestCase {
             enumerated.fulfill()
         }
         await fulfillment(of: [started, enumerated], timeout: 3)
-        lock.withLock { source }?.succeed(Data("durable".utf8), headers: ["Accept-Encoding": "gzip"])
+        lock.withLock { source }?.succeed(Data("durable".utf8), headers: ["Accept-Encoding": acceptedEncodings])
         await fulfillment(of: [completion], timeout: 3)
     }
 

@@ -1021,43 +1021,46 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
-  it("runs a queued update immediately after the preceding observer sync", async () => {
-    vi.useFakeTimers();
-    const client = createMockClient();
-    await initBackgroundHealthKitSync(client);
-    await vi.runAllTimersAsync();
-    mockCompleteObserverUpdates.mockClear();
+  it.each([true, false])(
+    "runs a queued update immediately after a sync with success %s",
+    async (succeeded) => {
+      vi.useFakeTimers();
+      const client = createMockClient();
+      await initBackgroundHealthKitSync(client);
+      await vi.runAllTimersAsync();
+      mockCompleteObserverUpdates.mockClear();
 
-    const firstSync = createDeferred<{
-      queryId: string | null;
-      samples: HealthKitSample[];
-      deletedUUIDs: string[];
-    }>();
-    mockQueryAnchoredSamples.mockReturnValueOnce(firstSync.promise);
+      const firstSync = createDeferred<{
+        queryId: string | null;
+        samples: HealthKitSample[];
+        deletedUUIDs: string[];
+      }>();
+      mockQueryAnchoredSamples.mockReturnValueOnce(firstSync.promise);
 
-    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
-    listener({
-      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
-      updateId: "update-1",
-    });
-    listener({
-      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
-      updateId: "update-2",
-    });
+      const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+      listener({
+        typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+        updateId: "update-1",
+      });
+      listener({
+        typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+        updateId: "update-2",
+      });
 
-    expect(mockCompleteObserverUpdates).not.toHaveBeenCalled();
-    firstSync.resolve({
-      queryId: "queued-query",
-      samples: [],
-      deletedUUIDs: [],
-    });
-    await vi.waitFor(() => {
-      expect(mockCompleteObserverUpdates).toHaveBeenCalledTimes(2);
-    });
-    expect(mockCompleteObserverUpdates).toHaveBeenNthCalledWith(1, ["update-1"], true);
-    expect(mockCompleteObserverUpdates).toHaveBeenLastCalledWith(["update-2"], true);
-    vi.useRealTimers();
-  });
+      expect(mockCompleteObserverUpdates).not.toHaveBeenCalled();
+      if (succeeded) {
+        firstSync.resolve({ queryId: "queued-query", samples: [], deletedUUIDs: [] });
+      } else {
+        firstSync.reject(new Error("First observer sync failed"));
+      }
+      await vi.waitFor(() => {
+        expect(mockCompleteObserverUpdates).toHaveBeenCalledTimes(2);
+      });
+      expect(mockCompleteObserverUpdates).toHaveBeenNthCalledWith(1, ["update-1"], succeeded);
+      expect(mockCompleteObserverUpdates).toHaveBeenLastCalledWith(["update-2"], true);
+      vi.useRealTimers();
+    },
+  );
 
   it("completes a failed observer batch unsuccessfully and reports the error", async () => {
     vi.useFakeTimers();

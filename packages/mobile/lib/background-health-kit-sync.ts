@@ -251,7 +251,7 @@ async function drainSyncQueue(): Promise<void> {
     );
   }
 
-  if (succeeded || !isCurrentContext(context)) await drainSyncQueue();
+  if (succeeded || pendingUpdates.size > 0 || !isCurrentContext(context)) await drainSyncQueue();
 }
 
 /**

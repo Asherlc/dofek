@@ -190,9 +190,19 @@ final class WhoopURLSessionTransport: NSObject, WhoopUploadTransport, URLSession
         deliveries[identity] = delivery
         // OS-delivered completions are valid before the task is restored or React configures uploads.
         let response = task.response as? HTTPURLResponse
+        let acceptedEncodings = response?.value(forHTTPHeaderField: "Accept-Encoding")?
+            .lowercased().split(separator: ",") ?? []
+        let acceptsGzip = acceptedEncodings.contains { encoding in
+            let parts = encoding.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.first?.trimmingCharacters(in: .whitespaces) == "gzip" else { return false }
+            guard let parameter = parts.dropFirst().first else { return true }
+            let quality = parameter.trimmingCharacters(in: .whitespaces)
+            guard quality.hasPrefix("q="), let weight = Double(quality.dropFirst(2)) else { return false }
+            return weight > 0 && weight <= 1
+        }
         let context = WhoopUploadCompletionContext(
             attempt: delivery.attempt, responseURL: response?.url, taskIdentifier: key, transportPath: "background",
-            acceptsGzip: response?.value(forHTTPHeaderField: "Accept-Encoding")?.lowercased() == "gzip",
+            acceptsGzip: acceptsGzip,
             sentGzip: task.originalRequest?.value(forHTTPHeaderField: "Content-Encoding") == "gzip"
         )
         onCompletion?(identity, response?.statusCode, data, context,
