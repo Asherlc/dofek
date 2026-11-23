@@ -71,6 +71,10 @@ import { createIngestZosImuRouter } from "./routes/ingest-zos-imu.ts";
 import { createOpenAiAppsChallengeRouter } from "./routes/openai-apps-challenge.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
+import {
+  mountTrpcWithWhoopEncoding,
+  whoopUploadResponseMeta,
+} from "./routes/whoop-upload-encoding.ts";
 import type { Context } from "./trpc.ts";
 
 export function onUnhandledRejection(reason: unknown): void {
@@ -395,8 +399,8 @@ function setupRoutes(
   app.use(createAuthRouter(db));
 
   // tRPC API
-  app.use(
-    "/api/trpc",
+  mountTrpcWithWhoopEncoding(
+    app,
     createExpressMiddleware({
       router: appRouter,
       createContext: async ({ req }): Promise<Context> => {
@@ -441,6 +445,7 @@ function setupRoutes(
           captureException(error.cause ?? error, { tags: { trpcPath: path } });
         }
       },
+      responseMeta: whoopUploadResponseMeta,
       allowMethodOverride: true,
     }),
   );

@@ -28,11 +28,11 @@ interface SyncContext {
   >;
   trpcClient: SyncTrpcClient;
   lifetime: AbortSignal;
+  readonly pendingCatchUp: Set<string>;
 }
 
 let subscription: EventSubscription | null = null;
 let currentSyncContext: SyncContext | undefined;
-let pendingCatchUp: SyncContext | undefined;
 const pendingUpdates = new Map<string, string>();
 let syncing: true | undefined;
 let observerLifecycle: Promise<void> = Promise.resolve();
@@ -90,6 +90,7 @@ function createStageTelemetry() {
 async function performHealthKitSync(
   trpcClient: SyncTrpcClient,
   typeIdentifiers: readonly string[],
+  onTypeComplete: (typeIdentifier: string) => void,
   onSyncComplete?: () => void | Promise<void>,
   manualController?: Pick<
     HealthKitManualSyncController,
@@ -104,6 +105,7 @@ async function performHealthKitSync(
     const run = () =>
       new AppleHealthSyncService({ trpcClient }).syncObserverChanges({
         typeIdentifiers,
+        onTypeComplete,
         onStage: stageTelemetry.start,
         assertCanContinue: manualController
           ? async () => manualController.assertAccountCurrent()
@@ -205,28 +207,23 @@ async function drainSyncQueue(): Promise<void> {
     return;
   }
 
-  const catchUp = pendingCatchUp === context;
-  if (catchUp) {
-    pendingCatchUp = undefined;
-  } else if (pendingUpdates.size === 0) {
+  if (context.pendingCatchUp.size === 0 && pendingUpdates.size === 0) {
     return;
   }
 
-  const updateIds = catchUp ? [] : Array.from(pendingUpdates.keys());
-  const typeIdentifiers = catchUp
-    ? BACKGROUND_HEALTH_KIT_TYPES
-    : [...new Set(pendingUpdates.values())];
-  if (!catchUp) {
-    pendingUpdates.clear();
-  }
+  const updateIds = Array.from(pendingUpdates.keys());
+  const unfinished = new Set([...context.pendingCatchUp, ...pendingUpdates.values()]);
+  context.pendingCatchUp.clear();
+  pendingUpdates.clear();
 
   syncing = true;
   setObserverSyncInProgress(true);
-  let drainAgain = true;
+  let succeeded = false;
   try {
-    const succeeded = await performHealthKitSync(
+    succeeded = await performHealthKitSync(
       context.trpcClient,
-      typeIdentifiers,
+      [...unfinished],
+      (typeIdentifier) => unfinished.delete(typeIdentifier),
       context.onSyncComplete
         ? async () => {
             if (isCurrentContext(context)) {
@@ -236,29 +233,25 @@ async function drainSyncQueue(): Promise<void> {
         : undefined,
       context.manualController,
     );
-    if (!succeeded && isCurrentContext(context)) {
-      pendingCatchUp = context;
-      drainAgain = false;
-    }
-    if (isCurrentContext(context) && updateIds.length > 0) {
-      acknowledgeObserverUpdates(updateIds, succeeded);
-    }
   } catch (error) {
-    if (isCurrentContext(context)) pendingCatchUp = context;
-    drainAgain = false;
     captureException(error, {
       source: TAG,
       operation: "drainSyncQueue",
     });
-    if (isCurrentContext(context) && updateIds.length > 0) {
-      acknowledgeObserverUpdates(updateIds, false);
-    }
   } finally {
+    if (isCurrentContext(context)) {
+      if (!succeeded) {
+        for (const typeIdentifier of unfinished) context.pendingCatchUp.add(typeIdentifier);
+      }
+      if (updateIds.length > 0) acknowledgeObserverUpdates(updateIds, succeeded);
+    }
     syncing = undefined;
-    setObserverSyncInProgress(pendingCatchUp !== undefined || pendingUpdates.size > 0);
+    setObserverSyncInProgress(
+      Boolean(currentSyncContext?.pendingCatchUp.size) || pendingUpdates.size > 0,
+    );
   }
 
-  if (drainAgain) await drainSyncQueue();
+  if (succeeded || pendingUpdates.size > 0 || !isCurrentContext(context)) await drainSyncQueue();
 }
 
 /**
@@ -290,7 +283,13 @@ export async function initBackgroundHealthKitSync(
     teardownBackgroundHealthKitSync();
   }
 
-  const context: SyncContext = { trpcClient, onSyncComplete, manualController, lifetime };
+  const context: SyncContext = {
+    trpcClient,
+    onSyncComplete,
+    manualController,
+    lifetime,
+    pendingCatchUp: new Set(),
+  };
   currentSyncContext = context;
 
   // Listen before registering native observers so an immediate HealthKit
@@ -327,7 +326,9 @@ export async function initBackgroundHealthKitSync(
   }
   if (!isCurrentContext(context)) return;
   logger.info(TAG, "Background observers registered");
-  pendingCatchUp = context;
+  for (const typeIdentifier of BACKGROUND_HEALTH_KIT_TYPES) {
+    context.pendingCatchUp.add(typeIdentifier);
+  }
   void drainSyncQueue();
 
   logger.info(TAG, "Init complete, listening for HealthKit updates");
@@ -352,7 +353,6 @@ function teardownContext(context: SyncContext | undefined) {
     subscription.remove();
     subscription = null;
   }
-  pendingCatchUp = undefined;
   pendingUpdates.clear();
   const tearDown = () => {
     try {

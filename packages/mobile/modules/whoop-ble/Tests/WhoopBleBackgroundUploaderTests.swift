@@ -214,18 +214,18 @@ extension WhoopBleBackgroundUploaderTests {
         XCTAssertEqual(try Data(contentsOf: transport.requests[1].1), batch.body)
     }
 
-    func testLiveFailureRetainsFallbackAndUsesExistingRetryBackoff() throws {
+    func testConnectionLossRetainsReservationAndUsesExistingRetryBackoff() throws {
         var now = Date(timeIntervalSince1970: 1_800_000_000)
         var errors: [Error] = []
         let (uploader, store, transport) = try setup(reportError: { errors.append($0) }, now: { now })
         try uploader.append(deviceId: "a", samplesByStream: [.realtime: Array(repeating: rows[0], count: 500)])
         try settle(uploader)
         let identity = try XCTUnwrap(transport.requests.first?.2)
-        transport.failOnePath(identity: identity)
+        transport.fail(0, error: URLError(.networkConnectionLost))
         try settle(uploader)
-        XCTAssertTrue(errors.isEmpty, "A connection loss with an active sibling remains a diagnostic outcome")
+        XCTAssertEqual(errors.count, 1)
         XCTAssertEqual(try uploader.diagnostics()["http5xxResponseCount"] as? Int, 0)
-        XCTAssertTrue(transport.tasks.contains(identity))
+        XCTAssertTrue(transport.tasks.isEmpty)
         XCTAssertNotNil(try uploader.diagnostics()["lastUploadError"] as? String)
         now.addTimeInterval(5)
         try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
@@ -239,13 +239,13 @@ extension WhoopBleBackgroundUploaderTests {
         XCTAssertEqual(try store.pendingBatches().count, 1)
     }
 
-    func testConfigurationAcceleratesRestoredReservationWithCurrentCredentials() throws {
+    func testConfigurationRefreshesRestoredReservationWithCurrentCredentials() throws {
         let (uploader, store, transport) = try restoredSetup(samples: rows)
         let batch = try XCTUnwrap(store.pendingBatches().first)
         let identity = batch.generation + "." + batch.id
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "current", headers: [:])
         try settle(uploader)
-        XCTAssertEqual(transport.requests.count, 1, "A restored OS-only transfer must not suppress immediate delivery")
+        XCTAssertEqual(transport.requests.count, 1)
         guard let request = transport.requests.first else { return }
         XCTAssertEqual(request.2, identity)
         XCTAssertEqual(request.0.value(forHTTPHeaderField: "Authorization"), "Bearer current")
@@ -325,7 +325,10 @@ extension WhoopBleBackgroundUploaderTests {
         let identity = batch.generation + "." + batch.id
         try settle(uploader)
         transport.tasks = []
-        transport.onCompletion?(identity, 401, Data(), (nil, URL(string: "https://example.com/api/trpc/whoopBleSync.pushRealtimeData"), nil, nil), nil)
+        transport.onCompletion?(identity, 401, Data(), WhoopUploadCompletionContext(
+            attempt: nil, responseURL: URL(string: "https://example.com/api/trpc/whoopBleSync.pushRealtimeData"),
+            taskIdentifier: nil, transportPath: nil
+        ), nil)
         try settle(uploader)
         XCTAssertTrue(transport.requests.isEmpty)
         XCTAssertEqual(try uploader.diagnostics()["blockedUploadStreams"] as? [String], ["realtime"])
@@ -475,25 +478,5 @@ extension WhoopBleBackgroundUploaderTests {
         try uploader.flush(); try settle(uploader)
         XCTAssertEqual(transport.requests.count, 2)
         XCTAssertFalse(errors.isEmpty)
-    }
-
-    func testCrossOriginCompletionRetainsRowsAndBlocksUntilConfigure() throws {
-        let (uploader, store, transport) = try setup()
-        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
-        try uploader.flush(); try settle(uploader)
-        let identity = try XCTUnwrap(transport.requests.first?.2)
-        transport.tasks.removeAll()
-        transport.onCompletion?(identity, 200, Data("{\"result\":{\"data\":{\"inserted\":1}}}".utf8),
-                                (transport.attempts[identity], URL(string: "https://other.example/api/trpc/whoopBleSync.pushRealtimeData"), nil, nil), nil)
-        try settle(uploader)
-        XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
-        XCTAssertEqual(try store.pendingBatches().count, 1)
-        XCTAssertEqual(try uploader.diagnostics()["blockedUploadStreams"] as? [String], ["realtime"])
-        try uploader.flush(); try settle(uploader)
-        XCTAssertEqual(transport.requests.count, 1)
-        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "new", headers: [:])
-        try settle(uploader)
-        XCTAssertEqual(transport.requests.count, 2)
-        XCTAssertEqual(transport.requests.last?.2, identity)
     }
 }

@@ -773,8 +773,14 @@ async function syncObserverWorkouts(
 export async function syncHealthKitObserverChanges(
   options: ObserverSyncOptions,
 ): Promise<SyncResult> {
-  const { healthKit, minimumSampleDate = null, onStage, trpcClient } = options;
+  const { healthKit, minimumSampleDate = null, onStage, onTypeComplete, trpcClient } = options;
   const typeIdentifiers = new Set(options.typeIdentifiers);
+  const workoutTypes = [WORKOUT_TYPE_IDENTIFIER, WORKOUT_ROUTE_TYPE_IDENTIFIER].filter((type) =>
+    typeIdentifiers.has(type),
+  );
+  const stepCountType = "HKQuantityTypeIdentifierStepCount";
+  // These types also depend on the shared running-step query at the end.
+  const completedBeforeRunningSteps: string[] = [];
   // A reset native anchor must replay every sample after the device cutoff so
   // the next account does not miss HealthKit history that belongs after the
   // previous account was erased. Once the anchor is persisted, native code
@@ -789,6 +795,12 @@ export async function syncHealthKitObserverChanges(
   let deleted = 0;
   let inserted = 0;
   const errors: string[] = [];
+
+  function accumulate(result: SyncResult) {
+    deleted += result.deleted;
+    inserted += result.inserted;
+    errors.push(...result.errors);
+  }
 
   for (const typeIdentifier of ADDITIVE_QUANTITY_TYPES) {
     if (!typeIdentifiers.has(typeIdentifier)) {
@@ -817,8 +829,14 @@ export async function syncHealthKitObserverChanges(
       undefined,
       options.assertCanContinue,
     );
-    inserted += result.inserted;
-    errors.push(...result.errors);
+    accumulate(result);
+    if (result.errors.length === 0) {
+      if (typeIdentifier === stepCountType) {
+        completedBeforeRunningSteps.push(typeIdentifier);
+      } else {
+        onTypeComplete?.(typeIdentifier);
+      }
+    }
   }
 
   for (const typeIdentifier of NON_ADDITIVE_QUANTITY_TYPES) {
@@ -827,9 +845,8 @@ export async function syncHealthKitObserverChanges(
     }
     if (ANCHORED_SAMPLE_TYPES.has(typeIdentifier)) {
       const result = await syncAnchoredSampleType(options, typeIdentifier, startDate);
-      deleted += result.deleted;
-      inserted += result.inserted;
-      errors.push(...result.errors);
+      accumulate(result);
+      if (result.errors.length === 0) onTypeComplete?.(typeIdentifier);
       continue;
     }
 
@@ -849,24 +866,20 @@ export async function syncHealthKitObserverChanges(
       undefined,
       options.assertCanContinue,
     );
-    inserted += result.inserted;
-    errors.push(...result.errors);
+    accumulate(result);
+    if (result.errors.length === 0) onTypeComplete?.(typeIdentifier);
   }
 
   if (typeIdentifiers.has(MENSTRUAL_FLOW_TYPE_IDENTIFIER)) {
     const result = await syncAnchoredSampleType(options, MENSTRUAL_FLOW_TYPE_IDENTIFIER, startDate);
-    deleted += result.deleted;
-    inserted += result.inserted;
-    errors.push(...result.errors);
+    accumulate(result);
+    if (result.errors.length === 0) onTypeComplete?.(MENSTRUAL_FLOW_TYPE_IDENTIFIER);
   }
 
-  if (
-    typeIdentifiers.has(WORKOUT_TYPE_IDENTIFIER) ||
-    typeIdentifiers.has(WORKOUT_ROUTE_TYPE_IDENTIFIER)
-  ) {
+  if (workoutTypes.length > 0) {
     const result = await syncObserverWorkouts(options, startDate, endDate);
-    inserted += result.inserted;
-    errors.push(...result.errors);
+    accumulate(result);
+    if (result.errors.length === 0) completedBeforeRunningSteps.push(...workoutTypes);
   }
 
   if (typeIdentifiers.has(SLEEP_TYPE_IDENTIFIER)) {
@@ -883,17 +896,18 @@ export async function syncHealthKitObserverChanges(
       const result = await trpcClient.healthKitSync.pushSleepSamples.mutate({ samples });
       inserted += result.inserted;
     }
+    onTypeComplete?.(SLEEP_TYPE_IDENTIFIER);
   }
 
-  if (
-    typeIdentifiers.has("HKQuantityTypeIdentifierStepCount") ||
-    typeIdentifiers.has(WORKOUT_TYPE_IDENTIFIER) ||
-    typeIdentifiers.has(WORKOUT_ROUTE_TYPE_IDENTIFIER)
-  ) {
+  if (typeIdentifiers.has(stepCountType) || workoutTypes.length > 0) {
     await options.assertCanContinue?.();
     const result = await syncRunningSteps(options, startDate, endDate);
-    inserted += result.inserted;
-    deleted += result.deleted;
+    accumulate(result);
+    if (result.errors.length === 0) {
+      for (const typeIdentifier of completedBeforeRunningSteps) {
+        onTypeComplete?.(typeIdentifier);
+      }
+    }
   }
 
   return { deleted, inserted, errors };

@@ -42,3 +42,34 @@ final class WhoopBleBackgroundUploaderStartupTests: XCTestCase {
         try uploader.disable()
     }
 }
+
+extension WhoopBleBackgroundUploaderTests {
+    func testBackgroundCompletionWaitsForNextEligibleTask() throws {
+        let (uploader, _, transport) = try setup()
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: Array(repeating: rows[0], count: 1_000)])
+        try uploader.flush(); try settle(uploader)
+        XCTAssertEqual(transport.requests.count, 1)
+
+        let handoff = expectation(description: "Next task reconciliation requested")
+        let completion = expectation(description: "Background events finish after handoff")
+        let mainQueueDrained = expectation(description: "Earlier main queue callbacks have run")
+        var releaseSnapshot: (() -> Void)?
+        transport.holdTaskSnapshot = { release in
+            transport.holdTaskSnapshot = nil
+            releaseSnapshot = release
+            handoff.fulfill()
+        }
+        uploader.handleBackgroundEvents {
+            XCTAssertEqual(transport.requests.count, 2)
+            completion.fulfill()
+        }
+        transport.complete(0)
+        transport.onFinishEvents?()
+        wait(for: [handoff], timeout: 2)
+        try settle(uploader)
+        DispatchQueue.main.async { mainQueueDrained.fulfill() }
+        wait(for: [mainQueueDrained], timeout: 2)
+        try XCTUnwrap(releaseSnapshot)()
+        wait(for: [completion], timeout: 2)
+    }
+}
