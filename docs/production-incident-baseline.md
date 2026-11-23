@@ -39917,3 +39917,30 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Remaining risk and follow-up.** Other fixtures that mock dependencies
   already imported into a shared worker can still depend on suite order. If the
   failure recurs, reproduce the shard order and check mock and MSW ownership.
+
+## 2026-11-23 — Climbing schema maintenance interrupted Dofek web access
+
+- **Impact and evidence.** Dofek web displayed `Auth bootstrap failed: 503`
+  when `/api/auth/me` was unavailable. Direct requests to `/` and
+  `/api/auth/me` reproduced HTTP 503 with `no available server`. Axiom logged
+  85 web-router 503 responses with origin status `0` from 23:33:01 through
+  23:40:14 UTC. The count is requests, and the number of affected users is
+  unknown. [Release job](https://github.com/Asherlc/dofek/actions/runs/45288590785/job/138092541142)
+  · [Traefik log query](axiom-observability-runbook.md#traefik-server-error-access-logs).
+- **Cause.** The release drained both web replicas before migration
+  `0197_remove_climbing_area_groups`, which drops the old grouping column and
+  table. Swarm reported `0/0` web replicas and the maintenance target matched
+  the migration. Traefik returned 503 while no web replica was available.
+  [Migration](../drizzle/0197_remove_climbing_area_groups.sql)
+  · [Maintenance overlay](../deploy/stack.maintenance.yml)
+  · [Traefik fallback](../deploy/traefik-web-unavailable.yml).
+- **Recovery and validation.** The migration step succeeded at 23:40:03 UTC.
+  By 23:40:59 UTC, the rollout had restored both web replicas and the worker.
+  `/`, `/healthz`, and `/api/auth/providers` returned HTTP 200. An unauthenticated
+  `/api/auth/me` request returned the expected HTTP 401. The release workflow
+  was still running its remaining checks at the recovery verification.
+  [Production release](https://github.com/Asherlc/dofek/actions/runs/45288590785).
+- **Remaining risk and follow-up.** Future maintenance-mode releases can
+  present the same session error. Consider showing a maintenance message at
+  the proxy and in the web session screen when the fallback route handles
+  the request.
