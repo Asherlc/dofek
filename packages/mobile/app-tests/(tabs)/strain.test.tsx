@@ -14,6 +14,8 @@ import { demonstratedGradeFixture } from "../../components/climbing-demonstrated
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 import { intervalRun, runningData } from "../../components/running-training-test-helpers";
+import { loggedSetFixture } from "../../components/strength-logged-set-fixture";
+import { repImprovementRow } from "../../components/training-progression-fixture";
 import { trainingSections } from "../../lib/training-sections";
 import {
   mockAttemptIncreaseQuery,
@@ -99,8 +101,9 @@ describe("StrainScreen", () => {
 
   it("keeps cached progression rows visible while a refresh is loading", async () => {
     const { TrainingAnalysis } = await import("../../app/strain");
+    mockQueryState.loggedSets = loggedSetFixture;
     mockStrengthProgressionQuery.mockReturnValue({
-      data: [1],
+      data: [repImprovementRow],
       isLoading: true,
       error: null,
       refetch: mockStrengthProgressionRefetch,
@@ -108,6 +111,11 @@ describe("StrainScreen", () => {
 
     render(<TrainingAnalysis section="strength" isFocused />);
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
+    expect(
+      screen.getByLabelText("Training progression status: Bench press · Barbell"),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "See recorded sets" }));
+    expect(screen.getByText(/Nov 20, 2026 · 10 reps at 60\.0 kg · Effort 7\/10/)).toBeTruthy();
   });
 
   it("includes strength progression in pull-to-refresh for the Strength section", async () => {

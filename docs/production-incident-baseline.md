@@ -39850,3 +39850,6 @@ Local qualification and CI are separate from production throughput acceptance. T
   mock. Both suites passed all 60 tests in the failing order with retries
   disabled, real PostgreSQL, and the original MSW listener.
   [Board fixture](../src/lib/climbing-board-account.integration.test.ts).
+- **Remaining risk and follow-up.** Other fixtures that mock dependencies
+  already imported into a shared worker can still depend on suite order. If the
+  failure recurs, reproduce the shard order and check mock and MSW ownership.

@@ -99,6 +99,16 @@ const benchmarkRowNoRpe = (activity: number, date: string, weight: number) =>
 type Row = ReturnType<typeof evidenceRow>;
 const decide = (rows: Row[]) => selectStrengthProgressionEvidence(consolidateSets(rows).sets);
 
+function competingSeries(firstSetId: number, set: EvidenceOverrides, latestReps = 10) {
+  return [
+    { date: "2026-11-10", reps: 8 },
+    { date: "2026-11-12", reps: 10 },
+    { date: "2026-11-14", reps: latestReps },
+  ].map(({ date, reps }, index) =>
+    evidenceRow(index + 1, date, { ...set, set_id: evidenceId(firstSetId + index), reps }),
+  );
+}
+
 describe("selectStrengthProgressionEvidence", () => {
   it("marks repeatable rep improvement at one comparable slot with recorded effort ready", () => {
     const result = decide([
@@ -543,20 +553,18 @@ describe("selectStrengthProgressionEvidence", () => {
   });
 
   it("prefers the lower recorded slot then the lighter load on an equal ending date", () => {
-    const slotSeries = (setIndex: number, start: number) => [
-      evidenceRow(start, "2026-11-10", { set_index: setIndex }),
-      evidenceRow(start + 1, "2026-11-12", { set_index: setIndex, reps: 10 }),
-      evidenceRow(start + 2, "2026-11-14", { set_index: setIndex, reps: 10 }),
-    ];
-    const bySlot = decide([...slotSeries(1, 1), ...slotSeries(0, 4)]);
+    const higherSlot = competingSeries(2100, { set_index: 1 });
+    const lowerSlot = competingSeries(2200, { set_index: 0 });
+    expect(decide(higherSlot)[0]).toMatchObject({ status: "ready", evidence: { slot: 2 } });
+    expect(decide(lowerSlot)[0]).toMatchObject({ status: "ready", evidence: { slot: 1 } });
+    const bySlot = decide([...higherSlot, ...lowerSlot]);
     expect(bySlot[0]?.evidence).toMatchObject({ kind: "rep_improvement", slot: 1 });
 
-    const loadSeries = (weight: number, start: number) => [
-      evidenceRow(start, "2026-11-10", { weight_kg: weight }),
-      evidenceRow(start + 1, "2026-11-12", { weight_kg: weight, reps: 10 }),
-      evidenceRow(start + 2, "2026-11-14", { weight_kg: weight, reps: 10 }),
-    ];
-    const byWeight = decide([...loadSeries(70, 10), ...loadSeries(60, 13)]);
+    const heavierLoad = competingSeries(2300, { exercise_index: 0, weight_kg: 70 });
+    const lighterLoad = competingSeries(2400, { exercise_index: 1, weight_kg: 60 });
+    expect(decide(heavierLoad)[0]).toMatchObject({ status: "ready", evidence: { weightKg: 70 } });
+    expect(decide(lighterLoad)[0]).toMatchObject({ status: "ready", evidence: { weightKg: 60 } });
+    const byWeight = decide([...heavierLoad, ...lighterLoad]);
     expect(byWeight[0]?.evidence).toMatchObject({ kind: "rep_improvement", weightKg: 60 });
   });
 
@@ -677,18 +685,11 @@ describe("selectStrengthProgressionEvidence", () => {
   });
 
   it("prefers a ready repeatable series over a null series ending on the same date", () => {
-    const nullSeries = (activity: number, date: string, reps: number) =>
-      evidenceRow(activity, date, { set_index: 0, weight_kg: 60, reps });
-    const readySeries = (activity: number, date: string, reps: number) =>
-      evidenceRow(activity, date, { set_index: 1, weight_kg: 70, reps });
-    const result = decide([
-      nullSeries(1, "2026-11-10", 8),
-      nullSeries(2, "2026-11-12", 10),
-      nullSeries(3, "2026-11-14", 9),
-      readySeries(4, "2026-11-10", 8),
-      readySeries(5, "2026-11-12", 10),
-      readySeries(6, "2026-11-14", 10),
-    ]);
+    const observed = competingSeries(2100, { set_index: 0, weight_kg: 60 }, 9);
+    const ready = competingSeries(2200, { set_index: 1, weight_kg: 70 });
+    expect(decide(observed)[0]).toMatchObject({ status: null, evidence: { slot: 1 } });
+    expect(decide(ready)[0]).toMatchObject({ status: "ready", evidence: { slot: 2 } });
+    const result = decide([...observed, ...ready]);
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       status: "ready",

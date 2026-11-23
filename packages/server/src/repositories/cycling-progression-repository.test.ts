@@ -100,7 +100,7 @@ type StreamEvidence = [string, string | null, string | null, MeasurementKind];
 
 function sampleRows(
   activityId: string,
-  power = 200,
+  power: number | null = 200,
   measurementKinds: MeasurementKind[] = ["direct"],
   sampleCount = 600,
 ) {
@@ -170,6 +170,7 @@ interface SetupOptions {
   measurementKind?: "direct" | "estimated" | "unknown";
   measurementKinds?: MeasurementKind[];
   identities?: IdentityRow[];
+  selectedSamples?: ReturnType<typeof sampleRows>;
   windowOverride?: ActivitySensorWindow | null;
 }
 
@@ -184,12 +185,9 @@ function setup(options: SetupOptions = {}) {
   const sampleCount = (ride: RideRow) =>
     Math.max(0, Math.ceil((Date.parse(ride.ended_at) - Date.parse(ride.started_at)) / 1000));
   const kinds = options.measurementKinds ?? [options.measurementKind ?? "direct"];
-  const selectedSamples = sampleRows(
-    selectedId,
-    options.selectedPower ?? 200,
-    kinds,
-    sampleCount(selected),
-  );
+  const selectedSamples =
+    options.selectedSamples ??
+    sampleRows(selectedId, options.selectedPower ?? 200, kinds, sampleCount(selected));
   const candidateSamples = candidateRows.flatMap((candidate) =>
     sampleRows(candidate.id, options.candidatePower ?? 200, kinds, sampleCount(candidate)),
   );
@@ -824,6 +822,27 @@ describe("CyclingProgressionRepository", () => {
     const { repository } = setup({ measurementKind: "estimated" });
     await expect(repository.getCyclingProgression(selectedId)).resolves.toBeNull();
   });
+
+  it.each<{ kinds: MeasurementKind[]; eligible: boolean }>([
+    { kinds: ["estimated"], eligible: false },
+    { kinds: ["direct", "unknown"], eligible: false },
+    { kinds: [], eligible: true },
+  ])(
+    "preserves gaps between direct samples for $kinds, eligible=$eligible",
+    async ({ kinds, eligible }) => {
+      const direct = sampleRows(selectedId);
+      const interleaved = sampleRows(selectedId, kinds.length ? 200 : null, kinds);
+      const { repository } = setup({
+        selectedSamples: [
+          ...direct.filter((row) => row.elapsed_seconds % 2 === 0),
+          ...interleaved.filter((row) => row.elapsed_seconds % 2 === 1),
+        ].sort((a, b) => a.elapsed_seconds - b.elapsed_seconds),
+      });
+      expect((await repository.getCyclingProgression(selectedId))?.status ?? null).toBe(
+        eligible ? "ready" : null,
+      );
+    },
+  );
 
   it("yields null when interval power coverage is sparse", async () => {
     const { repository } = setup({

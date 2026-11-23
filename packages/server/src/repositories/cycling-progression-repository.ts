@@ -230,19 +230,17 @@ function prepareRide(
       return null;
   }
 
-  // Only uniformly directly measured power may establish a measured baseline.
-  const directRows = sampleRows.filter(
-    (row) =>
-      row.activity_id === ride.id &&
-      row.power_measurement_kinds.length > 0 &&
-      row.power_measurement_kinds.every((kind) => kind === "direct"),
-  );
+  const directRows: SampleRow[] = [];
+  const samples: CyclingEffortSample[] = [];
+  for (const row of sampleRows) {
+    if (row.activity_id !== ride.id || row.power_measurement_kinds.length === 0) continue;
+    const direct = row.power_measurement_kinds.every((kind) => kind === "direct");
+    if (direct) directRows.push(row);
+    // Explicit gaps stop a measured value from carrying across non-direct observations.
+    samples.push({ elapsedSeconds: row.elapsed_seconds, powerWatts: direct ? row.power : null });
+  }
   if (directRows.length === 0) return null;
   const durationSeconds = canonicalWindowSeconds(ride.started_at, ride.ended_at, recorded);
-  const samples: CyclingEffortSample[] = directRows.map((row) => ({
-    elapsedSeconds: row.elapsed_seconds,
-    powerWatts: row.power,
-  }));
   const power = resampleCleanPower(samples, durationSeconds);
   const intervals: MeasuredInterval[] = [];
   for (const evidence of work) {

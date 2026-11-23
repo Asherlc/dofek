@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { AppRouterOutputs } from "dofek-server/router";
 import type React from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -54,6 +53,7 @@ import {
   resetActivityDetailMocks,
   routeMocks,
 } from "../../components/activity/activity-detail-test-helpers";
+import { cyclingProgressionFixture } from "../../components/CyclingProgressionEvidence.stories";
 import { RouteMap } from "../../components/RouteMap";
 import type { AuthUser } from "../../lib/auth";
 import type { useAuth } from "../../lib/auth-context";
@@ -1279,41 +1279,7 @@ it("enables the cycling progression query only for cycling activities", () => {
 });
 
 it("shows ready cycling evidence with both dated rides and session effort separated", async () => {
-  const ride = (role: "selected" | "comparison", date: string, watts: number) => ({
-    role,
-    activityId:
-      role === "selected"
-        ? "00000000-0000-4000-8000-000000000001"
-        : "00000000-0000-4000-8000-000000000002",
-    date,
-    sessionEffort: 4,
-    modality: "cycling",
-    exactWorkoutIdentities: [],
-    intervalCount: 1,
-    intervals: [
-      {
-        index: 1,
-        workDurationSeconds: 120,
-        meanPowerWatts: watts,
-        powerCoveragePct: 98,
-        sourceProvider: "zwift",
-        sourceActivityId: null,
-        sourceMemberActivityIds: [],
-      },
-    ],
-    powerProvenance: { measurementKind: "direct" as const, providers: ["zwift"], devices: [] },
-  });
-  const ready: NonNullable<AppRouterOutputs["trainingProgression"]["cycling"]> = {
-    status: "ready",
-    basis: "recorded_work_protocol",
-    comparison: {
-      intervalCount: 1,
-      largestDurationDifferencePct: 1,
-      largestMeanPowerDifferencePct: 2,
-    },
-    rides: [ride("selected", "2026-11-20", 220), ride("comparison", "2026-11-06", 218)],
-  };
-  mocks.trainingProgressionCyclingQuery.mockReturnValue(defaultObserver(ready));
+  mocks.trainingProgressionCyclingQuery.mockReturnValue(defaultObserver(cyclingProgressionFixture));
   renderActivityDetail();
 
   expect(getQueryEnabledFlag(mocks.trainingProgressionCyclingQuery.mock.calls.at(-1)?.[1])).toBe(
@@ -1341,24 +1307,18 @@ it("shows a compact loading panel while cycling progression loads without a cach
 });
 
 it("keeps cached cycling evidence visible while it reloads", () => {
-  const ready: NonNullable<AppRouterOutputs["trainingProgression"]["cycling"]> = {
-    status: "ready",
-    basis: "recorded_work_protocol",
-    comparison: {
-      intervalCount: 1,
-      largestDurationDifferencePct: 1,
-      largestMeanPowerDifferencePct: 2,
-    },
-    rides: [],
-  };
   mocks.trainingProgressionCyclingQuery.mockReturnValue({
-    ...defaultObserver(ready),
+    ...defaultObserver(cyclingProgressionFixture),
     isLoading: true,
   });
   renderActivityDetail();
 
   expect(document.querySelectorAll('[testid="query-state-loading"]')).toHaveLength(0);
   expect(screen.getByText("Ready to progress")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "See interval evidence" }));
+  expect(screen.getByText(/Work 1:.*220 W/)).toBeTruthy();
+  expect(screen.getByText(/Work 1:.*218 W/)).toBeTruthy();
+  expect(screen.getAllByText("Session effort: 4/10")).toHaveLength(2);
 });
 
 it("shows no progression panel once a null result arrives successfully", () => {
