@@ -2,10 +2,12 @@ import { createHash } from "node:crypto";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { LoggedSetComparison, LoggedSetExercise } from "../contracts/logged-set-comparison.ts";
+import type { TrainingProgressionStrengthRow } from "../contracts/training-progression-strength.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { selectStrengthProgressionEvidence } from "./strength-progression-evidence.ts";
 import {
   type ConsolidatedSet,
   consolidatedStrengthQualityFlags,
@@ -73,6 +75,8 @@ function round(value: number, precision = 2): number {
 function roundEstimate(value: number | null): number | null {
   return value === null ? null : round(value);
 }
+
+const STRENGTH_EVIDENCE_WINDOW_DAYS = 56;
 
 function sourceExerciseIdentity(raw: Record<string, unknown>) {
   const providerExerciseId =
@@ -736,5 +740,18 @@ export class StrengthProgressionRepository extends BaseRepository {
         next_cursor: hasMore && lastPageRow ? encodeCursor(lastPageRow, this.userId, shape) : null,
       },
     };
+  }
+
+  /**
+   * Read-only training-progression evidence. Own selection stays on the server:
+   * a bounded, access-windowed read feeds canonical deduplication and the same
+   * Epley observation rules used by the existing strength estimate.
+   */
+  async getStrengthProgression(): Promise<TrainingProgressionStrengthRow[]> {
+    const rows = await this.#readRows(sql`/* training_progression_strength */ true
+      ${ChartRange.fromDays(STRENGTH_EVIDENCE_WINDOW_DAYS).postgresTimestampAfterNow(sql`a.started_at`)}
+      AND a.started_at <= CURRENT_TIMESTAMP
+      ${this.timestampAccessPredicate(sql`a.started_at`)}`);
+    return selectStrengthProgressionEvidence(consolidateSets(rows).sets);
   }
 }

@@ -339,3 +339,231 @@ describe("StrengthProgressionRepository database semantics", () => {
     });
   });
 });
+
+describe("StrengthProgressionRepository strength evidence", () => {
+  const userId = randomUUID();
+  const otherUserId = randomUUID();
+  const primaryProvider = "strong-csv";
+  const mirrorProvider = `zstrength-evidence-mirror-${randomUUID()}`;
+  const benchExercise = randomUUID();
+  const squatExercise = randomUUID();
+  const pressExercise = randomUUID();
+  const benchSession = randomUUID();
+  const mirrorSession = randomUUID();
+  let context: TestContext;
+  let day: (offset: number) => string;
+  let startedAt: (offset: number) => string;
+
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    const [clock] = await executeWithSchema(
+      context.db,
+      z.object({ now: timestampStringSchema }),
+      sql`SELECT CURRENT_TIMESTAMP::text AS now`,
+    );
+    if (!clock) throw new Error("Database clock is required");
+    const now = new Date(clock.now);
+    day = (offset) => new Date(now.getTime() - offset * 86_400_000).toISOString().slice(0, 10);
+    startedAt = (offset) => `${day(offset)}T18:00:00.000Z`;
+
+    await context.db.execute(sql`
+      INSERT INTO fitness.user_profile (id, name) VALUES
+        (${userId}::uuid, 'Strength evidence fixture'),
+        (${otherUserId}::uuid, 'Strength evidence other user')
+    `);
+    await context.db.execute(sql`
+      INSERT INTO fitness.provider (id, name, user_id) VALUES
+        (${primaryProvider}, 'Strong', ${userId}::uuid),
+        (${mirrorProvider}, 'Mirror', ${userId}::uuid)
+      ON CONFLICT (id) DO NOTHING
+    `);
+    await context.db.execute(sql`
+      INSERT INTO fitness.exercise (
+        id, name, muscle_groups, equipment, exercise_type, movement
+      ) VALUES
+        (${benchExercise}::uuid, 'Bench Press', ARRAY['CHEST'], 'Barbell', 'STRENGTH', 'push'),
+        (${squatExercise}::uuid, 'Squat', ARRAY['QUADRICEPS'], 'Barbell', 'STRENGTH', 'squat'),
+        (${pressExercise}::uuid, 'Shoulder Press', ARRAY['SHOULDERS'], 'Dumbbell', 'STRENGTH', 'push')
+    `);
+
+    const insertSession = async (
+      id: string,
+      offset: number,
+      name: string,
+      provider = primaryProvider,
+      groupId = id,
+      owner = userId,
+    ) => {
+      await context.db.execute(sql`
+        INSERT INTO fitness.activity (
+          id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+          started_at, ended_at, name, source_name, raw, timezone,
+          start_utc_offset_minutes, end_utc_offset_minutes, local_time_source
+        ) VALUES (
+          ${id}::uuid, ${groupId}::uuid, ${provider}, ${owner}::uuid, ${id},
+          'strength', 'strength_training', ${startedAt(offset)}::timestamptz,
+          ${`${day(offset)}T19:00:00.000Z`}::timestamptz, ${name}, 'Strong', '{}'::jsonb,
+          'UTC', 0, 0, 'device_timezone'
+        )
+      `);
+    };
+    const insertSet = async (
+      activityId: string,
+      exerciseId: string,
+      weight: number,
+      reps: number,
+      rpe: number | null,
+      raw: Record<string, unknown>,
+    ) => {
+      await context.db.execute(sql`
+        INSERT INTO fitness.strength_set (
+          activity_id, exercise_id, exercise_index, set_index, set_type,
+          weight_kg, reps, rpe, raw
+        ) VALUES (
+          ${activityId}::uuid, ${exerciseId}::uuid, 0, 0, 'working',
+          ${weight}, ${reps}, ${rpe}, ${JSON.stringify(raw)}::jsonb
+        )
+      `);
+    };
+
+    const repSessions: Array<{ offset: number; reps: number; activity: string }> = [
+      { offset: 20, reps: 8, activity: benchSession },
+      { offset: 18, reps: 10, activity: randomUUID() },
+      { offset: 16, reps: 10, activity: randomUUID() },
+    ];
+    for (const session of repSessions) {
+      await insertSession(session.activity, session.offset, "Bench session");
+      await insertSet(session.activity, benchExercise, 60, session.reps, 8, {
+        weight: 60,
+        weightUnit: "kg",
+        reps: session.reps,
+        rpe: 8,
+      });
+    }
+    await insertSession(mirrorSession, 20, "Bench session mirror", mirrorProvider, benchSession);
+    await insertSet(mirrorSession, benchExercise, 60, 8, 8, {
+      weight_kg: 60,
+      number_of_reps: 8,
+      rpe: 8,
+    });
+
+    const flatWeights = [100, 100, 101, 101, 100, 100];
+    const flatOffsets = [50, 45, 40, 35, 30, 22];
+    for (const [index, offset] of flatOffsets.entries()) {
+      const weight = flatWeights[index] ?? 100;
+      const activity = randomUUID();
+      await insertSession(activity, offset, "Squat session");
+      await insertSet(activity, squatExercise, weight, 5, 8, {
+        weight,
+        weightUnit: "kg",
+        reportedWeightUnit: "kg",
+        reps: 5,
+        setTag: "Failure",
+        exerciseName: "Squat (Barbell)",
+        rpe: 8,
+      });
+    }
+
+    for (const [index, offset] of [15, 13, 11].entries()) {
+      const reps = index === 0 ? 6 : 8;
+      const activity = randomUUID();
+      await insertSession(activity, offset, "Press session");
+      await insertSet(activity, pressExercise, 40, reps, null, {
+        weight: 40,
+        weightUnit: "kg",
+        reps,
+        rpe: null,
+      });
+    }
+
+    const oldSession = randomUUID();
+    await insertSession(oldSession, 70, "Old bench session");
+    await insertSet(oldSession, benchExercise, 60, 12, 8, {
+      weight: 60,
+      weightUnit: "kg",
+      reps: 12,
+      rpe: 8,
+    });
+    const foreignSession = randomUUID();
+    await insertSession(
+      foreignSession,
+      14,
+      "Foreign bench session",
+      primaryProvider,
+      foreignSession,
+      otherUserId,
+    );
+    await insertSet(foreignSession, benchExercise, 60, 12, 8, {
+      weight: 60,
+      weightUnit: "kg",
+      reps: 12,
+      rpe: 8,
+    });
+  });
+
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+
+  it("returns newest-first evidence with ownership, 56-day, deduplication, and optional-effort semantics", async () => {
+    const rows = await new StrengthProgressionRepository(
+      context.db,
+      userId,
+      "UTC",
+    ).getStrengthProgression();
+    expect(rows.map(({ exerciseName }) => exerciseName)).toEqual([
+      "Shoulder Press",
+      "Bench Press",
+      "Squat",
+    ]);
+    const byName = new Map(rows.map((row) => [row.exerciseName, row]));
+    const bench = byName.get("Bench Press");
+    expect(bench).toMatchObject({
+      exerciseId: benchExercise,
+      exerciseName: "Bench Press",
+      equipment: "Barbell",
+      status: "ready",
+      evidence: { kind: "rep_improvement", effort: { provider: primaryProvider } },
+    });
+    expect(bench?.evidence.observations).toHaveLength(3);
+    expect(bench?.evidence.observations[0]).toMatchObject({
+      sourceSetId: expect.any(String),
+      sourceActivityId: expect.any(String),
+      activityId: expect.any(String),
+      provider: primaryProvider,
+      weightKg: 60,
+      reps: 10,
+      rpe: 8,
+    });
+    expect(bench?.latestEvidenceDate).toBe(day(16));
+
+    expect(byName.get("Squat")).toMatchObject({
+      status: "stagnating",
+      evidence: {
+        kind: "flat_benchmark",
+        formula: "Epley",
+        observedDates: 6,
+        spanDays: 28,
+      },
+    });
+    expect(byName.get("Shoulder Press")).toMatchObject({
+      status: null,
+      evidence: { kind: "rep_improvement", effort: { rpeSpread: null, comparable: false } },
+    });
+
+    const otherUser = await new StrengthProgressionRepository(
+      context.db,
+      otherUserId,
+      "UTC",
+    ).getStrengthProgression();
+    expect(otherUser).toEqual([]);
+    const limited = await new StrengthProgressionRepository(context.db, userId, "UTC", {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: day(19),
+      endDateExclusive: day(17),
+    }).getStrengthProgression();
+    expect(limited).toEqual([]);
+  });
+});
