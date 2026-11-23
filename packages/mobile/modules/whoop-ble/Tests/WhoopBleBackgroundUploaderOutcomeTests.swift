@@ -2,7 +2,7 @@ import XCTest
 @testable import WhoopBLE
 
 extension WhoopBleBackgroundUploaderTests {
-    func testLiveConnectionLossWithSiblingRetainsDurableBatchWithoutException() throws {
+    func testConnectionLossRecoveryMeasuresUntilTheSameBatchIsAcknowledged() throws {
         var instant = ContinuousClock.now
         var errors: [Error] = []
         var outcomes: [WhoopUploadOutcome] = []
@@ -16,23 +16,15 @@ extension WhoopBleBackgroundUploaderTests {
 
         let identity = try XCTUnwrap(transport.requests.first?.2)
         let pending = try XCTUnwrap(store.pendingBatches().first)
-        transport.failOnePath(identity: identity)
-        try settle(uploader)
-
-        XCTAssertTrue(transport.tasks.contains(identity))
-        XCTAssertEqual(try store.pendingBatches().map(\.id), [pending.id])
-        XCTAssertEqual(outcomes.map(\.stage), ["path_failed_fallback_active"])
-        XCTAssertTrue(errors.isEmpty, "A live -1005 with a sibling remaining is an operational outcome")
-        XCTAssertEqual(outcomes.filter(\.transportConnectionLost).count, 1)
-        XCTAssertTrue(outcomes.compactMap(\.connectionLossRecoveryDuration).isEmpty)
-
-        instant = instant.advanced(by: .seconds(8))
         transport.fail(0, error: URLError(.networkConnectionLost))
         try settle(uploader)
-        XCTAssertEqual(outcomes.filter(\.transportConnectionLost).count, 2)
-        XCTAssertTrue(outcomes.compactMap(\.connectionLossRecoveryDuration).isEmpty)
-        XCTAssertEqual(errors.count, 1, "The terminal path failure remains actionable")
+
+        XCTAssertTrue(transport.tasks.isEmpty)
         XCTAssertEqual(try store.pendingBatches().map(\.id), [pending.id])
+        XCTAssertEqual(outcomes.map(\.stage), ["transport_error"])
+        XCTAssertEqual(outcomes.filter(\.transportConnectionLost).count, 1)
+        XCTAssertTrue(outcomes.compactMap(\.connectionLossRecoveryDuration).isEmpty)
+        XCTAssertEqual(errors.count, 1)
 
         try uploader.append(deviceId: "a", samplesByStream: [.sensorRecords: rows])
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "refreshed", headers: [:])
@@ -49,8 +41,8 @@ extension WhoopBleBackgroundUploaderTests {
         XCTAssertTrue(try store.pendingBatches().isEmpty)
         XCTAssertEqual(outcomes.last?.stage, "outbox_retired")
         XCTAssertEqual(outcomes.last?.batchIdentity, identity)
-        XCTAssertEqual(outcomes.compactMap(\.connectionLossRecoveryDuration), [.milliseconds(27_250)])
-        XCTAssertEqual(outcomes.filter(\.transportConnectionLost).count, 2)
+        XCTAssertEqual(outcomes.compactMap(\.connectionLossRecoveryDuration), [.milliseconds(19_250)])
+        XCTAssertEqual(outcomes.filter(\.transportConnectionLost).count, 1)
         XCTAssertEqual(errors.count, 1)
     }
 
@@ -60,21 +52,22 @@ extension WhoopBleBackgroundUploaderTests {
         try uploader.append(deviceId: "a", samplesByStream: [.sensorRecords: rows])
         try uploader.flush()
         try settle(uploader)
-        let identity = try XCTUnwrap(transport.requests.first?.2)
-        transport.failOnePath(identity: identity)
+        transport.fail(0, error: URLError(.networkConnectionLost))
         try settle(uploader)
         XCTAssertEqual(outcomes.filter(\.transportConnectionLost).count, 1)
+        try uploader.flush()
+        try settle(uploader)
 
         try store.advanceErasureCutoff(to: Date(timeIntervalSince1970: 1_800_000_000))
         XCTAssertTrue(try store.pendingBatches().isEmpty)
-        transport.complete(0)
+        transport.complete(1)
         try settle(uploader)
 
         XCTAssertEqual(outcomes.last?.stage, "batch_not_found")
         XCTAssertTrue(outcomes.compactMap(\.connectionLossRecoveryDuration).isEmpty)
     }
 
-    func testLiveFailureReportsBatchIdentityAndRetainedOutboxState() throws {
+    func testUnrelatedErrorDomainDoesNotCountAsConnectionLoss() throws {
         var errors: [Error] = []
         var outcomes: [WhoopUploadOutcome] = []
         let (uploader, store, transport) = try setup(
@@ -84,13 +77,13 @@ extension WhoopBleBackgroundUploaderTests {
         try settle(uploader)
 
         let identity = try XCTUnwrap(transport.requests.first?.2)
-        transport.failOnePath(identity: identity, error: NSError(domain: "OtherNetworkError", code: -1005))
+        transport.fail(0, error: NSError(domain: "OtherNetworkError", code: -1005))
         try settle(uploader)
 
         let outcome = try XCTUnwrap(outcomes.first)
         XCTAssertEqual(outcome.batchIdentity, identity)
         XCTAssertEqual(outcome.stream, "realtime")
-        XCTAssertEqual(outcome.stage, "path_failed_fallback_active")
+        XCTAssertEqual(outcome.stage, "transport_error")
         XCTAssertNil(outcome.statusCode)
         XCTAssertFalse(outcome.acknowledgmentValidated)
         XCTAssertEqual(outcome.outboxState, "pending")
@@ -162,9 +155,11 @@ extension WhoopBleBackgroundUploaderTests {
         try settle(uploader)
 
         let identity = try XCTUnwrap(transport.requests.first?.2)
-        transport.failOnePath(identity: identity)
+        transport.fail(0, error: URLError(.networkConnectionLost))
         try settle(uploader)
-        transport.complete(0, status: 408, body: "")
+        try uploader.flush()
+        try settle(uploader)
+        transport.complete(1, status: 408, body: "")
         try settle(uploader)
         try uploader.flush()
         try settle(uploader)
@@ -183,7 +178,7 @@ extension WhoopBleBackgroundUploaderTests {
         XCTAssertEqual(outcomes.compactMap(\.connectionLossRecoveryDuration), [.seconds(4)])
         XCTAssertEqual(try uploader.diagnostics()["http408RecoveredBatchCount"] as? Int, 1)
         XCTAssertTrue(try store.pendingBatches().isEmpty)
-        XCTAssertEqual(reportOrder, ["outcome", "outcome", "outcome", "error"])
+        XCTAssertEqual(reportOrder, ["outcome", "error", "outcome", "outcome", "error"])
     }
 
     func testOnlyValidatedHttp5xxIsExcludedFromOutcomeBreadcrumbs() {
@@ -228,9 +223,6 @@ extension WhoopBleBackgroundUploaderTests {
         try uploader.flush()
         try settle(uploader)
 
-        let identity = try XCTUnwrap(transport.requests.first?.2)
-        transport.failOnePath(identity: identity)
-        try settle(uploader)
         transport.complete(0, body: "{")
         try settle(uploader)
 
@@ -250,6 +242,6 @@ extension WhoopBleBackgroundUploaderTests {
             route: "whoopBleSync.pushSensorRecords", stage: stage, statusCode: status,
             responseOriginValidated: originValidated, acknowledgmentValidated: false, outboxState: "pending",
             batchSampleCount: nil, attempt: nil, taskIdentifier: nil, transportPath: nil,
-            siblingTaskPending: nil, occurredAt: "2026-11-17T00:00:00Z")
+            occurredAt: "2026-11-17T00:00:00Z")
     }
 }

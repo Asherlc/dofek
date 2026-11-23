@@ -327,28 +327,23 @@ at most 16 records and 262,144 encoded bytes, following the
 Each stream uses its existing authenticated ingestion route.
 Actual BLE arrivals coalesce scheduling checks to five seconds, and partial
 batches become eligible after 30 seconds or a lifecycle flush. Each reservation
-uses one ordinary native request while the app executes and one file-backed
+uses one file-backed
 [background URLSession transfer](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background)
-for process-independent delivery. Background-started transfers remain
-[discretionary regardless of the configured flag](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/isdiscretionary),
-so fresh capture also has an ordinary delivery path. Both paths share the same
-immutable batch and deterministic server identities; concurrent replay is possible.
-The first terminal response owns acknowledgment handling, and its counterpart is
-canceled after that handling finishes. A network failure on one path is reported
-immediately while the other remains available. Capture may replenish a missing
-path after the existing 30-second error backoff; no polling loop is added.
-The ordinary session [waits for initial connectivity](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/waitsforconnectivity),
-matching the background service's waiting behavior, and disables shared cookies,
-credentials and caching. Responses are bounded to 64 KiB and isolated by session
-as well as [task identifier](https://developer.apple.com/documentation/foundation/urlsessiontask/taskidentifier).
-Tokens remain in application memory; iOS owns submitted request headers. After a
-restart, native callbacks acknowledge existing batches without React;
-authenticated configuration or an explicit flush can add ordinary delivery to a
-restored reservation. Account changes cancel both paths, and replacement
-credentials retire the old request. Queued callbacks carry an in-memory submission identity so
-retired results cannot block or cancel a refreshed reservation, including a refresh
-with unchanged credentials. Native background completions remain valid before any
-new submission is configured. Canonical mutation endpoints
+for process-independent delivery. Foreground-started tasks are eligible for
+immediate transfer. iOS [schedules background-started tasks at its discretion](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/isdiscretionary),
+including history captured while the phone is locked. Capture retains the same
+immutable SQLite reservation and retries a terminal network failure after the
+existing 30-second backoff. Responses are bounded to 64 KiB per
+[task identifier](https://developer.apple.com/documentation/foundation/urlsessiontask/taskidentifier).
+The session disables shared cookies, credentials and caching. Tokens remain in
+application memory and iOS owns submitted request headers.
+
+Native callbacks can acknowledge restored batches before React loads.
+Credential changes cancel the old task and wait for its terminal callback
+before starting a replacement. A refresh with matching credentials keeps the
+active task. Queued callbacks carry an in-memory attempt number so retired
+results cannot block a newer submission. Account retirement cancels its tasks.
+Canonical mutation endpoints
 must serve directly: Apple's background service follows redirects, and a
 cross-origin final response is rejected as an acknowledgment.
 
@@ -481,11 +476,11 @@ Bluetooth delivery separately on a device.
 
 The [transport tests](ios/BridgeTests/WhoopURLSessionTransportTests.swift) use real
 URLSession tasks with a stock [URLProtocol](https://developer.apple.com/documentation/foundation/urlprotocol)
-network boundary to exercise paired delivery, response isolation, restoration,
-network failure and cancellation races. These tests do not reproduce iOS's
-background-transfer scheduling decisions. Physical acceptance requires a matching
-native build: verify fresh locked-phone capture and advancing confirmations,
-retained rows across process recreation, and cancellation across account changes.
+network boundary to exercise single-task delivery, credential replacement,
+response bounds, restoration and cancellation races. Physical acceptance with
+a matching native build covers foreground latency, locked-phone capture and
+eventual confirmation, retention across process recreation, and cancellation
+across account changes.
 
 The standalone `swift test` suite remains separate: its target excludes the Expo
 bridge and the app-hosted tests, as declared in [Package.swift](Package.swift).

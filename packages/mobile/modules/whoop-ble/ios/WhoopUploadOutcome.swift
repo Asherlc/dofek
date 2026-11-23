@@ -20,7 +20,6 @@ struct WhoopUploadOutcome {
     let attempt: Int?
     let taskIdentifier: Int?
     let transportPath: String?
-    let siblingTaskPending: Bool?
     let occurredAt: String
     var transportConnectionLost = false
     var connectionLossRecoveryDuration: Duration?
@@ -57,7 +56,6 @@ struct WhoopUploadOutcome {
         if let attempt { data["attempt"] = attempt }
         if let taskIdentifier { data["taskIdentifier"] = taskIdentifier }
         if let transportPath { data["transportPath"] = transportPath }
-        if let siblingTaskPending { data["siblingTaskPending"] = siblingTaskPending }
         return data
     }
 
@@ -74,7 +72,7 @@ struct WhoopUploadOutcome {
             responseOriginValidated: nil, acknowledgmentValidated: false, outboxState: "pending",
             batchSampleCount: batch.sampleCount, attempt: context.attempt,
             taskIdentifier: context.taskIdentifier, transportPath: context.transportPath,
-            siblingTaskPending: nil, occurredAt: occurredAt,
+            occurredAt: occurredAt,
             transportConnectionLost: isNetworkConnectionLost(response.error))
     }
 
@@ -89,7 +87,7 @@ struct WhoopUploadOutcome {
             statusCode: status, responseOriginValidated: nil, acknowledgmentValidated: false,
             outboxState: "absent", batchSampleCount: nil, attempt: context.attempt,
             taskIdentifier: context.taskIdentifier, transportPath: context.transportPath,
-            siblingTaskPending: nil, occurredAt: occurredAt)
+            occurredAt: occurredAt)
     }
 }
 
@@ -155,7 +153,6 @@ struct WhoopUploadMetrics {
 
 enum WhoopUploadTelemetry {
     static let contextKey = "com.dofek.whoop_upload_context"
-    static let transportContextKey = "com.dofek.whoop_upload_transport_context"
 
     static func adding(_ context: [String: Any], to error: Error, key: String = contextKey) -> NSError {
         let original = error as NSError

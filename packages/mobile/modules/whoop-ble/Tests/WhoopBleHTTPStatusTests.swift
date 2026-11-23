@@ -195,13 +195,12 @@ extension WhoopBleBackgroundUploaderTests {
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "new", headers: [:])
         try settle(uploader)
         let requestIndex = try XCTUnwrap(transport.requests.indices.last)
-        let identity = transport.requests[requestIndex].2
         transport.complete(requestIndex, status: 600); try settle(uploader)
         XCTAssertEqual(errors.count, 2)
         XCTAssertEqual(try uploader.diagnostics()["http5xxResponseCount"] as? Int, 0)
 
         try uploader.flush(); try settle(uploader)
-        transport.failOnePath(identity: identity, error: URLError(.timedOut))
+        transport.fail(try XCTUnwrap(transport.requests.indices.last), error: URLError(.timedOut))
         try settle(uploader)
         XCTAssertEqual(errors.count, 3, "A timeout without an HTTP 5xx response remains an exception")
         XCTAssertEqual(try uploader.diagnostics()["http5xxResponseCount"] as? Int, 0)

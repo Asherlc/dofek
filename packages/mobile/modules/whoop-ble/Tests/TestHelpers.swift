@@ -86,10 +86,8 @@ final class CleanupStageRecorder {
 
 final class TestWhoopUploadTransport: WhoopUploadTransport {
     var onCompletion: WhoopUploadCompletion?
-    var onAttemptFailure: ((String, Error, Int?) -> Void)?
     var onFinishEvents: (() -> Void)?
     var tasks: [String] = []
-    var pairedTasks = Set<String>()
     var attempts: [String: Int] = [:]
     var requests: [(URLRequest, URL, String)] = []
     var reconciliationCount = 0
@@ -98,23 +96,28 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
     var cancellations: [String] = []
     var beforeAllTasks: (() -> Void)?
     var afterAllTasks: (() -> Void)?
-    func allTasks(_ completion: @escaping (WhoopUploadTaskSnapshot) -> Void) {
+    var holdTaskSnapshot: ((@escaping () -> Void) -> Void)?
+    func allTasks(_ completion: @escaping (Set<String>) -> Void) {
         reconciliationCount += 1
         beforeAllTasks?()
-        completion(WhoopUploadTaskSnapshot(identities: Set(tasks), pairedIdentities: pairedTasks.intersection(tasks)))
+        let identities = Set(tasks)
+        if let holdTaskSnapshot {
+            holdTaskSnapshot { completion(identities) }
+        } else {
+            completion(identities)
+        }
         afterAllTasks?()
     }
     func start(request: URLRequest, file: URL, identity: String, attempt: Int) {
         attempts[identity] = attempt
-        if tasks.contains(identity), pairedTasks.contains(identity),
+        if tasks.contains(identity),
            let previous = requests.last(where: { $0.2 == identity }), previous.0 == request { return }
         if !tasks.contains(identity) { tasks.append(identity) }
-        pairedTasks.insert(identity)
         requests.append((request, file, identity))
     }
     func cancel(identity: String) {
         cancellations.append(identity)
-        let cancel = { self.tasks.removeAll { $0 == identity }; self.pairedTasks.remove(identity); self.attempts[identity] = nil }
+        let cancel = { self.tasks.removeAll { $0 == identity }; self.attempts[identity] = nil }
         if delayCancellation { delayedCancellations.append(cancel) } else { cancel() }
     }
     func complete(
@@ -126,7 +129,6 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
         let task = requests[index]
         guard requests.last(where: { $0.2 == task.2 })?.0 == task.0 else { return }
         tasks.removeAll { $0 == task.2 }
-        pairedTasks.remove(task.2)
         onCompletion?(
             task.2,
             status,
@@ -138,7 +140,6 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
     func fail(_ index: Int, error: Error = URLError(.unknown)) {
         let task = requests[index]
         tasks.removeAll { $0 == task.2 }
-        pairedTasks.remove(task.2)
         onCompletion?(
             task.2,
             nil,
@@ -146,10 +147,6 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
             (attempts[task.2], nil, index + 1, "test"),
             error
         )
-    }
-    func failOnePath(identity: String, error: Error = URLError(.networkConnectionLost)) {
-        pairedTasks.remove(identity)
-        onAttemptFailure?(identity, error, attempts[identity])
     }
 }
 
@@ -363,8 +360,7 @@ extension WhoopBleBackgroundUploaderTests {
         transport.afterAllTasks = {
             transport.afterAllTasks = nil
             if attemptFailure {
-                let request = transport.requests[0]
-                transport.onAttemptFailure?(request.2, URLError(.networkConnectionLost), transport.attempts[request.2])
+                transport.fail(0, error: URLError(.networkConnectionLost))
             } else { transport.complete(0, status: 401) }
         }
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: replacementToken, headers: [:])

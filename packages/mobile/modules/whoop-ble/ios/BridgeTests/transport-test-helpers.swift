@@ -25,19 +25,20 @@ extension WhoopURLSessionTransportTests {
             XCTAssertFalse(configuration.httpShouldSetCookies)
             XCTAssertNil(configuration.urlCredentialStorage)
             XCTAssertNil(configuration.urlCache)
-            let background = configuration.identifier != nil
-            if !background { XCTAssertTrue(configuration.waitsForConnectivity) }
+            XCTAssertNotNil(configuration.identifier)
+            XCTAssertTrue(configuration.sessionSendsLaunchEvents)
+            XCTAssertFalse(configuration.isDiscretionary)
             let test = URLSessionConfiguration.ephemeral
             test.protocolClasses = [WhoopTransportURLProtocol.self]
-            test.httpAdditionalHeaders = ["X-Test-Delivery": background ? "background" : "live"]
+            test.httpAdditionalHeaders = ["X-Test-Delivery": "background"]
             let session: URLSession
-            if background, let makeBackgroundSession {
+            if let makeBackgroundSession {
                 session = makeBackgroundSession(test, delegate, queue)
             } else {
                 session = URLSession(configuration: test, delegate: delegate, delegateQueue: queue)
             }
             self.addTeardownBlock { session.invalidateAndCancel() }
-            if restored && background {
+            if restored {
                 let task = session.uploadTask(with: request, fromFile: file)
                 task.taskDescription = "generation.batch"
                 task.resume()

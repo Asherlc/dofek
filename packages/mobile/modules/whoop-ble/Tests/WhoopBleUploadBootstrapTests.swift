@@ -4,10 +4,9 @@ import XCTest
 
 private final class BootstrapTransport: WhoopUploadTransport {
     var onCompletion: WhoopUploadCompletion?
-    var onAttemptFailure: ((String, Error, Int?) -> Void)?
     var onFinishEvents: (() -> Void)?
-    func allTasks(_ completion: @escaping (WhoopUploadTaskSnapshot) -> Void) {
-        completion(WhoopUploadTaskSnapshot(identities: [], pairedIdentities: []))
+    func allTasks(_ completion: @escaping (Set<String>) -> Void) {
+        completion([])
     }
     func start(request: URLRequest, file: URL, identity: String, attempt: Int) {}
     func cancel(identity: String) {}
