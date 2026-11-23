@@ -368,8 +368,10 @@ The shared web and mobile `strength.loggedSetComparison` query compares observed
 rep counts within the selected timestamp range and request access window. It counts canonical,
 deduplicated sets with positive normalized load and reps that pass the existing working-volume
 quality checks, excluding warm-ups, rests, missing values, and ambiguous or conflicting observations.
-Session and set evidence retain provider attribution; first/latest comparisons require distinct
-local dates. The response includes context from the
+The [comparison repository](src/repositories/strength-progression-repository.ts) groups confirmed
+exercise aliases before consolidating mirrored sets. It matches explicitly recorded equipment and
+preserves movement qualifiers such as seated. Session and set evidence retain provider attribution,
+and first/latest comparisons require distinct local dates. The response includes context from the
 [Schoenfeld et al. trial](https://pmc.ncbi.nlm.nih.gov/articles/pmid/30153194/), which used supervised
 sets to failure and tested squat and bench-press strength, without prescribing set targets or
 inferring personal causation.

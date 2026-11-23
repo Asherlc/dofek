@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { strengthExerciseIdentityKey } from "@dofek/training/training";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { LoggedSetComparison, LoggedSetExercise } from "../contracts/logged-set-comparison.ts";
@@ -53,6 +54,65 @@ const cursorSchema = z
   .strict();
 
 type Row = z.infer<typeof rowSchema>;
+
+function loggedExerciseIdentity(row: Row) {
+  const name = row.exercise_name.trim().replace(/\s+/g, " ");
+  const equipment = row.equipment?.trim().replace(/\s+/g, " ") || null;
+  const normalizedEquipment = equipment?.toLowerCase() ?? null;
+  const delimiter = " - ";
+  const suffixStart = name.lastIndexOf(delimiter);
+  const baseName =
+    suffixStart >= 0 &&
+    name.slice(suffixStart + delimiter.length).toLowerCase() === normalizedEquipment
+      ? name.slice(0, suffixStart)
+      : name;
+  const exerciseName =
+    normalizedEquipment === "dumbbell" && baseName.toLowerCase() === "bench fly"
+      ? "Chest Fly"
+      : baseName;
+  return {
+    key: strengthExerciseIdentityKey({
+      exerciseName: exerciseName.toLowerCase(),
+      equipment: normalizedEquipment,
+    }),
+    exerciseId: row.exercise_id,
+    exerciseName,
+    equipment: normalizedEquipment === "dumbbell" ? "Dumbbell" : equipment,
+    plainName: exerciseName === name,
+  };
+}
+
+function groupLoggedSetRows(rows: Row[]) {
+  type ExerciseGroup = {
+    display: ReturnType<typeof loggedExerciseIdentity>;
+    exerciseIds: string[];
+  };
+  const groups = new Map<string, ExerciseGroup>();
+  const byExerciseId = new Map<string, ExerciseGroup>();
+  const groupedRows = rows.map((row) => {
+    const known = byExerciseId.get(row.exercise_id);
+    if (known) return { ...row, exerciseGroup: known };
+
+    const identity = loggedExerciseIdentity(row);
+    const group = groups.get(identity.key) ?? { display: identity, exerciseIds: [] };
+    const current = group.display;
+    if (
+      (identity.plainName && !current.plainName) ||
+      (identity.plainName === current.plainName && identity.exerciseId < current.exerciseId)
+    ) {
+      group.display = identity;
+    }
+    group.exerciseIds.push(row.exercise_id);
+    groups.set(identity.key, group);
+    byExerciseId.set(row.exercise_id, group);
+    return { ...row, exerciseGroup: group };
+  });
+
+  // Consolidation uses exercise IDs within each workout. Give aliases the same
+  // ID on these comparison rows so mirrored sets go through the existing checks.
+  for (const row of groupedRows) row.exercise_id = row.exerciseGroup.display.exerciseId;
+  return groupedRows;
+}
 
 export interface StrengthProgressionInput {
   startDate: string;
@@ -231,17 +291,19 @@ export class StrengthProgressionRepository extends BaseRepository {
       ${this.timestampAccessPredicate(sql`a.started_at`)}`);
     const exercises = new Map<string, LoggedSetExercise>();
     const sessions = new Map<string, LoggedSetExercise["sessions"][number]>();
-    for (const set of consolidateSets(rows).sets) {
+    for (const set of consolidateSets(groupLoggedSetRows(rows)).sets) {
       if (volumeResult(set, consolidatedStrengthQualityFlags(set)).status !== "available") continue;
       const row = set.row;
       if (row.reps === null || row.weight_kg === null) continue;
-      const key = JSON.stringify([row.exercise_id, row.equipment]);
+      const key = row.exercise_id;
       let exercise = exercises.get(key);
       if (!exercise) {
+        const { display, exerciseIds } = row.exerciseGroup;
         exercise = {
-          exerciseId: row.exercise_id,
-          exerciseName: row.exercise_name,
-          equipment: row.equipment,
+          exerciseId: display.exerciseId,
+          exerciseName: display.exerciseName,
+          equipment: display.equipment,
+          ...(exerciseIds.length > 1 ? { exerciseIds: [...exerciseIds].sort() } : {}),
           totalLoggedSets: 0,
           sessions: [],
           comparisons: [],

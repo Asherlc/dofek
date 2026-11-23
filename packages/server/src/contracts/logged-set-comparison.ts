@@ -12,6 +12,7 @@ const endpointSchema = heaviestSetSchema.extend({
 });
 const exerciseSchema = z.object({
   exerciseId: z.string().uuid(),
+  exerciseIds: z.array(z.string().uuid()).optional(),
   exerciseName: z.string(),
   equipment: z.string().nullable(),
   totalLoggedSets: z.number().int().nonnegative(),

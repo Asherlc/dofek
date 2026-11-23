@@ -85,7 +85,11 @@ export const strengthRouter = router({
         ctx.timezone,
         ctx.accessWindow,
       ).listLoggedSetComparison(range.days),
-    { outputSchema: loggedSetComparisonSchema, expiresAt: "localDayBoundary" },
+    {
+      outputSchema: loggedSetComparisonSchema,
+      expiresAt: "localDayBoundary",
+      keyVersion: "logged-set-comparison-v2",
+    },
   ),
   volumeOverTime: selectedChartRangeQuery(
     "strength.volumeOverTime",
