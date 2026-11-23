@@ -2,7 +2,7 @@
   "version": 1,
   "title": "Dofek · Training progression",
   "kind": "prototype",
-  "description": "Three interactive mobile concepts for strength and cycling progression, using sample training data.",
+  "description": "Three mobile concepts that show training status and the logged evidence behind it, using sample strength and cycling data.",
   "artboards": [
     {
       "id": "daily-brief",
