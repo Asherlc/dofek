@@ -224,7 +224,7 @@ export const providerDetailRouter = router({
   /** Single record detail with raw data */
   recordDetail: cachedProtectedQuery({
     maxAge: CacheTTL.SHORT,
-    keyVersion: "provider-record-detail-response-v1",
+    keyVersion: "provider-record-detail-response-v2",
     outputSchema: recordDetailOutputSchema,
   })
     .input(

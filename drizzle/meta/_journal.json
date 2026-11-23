@@ -1380,6 +1380,13 @@
       "when": 1795281538228,
       "tag": "0196_fit_workout_step_intervals",
       "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1795281538229,
+      "tag": "0197_remove_climbing_area_groups",
+      "breakpoints": true
     }
   ]
 }

@@ -18,20 +18,21 @@ import {
   CLIMBING_SYNC_OTHER_USER_ID as otherUserId,
   CLIMBING_SYNC_PROVIDER_ID as providerId,
 } from "../../../../src/db/climbing-log-sync-test-helpers.ts";
+import { activity } from "../../../../src/db/schema/activity.ts";
 import { area } from "../../../../src/db/schema/climbing.ts";
 import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import type { TestContext } from "../../../../src/db/test-helpers.ts";
 import { executeWithSchema } from "../../../../src/db/typed-sql.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 
-describe("explicit climbing area groups", () => {
+describe("automatic climbing area groups", () => {
   let context: TestContext;
   beforeAll(async () => {
     context = await createClimbingLogSyncTestContext();
   });
   afterEach(async () => {
     await clearClimbingLogSyncTestContext(context);
-    await context.db.execute(sql`DELETE FROM fitness.area_group`);
+    await context.db.delete(activity).where(eq(activity.providerId, providerId));
   });
   afterAll(async () => {
     await context.cleanup();
@@ -49,16 +50,155 @@ describe("explicit climbing area groups", () => {
       providerId: provider,
       entries: [source],
     });
-  async function makeGroup(owner = userId) {
-    const id = randomUUID();
-    await context.db.execute(
-      sql`INSERT INTO fitness.area_group(id, user_id) VALUES (${id}::uuid, ${owner}::uuid)`,
-    );
-    return id;
-  }
   const repository = () => new ClimbingActivityLogEntryRepository(context.db, userId, "UTC");
 
-  it("automatically groups different source gym names without persisting membership", async () => {
+  async function climbingActivity(externalId: string) {
+    const [record] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId,
+        externalId,
+        canonicalType: "climbing",
+        providerType: "climbing",
+        startedAt: new Date("2026-11-22T22:00:00Z"),
+      })
+      .returning({ id: activity.id, groupId: activity.groupId });
+    if (!record) throw new Error("Expected a climbing activity");
+    return record;
+  }
+
+  it("groups the Picnic Table Wall climbs from both sources on an attached activity", async () => {
+    const record = await climbingActivity("berkeley-outing");
+    const shortPath = ["Berkeley", "Indian Rock", "Picnic Table Wall"];
+    const longPath = [
+      "California",
+      "San Francisco Bay Area",
+      "East Bay Area",
+      "Berkeley",
+      "Indian Rock Park",
+      "Picnic Table Wall",
+    ];
+    const sources = [
+      {
+        provider: providerId,
+        names: shortPath,
+        climbs: ["Picnic Traverse", "Overhang Variations", "Face Variations"],
+      },
+      { provider: providerId, names: [...shortPath.slice(0, -1), "Ape"], climbs: ["Ape Overhang"] },
+      { provider: otherProviderId, names: longPath, climbs: ["The Roof", "Left Route"] },
+    ];
+    for (const { provider, names, climbs } of sources) {
+      const areas = names.map((name) => ({ externalId: name, name }));
+      await persistClimbingLogEntries(context.db, {
+        userId,
+        providerId: provider,
+        entries: climbs.map((name) => ({
+          externalId: name,
+          activityId: record.id,
+          climbedOn: "2026-11-22",
+          climb: {
+            externalId: name,
+            name,
+            kind: "boulder",
+            setting: provider === providerId ? "outdoor" : null,
+            areas,
+          },
+          attempts: [],
+        })),
+      });
+    }
+    const logs = (await repository().getActivityLogEntries(record.groupId)).map((log) =>
+      log.toDetail(),
+    );
+    const groups = groupClimbingLogEntriesByArea(logs);
+    expect(groups.map((group) => [group.area?.name, group.entries.length])).toEqual(
+      expect.arrayContaining([
+        ["Picnic Table Wall", 5],
+        ["Ape", 1],
+      ]),
+    );
+    expect(groups).toHaveLength(2);
+    expect(logs.filter((log) => log.providerId === otherProviderId)).toHaveLength(2);
+    for (const log of logs.filter((log) => log.providerId === otherProviderId)) {
+      expect(log.areaPath?.map((source) => source.name)).toEqual(longPath);
+    }
+  });
+
+  it("keeps same-name logs with different recorded paths under one display heading", async () => {
+    const record = await climbingActivity("shared-heading");
+    for (const [provider, names] of [
+      [providerId, ["Berkeley", "Indian Rock", "Wall"]],
+      [otherProviderId, ["California", "Berkeley", "Indian Rock Park", "Wall"]],
+    ] as const) {
+      await write(provider, {
+        externalId: "route-log",
+        activityId: record.id,
+        climbedOn: "2026-11-22",
+        areas: names.map((name) => ({ externalId: name, name })),
+        climb: {
+          externalId: "route",
+          name: "Corner",
+          kind: "route",
+          setting: "outdoor",
+          areas: [{ externalId: "catalogue-wall", name: "Wall" }],
+          publishedGrades: [{ value: "5.10a", system: "yds" }],
+        },
+        attempts: [{ scope: "climb" }],
+      });
+    }
+    const logs = (await repository().getActivityLogEntries(record.groupId)).map((log) =>
+      log.toDetail(),
+    );
+    expect(logs.map((log) => log.providerId).sort()).toEqual([otherProviderId, providerId]);
+    expect(groupClimbingLogEntriesByArea(logs)).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      scenario: "unpinned gyms",
+      providers: [providerId, otherProviderId],
+      coordinates: null,
+      expectedCount: 2,
+    },
+    {
+      scenario: "competing gym matches",
+      providers: [providerId, providerId, otherProviderId],
+      coordinates: { latitude: 37.81644, longitude: -122.28852 },
+      expectedCount: 3,
+    },
+    {
+      scenario: "one corroborated gym",
+      providers: [providerId, otherProviderId],
+      coordinates: { latitude: 37.81644, longitude: -122.28852 },
+      expectedCount: 1,
+    },
+  ])(
+    "consolidates same-name gym routes with $scenario",
+    async ({ providers, coordinates, expectedCount }) => {
+      const record = await climbingActivity("same-name-gyms");
+      for (const [index, provider] of providers.entries()) {
+        await write(provider, {
+          externalId: `log-${index}`,
+          activityId: record.id,
+          climbedOn: "2026-11-22",
+          climb: {
+            externalId: `route-${index}`,
+            name: "Corner",
+            kind: "route",
+            setting: "indoor",
+            areas: [{ externalId: `wall-${index}`, name: "Main Wall", coordinates }],
+            publishedGrades: [{ value: "5.10a", system: "yds" }],
+          },
+          attempts: [{ scope: "climb" }],
+        });
+      }
+      const logs = await repository().getActivityLogEntries(record.groupId);
+      expect(logs).toHaveLength(expectedCount);
+    },
+  );
+
+  it("groups nearby gyms with different source names", async () => {
     for (const [provider, name, latitude] of [
       [providerId, "Touchstone Pacific Pipe", 37.815355],
       [otherProviderId, "Pacific Pipe Climbing", 37.81644],
@@ -75,9 +215,6 @@ describe("explicit climbing area groups", () => {
       "Pacific Pipe Climbing",
       "Touchstone Pacific Pipe",
     ]);
-    expect((await context.db.select().from(area)).every((source) => source.groupId === null)).toBe(
-      true,
-    );
   });
 
   it("resolves a standalone unlocated log from an unselected exact session peer", async () => {
@@ -221,88 +358,35 @@ describe("explicit climbing area groups", () => {
     },
   );
 
-  it("retains a shared identity and source names through resync and a rename", async () => {
-    await write(providerId, entry("Touchstone Great Western Power Company"));
-    await write(otherProviderId, entry("Great Western Power Company"));
-    const groupId = await makeGroup();
-    await context.db.execute(
-      sql`UPDATE fitness.area SET group_id=${groupId}::uuid WHERE user_id=${userId}::uuid`,
-    );
-    const before = await repository().getUnattachedLogEntriesForDate("2026-11-09");
-    expect(before).toHaveLength(2);
-    expect(before).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          providerId,
-          areaGroupId: groupId,
-          areaPath: [expect.objectContaining({ name: "Touchstone Great Western Power Company" })],
-        }),
-        expect.objectContaining({
-          providerId: otherProviderId,
-          areaGroupId: groupId,
-          areaPath: [expect.objectContaining({ name: "Great Western Power Company" })],
-        }),
-      ]),
-    );
-    await write(providerId, entry("A renamed gym"));
-    const after = await repository().getUnattachedLogEntriesForDate("2026-11-09");
-    expect(after.map((log) => log.id).sort()).toEqual(before.map((log) => log.id).sort());
-    expect(after.every((log) => log.areaGroupId === groupId)).toBe(true);
-    expect(after.find((log) => log.providerId === providerId)?.areaPath?.[0]?.name).toBe(
-      "A renamed gym",
-    );
-  });
-
-  it("uses the log's recorded area membership before its catalogue area", async () => {
+  it("uses the log's recorded area for grouping before its catalogue area", async () => {
     const source = {
       ...entry("Catalogue gym"),
       areas: [{ externalId: "logged-gym", name: "Recorded gym" }],
     };
     await write(providerId, source);
-    const catalogueGroup = await makeGroup();
-    const recordedGroup = await makeGroup();
-    await context.db.execute(
-      sql`UPDATE fitness.area SET group_id=CASE WHEN external_id='gym' THEN ${catalogueGroup}::uuid ELSE ${recordedGroup}::uuid END WHERE user_id=${userId}::uuid`,
-    );
     const [log] = await repository().getUnattachedLogEntriesForDate("2026-11-09");
+    if (!log) throw new Error("Expected projected log");
+    expect(log.areaGroupId).toBe(log.areaPath?.at(-1)?.id);
     expect(log).toMatchObject({
-      areaGroupId: recordedGroup,
       areaPath: [expect.objectContaining({ name: "Recorded gym" })],
       climb: { areaPath: [expect.objectContaining({ name: "Catalogue gym" })] },
     });
   });
 
-  it("rejects assigning another owner's group", async () => {
-    await write(providerId, entry("Owner's gym"));
-    const groupId = await makeGroup(otherUserId);
-    await expect(
-      context.db.execute(
-        sql`UPDATE fitness.area SET group_id=${groupId}::uuid WHERE user_id=${userId}::uuid`,
-      ),
-    ).rejects.toMatchObject({ cause: { code: "23503" } });
-  });
-
-  it("fences and erases group ownership while preserving another owner's group", async () => {
-    await write(providerId, entry("Other owner's gym"), otherUserId);
-    const otherGroup = await makeGroup(otherUserId);
-    const retainedGroup = await makeGroup();
-    await context.db.execute(
-      sql`UPDATE fitness.area SET group_id=${otherGroup}::uuid WHERE user_id=${otherUserId}::uuid`,
-    );
+  it("erases source areas for the requested account and retains another owner's areas", async () => {
+    await write(providerId, entry("Erased gym"), otherUserId);
+    await write(providerId, entry("Retained gym"));
     await expect(assertPostgresAccountErasureCoverage(context.db)).resolves.toBeUndefined();
     const requestId = randomUUID();
     await context.db.execute(
       sql`INSERT INTO fitness.account_erasure_request(id,user_id,user_hash,user_hash_key_id,write_fence_hash,status_token_hash,replay_retained_until,completion_deadline) VALUES(${requestId}::uuid,${otherUserId}::uuid,${"1".repeat(64)},'test-key',${"2".repeat(64)},${"3".repeat(64)},now()+interval '7 days',now()+interval '30 days')`,
     );
-    await expect(makeGroup(otherUserId)).rejects.toMatchObject({ cause: { code: "55000" } });
     await erasePostgresAccount(context.db, requestId, otherUserId);
     expect(await context.db.select().from(area).where(eq(area.userId, otherUserId))).toEqual([]);
     expect(
-      await executeWithSchema(
-        context.db,
-        z.object({ id: z.guid() }),
-        sql`SELECT id FROM fitness.area_group`,
-      ),
-    ).toEqual([{ id: retainedGroup }]);
+      await context.db.select({ name: area.name }).from(area).where(eq(area.userId, userId)),
+    ).toEqual([{ name: "Retained gym" }]);
+    const logs = await repository().getUnattachedLogEntriesForDate("2026-11-09");
+    expect(logs.map((log) => log.areaPath?.at(-1)?.name)).toEqual(["Retained gym"]);
   });
 });
