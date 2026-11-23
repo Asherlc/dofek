@@ -39814,3 +39814,30 @@ Local qualification and CI are separate from production throughput acceptance. T
   [Web Overview](../packages/web/src/pages/Dashboard.tsx) ·
   [iOS Overview](../packages/mobile/app/(tabs)/index.tsx) ·
   [iOS sync refresh list](../packages/mobile/lib/invalidate-synced-health-data.ts).
+
+## 2026-11-23 — Overview calculation returned no qualifying relationship
+
+- **Impact and evidence.** One signed-in web Overview showed an empty Key
+  relationship card for August 26 through November 23. Production served
+  the web build from PR #3461. At 14:44:51 UTC Axiom recorded an
+  `insights.compute` cache miss with a 3,230 ms procedure duration and
+  HTTP 200 for the enclosing batch. A browser reload at 14:47 UTC returned
+  an empty list and reproduced the card.
+  [Refresh PR](https://github.com/Asherlc/dofek/pull/3461) ·
+  [Production release](https://github.com/Asherlc/dofek/actions/runs/45118269517).
+- **Cause and validation.** A read-only replay of the deployed repository
+  for the same account in `America/Los_Angeles` bypassed the request cache.
+  The November 23 calculation joined 91 calendar dates. No candidate
+  passed the engine's statistical filters. The windows ending November 21
+  and 22 also returned zero candidates, and the window ending November 16
+  returned one eligible candidate.
+  [Repository](../packages/server/src/repositories/insights-repository.ts) ·
+  [Statistical filters](../packages/server/src/insights/engine.ts).
+- **Remaining issue and follow-up.** The joined dates included August 25
+  for the November 23 window and dates after November 16 for the historical
+  replay. A diagnostic restricted candidate selection to the advertised
+  dates and returned zero eligible candidates for November 23 and two for
+  November 16. Enforce the advertised date boundaries and clarify the
+  empty-state message. This investigation made no runtime changes.
+  [Date helpers](../packages/server/src/lib/date-window.ts) ·
+  [Input join](../packages/server/src/insights/data-join.ts).
