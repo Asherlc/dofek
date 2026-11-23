@@ -26,7 +26,11 @@ export default function OverviewScreen() {
   const endDate = useTodayQueryDate();
   const overviewInput = { days: overviewDays, endDate };
   const overviewOptions = { placeholderData: <Data,>(previous: Data | undefined) => previous };
-  const insightsQuery = trpc.insights.compute.useQuery(overviewInput, overviewOptions);
+  const insightsQuery = trpc.insights.compute.useQuery(overviewInput, {
+    ...overviewOptions,
+    refetchOnWindowFocus: "always",
+    refetchOnMount: true,
+  });
   const trendsQuery = trpc.dailyMetrics.trends.useQuery(overviewInput, overviewOptions);
   const heartRateQuery = trpc.dailyMetrics.hrvBaseline.useQuery(overviewInput, overviewOptions);
 

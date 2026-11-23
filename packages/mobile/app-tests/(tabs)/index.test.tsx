@@ -626,6 +626,20 @@ describe("TodayScreen independent loading states", () => {
     );
   });
 
+  it("refreshes insights on foreground and refreshes stale insights on mount", async () => {
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    render(<OverviewScreen />);
+
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        placeholderData: expect.any(Function),
+        refetchOnWindowFocus: "always",
+        refetchOnMount: true,
+      }),
+    );
+  });
+
   it("shows anomaly alerts from the standalone anomaly query", async () => {
     mockDashboardData = {
       ...mockDashboardData,

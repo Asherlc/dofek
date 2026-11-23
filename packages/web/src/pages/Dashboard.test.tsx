@@ -321,13 +321,16 @@ describe("Dashboard", () => {
     );
   });
 
-  it("uses a 90-day evidence window", () => {
+  it("uses a 90-day evidence window and refreshes insights on window focus", () => {
     render(<Dashboard />);
 
     const overviewRange = { days: 90, endDate: "2026-05-27" };
     expect(mockTrendsQuery).toHaveBeenCalledWith(overviewRange);
     expect(mockHeartRateBaselineQuery).toHaveBeenCalledWith(overviewRange);
-    expect(mockInsightsQuery).toHaveBeenCalledWith(overviewRange);
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      overviewRange,
+      expect.objectContaining({ refetchOnWindowFocus: true }),
+    );
     expect(mockDashboardEvidenceOverview).toHaveBeenCalledWith(
       expect.objectContaining({ days: 90, endDate: "2026-05-27" }),
     );

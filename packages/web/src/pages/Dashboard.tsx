@@ -66,7 +66,10 @@ export function Dashboard() {
     days: overviewDays,
     endDate,
   });
-  const insightsQuery = trpc.insights.compute.useQuery({ days: overviewDays, endDate });
+  const insightsQuery = trpc.insights.compute.useQuery(
+    { days: overviewDays, endDate },
+    { refetchOnWindowFocus: true },
+  );
   const processingStatus = useProcessingStatus({
     datasets: ["activity", "sleep", "recovery", "training", "body"],
   });

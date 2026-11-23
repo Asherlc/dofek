@@ -39776,7 +39776,12 @@ Local qualification and CI are separate from production throughput acceptance. T
   state that produced the original empty result is unknown. Reloading the
   production tab cleared the observed symptom. [Web query defaults](../packages/web/src/lib/query-client.ts) ·
   [iOS query defaults](../packages/mobile/lib/query-client.ts).
-- **Follow-up.** Verify that an empty Overview result can refresh when users
-  return and when iOS health sync completes. Verify that a successful refresh
-  can still show an empty state when the window has no qualifying result.
+- **Fix and validation.** The Overview refreshes insights when its web tab
+  becomes visible, when the iOS app returns to the foreground, or when iOS
+  opens the Overview with stale results. Completing an iOS health sync also
+  refreshes insights and restarts an overlapping initial request.
+  Focused web and mobile tests passed, including the empty and error states.
+  Verify the change in production after deployment.
+  [Web Overview](../packages/web/src/pages/Dashboard.tsx) ·
+  [iOS Overview](../packages/mobile/app/(tabs)/index.tsx) ·
   [iOS sync refresh list](../packages/mobile/lib/invalidate-synced-health-data.ts).
