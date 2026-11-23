@@ -22,5 +22,7 @@ describe("CyclingProgressionEvidence", () => {
     expect(screen.getAllByText(/220 W/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/218 W/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Measured power:/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/2m 0s/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/2m 5s/).length).toBeGreaterThan(0);
   });
 });

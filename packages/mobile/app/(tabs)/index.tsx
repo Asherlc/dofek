@@ -5,7 +5,7 @@ import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useQueryClient } from "@tanstack/react-query";
 import { getQueryKey } from "@trpc/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Animated, { Easing, FadeInUp } from "react-native-reanimated";
 import { Card } from "../../components/Card";
@@ -44,6 +44,14 @@ export default function OverviewScreen() {
   const trendsQuery = trpc.dailyMetrics.trends.useQuery(overviewInput, overviewOptions);
   const heartRateQuery = trpc.dailyMetrics.hrvBaseline.useQuery(overviewInput, overviewOptions);
   const strengthProgression = trpc.trainingProgression.strength.useQuery();
+  const previousStrengthProgressionDate = useRef(endDate);
+  const { refetch: refetchStrengthProgression } = strengthProgression;
+  useEffect(() => {
+    const dateChanged = previousStrengthProgressionDate.current !== endDate;
+    previousStrengthProgressionDate.current = endDate;
+    if (!dateChanged) return;
+    void refetchStrengthProgression();
+  }, [endDate, refetchStrengthProgression]);
   const latestStrengthStatus = firstStatusRow(strengthProgression.data);
 
   // Consolidated dashboard data fetch

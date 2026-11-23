@@ -21,4 +21,6 @@ it("keeps both dated rides behind an accessible disclosure until opened", () => 
   expect(screen.getAllByText(/Session effort: 4\/10/)).toHaveLength(2);
   expect(screen.getAllByText(/220 W/).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/Measured power:/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/2m 0s/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/2m 5s/).length).toBeGreaterThan(0);
 });

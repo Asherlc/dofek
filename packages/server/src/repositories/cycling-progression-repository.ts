@@ -116,11 +116,15 @@ const rowFields = (row: IntervalRow): IntervalFields => ({
  */
 function hasOpposingMergedClasses(recorded: RecordedIntervalEvidence[]): boolean {
   return recorded.some(({ interval }) => {
-    const fields: IntervalFields[] = (interval.sourceEvidence ?? []).map((peer) => ({
-      workRecoveryKind: peer.workRecoveryKind,
-      segmentType: peer.segmentType,
-      intervalType: peer.intervalType,
-    }));
+    // Only directly recorded peers are authoritative about the work/recovery class. An inferred
+    // detector label merged into the same group cannot veto a provider-recorded work interval.
+    const fields: IntervalFields[] = (interval.sourceEvidence ?? [])
+      .filter((peer) => peer.source === "provider_recorded")
+      .map((peer) => ({
+        workRecoveryKind: peer.workRecoveryKind,
+        segmentType: peer.segmentType,
+        intervalType: peer.intervalType,
+      }));
     const kinds = new Set(
       fields.map(effectiveIntervalClass).filter((kind): kind is IntervalClass => kind !== null),
     );
@@ -243,15 +247,15 @@ function prepareRide(
   const intervals: MeasuredInterval[] = [];
   for (const evidence of work) {
     const exactDuration = evidence.input.endOffsetSeconds - evidence.input.startOffsetSeconds;
-    const { startOffsetSeconds, endOffsetSeconds, averagePowerWatts } = summarizeIntervalPower(
+    const { startOffsetSeconds, endOffsetSeconds, meanPowerWatts } = summarizeIntervalPower(
       power.values,
       evidence.input,
     );
     if (
       !(exactDuration > 0) ||
-      averagePowerWatts == null ||
-      !Number.isFinite(averagePowerWatts) ||
-      averagePowerWatts <= 0
+      meanPowerWatts == null ||
+      !Number.isFinite(meanPowerWatts) ||
+      meanPowerWatts <= 0
     )
       return null;
     const covered = power.values
@@ -263,7 +267,8 @@ function prepareRide(
       interval: {
         index: evidence.input.index + 1,
         workDurationSeconds: exactDuration,
-        meanPowerWatts: averagePowerWatts,
+        // Keep the unrounded mean for the tolerance comparison; clients round it for display.
+        meanPowerWatts,
         powerCoveragePct: Math.min(100, Math.round(coveragePct)),
         sourceProvider: evidence.interval.sourceProvider,
         sourceActivityId: evidence.interval.sourceActivityId,
@@ -377,32 +382,90 @@ export class CyclingProgressionRepository extends BaseRepository {
     const selectedRow = await this.#readSelected(window.activityId);
     const selected = selectedRow ? validatedRideRow(selectedRow) : null;
     if (!selected) return null;
-    const candidates = (await this.#readCandidates(selected))
-      .flatMap((row) => {
-        const validated = validatedRideRow(row);
-        return validated ? [validated] : [];
-      })
-      .filter(
-        (ride) =>
-          ride.modality === selected.modality &&
-          ride.local_date < selected.local_date &&
-          Date.parse(ride.local_date) >=
-            Date.parse(selected.local_date) - COMPARISON_WINDOW_DAYS * 86_400_000,
-      );
-    if (candidates.length === 0) return null;
 
-    const rides = [selected, ...candidates];
-    const intervalRows = await loadRecordedIntervalRows(
-      this.db,
-      uniqueSorted(rides.flatMap((ride) => ride.member_activity_ids)),
-    );
-    const selectedHasWork = intervalRows.some(
+    // The work gate and first candidate page are both Postgres-only reads. Running them together
+    // keeps a ride with no candidates from paying for the ClickHouse power load below.
+    const [selectedIntervalRows, firstCandidatePage] = await Promise.all([
+      loadRecordedIntervalRows(this.db, uniqueSorted(selected.member_activity_ids)),
+      this.#readCandidates(selected, null),
+    ]);
+    const selectedHasWork = selectedIntervalRows.some(
       (row) =>
         selected.member_activity_ids.includes(row.member_activity_id) &&
         row.source_kind === "provider_recorded" &&
         effectiveIntervalClass(rowFields(row)) === "work",
     );
     if (!selectedHasWork) return null;
+    if (firstCandidatePage.length === 0) return null;
+    // The selected ride's preparation is reused unchanged for every candidate batch.
+    const baseline = (await this.#prepareRides([selected], selectedIntervalRows))[0];
+    if (!baseline) return null;
+
+    // Scan the whole 56-day history in newest-first keyset batches, stopping at the first eligible
+    // comparison. Progress follows the last raw row, so a full page whose rows all fail validation
+    // still advances the scan; a short or empty page ends it without another fetch. Only one batch
+    // of intervals and power is loaded at a time, and a repeated cursor ends the loop defensively.
+    const seenCursors = new Set<string>();
+    let rawPage: RideRow[] = firstCandidatePage;
+    while (rawPage.length > 0) {
+      const oldestRaw: RideRow | undefined = rawPage.at(-1);
+      if (!oldestRaw) break;
+      const cursor = `${oldestRaw.started_at}|${oldestRaw.id}`;
+      if (seenCursors.has(cursor)) break;
+      seenCursors.add(cursor);
+
+      const batch: ValidatedRideRow[] = rawPage
+        .flatMap((row) => {
+          const validated = validatedRideRow(row);
+          return validated ? [validated] : [];
+        })
+        .filter(
+          (ride) =>
+            ride.modality === selected.modality &&
+            ride.local_date < selected.local_date &&
+            ride.started_at < selected.started_at &&
+            Date.parse(ride.local_date) >=
+              Date.parse(selected.local_date) - COMPARISON_WINDOW_DAYS * 86_400_000,
+        );
+      if (batch.length > 0) {
+        for (const candidate of await this.#prepareRides(batch)) {
+          const comparison = compareEvidence(baseline, candidate);
+          if (!comparison) continue;
+          return trainingProgressionCyclingSchema.parse({
+            status: "ready",
+            basis: comparison.basis,
+            comparison: {
+              intervalCount: baseline.intervals.length,
+              largestDurationDifferencePct: comparison.largestDurationDifferencePct,
+              largestMeanPowerDifferencePct: comparison.largestMeanPowerDifferencePct,
+            },
+            rides: [toRide(baseline, "selected"), toRide(candidate, "comparison")],
+          });
+        }
+      }
+      if (rawPage.length < MAXIMUM_CANDIDATES) break;
+      rawPage = await this.#readCandidates(selected, {
+        startedAt: oldestRaw.started_at,
+        id: oldestRaw.id,
+      });
+    }
+    return null;
+  }
+
+  async #prepareRides(
+    rides: ValidatedRideRow[],
+    preloadedIntervalRows?: IntervalRow[],
+  ): Promise<RideEvidence[]> {
+    const intervalRows =
+      preloadedIntervalRows ??
+      (await loadRecordedIntervalRows(
+        this.db,
+        uniqueSorted(rides.flatMap((ride) => ride.member_activity_ids)),
+      ));
+    const canonicalWindows: Record<string, { startedAt: string; endedAt: string }> = {};
+    for (const ride of rides) {
+      canonicalWindows[ride.id] = { startedAt: ride.started_at, endedAt: ride.ended_at };
+    }
     const [identities, sampleRows] = await Promise.all([
       new PerformanceComparisonIdentity(this.db, this.#store, this.userId).identities(
         rides.map((ride) => ({
@@ -425,6 +488,7 @@ export class CyclingProgressionRepository extends BaseRepository {
               memberActivityId,
             })),
           ),
+          canonicalWindows,
         },
       ),
     ]);
@@ -434,27 +498,15 @@ export class CyclingProgressionRepository extends BaseRepository {
       rows.push(identity);
       identitiesByRide.set(identity.canonical_activity_id, rows);
     }
-    const prepared = rides.map((ride) =>
-      prepareRide(ride, intervalRows, sampleRows, identitiesByRide.get(ride.id) ?? []),
-    );
-    const baseline = prepared[0];
-    if (!baseline) return null;
-    for (const candidate of prepared.slice(1)) {
-      if (!candidate) continue;
-      const comparison = compareEvidence(baseline, candidate);
-      if (!comparison) continue;
-      return trainingProgressionCyclingSchema.parse({
-        status: "ready",
-        basis: comparison.basis,
-        comparison: {
-          intervalCount: baseline.intervals.length,
-          largestDurationDifferencePct: comparison.largestDurationDifferencePct,
-          largestMeanPowerDifferencePct: comparison.largestMeanPowerDifferencePct,
-        },
-        rides: [toRide(baseline, "selected"), toRide(candidate, "comparison")],
-      });
-    }
-    return null;
+    return rides.flatMap((ride) => {
+      const prepared = prepareRide(
+        ride,
+        intervalRows,
+        sampleRows,
+        identitiesByRide.get(ride.id) ?? [],
+      );
+      return prepared ? [prepared] : [];
+    });
   }
 
   async #readSelected(activityId: string): Promise<RideRow | null> {
@@ -480,7 +532,10 @@ export class CyclingProgressionRepository extends BaseRepository {
     return rows[0] ?? null;
   }
 
-  async #readCandidates(selected: ValidatedRideRow): Promise<RideRow[]> {
+  async #readCandidates(
+    selected: ValidatedRideRow,
+    after: { startedAt: string; id: string } | null,
+  ): Promise<RideRow[]> {
     const localDate = postgresActivityLocalDate(sql`a`, this.timezone);
     return this.query(
       rideRowSchema,
@@ -499,6 +554,7 @@ export class CyclingProgressionRepository extends BaseRepository {
           AND a.modality IS NOT DISTINCT FROM ${selected.modality}
           AND ${localDate} < ${selected.local_date}::date
           AND ${localDate} >= ${selected.local_date}::date - ${sql.raw(String(COMPARISON_WINDOW_DAYS))}
+          AND a.started_at < ${selected.started_at}::timestamptz
           AND a.perceived_exertion > 0
           AND a.perceived_exertion <= ${sql.raw(String(MAXIMUM_SESSION_EFFORT))}
           AND a.ended_at IS NOT NULL
@@ -508,11 +564,20 @@ export class CyclingProgressionRepository extends BaseRepository {
             SELECT 1 FROM fitness.activity_interval AS work
             WHERE work.activity_id = ANY(a.member_activity_ids)
               AND work.source_kind = 'provider_recorded'
-              AND COALESCE(work.work_recovery_kind, work.segment_type, work.interval_type) = 'work'
+              AND LOWER(BTRIM(COALESCE(
+                work.work_recovery_kind, work.segment_type, work.interval_type
+              ))) = 'work'
           )
           AND ${effortConsistentPredicate}
+          ${
+            after
+              ? sql`AND (a.started_at < ${after.startedAt}::timestamptz
+                OR (a.started_at = ${after.startedAt}::timestamptz
+                  AND a.id < ${after.id}::uuid))`
+              : sql``
+          }
           ${this.timestampAccessPredicate(sql`a.started_at`)}
-        ORDER BY ${localDate} DESC, a.started_at DESC
+        ORDER BY a.started_at DESC, a.id DESC
         LIMIT ${sql.raw(String(MAXIMUM_CANDIDATES))}`,
     );
   }

@@ -162,6 +162,8 @@ function identityRow(
 interface SetupOptions {
   selected?: RideRow;
   candidates?: RideRow[];
+  /** Sequential keyset pages returned by the candidate query, in fetch order. */
+  candidatePages?: RideRow[][];
   intervalRows?: IntervalRow[];
   selectedPower?: number;
   candidatePower?: number;
@@ -174,6 +176,7 @@ interface SetupOptions {
 function setup(options: SetupOptions = {}) {
   const selected = options.selected ?? rideRow();
   const candidates = options.candidates ?? [priorRideRow()];
+  const candidateRows = options.candidatePages?.flat() ?? candidates;
   const intervalRows = options.intervalRows ?? [
     workIntervalRow(selectedId, selected.started_at),
     workIntervalRow(priorId, candidates[0]?.started_at ?? priorRideRow().started_at),
@@ -187,14 +190,20 @@ function setup(options: SetupOptions = {}) {
     kinds,
     sampleCount(selected),
   );
-  const candidateSamples = candidates.flatMap((candidate) =>
+  const candidateSamples = candidateRows.flatMap((candidate) =>
     sampleRows(candidate.id, options.candidatePower ?? 200, kinds, sampleCount(candidate)),
   );
 
+  let candidatePage = 0;
   const execute = vi.fn(async (query: unknown) => {
     const text = collectSqlText(query);
     if (text.includes("cycling-progression:selected")) return [selected];
-    if (text.includes("cycling-progression:candidates")) return candidates;
+    if (text.includes("cycling-progression:candidates")) {
+      const page =
+        options.candidatePages?.[candidatePage] ?? (candidatePage === 0 ? candidates : []);
+      candidatePage += 1;
+      return page;
+    }
     if (text.includes("fitness.activity_interval")) return intervalRows;
     throw new Error(`Unexpected Postgres query: ${text.slice(0, 160)}`);
   });
@@ -330,6 +339,7 @@ describe("CyclingProgressionRepository", () => {
           ended_at: "2026-06-01T12:10:00.200Z",
         }),
         workIntervalRow(priorId, "2026-05-25T12:00:00.000Z"),
+        workIntervalRow(priorId, "2026-05-25T12:05:00.000Z", { interval_index: 1 }),
       ],
     });
     await expect(repository.getCyclingProgression(selectedId)).resolves.toBeNull();
@@ -348,9 +358,52 @@ describe("CyclingProgressionRepository", () => {
           segment_type: "recovery",
         }),
         workIntervalRow(priorId, "2026-05-25T12:00:00.000Z"),
+        workIntervalRow(priorId, "2026-05-25T12:05:00.000Z", { interval_index: 1 }),
       ],
     });
     await expect(repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+  });
+
+  it("only lets a provider-recorded peer veto a cross-field classification dispute", async () => {
+    const intervalRows = (sourceKind: "inferred" | "provider_recorded"): IntervalRow[] => [
+      workIntervalRow(selectedId, window.startedAt),
+      workIntervalRow(selectedId, "2026-06-01T12:05:00.000Z", { interval_index: 1 }),
+      workIntervalRow(memberId, "2026-06-01T12:05:00.000Z", {
+        interval_index: 1,
+        source_kind: sourceKind,
+        work_recovery_kind: null,
+        segment_type: "recovery",
+      }),
+      workIntervalRow(priorId, "2026-05-25T12:00:00.000Z"),
+      workIntervalRow(priorId, "2026-05-25T12:05:00.000Z", { interval_index: 1 }),
+    ];
+    const ride = rideRow({ member_activity_ids: [selectedId, memberId] });
+
+    // With no disputed peer at all, the two-interval rides are comparable.
+    const clean = setup({
+      selected: ride,
+      intervalRows: [
+        workIntervalRow(selectedId, window.startedAt),
+        workIntervalRow(selectedId, "2026-06-01T12:05:00.000Z", { interval_index: 1 }),
+        workIntervalRow(priorId, "2026-05-25T12:00:00.000Z"),
+        workIntervalRow(priorId, "2026-05-25T12:05:00.000Z", { interval_index: 1 }),
+      ],
+    });
+    await expect(clean.repository.getCyclingProgression(selectedId)).resolves.toHaveProperty(
+      "status",
+      "ready",
+    );
+
+    // An inferred recovery peer at the same normalized bounds cannot veto the work class.
+    const inferred = setup({ selected: ride, intervalRows: intervalRows("inferred") });
+    await expect(inferred.repository.getCyclingProgression(selectedId)).resolves.toHaveProperty(
+      "status",
+      "ready",
+    );
+
+    // The very same peer vetoes once it is provider-recorded.
+    const recorded = setup({ selected: ride, intervalRows: intervalRows("provider_recorded") });
+    await expect(recorded.repository.getCyclingProgression(selectedId)).resolves.toBeNull();
   });
 
   it("accepts an adjacent recovery whose raw overlap rounds to a distinct boundary", async () => {
@@ -488,6 +541,7 @@ describe("CyclingProgressionRepository", () => {
           work_recovery_kind: "recovery",
         }),
         workIntervalRow(priorId, "2026-05-25T12:00:00.000Z"),
+        workIntervalRow(priorId, "2026-05-25T12:05:00.000Z", { interval_index: 1 }),
       ],
     });
     await expect(repository.getCyclingProgression(selectedId)).resolves.toBeNull();
@@ -504,6 +558,12 @@ describe("CyclingProgressionRepository", () => {
     expect(query).not.toHaveBeenCalled();
   });
 
+  it("returns null without loading power when the first candidate page is empty", async () => {
+    const { repository, query } = setup({ candidates: [] });
+    await expect(repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it("filters direct power by authorized canonical/member pairs in the sample query", async () => {
     const { repository, query } = setup();
     await repository.getCyclingProgression(selectedId);
@@ -513,8 +573,8 @@ describe("CyclingProgressionRepository", () => {
     expect(sampleCall?.[2]).toMatchObject({ authorizedLinks: expect.any(Array) });
   });
 
-  it("returns a ready result with two source-backed rides and bounded candidate reads", async () => {
-    const { repository, execute } = setup();
+  it("returns a ready result with two source-backed rides", async () => {
+    const { repository } = setup();
     const result = await repository.getCyclingProgression(selectedId);
 
     expect(result?.status).toBe("ready");
@@ -543,21 +603,45 @@ describe("CyclingProgressionRepository", () => {
       largestDurationDifferencePct: 0,
       largestMeanPowerDifferencePct: 0,
     });
-    const candidateQuery = execute.mock.calls
-      .map(([query]) => query)
-      .find((query) => collectSqlText(query).includes("cycling-progression:candidates"));
-    expect(candidateQuery).toBeDefined();
-    const candidateSql = collectSqlText(candidateQuery);
-    expect(candidateSql).toMatch(/date - 56\b/);
-    expect(candidateSql).toMatch(/perceived_exertion <= 5\b/);
-    expect(candidateSql).toMatch(/a\.ended_at IS NOT NULL/);
-    expect(candidateSql).toMatch(/fitness\.activity_interval/);
-    expect(candidateSql).toMatch(
-      /COALESCE\(work\.work_recovery_kind, work\.segment_type, work\.interval_type\) = 'work'/,
+  });
+
+  it("continues past a full raw page whose rows all fail validation", async () => {
+    // The raw rows pass SQL but fail the JavaScript validation gate. Keyset progress must use
+    // the last raw row, and a full page with no validated rows must not end the search.
+    const unusable = Array.from({ length: 8 }, (_, index) => {
+      const id = `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+      const started = new Date(
+        Date.parse("2026-05-31T12:00:00.000Z") - index * 60_000,
+      ).toISOString();
+      return rideRow({
+        id,
+        local_date: "2026-05-31",
+        started_at: started,
+        ended_at: new Date(Date.parse(started) + 600_000).toISOString(),
+        perceived_exertion: null,
+        member_activity_ids: [id],
+      });
+    });
+    const { repository } = setup({ candidatePages: [unusable, [priorRideRow()]] });
+    const result = await repository.getCyclingProgression(selectedId);
+    expect(result?.status).toBe("ready");
+    expect(result?.rides[1]?.activityId).toBe(priorId);
+  });
+
+  it("stops after a short raw page without fetching another", async () => {
+    const older = priorRideRow({
+      started_at: "2026-05-24T12:00:00.000Z",
+      local_date: "2026-05-24",
+    });
+    const { repository, execute } = setup({
+      candidatePages: [[priorRideRow()], [older]],
+      candidatePower: 211,
+    });
+    await expect(repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+    const candidateCalls = execute.mock.calls.filter(([query]) =>
+      collectSqlText(query).includes("cycling-progression:candidates"),
     );
-    expect(candidateSql.match(/COUNT\(DISTINCT member\.perceived_exertion\)/g)).toHaveLength(2);
-    expect(candidateSql).toMatch(/a\.started_at DESC\b/);
-    expect(candidateSql).toMatch(/LIMIT 8\b/);
+    expect(candidateCalls).toHaveLength(1);
   });
 
   it("keeps a candidate with an exact workout identity matching the selected ride", async () => {
@@ -771,6 +855,24 @@ describe("CyclingProgressionRepository", () => {
 
     const outside = setup({ candidatePower: 211 });
     await expect(outside.repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+  });
+
+  it("compares the raw mean and keeps it in the contract for display rounding", async () => {
+    // 210.04 W is 5.02% above 200 W: it must be rejected before any rounding.
+    const beyond = setup({ candidatePower: 210.04 });
+    await expect(beyond.repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+
+    // The unrounded mean survives into the contract; both clients round it for display.
+    const raw = setup({ candidatePower: 208.4 });
+    const result = await raw.repository.getCyclingProgression(selectedId);
+    expect(result?.rides[1]?.intervals[0]?.meanPowerWatts).toBeCloseTo(208.4, 5);
+
+    // A positive mean below half a watt stays positive instead of rounding to zero, which
+    // would violate the contract's positive-number schema.
+    const subWatt = setup({ selectedPower: 0.4, candidatePower: 0.4 });
+    const small = await subWatt.repository.getCyclingProgression(selectedId);
+    expect(small?.status).toBe("ready");
+    expect(small?.rides[0]?.intervals[0]?.meanPowerWatts).toBeCloseTo(0.4, 5);
   });
 
   it("rejects overlapping recorded work intervals", async () => {

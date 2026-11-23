@@ -28,6 +28,19 @@ describe("CyclingProgressionRepository database semantics", () => {
   const staleSelectedId = randomUUID();
   const stalePriorId = randomUUID();
   const removedMemberId = randomUUID();
+  const normalizedUserId = randomUUID();
+  const normalizedSelectedId = randomUUID();
+  const normalizedPriorId = randomUUID();
+  const offsetUserId = randomUUID();
+  const offsetSelectedId = randomUUID();
+  const offsetPriorId = randomUUID();
+  const ninthUserId = randomUUID();
+  const ninthSelectedId = randomUUID();
+  const ninthPriorId = randomUUID();
+  const ninthUnusableIds = Array.from({ length: 8 }, () => randomUUID());
+  const timezoneBoundaryUserId = randomUUID();
+  const tokyoSelectedId = randomUUID();
+  const hawaiiLaterId = randomUUID();
   const selectedStart = "2026-06-01T12:00:00.000Z";
   const selectedEnd = "2026-06-01T12:10:00.000Z";
   const priorStart = "2026-05-25T12:00:00.000Z";
@@ -35,6 +48,10 @@ describe("CyclingProgressionRepository database semantics", () => {
   const fullAccess: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" };
   const asClickHouseTime = (iso: string) => iso.replace("T", " ").replace("Z", "");
   const workEnd = (start: string) => new Date(Date.parse(start) + 300_000).toISOString();
+  const staleAnalyticsStart = (start: string) =>
+    new Date(Date.parse(start) + 350_000).toISOString();
+  const ninthUnusableStart = (index: number) =>
+    new Date(Date.parse("2026-05-31T20:00:00.000Z") - index * 3_600_000).toISOString();
   let postgres: TestContext;
 
   const store: Pick<ActivitySensorStore, "query"> = {
@@ -73,28 +90,33 @@ describe("CyclingProgressionRepository database semantics", () => {
     endedAt: string,
     effort: number,
     groupId = id,
+    localTime?: { source: string; startUtcOffsetMinutes: number; endUtcOffsetMinutes: number },
   ) => {
     await postgres.db.execute(sql`
       INSERT INTO fitness.activity (
         id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
-        modality, started_at, ended_at, name, source_name, raw, perceived_exertion
+        modality, started_at, ended_at, name, source_name, raw, perceived_exertion,
+        local_time_source, start_utc_offset_minutes, end_utc_offset_minutes
       ) VALUES (
         ${id}::uuid, ${groupId}::uuid, ${providerId}, ${owner}::uuid, ${externalId},
         'cycling', 'cycling', 'indoor', ${startedAt}::timestamptz, ${endedAt}::timestamptz,
-        'Ride', 'Wahoo', '{}'::jsonb, ${effort}
+        'Ride', 'Wahoo', '{}'::jsonb, ${effort},
+        ${localTime?.source ?? "unknown"},
+        ${localTime?.startUtcOffsetMinutes ?? null},
+        ${localTime?.endUtcOffsetMinutes ?? null}
       )
     `);
   };
 
-  const seedWork = async (activityId: string, startedAt: string) => {
+  const seedWork = async (activityId: string, startedAt: string, segmentType?: string) => {
     await postgres.db.execute(sql`
       INSERT INTO fitness.activity_interval (
         activity_id, interval_index, label, interval_type, started_at, ended_at,
-        source_kind, source_provider, source_activity_id, work_recovery_kind, raw
+        source_kind, source_provider, source_activity_id, work_recovery_kind, segment_type, raw
       ) VALUES (
         ${activityId}::uuid, 0, 'Work 1', 'workout_step', ${startedAt}::timestamptz,
         ${workEnd(startedAt)}::timestamptz, 'provider_recorded', 'wahoo',
-        ${activityId}::uuid, 'work', '{}'::jsonb
+        ${activityId}::uuid, ${segmentType ? null : "work"}, ${segmentType ?? null}, '{}'::jsonb
       )
     `);
   };
@@ -114,6 +136,7 @@ describe("CyclingProgressionRepository database semantics", () => {
     startedAt: string,
     link: "linked" | "unlinked-work" | "stale-member-work",
     staleMemberId = id,
+    measurementKind = "direct",
   ) =>
     Array.from({ length: 600 }, (_, elapsedSeconds) => ({
       activity_id: id,
@@ -125,7 +148,7 @@ describe("CyclingProgressionRepository database semantics", () => {
       scalar: 200,
       provider_id: "wahoo",
       device_id: "trainer",
-      measurement_kind: "direct",
+      measurement_kind: measurementKind,
       member_activity_id:
         link === "linked" || elapsedSeconds >= 300
           ? id
@@ -151,7 +174,11 @@ describe("CyclingProgressionRepository database semantics", () => {
       INSERT INTO fitness.user_profile (id, name) VALUES
         (${conflictUserId}::uuid, 'Cycling effort conflict fixture'),
         (${unlinkedUserId}::uuid, 'Cycling unlinked power fixture'),
-        (${staleUserId}::uuid, 'Cycling stale membership fixture')
+        (${staleUserId}::uuid, 'Cycling stale membership fixture'),
+        (${normalizedUserId}::uuid, 'Cycling class normalization fixture'),
+        (${offsetUserId}::uuid, 'Cycling canonical start offset fixture'),
+        (${ninthUserId}::uuid, 'Cycling ninth candidate fixture'),
+        (${timezoneBoundaryUserId}::uuid, 'Cycling timezone boundary fixture')
       ON CONFLICT (id) DO NOTHING
     `);
 
@@ -219,6 +246,93 @@ describe("CyclingProgressionRepository database semantics", () => {
     await seedWork(staleSelectedId, selectedStart);
     await seedWork(stalePriorId, priorStart);
 
+    // The prior work class is mixed-case and padded; the SQL candidate predicate must normalize it.
+    await seedActivity(
+      normalizedUserId,
+      normalizedSelectedId,
+      "normalized-selected",
+      selectedStart,
+      selectedEnd,
+      5,
+    );
+    await seedActivity(
+      normalizedUserId,
+      normalizedPriorId,
+      "normalized-prior",
+      priorStart,
+      priorEnd,
+      5,
+    );
+    await seedWork(normalizedSelectedId, selectedStart);
+    await seedWork(normalizedPriorId, priorStart, " WOrK ");
+
+    // Analytics still advertises a start 350 s after the current Postgres canonical start.
+    await seedActivity(
+      offsetUserId,
+      offsetSelectedId,
+      "offset-selected",
+      selectedStart,
+      selectedEnd,
+      5,
+    );
+    await seedActivity(offsetUserId, offsetPriorId, "offset-prior", priorStart, priorEnd, 5);
+    await seedWork(offsetSelectedId, selectedStart);
+    await seedWork(offsetPriorId, priorStart);
+
+    // Eight newer rides with estimated power fill one full keyset batch before the valid ninth.
+    await seedActivity(
+      ninthUserId,
+      ninthSelectedId,
+      "ninth-selected",
+      selectedStart,
+      selectedEnd,
+      5,
+    );
+    await seedActivity(ninthUserId, ninthPriorId, "ninth-prior", priorStart, priorEnd, 5);
+    await seedWork(ninthSelectedId, selectedStart);
+    await seedWork(ninthPriorId, priorStart);
+    for (const [index, id] of ninthUnusableIds.entries()) {
+      const startedAt = ninthUnusableStart(index);
+      await seedActivity(
+        ninthUserId,
+        id,
+        `ninth-unusable-${index}`,
+        startedAt,
+        workEnd(startedAt),
+        5,
+      );
+      await seedWork(id, startedAt);
+    }
+
+    // Regression: a physically later Hawaii ride (later UTC started_at) can have an earlier local
+    // date than an earlier Tokyo ride. Local date alone would wrongly accept it as history.
+    const tokyoStart = "2026-06-01T00:30:00.000Z"; // 2026-06-01 09:30 JST
+    const tokyoEnd = "2026-06-01T00:40:00.000Z";
+    const hawaiiStart = "2026-06-01T08:00:00.000Z"; // 2026-05-31 22:00 HST, later instant
+    const hawaiiEnd = "2026-06-01T08:10:00.000Z";
+    await seedActivity(
+      timezoneBoundaryUserId,
+      tokyoSelectedId,
+      "tokyo-selected",
+      tokyoStart,
+      tokyoEnd,
+      5,
+      tokyoSelectedId,
+      { source: "provider_offset", startUtcOffsetMinutes: 540, endUtcOffsetMinutes: 540 },
+    );
+    await seedActivity(
+      timezoneBoundaryUserId,
+      hawaiiLaterId,
+      "hawaii-later-earlier-local-date",
+      hawaiiStart,
+      hawaiiEnd,
+      5,
+      hawaiiLaterId,
+      { source: "provider_offset", startUtcOffsetMinutes: -600, endUtcOffsetMinutes: -600 },
+    );
+    await seedWork(tokyoSelectedId, tokyoStart);
+    await seedWork(hawaiiLaterId, hawaiiStart);
+
     await clickhouse.command({ query: `CREATE DATABASE ${analyticsDatabase}` });
     await clickhouse.command({
       query: `CREATE TABLE ${analyticsDatabase}.deduped_activities (
@@ -261,6 +375,23 @@ describe("CyclingProgressionRepository database semantics", () => {
         dedupedRow(unlinkedUserId, unlinkedPriorId, priorStart, [unlinkedPriorId]),
         dedupedRow(staleUserId, staleSelectedId, selectedStart, [staleSelectedId, removedMemberId]),
         dedupedRow(staleUserId, stalePriorId, priorStart, [stalePriorId]),
+        dedupedRow(normalizedUserId, normalizedSelectedId, selectedStart, [normalizedSelectedId]),
+        dedupedRow(normalizedUserId, normalizedPriorId, priorStart, [normalizedPriorId]),
+        dedupedRow(offsetUserId, offsetSelectedId, staleAnalyticsStart(selectedStart), [
+          offsetSelectedId,
+        ]),
+        dedupedRow(offsetUserId, offsetPriorId, staleAnalyticsStart(priorStart), [offsetPriorId]),
+        dedupedRow(ninthUserId, ninthSelectedId, selectedStart, [ninthSelectedId]),
+        dedupedRow(ninthUserId, ninthPriorId, priorStart, [ninthPriorId]),
+        ...ninthUnusableIds.map((id, index) =>
+          dedupedRow(ninthUserId, id, ninthUnusableStart(index), [id]),
+        ),
+        dedupedRow(timezoneBoundaryUserId, tokyoSelectedId, "2026-06-01T00:30:00.000Z", [
+          tokyoSelectedId,
+        ]),
+        dedupedRow(timezoneBoundaryUserId, hawaiiLaterId, "2026-06-01T08:00:00.000Z", [
+          hawaiiLaterId,
+        ]),
       ],
     });
     await clickhouse.insert({
@@ -281,14 +412,53 @@ describe("CyclingProgressionRepository database semantics", () => {
           removedMemberId,
         ),
         ...powerSamples(staleUserId, stalePriorId, priorStart, "linked"),
+        ...powerSamples(normalizedUserId, normalizedSelectedId, selectedStart, "linked"),
+        ...powerSamples(normalizedUserId, normalizedPriorId, priorStart, "linked"),
+        ...powerSamples(offsetUserId, offsetSelectedId, selectedStart, "linked"),
+        ...powerSamples(offsetUserId, offsetPriorId, priorStart, "linked"),
+        ...powerSamples(ninthUserId, ninthSelectedId, selectedStart, "linked"),
+        ...powerSamples(ninthUserId, ninthPriorId, priorStart, "linked"),
+        ...ninthUnusableIds.flatMap((id, index) =>
+          powerSamples(ninthUserId, id, ninthUnusableStart(index), "linked", id, "estimated"),
+        ),
+        ...powerSamples(
+          timezoneBoundaryUserId,
+          tokyoSelectedId,
+          "2026-06-01T00:30:00.000Z",
+          "linked",
+        ),
+        ...powerSamples(
+          timezoneBoundaryUserId,
+          hawaiiLaterId,
+          "2026-06-01T08:00:00.000Z",
+          "linked",
+        ),
       ],
     });
   });
 
   afterAll(async () => {
-    await clickhouse.command({ query: `DROP DATABASE IF EXISTS ${analyticsDatabase}` });
-    await clickhouse.close();
-    await postgres?.cleanup();
+    // Each resource is released independently so one failure cannot leak another; all errors are
+    // surfaced together after drop-then-close and Postgres cleanup have each been attempted.
+    const errors: unknown[] = [];
+    try {
+      await postgres?.cleanup();
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      await clickhouse.command({ query: `DROP DATABASE IF EXISTS ${analyticsDatabase}` });
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      await clickhouse.close();
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(errors, "Cycling progression fixture teardown failed");
+    }
   });
 
   it("returns the eligible pair with source-backed work evidence from both engines", async () => {
@@ -374,5 +544,31 @@ describe("CyclingProgressionRepository database semantics", () => {
     await expect(
       repository(staleUserId).getCyclingProgression(staleSelectedId),
     ).resolves.toBeNull();
+  });
+
+  it("normalizes mixed-case padded work classes in the candidate query", async () => {
+    const result = await repository(normalizedUserId).getCyclingProgression(normalizedSelectedId);
+    expect(result?.status).toBe("ready");
+    expect(result?.rides[1]?.activityId).toBe(normalizedPriorId);
+  });
+
+  it("uses the current Postgres canonical start when the analytics start is stale", async () => {
+    const result = await repository(offsetUserId).getCyclingProgression(offsetSelectedId);
+    expect(result?.status).toBe("ready");
+    expect(result?.comparison.largestMeanPowerDifferencePct).toBeCloseTo(0, 5);
+    expect(result?.rides[0]?.intervals[0]?.powerCoveragePct).toBe(100);
+  });
+
+  it("scans past a full keyset batch to a ninth usable candidate", async () => {
+    const result = await repository(ninthUserId).getCyclingProgression(ninthSelectedId);
+    expect(result?.status).toBe("ready");
+    expect(result?.rides[1]?.activityId).toBe(ninthPriorId);
+  });
+
+  it("rejects a physically later ride whose earlier local date would otherwise pass", async () => {
+    // Tokyo 19:00 JST is earlier on the clock than Hawaii 08:00 HST on the same local calendar day,
+    // but it is 8 hours earlier in UTC. The local-date gate alone would wrongly accept Hawaii.
+    const result = await repository(timezoneBoundaryUserId).getCyclingProgression(tokyoSelectedId);
+    expect(result).toBeNull();
   });
 });

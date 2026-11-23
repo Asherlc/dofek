@@ -58,7 +58,7 @@ export const cyclingProgressionFixture: NonNullable<
       intervals: [
         {
           index: 1,
-          workDurationSeconds: 121,
+          workDurationSeconds: 125,
           meanPowerWatts: 218,
           powerCoveragePct: 97,
           sourceProvider: "zwift",

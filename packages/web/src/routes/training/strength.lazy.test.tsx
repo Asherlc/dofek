@@ -45,6 +45,20 @@ describe("strength route range plumbing", () => {
     expect(screen.getByTestId("progression-rows-count").textContent).toBe("1");
   });
 
+  it("shows a compact loading panel while strength progression loads without a cache", async () => {
+    state.trainingProgressionStrengthQuery = { data: undefined, isLoading: true, error: null };
+    await renderRoute("/training/strength", () => import("./strength.lazy.tsx"));
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(screen.getByTestId("progression-rows-count").textContent).toBe("0");
+  });
+
+  it("keeps cached progression rows visible while a refresh is loading", async () => {
+    state.trainingProgressionStrengthQuery = { data: [1], isLoading: true, error: null };
+    await renderRoute("/training/strength", () => import("./strength.lazy.tsx"));
+    expect(screen.queryByTestId("query-state-loading")).toBeNull();
+    expect(screen.getByTestId("progression-rows-count").textContent).toBe("1");
+  });
+
   it("keeps previous logged-set data across selected ranges with slow query options", async () => {
     resetRangePlumbingState();
     state.days = 30;

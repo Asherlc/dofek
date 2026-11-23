@@ -1329,6 +1329,46 @@ it("shows ready cycling evidence with both dated rides and session effort separa
   expect(screen.getAllByText(/218 W/).length).toBeGreaterThan(0);
 });
 
+it("shows a compact loading panel while cycling progression loads without a cache", () => {
+  mocks.trainingProgressionCyclingQuery.mockReturnValue({
+    ...defaultObserver(null),
+    isLoading: true,
+  });
+  renderActivityDetail();
+
+  expect(document.querySelectorAll('[testid="query-state-loading"]')).toHaveLength(1);
+  expect(screen.queryByText("Ready to progress")).toBeNull();
+});
+
+it("keeps cached cycling evidence visible while it reloads", () => {
+  const ready: NonNullable<AppRouterOutputs["trainingProgression"]["cycling"]> = {
+    status: "ready",
+    basis: "recorded_work_protocol",
+    comparison: {
+      intervalCount: 1,
+      largestDurationDifferencePct: 1,
+      largestMeanPowerDifferencePct: 2,
+    },
+    rides: [],
+  };
+  mocks.trainingProgressionCyclingQuery.mockReturnValue({
+    ...defaultObserver(ready),
+    isLoading: true,
+  });
+  renderActivityDetail();
+
+  expect(document.querySelectorAll('[testid="query-state-loading"]')).toHaveLength(0);
+  expect(screen.getByText("Ready to progress")).toBeTruthy();
+});
+
+it("shows no progression panel once a null result arrives successfully", () => {
+  mocks.trainingProgressionCyclingQuery.mockReturnValue(defaultObserver(null));
+  renderActivityDetail();
+
+  expect(document.querySelectorAll('[testid="query-state-loading"]')).toHaveLength(0);
+  expect(screen.queryByText("Ready to progress")).toBeNull();
+});
+
 it("keeps the recorded Session effort when cycling evidence is empty", () => {
   mocks.byIdQuery.mockReturnValue(
     defaultObserver({ ...baseCyclingActivity, perceivedExertion: 7 }),

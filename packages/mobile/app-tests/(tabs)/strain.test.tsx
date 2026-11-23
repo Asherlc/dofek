@@ -84,6 +84,32 @@ describe("StrainScreen", () => {
     expect(screen.queryByText(error.message)).toBeNull();
   });
 
+  it("shows a compact loading panel while strength progression loads without a cache", async () => {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    mockStrengthProgressionQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+      refetch: mockStrengthProgressionRefetch,
+    });
+
+    render(<TrainingAnalysis section="strength" isFocused />);
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+  });
+
+  it("keeps cached progression rows visible while a refresh is loading", async () => {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    mockStrengthProgressionQuery.mockReturnValue({
+      data: [1],
+      isLoading: true,
+      error: null,
+      refetch: mockStrengthProgressionRefetch,
+    });
+
+    render(<TrainingAnalysis section="strength" isFocused />);
+    expect(screen.queryByTestId("query-state-loading")).toBeNull();
+  });
+
   it("includes strength progression in pull-to-refresh for the Strength section", async () => {
     const { TrainingAnalysis } = await import("../../app/strain");
     render(<TrainingAnalysis section="strength" isFocused />);

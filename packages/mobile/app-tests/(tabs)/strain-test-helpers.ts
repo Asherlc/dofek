@@ -44,7 +44,12 @@ export const mockBestOnsightRefetch = vi.fn();
 export const mockBestOnsightInvalidate = vi.fn();
 export const mockStrengthProgressionRefetch = vi.fn();
 export const mockStrengthProgressionQuery = vi.fn(
-  (): { data: unknown[]; isLoading: boolean; error: unknown; refetch: () => Promise<unknown> } => ({
+  (): {
+    data: unknown[] | undefined;
+    isLoading: boolean;
+    error: unknown;
+    refetch: () => Promise<unknown>;
+  } => ({
     data: [],
     isLoading: false,
     error: null,

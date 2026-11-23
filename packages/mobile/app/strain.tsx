@@ -513,6 +513,9 @@ export function TrainingAnalysis({
           {strengthProgressionQuery.error ? (
             <QueryStatePanel variant="error" message={strengthProgressionQuery.error.message} />
           ) : null}
+          {strengthProgressionQuery.isLoading && !strengthProgressionQuery.data ? (
+            <QueryStatePanel variant="loading" minHeight={72} />
+          ) : null}
           <StrengthLoggedSetComparison
             data={loggedSetsQuery.data}
             loading={loggedSetsQuery.isLoading}

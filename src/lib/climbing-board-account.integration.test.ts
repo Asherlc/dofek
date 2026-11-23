@@ -18,12 +18,17 @@ import { SyncWindow } from "../providers/sync-window.ts";
 import { TensionProvider } from "../providers/tension.ts";
 import { TouchstoneProvider } from "../providers/touchstone.ts";
 import type { SyncProvider } from "../providers/types.ts";
-import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 
-const sdk = vi.hoisted(() => ({
-  getAll: vi.fn<(query: string) => Promise<unknown[]>>(),
-}));
+const sdk = await vi.hoisted(async () => {
+  const { createIntegrationMswFixture } = await import("../test/early-msw-lifecycle.ts");
+  vi.resetModules();
+  return {
+    getAll: vi.fn<(query: string) => Promise<unknown[]>>(),
+    server: createIntegrationMswFixture(),
+  };
+});
+const server = sdk.server;
 // Approved SDK-only exception: PowerSync's private Undici socket bypasses MSW.
 // REST remains on MSW, and persistence uses real PostgreSQL.
 vi.mock("@powersync/node", async (original) => ({
@@ -80,7 +85,6 @@ const bid = {
   climbed_at: "2026-10-02 00:00:00",
   bid_count: 2,
 };
-const server = createIntegrationMswFixture();
 
 describe("board account canonical persistence", () => {
   let context: TestContext;
@@ -141,7 +145,7 @@ describe("board account canonical persistence", () => {
     await context.db.delete(area);
   });
   afterAll(async () => {
-    server.deactivate();
+    server?.deactivate();
     await context.cleanup();
   });
 

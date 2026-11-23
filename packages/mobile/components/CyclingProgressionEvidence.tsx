@@ -18,7 +18,8 @@ function RideEvidence({ ride }: { ride: Ride }) {
       <Text style={styles.effort}>Session effort: {ride.sessionEffort}/10</Text>
       {ride.intervals.map((interval) => (
         <Text key={interval.index} style={styles.interval}>
-          Work {interval.index}: {formatDurationSeconds(interval.workDurationSeconds)} at{" "}
+          Work {interval.index}:{" "}
+          {formatDurationSeconds(interval.workDurationSeconds, { precision: "second" })} at{" "}
           {formatNumber(interval.meanPowerWatts, 0)} W
           {interval.sourceProvider ? ` · ${providerLabel(interval.sourceProvider)}` : ""}
         </Text>

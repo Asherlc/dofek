@@ -30,7 +30,7 @@
 
 **Files** — `packages/server/src/repositories/strength-progression-repository.ts`, its colocated integration and unit tests, the new `packages/server/src/routers/training-progression.ts` registered in `packages/server/src/router.ts`, and a focused internal comparison module with colocated tests if needed.
 
-**Interface** — Add a protected, cached, bounded `trainingProgression.strength` query returning per-exercise results keyed by exercise name and equipment, with the canonical exercise ID, a nullable `status` of `ready` or `stagnating`, and discriminated evidence `rep_improvement` or `flat_benchmark`. Evidence includes dated, source-backed observations with recorded weight and reps, optional perceived effort, and activity IDs. Results include the most recent evidence date so Home can select the latest result on the server or consume the server's first eligible result. Return arrays in deterministic newest-first order.
+**Interface** — Add a protected, bounded `trainingProgression.strength` query returning per-exercise results keyed by exercise name and equipment, with the canonical exercise ID, a nullable `status` of `ready` or `stagnating`, and discriminated evidence `rep_improvement` or `flat_benchmark`. Evidence includes dated, source-backed observations with recorded weight and reps, optional perceived effort, and activity IDs. Results include the most recent evidence date so Home can select the latest result on the server or consume the server's first eligible result. Return arrays in deterministic newest-first order.
 
 - [x] Add test coverage through the repository and route for three same-lift sessions on distinct dates with comparable working sets at 60 kg for 8, 10, 10 reps. All three at similarly recorded effort produce `ready`. Missing effort still produces `rep_improvement` with null status. A harder or incomparable reported effort produces null status.
 - [x] Add a flat-benchmark case with at least six comparable distinct session dates spanning at least 28 days. Favor an existing admissible estimated one-rep-max benchmark of the same exercise, equipment, and effort protocol, and report its observed range. Use an explicit 2.5% maximum range relative to the lowest estimate as a documented initial heuristic. Keep comparisons from distinct compatible rep protocols separate. Confirm that a sparse block does not qualify and an increase outside the tolerance does not show stagnation.
@@ -60,3 +60,9 @@
 - [x] Review scope, evidence rules, metric ownership, access windows, async and empty states, compatibility, and web/iOS parity. Resolve material findings.
 - [x] Run `pnpm lint`, `pnpm --recursive --include-workspace-root --if-present typecheck`, relevant noninteractive unit/mobile tests, and real-engine integration tests for database behavior. Use the workspace Compose wrapper and the integration readiness runbook if needed.
 - [ ] Commit and push each reviewed, meaningful slice. Verify remote CI and report any remaining evidence or verification limits.
+
+## PR review decisions
+
+- Read progression from the current server data on each request. This keeps a request that overlaps an activity deletion from restoring deleted evidence to the shared response cache.
+- Search the full 56-day cycling history in newest-first candidate batches. Stop at the first eligible comparison and bound the interval and power reads to one batch at a time.
+- Use the latest canonical strength session to determine whether evidence is current. Prefer a ready result when multiple comparable set sequences end in that session.

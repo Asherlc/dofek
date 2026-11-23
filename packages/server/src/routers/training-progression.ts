@@ -4,31 +4,22 @@ import { trainingProgressionStrengthSchema } from "../contracts/training-progres
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { CyclingProgressionRepository } from "../repositories/cycling-progression-repository.ts";
 import { StrengthProgressionRepository } from "../repositories/strength-progression-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { protectedProcedure, router } from "../trpc.ts";
 
 export const trainingProgressionRouter = router({
-  strength: cachedProtectedQuery({
-    maxAge: CacheTTL.LONG,
-    expiresAt: "localDayBoundary",
-    keyVersion: "training-progression-strength-v1",
-    scopeByAccessWindow: true,
-    outputSchema: trainingProgressionStrengthSchema,
-  }).query(({ ctx }) =>
-    new StrengthProgressionRepository(
-      ctx.db,
-      ctx.userId,
-      ctx.timezone,
-      ctx.accessWindow,
-    ).getStrengthProgression(),
-  ),
-  cycling: cachedProtectedQuery({
-    maxAge: CacheTTL.LONG,
-    expiresAt: "localDayBoundary",
-    keyVersion: "training-progression-cycling-v1",
-    scopeByAccessWindow: true,
-    outputSchema: trainingProgressionCyclingSchema,
-  })
+  strength: protectedProcedure
+    .output(trainingProgressionStrengthSchema)
+    .query(({ ctx }) =>
+      new StrengthProgressionRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).getStrengthProgression(),
+    ),
+  cycling: protectedProcedure
     .input(z.object({ activityId: z.string().uuid() }))
+    .output(trainingProgressionCyclingSchema)
     .query(({ ctx, input }) => {
       const activities = new ActivityRepository(
         ctx.db,

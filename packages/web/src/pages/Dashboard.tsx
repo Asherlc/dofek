@@ -6,7 +6,7 @@ import {
   type HealthStatusMetric,
   healthStatusMetricSchema,
 } from "dofek-server/mobile-dashboard-contracts";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { z } from "zod";
 import type { Insight } from "../components/CorrelationCard.tsx";
 import { DashboardEvidenceOverview } from "../components/DashboardEvidenceOverview.tsx";
@@ -79,6 +79,14 @@ export function Dashboard() {
     { refetchOnWindowFocus: true },
   );
   const strengthProgression = trpc.trainingProgression.strength.useQuery();
+  const previousStrengthProgressionDate = useRef(endDate);
+  const { refetch: refetchStrengthProgression } = strengthProgression;
+  useEffect(() => {
+    const dateChanged = previousStrengthProgressionDate.current !== endDate;
+    previousStrengthProgressionDate.current = endDate;
+    if (!dateChanged) return;
+    void refetchStrengthProgression();
+  }, [endDate, refetchStrengthProgression]);
   const processingStatus = useProcessingStatus({
     datasets: ["activity", "sleep", "recovery", "training", "body"],
   });

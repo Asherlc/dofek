@@ -17,7 +17,11 @@ type MockQueryResult<TData> = {
   isLoading: boolean;
   isFetched?: boolean;
   error: Error | null;
+  refetch?: () => Promise<unknown>;
 };
+
+const mockTodayQueryDate = vi.hoisted(() => ({ current: "2026-05-27" }));
+const mockStrengthProgressionRefetch = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
 const mockTrendsQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
@@ -74,7 +78,7 @@ vi.mock("../components/PageLayout.tsx", () => ({
 }));
 
 vi.mock("../hooks/useTodayQueryDate.ts", () => ({
-  useTodayQueryDate: () => "2026-05-27",
+  useTodayQueryDate: () => mockTodayQueryDate.current,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -177,7 +181,10 @@ describe("Dashboard", () => {
       data: undefined,
       isLoading: false,
       error: null,
+      refetch: mockStrengthProgressionRefetch,
     });
+    mockStrengthProgressionRefetch.mockClear();
+    mockTodayQueryDate.current = "2026-05-27";
     mockDashboardEvidenceOverview.mockClear();
   });
 
@@ -228,6 +235,24 @@ describe("Dashboard", () => {
     render(<Dashboard />);
     expect(screen.queryByRole("region", { name: "Training progression status" })).toBeNull();
     expect(screen.getByRole("region", { name: "Dashboard overview" })).toBeTruthy();
+  });
+
+  it("refetches strength progression when the query date advances without an extra initial fetch", () => {
+    mockTrainingProgressionStrengthQuery.mockReturnValue({
+      data: [repImprovementRow],
+      isLoading: false,
+      error: null,
+      refetch: mockStrengthProgressionRefetch,
+    });
+    const { rerender } = render(<Dashboard />);
+    expect(mockStrengthProgressionRefetch).not.toHaveBeenCalled();
+    expect(screen.getByRole("region", { name: "Training progression status" })).toBeTruthy();
+
+    mockTodayQueryDate.current = "2026-05-28";
+    rerender(<Dashboard />);
+
+    expect(mockStrengthProgressionRefetch).toHaveBeenCalledOnce();
+    expect(screen.getByRole("region", { name: "Training progression status" })).toBeTruthy();
   });
 
   it("shows one notice when dashboard and processing status queries fail from the same offline condition", () => {

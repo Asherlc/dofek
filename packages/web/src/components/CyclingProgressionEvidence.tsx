@@ -16,7 +16,8 @@ function RideEvidence({ ride }: { ride: Ride }) {
       <ul className="ml-4 space-y-1">
         {ride.intervals.map((interval) => (
           <li key={interval.index}>
-            Work {interval.index}: {formatDurationSeconds(interval.workDurationSeconds)} at{" "}
+            Work {interval.index}:{" "}
+            {formatDurationSeconds(interval.workDurationSeconds, { precision: "second" })} at{" "}
             {formatNumber(interval.meanPowerWatts, 0)} W
             {interval.sourceProvider ? ` · ${providerLabel(interval.sourceProvider)}` : ""}
           </li>

@@ -27,6 +27,14 @@ export interface CyclingSampleRowOptions {
    * Membership comes from the caller's authorized Postgres read, not the analytics read model.
    */
   authorizedPowerLinks?: Array<{ activityId: string; memberActivityId: string }>;
+  /**
+   * Narrow, optional Postgres canonical windows keyed by activity id. When present, offsets count
+   * from each activity's current canonical start and samples are bounded to its canonical window,
+   * so a stale analytics start can never shift intervals against their power. Every activity id
+   * passed to this loader must have a complete window; callers that omit the option keep the
+   * analytics-relative query unchanged.
+   */
+  canonicalWindows?: Record<string, { startedAt: string; endedAt: string }>;
 }
 
 /**
@@ -43,10 +51,24 @@ export async function loadCyclingSampleRows(
   options: CyclingSampleRowOptions = {},
 ) {
   if (activityIds.length === 0) return [];
-  const origin =
-    startedAt === undefined
+  const canonicalWindows = options.canonicalWindows;
+  const canonicalEntries = canonicalWindows ? Object.entries(canonicalWindows) : [];
+  const hasCanonical = canonicalEntries.length > 0;
+  const canonicalField = (index: 2 | 3) =>
+    `arrayFirstOrNull(row -> row.1 = sensor.activity_id, ` +
+    `{canonicalWindows:Array(Tuple(UUID, String, String))}).${index}`;
+  const canonicalTimestamp = (index: 2 | 3) =>
+    `parseDateTime64BestEffort(${canonicalField(index)}, 3, 'UTC')`;
+  const canonicalStart = () => canonicalTimestamp(2);
+  const origin = hasCanonical
+    ? canonicalStart()
+    : startedAt === undefined
       ? "activity.started_at"
       : "parseDateTime64BestEffort({startedAt:String}, 3, 'UTC')";
+  const canonicalBounds = hasCanonical
+    ? `\n              AND sensor.recorded_at >= ${canonicalStart()}` +
+      `\n              AND sensor.recorded_at <= ${canonicalTimestamp(3)}`
+    : "";
   const authorizedLinks = options.authorizedPowerLinks;
   const linkPredicate =
     authorizedLinks === undefined
@@ -78,7 +100,7 @@ export async function loadCyclingSampleRows(
             WHERE sensor.user_id = {userId:UUID}
               AND sensor.activity_id IN ({activityIds:Array(UUID)})
               AND sensor.channel IN ({channels:Array(String)})
-              AND sensor.is_deleted = 0${linkPredicate}
+              AND sensor.is_deleted = 0${linkPredicate}${canonicalBounds}
             GROUP BY sensor.activity_id, ${origin}, sensor.recorded_at
             ORDER BY sensor.activity_id, sensor.recorded_at`,
     {
@@ -95,6 +117,14 @@ export async function loadCyclingSampleRows(
               ({ activityId, memberActivityId }) => new TupleParam([activityId, memberActivityId]),
             ),
           }),
+      ...(hasCanonical
+        ? {
+            canonicalWindows: canonicalEntries.map(
+              ([activityId, window]) =>
+                new TupleParam([activityId, window.startedAt, window.endedAt]),
+            ),
+          }
+        : {}),
     },
   );
 }

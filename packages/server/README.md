@@ -445,9 +445,13 @@ limit is an application rule for the recorded benchmark.
 
 Cycling compares two authorized rides with comparable provider-recorded work
 intervals, directly measured power, and imported whole-ride Session effort.
-The comparison uses a bounded prior-ride search and returns an empty status
-when evidence is incomplete. The [strength](src/contracts/training-progression-strength.ts)
-and [cycling](src/contracts/training-progression-cycling.ts) contracts include the
+It searches the previous 56 days in batches from newest to oldest and leaves
+the status empty when evidence is incomplete. The iOS HealthKit lookup was
+rolled back in [#3459](https://github.com/Asherlc/dofek/pull/3459), and saved
+ratings are still eligible. Each progression request reads the current data,
+so completed activity edits and removals are reflected on the next request.
+The [strength](src/contracts/training-progression-strength.ts) and
+[cycling](src/contracts/training-progression-cycling.ts) contracts include the
 dated observations that support each result.
 
 ### MCP activity and cycling analytics

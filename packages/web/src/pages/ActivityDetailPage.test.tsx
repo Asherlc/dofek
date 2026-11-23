@@ -1209,6 +1209,37 @@ describe("ActivityDetailPage", () => {
         expect(screen.getAllByText(/218 W/).length).toBeGreaterThan(0);
       });
 
+      it("shows a compact loading panel while cycling progression loads without a cache", () => {
+        setCyclingPowerActivity();
+        mockTrainingProgressionCyclingUseQuery.mockReturnValue(
+          queryResult(undefined, { isLoading: true }),
+        );
+        renderWithUnits(<ActivityDetailPage />);
+
+        expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+        expect(screen.getByText("Loading cycling progression.")).toBeTruthy();
+      });
+
+      it("keeps the ready cycling card visible while a refresh is loading", () => {
+        setCyclingPowerActivity();
+        mockTrainingProgressionCyclingUseQuery.mockReturnValue(
+          queryResult(ready, { isLoading: true }),
+        );
+        renderWithUnits(<ActivityDetailPage />);
+
+        expect(screen.queryByTestId("query-state-loading")).toBeNull();
+        expect(screen.getByText("Ready to progress")).toBeDefined();
+      });
+
+      it("shows no progression panel once a null result arrives successfully", () => {
+        setCyclingPowerActivity();
+        mockTrainingProgressionCyclingUseQuery.mockReturnValue(queryResult(null));
+        renderWithUnits(<ActivityDetailPage />);
+
+        expect(screen.queryByTestId("query-state-loading")).toBeNull();
+        expect(screen.queryByText("Ready to progress")).toBeNull();
+      });
+
       it("keeps the recorded Session effort when cycling evidence is empty", () => {
         setCyclingPowerActivity();
         mockActivityByIdUseQuery.mockReturnValue(

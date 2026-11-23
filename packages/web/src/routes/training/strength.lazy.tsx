@@ -45,6 +45,9 @@ function StrengthTab() {
   return (
     <>
       {progression.error ? <QueryStatePanel error={progression.error} height={72} /> : null}
+      {progression.isLoading && !progression.data ? (
+        <QueryStatePanel variant="loading" height={72} contextLabel="Strength progression" />
+      ) : null}
       <StrengthLoggedSetComparison
         data={loggedSets.data}
         loading={loggedSets.isLoading}

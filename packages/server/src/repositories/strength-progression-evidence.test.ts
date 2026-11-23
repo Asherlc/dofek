@@ -641,4 +641,164 @@ describe("selectStrengthProgressionEvidence", () => {
       "2026-11-10",
     ]);
   });
+
+  it("orders canonical sessions by timestamp when local dates go backward", () => {
+    // A physically later Hawaii 2026-06-01 session starts after a Tokyo
+    // 2026-06-02 session. Local-date order (06-01 before 06-02) disagrees with
+    // session chronology, so the latest canonical session must still be the one
+    // that supplies the newest observation and the candidate's latest anchor.
+    const result = decide([
+      evidenceRow(1, "2026-05-30", {
+        activity_started_at: "2026-05-30T12:00:00.000Z",
+        reps: 8,
+      }),
+      evidenceRow(2, "2026-06-02", {
+        activity_started_at: "2026-06-01T15:00:00.000Z",
+        reps: 10,
+      }),
+      evidenceRow(3, "2026-06-01", {
+        activity_started_at: "2026-06-02T01:00:00.000Z",
+        reps: 10,
+      }),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      status: "ready",
+      latestEvidenceDate: "2026-06-01",
+      evidence: {
+        kind: "rep_improvement",
+        observations: [
+          expect.objectContaining({ date: "2026-06-01", reps: 10, sourceSetId: evidenceId(2003) }),
+          expect.objectContaining({ date: "2026-06-02", reps: 10, sourceSetId: evidenceId(2002) }),
+          expect.objectContaining({ date: "2026-05-30", reps: 8, sourceSetId: evidenceId(2001) }),
+        ],
+      },
+    });
+  });
+
+  it("prefers a ready repeatable series over a null series ending on the same date", () => {
+    const nullSeries = (activity: number, date: string, reps: number) =>
+      evidenceRow(activity, date, { set_index: 0, weight_kg: 60, reps });
+    const readySeries = (activity: number, date: string, reps: number) =>
+      evidenceRow(activity, date, { set_index: 1, weight_kg: 70, reps });
+    const result = decide([
+      nullSeries(1, "2026-11-10", 8),
+      nullSeries(2, "2026-11-12", 10),
+      nullSeries(3, "2026-11-14", 9),
+      readySeries(4, "2026-11-10", 8),
+      readySeries(5, "2026-11-12", 10),
+      readySeries(6, "2026-11-14", 10),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      status: "ready",
+      evidence: { kind: "rep_improvement", slot: 2, weightKg: 70 },
+    });
+  });
+
+  it("drops an older load's ready series when a later same-day session uses another load", () => {
+    const morning = (activity: number, date: string, overrides: EvidenceOverrides = {}) =>
+      evidenceRow(activity, date, {
+        activity_started_at: `${date}T09:00:00.000Z`,
+        ...overrides,
+      });
+    const result = decide([
+      morning(1, "2026-11-10"),
+      morning(2, "2026-11-12", { reps: 10 }),
+      morning(3, "2026-11-14", { reps: 10 }),
+      morning(4, "2026-11-14", { set_index: 1, weight_kg: 70, reps: 8 }),
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  it("keeps the qualifying set when the latest session also contains another set", () => {
+    const evening = (activity: number, date: string, overrides: EvidenceOverrides = {}) =>
+      evidenceRow(activity, date, {
+        activity_started_at: `${date}T17:00:00.000Z`,
+        ...overrides,
+      });
+    const result = decide([
+      evidenceRow(1, "2026-11-10"),
+      evidenceRow(2, "2026-11-12", { reps: 10 }),
+      evening(3, "2026-11-14", { reps: 10 }),
+      evening(3, "2026-11-14", {
+        set_index: 1,
+        weight_kg: 70,
+        reps: 8,
+        set_id: evidenceId(3999),
+        set_activity_id: evidenceId(1003),
+      }),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      status: "ready",
+      latestEvidenceDate: "2026-11-14",
+      evidence: { kind: "rep_improvement", slot: 1, weightKg: 60 },
+    });
+  });
+
+  it("uses the later same-day session's observation when a series spans two sessions on one date", () => {
+    const morning = (activity: number, date: string, reps: number) =>
+      evidenceRow(activity, date, {
+        activity_started_at: `${date}T09:00:00.000Z`,
+        reps,
+      });
+    const evening = (activity: number, date: string, reps: number) =>
+      evidenceRow(activity, date, {
+        activity_started_at: `${date}T17:00:00.000Z`,
+        reps,
+      });
+    const result = decide([
+      morning(1, "2026-11-10", 8),
+      morning(2, "2026-11-12", 10),
+      morning(3, "2026-11-14", 9),
+      evening(4, "2026-11-14", 10),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      status: "ready",
+      evidence: {
+        kind: "rep_improvement",
+        observations: [
+          expect.objectContaining({ date: "2026-11-14", reps: 10 }),
+          expect.objectContaining({ date: "2026-11-12", reps: 10 }),
+          expect.objectContaining({ date: "2026-11-10", reps: 8 }),
+        ],
+      },
+    });
+  });
+
+  it("keeps a current same-day series when an older ready series shares the local date", () => {
+    const morning = (activity: number, date: string, weight: number, reps: number) =>
+      evidenceRow(activity, date, {
+        activity_started_at: `${date}T09:00:00.000Z`,
+        weight_kg: weight,
+        reps,
+      });
+    const evening = (activity: number, date: string, weight: number, reps: number) =>
+      evidenceRow(activity, date, {
+        activity_started_at: `${date}T17:00:00.000Z`,
+        weight_kg: weight,
+        reps,
+      });
+    // Both series end on 2026-11-14 at the same local date. The 60 kg series is
+    // anchored to an older morning session; the 70 kg series is anchored to the
+    // current evening session (the lift's latest eligible exposure). The stale
+    // ready series must not win the same-date ranking and then be dropped.
+    const result = decide([
+      morning(1, "2026-11-10", 60, 8),
+      morning(2, "2026-11-12", 60, 10),
+      morning(3, "2026-11-14", 60, 10),
+      evening(11, "2026-11-10", 70, 8),
+      evening(12, "2026-11-12", 70, 10),
+      evening(13, "2026-11-14", 70, 10),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      status: "ready",
+      latestEvidenceDate: "2026-11-14",
+      evidence: { kind: "rep_improvement", weightKg: 70 },
+    });
+    expect(result[0]?.evidence.observations).toHaveLength(3);
+  });
 });

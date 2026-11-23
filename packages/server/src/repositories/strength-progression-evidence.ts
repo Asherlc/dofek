@@ -19,8 +19,22 @@ const FLAT_BENCHMARK_MIN_DATES = 6;
 const FLAT_BENCHMARK_MIN_SPAN_DAYS = 28;
 const FLAT_BENCHMARK_MAX_SPREAD_PERCENT = 2.5;
 
-type EvidenceRow = z.infer<typeof strengthSetRowSchema> & { session_date: string };
+type EvidenceRow = z.infer<typeof strengthSetRowSchema> & {
+  session_date: string;
+  activity_started_at: string;
+};
 type EvidenceSet = ConsolidatedSet<EvidenceRow>;
+
+/** The canonical session behind a set, precise enough to separate same-day sessions. */
+interface SessionAnchor {
+  startedAt: string;
+  activityId: string;
+}
+
+interface AnchoredObservation {
+  observation: StrengthEvidenceObservation;
+  anchor: SessionAnchor;
+}
 
 interface EffortAssessment extends StrengthEvidenceEffort {
   /** True only when every observation in the group carries a recorded RPE. */
@@ -31,6 +45,7 @@ interface EvidenceCandidate {
   evidence: TrainingProgressionStrengthRow["evidence"];
   status: TrainingProgressionStrengthRow["status"];
   latestDate: string;
+  latestAnchor: SessionAnchor | null;
 }
 
 function round(value: number, precision = 2): number {
@@ -124,40 +139,88 @@ function effortEvidence(effort: EffortAssessment): StrengthEvidenceEffort {
   };
 }
 
-function dailyObservations(
-  observations: StrengthEvidenceObservation[],
-): StrengthEvidenceObservation[] {
-  const byDate = new Map<string, StrengthEvidenceObservation>();
-  for (const observation of observations) {
-    const current = byDate.get(observation.date);
-    if (!current || observation.sourceSetId < current.sourceSetId) {
-      byDate.set(observation.date, observation);
-    }
-  }
-  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+function sessionAnchor(row: EvidenceRow): SessionAnchor {
+  return { startedAt: row.activity_started_at, activityId: row.activity_id };
+}
+
+/** Later canonical session wins; activity id breaks ties deterministically. */
+function compareSessionAnchors(a: SessionAnchor, b: SessionAnchor): number {
+  return (
+    Date.parse(a.startedAt) - Date.parse(b.startedAt) || a.activityId.localeCompare(b.activityId)
+  );
 }
 
 /**
- * The most recent date carrying an eligible working exposure for a lift. A
- * candidate that ends earlier describes an older training block; selecting it
- * would keep a readiness or stagnation status alive after a newer session at a
- * different load, slot, or performance level.
+ * One observation per distinct date keeps the repetition and span counts honest.
+ * When several eligible sets share a date, the latest canonical session wins so
+ * a newer same-day session stays matched to its own evidence rather than an
+ * older set with a smaller source id. Ordering is by canonical session time, not
+ * local date: travel across time zones can make a physically later session carry
+ * an earlier local date, and sorting by date would drop the actual latest series.
  */
-function latestEligibleExposureDate(sets: EvidenceSet[]): string {
-  let latest = "";
+function dailyObservations(anchored: AnchoredObservation[]): {
+  observations: StrengthEvidenceObservation[];
+  latestAnchor: SessionAnchor | null;
+} {
+  const byDate = new Map<string, AnchoredObservation>();
+  for (const entry of anchored) {
+    const current = byDate.get(entry.observation.date);
+    if (!current || compareSessionAnchors(entry.anchor, current.anchor) > 0) {
+      byDate.set(entry.observation.date, entry);
+    }
+  }
+  const ordered = [...byDate.values()].sort((a, b) => compareSessionAnchors(a.anchor, b.anchor));
+  return {
+    observations: ordered.map((entry) => entry.observation),
+    latestAnchor: ordered.at(-1)?.anchor ?? null,
+  };
+}
+
+/**
+ * The most recent canonical session carrying an eligible working exposure for a
+ * lift. A candidate anchored to an earlier session describes an older training
+ * block; selecting it would keep a readiness or stagnation status alive after a
+ * newer session at a different load, slot, or performance level. Every set in
+ * that session shares the anchor, so one session can still yield several lifts.
+ */
+function latestEligibleSession(sets: EvidenceSet[]): SessionAnchor | null {
+  let latest: SessionAnchor | null = null;
   for (const set of sets) {
     if (consolidatedStrengthQualityFlags(set).length > 0 || !isWorking(set.row)) continue;
     const { weight_kg: weight, reps } = set.row;
     if (weight === null || weight <= 0 || reps === null || reps <= 0) continue;
-    if (set.row.session_date > latest) latest = set.row.session_date;
+    const anchor = sessionAnchor(set.row);
+    if (latest === null || compareSessionAnchors(anchor, latest) > 0) latest = anchor;
   }
   return latest;
 }
 
-function repeatedRepsCandidate(sets: EvidenceSet[]): EvidenceCandidate | null {
+/**
+ * A candidate is current only when its latest observation comes from the same
+ * canonical session as the lift's latest eligible exposure. Anchors and
+ * observations are both built from the canonical `row.activity_id` (only
+ * `sourceActivityId` uses a source/member id), so comparing activity ids is
+ * sufficient and avoids relying on recorded start times. Apply this before
+ * ranking: local dates can tie across distinct same-day sessions, so an older
+ * ready series would otherwise win the status tiebreak and then be discarded,
+ * hiding a current valid series entirely.
+ */
+function isCurrentCandidate(
+  candidate: EvidenceCandidate,
+  latestEligible: SessionAnchor | null,
+): boolean {
+  return (
+    latestEligible !== null && candidate.latestAnchor?.activityId === latestEligible.activityId
+  );
+}
+
+function repeatedRepsCandidate(
+  sets: EvidenceSet[],
+  latestEligible: SessionAnchor | null,
+): EvidenceCandidate | null {
   const byPosition = new Map<
     string,
-    { slot: number; weightKg: number; observations: StrengthEvidenceObservation[] }
+    { slot: number; weightKg: number; anchored: AnchoredObservation[] }
   >();
   for (const set of sets) {
     if (consolidatedStrengthQualityFlags(set).length > 0 || !isWorking(set.row)) continue;
@@ -167,15 +230,18 @@ function repeatedRepsCandidate(sets: EvidenceSet[]): EvidenceCandidate | null {
     const group = byPosition.get(key) ?? {
       slot: recordedSlot(set),
       weightKg: weight,
-      observations: [],
+      anchored: [],
     };
-    group.observations.push(observationOf(set, representativeSource(set), weight, reps, null));
+    group.anchored.push({
+      observation: observationOf(set, representativeSource(set), weight, reps, null),
+      anchor: sessionAnchor(set.row),
+    });
     byPosition.set(key, group);
   }
 
   const candidates: Array<EvidenceCandidate & { slot: number; weightKg: number }> = [];
   for (const group of byPosition.values()) {
-    const observations = dailyObservations(group.observations);
+    const { observations, latestAnchor } = dailyObservations(group.anchored);
     const baseline = observations[0]?.reps ?? 0;
     const previous = observations.at(-2)?.reps ?? 0;
     const latest = observations.at(-1)?.reps ?? 0;
@@ -199,25 +265,36 @@ function repeatedRepsCandidate(sets: EvidenceSet[]): EvidenceCandidate | null {
       },
       status: repeatable ? "ready" : null,
       latestDate: newestFirst[0]?.date ?? "",
+      latestAnchor,
       slot: group.slot,
       weightKg: group.weightKg,
     });
   }
-  candidates.sort(
+  const current = candidates.filter((candidate) => isCurrentCandidate(candidate, latestEligible));
+  // Current candidates share the latest eligible canonical session, so their
+  // latest date is tied by definition; ready outranks observed, then slot/load.
+  current.sort(
     (a, b) =>
-      b.latestDate.localeCompare(a.latestDate) || a.slot - b.slot || a.weightKg - b.weightKg,
+      Number(b.status === "ready") - Number(a.status === "ready") ||
+      a.slot - b.slot ||
+      a.weightKg - b.weightKg,
   );
-  const chosen = candidates[0];
+  const chosen = current[0];
   return chosen
-    ? { evidence: chosen.evidence, status: chosen.status, latestDate: chosen.latestDate }
+    ? {
+        evidence: chosen.evidence,
+        status: chosen.status,
+        latestDate: chosen.latestDate,
+        latestAnchor: chosen.latestAnchor,
+      }
     : null;
 }
 
-function flatBenchmarkCandidate(sets: EvidenceSet[]): EvidenceCandidate | null {
-  const byProtocol = new Map<
-    string,
-    { reps: number; observations: StrengthEvidenceObservation[] }
-  >();
+function flatBenchmarkCandidate(
+  sets: EvidenceSet[],
+  latestEligible: SessionAnchor | null,
+): EvidenceCandidate | null {
+  const byProtocol = new Map<string, { reps: number; anchored: AnchoredObservation[] }>();
   for (const set of sets) {
     const flags = consolidatedStrengthQualityFlags(set);
     if (flags.length > 0) continue;
@@ -235,18 +312,22 @@ function flatBenchmarkCandidate(sets: EvidenceSet[]): EvidenceCandidate | null {
       continue;
     }
     const key = JSON.stringify([positionKey(set), reps, source.set_provider]);
-    const group = byProtocol.get(key) ?? { reps, observations: [] };
-    group.observations.push(observationOf(set, source, weight, reps, estimate.value));
+    const group = byProtocol.get(key) ?? { reps, anchored: [] };
+    group.anchored.push({
+      observation: observationOf(set, source, weight, reps, estimate.value),
+      anchor: sessionAnchor(set.row),
+    });
     byProtocol.set(key, group);
   }
 
   const candidates: EvidenceCandidate[] = [];
   for (const group of byProtocol.values()) {
-    const observations = dailyObservations(group.observations);
+    const { observations, latestAnchor } = dailyObservations(group.anchored);
     if (observations.length < FLAT_BENCHMARK_MIN_DATES) continue;
-    const firstDate = observations[0]?.date ?? "";
-    const lastDate = observations.at(-1)?.date ?? "";
-    const spanDays = dateSpanDays(firstDate, lastDate);
+    // Observations are ordered by session chronology; the benchmark span still
+    // needs the earliest/latest local dates, which need not be the end entries.
+    const dates = observations.map((observation) => observation.date).sort();
+    const spanDays = dateSpanDays(dates[0] ?? "", dates.at(-1) ?? "");
     if (spanDays < FLAT_BENCHMARK_MIN_SPAN_DAYS) continue;
     const values = observations.flatMap((observation) =>
       observation.estimatedMaxKg === null ? [] : [observation.estimatedMaxKg],
@@ -283,13 +364,14 @@ function flatBenchmarkCandidate(sets: EvidenceSet[]): EvidenceCandidate | null {
       },
       status: "stagnating",
       latestDate: newestFirst[0]?.date ?? "",
+      latestAnchor,
     });
   }
-  // An older qualifying protocol must not suppress a newer flat group that ends
-  // on the lift's latest eligible exposure date. JS sort is stable, so ties keep
-  // the original protocol discovery order.
-  candidates.sort((a, b) => b.latestDate.localeCompare(a.latestDate));
-  return candidates[0] ?? null;
+  // Filter before ranking so a flat group anchored to a stale same-day session
+  // cannot preempt the current one. JS sort is stable, so ties among current
+  // groups keep the original protocol discovery order.
+  const current = candidates.filter((candidate) => isCurrentCandidate(candidate, latestEligible));
+  return current[0] ?? null;
 }
 
 /**
@@ -319,19 +401,10 @@ export function selectStrengthProgressionEvidence(
 
   const results: TrainingProgressionStrengthRow[] = [];
   for (const group of groups.values()) {
-    const latestEligibleDate = latestEligibleExposureDate(group.sets);
-    const candidates = [
-      repeatedRepsCandidate(group.sets),
-      flatBenchmarkCandidate(group.sets),
-    ].filter(
-      (candidate): candidate is EvidenceCandidate =>
-        candidate !== null && candidate.latestDate === latestEligibleDate,
-    );
-    candidates.sort(
-      (a, b) =>
-        b.latestDate.localeCompare(a.latestDate) || b.evidence.kind.localeCompare(a.evidence.kind),
-    );
-    const chosen = candidates[0];
+    const latestEligible = latestEligibleSession(group.sets);
+    const chosen =
+      repeatedRepsCandidate(group.sets, latestEligible) ??
+      flatBenchmarkCandidate(group.sets, latestEligible);
     if (!chosen) continue;
     results.push({
       identityKey: strengthExerciseIdentityKey({

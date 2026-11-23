@@ -229,6 +229,9 @@ export function ActivityDetailPage() {
       {isCycling && cyclingProgression.error ? (
         <QueryStatePanel error={cyclingProgression.error} height={72} />
       ) : null}
+      {isCycling && cyclingProgression.isLoading && !cyclingProgression.data ? (
+        <QueryStatePanel variant="loading" height={72} contextLabel="Cycling progression" />
+      ) : null}
       {isCycling && cyclingProgression.data ? (
         <TrainingProgressionStatusCard
           status={cyclingProgression.data.status}

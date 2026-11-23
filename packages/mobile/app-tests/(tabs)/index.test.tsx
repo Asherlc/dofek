@@ -42,6 +42,7 @@ const mockTrendsQuery = vi.fn();
 const mockHeartRateQuery = vi.fn();
 const mockInsightsQuery = vi.fn();
 const mockStrengthRefetch = vi.fn(() => Promise.resolve());
+const mockTodayQueryDate = vi.hoisted(() => ({ current: "" }));
 const mockTrainingProgressionStrengthQuery = vi.fn(
   (): { data: unknown; isLoading: boolean; error: unknown; refetch?: () => Promise<void> } => ({
     data: undefined,
@@ -50,6 +51,10 @@ const mockTrainingProgressionStrengthQuery = vi.fn(
     refetch: mockStrengthRefetch,
   }),
 );
+
+vi.mock("../../lib/useTodayQueryDate", () => ({
+  useTodayQueryDate: () => mockTodayQueryDate.current || formatDateYmd(),
+}));
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
@@ -208,6 +213,7 @@ function render(ui: ReactElement, queryClient: QueryClient = new QueryClient()) 
 
 describe("TodayScreen independent loading states", () => {
   beforeEach(() => {
+    mockTodayQueryDate.current = "";
     for (const query of [mockTrendsQuery, mockHeartRateQuery, mockInsightsQuery]) {
       query.mockReset();
       query.mockReturnValue({ isLoading: false, error: null, refetch: vi.fn() });
@@ -278,6 +284,26 @@ describe("TodayScreen independent loading states", () => {
       pathname: "/training/[section]",
       params: { section: "strength" },
     });
+  });
+
+  it("refetches strength progression when the query date advances without an extra initial fetch", async () => {
+    mockTrainingProgressionStrengthQuery.mockReturnValue({
+      data: [repImprovementRow],
+      isLoading: false,
+      error: null,
+      refetch: mockStrengthRefetch,
+    });
+    mockTodayQueryDate.current = "2026-03-21";
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    const { rerender } = render(<OverviewScreen />);
+    expect(mockStrengthRefetch).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Training status: Ready to progress")).toBeTruthy();
+
+    mockTodayQueryDate.current = "2026-03-22";
+    rerender(<OverviewScreen />);
+
+    expect(mockStrengthRefetch).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Training status: Ready to progress")).toBeTruthy();
   });
 
   it("discloses dated strength evidence on Home without navigating", async () => {

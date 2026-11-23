@@ -670,6 +670,9 @@ function ActivityDetailScreen({ id }: { id: string }) {
           {isCycling && cyclingProgression.error ? (
             <QueryStatePanel variant="error" message={cyclingProgression.error.message} />
           ) : null}
+          {isCycling && cyclingProgression.isLoading && !cyclingProgression.data ? (
+            <QueryStatePanel variant="loading" minHeight={72} />
+          ) : null}
           {isCycling && cyclingProgression.data ? (
             <TrainingProgressionStatusCard
               status={cyclingProgression.data.status}
