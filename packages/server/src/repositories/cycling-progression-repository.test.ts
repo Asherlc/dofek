@@ -101,7 +101,7 @@ type StreamEvidence = [string, string | null, string | null, MeasurementKind];
 function sampleRows(
   activityId: string,
   power = 200,
-  measurementKind: MeasurementKind = "direct",
+  measurementKinds: MeasurementKind[] = ["direct"],
   sampleCount = 600,
 ) {
   return Array.from({ length: sampleCount }, (_, elapsedSeconds) => ({
@@ -112,8 +112,10 @@ function sampleRows(
     cadence: null,
     source_providers: ["wahoo"],
     source_devices: ["trainer"],
-    power_measurement_kinds: [measurementKind],
-    stream_evidence: [["power", "wahoo", "trainer", measurementKind]] satisfies StreamEvidence[],
+    power_measurement_kinds: measurementKinds,
+    stream_evidence: measurementKinds.map(
+      (kind) => ["power", "wahoo", "trainer", kind] satisfies StreamEvidence,
+    ),
   }));
 }
 
@@ -133,14 +135,19 @@ type IdentityRow = {
   evidence: Record<string, unknown>;
 };
 
-function identityRow(activityId: string, value: string): IdentityRow {
+function identityRow(
+  activityId: string,
+  value: string,
+  provider = "wahoo",
+  overrides: Partial<IdentityRow> = {},
+): IdentityRow {
   return {
     canonical_activity_id: activityId,
     source_activity_id: activityId,
-    source_provider: "wahoo",
+    source_provider: provider,
     source_external_id: null,
     kind: "provider_workout",
-    namespace: "wahoo",
+    namespace: provider,
     value,
     normalized_value: value,
     display_name: "Aerobic intervals",
@@ -148,6 +155,7 @@ function identityRow(activityId: string, value: string): IdentityRow {
     method: "workout_template_id",
     source_field: "templateId",
     evidence: {},
+    ...overrides,
   };
 }
 
@@ -158,6 +166,7 @@ interface SetupOptions {
   selectedPower?: number;
   candidatePower?: number;
   measurementKind?: "direct" | "estimated" | "unknown";
+  measurementKinds?: MeasurementKind[];
   identities?: IdentityRow[];
   windowOverride?: ActivitySensorWindow | null;
 }
@@ -171,19 +180,15 @@ function setup(options: SetupOptions = {}) {
   ];
   const sampleCount = (ride: RideRow) =>
     Math.max(0, Math.ceil((Date.parse(ride.ended_at) - Date.parse(ride.started_at)) / 1000));
+  const kinds = options.measurementKinds ?? [options.measurementKind ?? "direct"];
   const selectedSamples = sampleRows(
     selectedId,
     options.selectedPower ?? 200,
-    options.measurementKind,
+    kinds,
     sampleCount(selected),
   );
   const candidateSamples = candidates.flatMap((candidate) =>
-    sampleRows(
-      candidate.id,
-      options.candidatePower ?? 200,
-      options.measurementKind,
-      sampleCount(candidate),
-    ),
+    sampleRows(candidate.id, options.candidatePower ?? 200, kinds, sampleCount(candidate)),
   );
 
   const execute = vi.fn(async (query: unknown) => {
@@ -231,6 +236,76 @@ describe("CyclingProgressionRepository", () => {
   it("rejects effort above the moderate threshold and non-finite effort", async () => {
     for (const perceived_exertion of [5.1, Number.POSITIVE_INFINITY]) {
       const { repository } = setup({ selected: rideRow({ perceived_exertion }) });
+      await expect(repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+    }
+  });
+
+  it("rejects zero and negative session effort", async () => {
+    for (const perceived_exertion of [0, -1]) {
+      const { repository } = setup({ selected: rideRow({ perceived_exertion }) });
+      await expect(repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+    }
+  });
+
+  it("filters candidates by modality and by local ordering", async () => {
+    const wrongModality = setup({ candidates: [priorRideRow({ modality: "running" })] });
+    await expect(wrongModality.repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+
+    const sameDate = setup({
+      candidates: [
+        priorRideRow({
+          local_date: "2026-06-01",
+          started_at: "2026-06-01T11:00:00.000Z",
+          ended_at: "2026-06-01T11:10:00.000Z",
+        }),
+      ],
+      intervalRows: [
+        workIntervalRow(selectedId, window.startedAt),
+        workIntervalRow(priorId, "2026-06-01T11:00:00.000Z"),
+      ],
+    });
+    await expect(sameDate.repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+  });
+
+  it("bounds candidate comparison to the 56-day window inclusively", async () => {
+    const older = setup({
+      candidates: [
+        priorRideRow({
+          local_date: "2026-03-01",
+          started_at: "2026-03-01T12:00:00.000Z",
+          ended_at: "2026-03-01T12:10:00.000Z",
+        }),
+      ],
+      intervalRows: [
+        workIntervalRow(selectedId, window.startedAt),
+        workIntervalRow(priorId, "2026-03-01T12:00:00.000Z"),
+      ],
+    });
+    await expect(older.repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+
+    const boundary = setup({
+      candidates: [
+        priorRideRow({
+          local_date: "2026-04-06",
+          started_at: "2026-04-06T12:00:00.000Z",
+          ended_at: "2026-04-06T12:10:00.000Z",
+        }),
+      ],
+      intervalRows: [
+        workIntervalRow(selectedId, window.startedAt),
+        workIntervalRow(priorId, "2026-04-06T12:00:00.000Z"),
+      ],
+    });
+    await expect(boundary.repository.getCyclingProgression(selectedId)).resolves.toHaveProperty(
+      "status",
+      "ready",
+    );
+  });
+
+  it("requires a recognized direct power measurement kind", async () => {
+    const cases: MeasurementKind[][] = [[], ["direct", "estimated"]];
+    for (const measurementKinds of cases) {
+      const { repository } = setup({ measurementKinds });
       await expect(repository.getCyclingProgression(selectedId)).resolves.toBeNull();
     }
   });
@@ -298,6 +373,88 @@ describe("CyclingProgressionRepository", () => {
     const result = await repository.getCyclingProgression(selectedId);
     expect(result?.status).toBe("ready");
     expect(result?.rides[0]?.intervalCount).toBe(1);
+  });
+
+  it("accepts matching work peer classes that normalize into one group", async () => {
+    const { repository } = setup({
+      selected: rideRow({ member_activity_ids: [selectedId, memberId] }),
+      intervalRows: [
+        workIntervalRow(selectedId, window.startedAt),
+        workIntervalRow(memberId, "2026-06-01T12:00:00.200Z", {
+          source_provider: "garmin",
+          source_activity_id: memberId,
+          ended_at: "2026-06-01T12:05:00.200Z",
+        }),
+        workIntervalRow(priorId, "2026-05-25T12:00:00.000Z"),
+      ],
+    });
+
+    await expect(repository.getCyclingProgression(selectedId)).resolves.toHaveProperty(
+      "status",
+      "ready",
+    );
+  });
+
+  it("rejects a target power conflict even with another valid work group", async () => {
+    const { repository } = setup({
+      selected: rideRow({ member_activity_ids: [selectedId, memberId] }),
+      intervalRows: [
+        workIntervalRow(selectedId, window.startedAt),
+        workIntervalRow(selectedId, "2026-06-01T12:05:00.000Z", {
+          interval_index: 1,
+          target_power_watts: 250,
+        }),
+        workIntervalRow(memberId, "2026-06-01T12:05:00.000Z", {
+          interval_index: 1,
+          source_provider: "garmin",
+          source_activity_id: memberId,
+          target_power_watts: 300,
+        }),
+        workIntervalRow(priorId, "2026-05-25T12:00:00.000Z"),
+        workIntervalRow(priorId, "2026-05-25T12:05:00.000Z", { interval_index: 1 }),
+      ],
+    });
+
+    await expect(repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+  });
+
+  it("keeps adjacent work windows and rejects overlapping ones on both rides", async () => {
+    const adjacent = setup({
+      intervalRows: [
+        workIntervalRow(selectedId, window.startedAt),
+        workIntervalRow(selectedId, "2026-06-01T12:05:00.000Z", { interval_index: 1 }),
+        workIntervalRow(priorId, "2026-05-25T12:00:00.000Z"),
+        workIntervalRow(priorId, "2026-05-25T12:05:00.000Z", { interval_index: 1 }),
+      ],
+    });
+    await expect(adjacent.repository.getCyclingProgression(selectedId)).resolves.toHaveProperty(
+      "status",
+      "ready",
+    );
+
+    const overlapping = setup({
+      intervalRows: [
+        workIntervalRow(selectedId, window.startedAt),
+        workIntervalRow(selectedId, "2026-06-01T12:02:00.000Z", { interval_index: 1 }),
+        workIntervalRow(priorId, "2026-05-25T12:00:00.000Z"),
+        workIntervalRow(priorId, "2026-05-25T12:02:00.000Z", { interval_index: 1 }),
+      ],
+    });
+    await expect(overlapping.repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+  });
+
+  it("measures a work window by duration rather than its absolute start", async () => {
+    const { repository } = setup({
+      intervalRows: [
+        workIntervalRow(selectedId, "2026-06-01T12:05:00.000Z"),
+        workIntervalRow(priorId, "2026-05-25T12:00:00.000Z"),
+      ],
+    });
+
+    await expect(repository.getCyclingProgression(selectedId)).resolves.toHaveProperty(
+      "status",
+      "ready",
+    );
   });
 
   it("accepts work rows classified by segment_type or interval_type alone", async () => {
@@ -426,6 +583,142 @@ describe("CyclingProgressionRepository", () => {
       identities: [identityRow(selectedId, "workout-1"), identityRow(selectedId, "workout-2")],
     });
     await expect(repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+  });
+
+  it("compares exact workout identity lists only when both rides identify the workout", async () => {
+    const mismatchedLengths = setup({
+      identities: [
+        identityRow(selectedId, "workout-1"),
+        identityRow(priorId, "workout-1"),
+        identityRow(priorId, "workout-2", "garmin"),
+      ],
+    });
+    await expect(
+      mismatchedLengths.repository.getCyclingProgression(selectedId),
+    ).resolves.toBeNull();
+
+    const partialMatch = setup({
+      identities: [
+        identityRow(selectedId, "workout-1"),
+        identityRow(selectedId, "workout-2", "garmin"),
+        identityRow(priorId, "workout-1"),
+        identityRow(priorId, "workout-3", "garmin"),
+      ],
+    });
+    await expect(partialMatch.repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+
+    const providerMismatch = setup({
+      identities: [
+        identityRow(selectedId, "workout-1"),
+        identityRow(priorId, "workout-1", "garmin"),
+      ],
+    });
+    await expect(providerMismatch.repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+  });
+
+  it("ignores identity rows that are not exact, named workout identities", async () => {
+    for (const overrides of [
+      { kind: "other" },
+      { strength: "fuzzy" },
+      { namespace: "" },
+      { value: "   " },
+    ] satisfies Array<Partial<IdentityRow>>) {
+      const { repository } = setup({
+        identities: [
+          identityRow(selectedId, "workout-1"),
+          identityRow(priorId, "ignored", "wahoo", overrides),
+        ],
+      });
+      await expect(repository.getCyclingProgression(selectedId)).resolves.toHaveProperty(
+        "status",
+        "ready",
+      );
+    }
+  });
+
+  it("sorts exact workout identities by provider then value", async () => {
+    const { repository } = setup({
+      identities: [
+        identityRow(selectedId, "workout-a"),
+        identityRow(selectedId, "workout-b", "garmin"),
+        identityRow(priorId, "workout-a"),
+        identityRow(priorId, "workout-b", "garmin"),
+      ],
+    });
+
+    const result = await repository.getCyclingProgression(selectedId);
+    expect(result?.rides[0]?.exactWorkoutIdentities).toEqual([
+      { provider: "garmin", value: "workout-b" },
+      { provider: "wahoo", value: "workout-a" },
+    ]);
+  });
+
+  it("compares identity lists only when both rides identify the workout", async () => {
+    for (const identities of [
+      [identityRow(selectedId, "workout-1")],
+      [identityRow(priorId, "workout-1")],
+    ]) {
+      const { repository } = setup({ identities });
+      const result = await repository.getCyclingProgression(selectedId);
+      expect(result?.basis).toBe("recorded_work_protocol");
+    }
+  });
+
+  it("allows a five percent whole-ride duration difference", async () => {
+    const atBoundary = setup({
+      candidates: [priorRideRow({ ended_at: "2026-05-25T12:10:30.000Z" })],
+    });
+    await expect(atBoundary.repository.getCyclingProgression(selectedId)).resolves.toHaveProperty(
+      "status",
+      "ready",
+    );
+
+    const beyond = setup({
+      candidates: [priorRideRow({ ended_at: "2026-05-25T12:11:00.000Z" })],
+    });
+    await expect(beyond.repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+  });
+
+  it("allows a five percent work-duration difference and reports the largest", async () => {
+    const atBoundary = setup({
+      intervalRows: [
+        workIntervalRow(selectedId, window.startedAt),
+        workIntervalRow(priorId, "2026-05-25T12:00:00.000Z", {
+          ended_at: "2026-05-25T12:05:15.000Z",
+        }),
+      ],
+    });
+    const boundaryResult = await atBoundary.repository.getCyclingProgression(selectedId);
+    expect(boundaryResult?.comparison.largestDurationDifferencePct).toBeCloseTo(5, 5);
+
+    const beyond = setup({
+      intervalRows: [
+        workIntervalRow(selectedId, window.startedAt),
+        workIntervalRow(priorId, "2026-05-25T12:00:00.000Z", {
+          ended_at: "2026-05-25T12:05:18.000Z",
+        }),
+      ],
+    });
+    await expect(beyond.repository.getCyclingProgression(selectedId)).resolves.toBeNull();
+  });
+
+  it("reports the largest work-duration difference across intervals", async () => {
+    const { repository } = setup({
+      intervalRows: [
+        workIntervalRow(selectedId, window.startedAt),
+        workIntervalRow(selectedId, "2026-06-01T12:05:00.000Z", { interval_index: 1 }),
+        workIntervalRow(priorId, "2026-05-25T12:00:00.000Z", {
+          ended_at: "2026-05-25T12:05:03.000Z",
+        }),
+        workIntervalRow(priorId, "2026-05-25T12:05:05.000Z", {
+          interval_index: 1,
+          ended_at: "2026-05-25T12:10:20.000Z",
+        }),
+      ],
+    });
+
+    const result = await repository.getCyclingProgression(selectedId);
+    expect(result?.comparison.largestDurationDifferencePct).toBeCloseTo(5, 5);
   });
 
   it("yields null when the candidate has no moderate effort", async () => {

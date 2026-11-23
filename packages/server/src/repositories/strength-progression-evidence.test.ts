@@ -108,6 +108,7 @@ describe("selectStrengthProgressionEvidence", () => {
     ]);
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
+      identityKey: '["Bench Press","Barbell"]',
       exerciseId: baseRow.exercise_id,
       exerciseName: "Bench Press",
       equipment: "Barbell",
@@ -130,6 +131,11 @@ describe("selectStrengthProgressionEvidence", () => {
       { date: "2026-11-14", reps: 10, weightKg: 60, rpe: 8, sourceSetId: evidenceId(2003) },
       { date: "2026-11-12", reps: 10, weightKg: 60, rpe: 8, sourceSetId: evidenceId(2002) },
       { date: "2026-11-10", reps: 8, weightKg: 60, rpe: 8, sourceSetId: evidenceId(2001) },
+    ]);
+    expect(result[0]?.evidence.observations.map(({ estimatedMaxKg }) => estimatedMaxKg)).toEqual([
+      null,
+      null,
+      null,
     ]);
   });
 
@@ -448,5 +454,191 @@ describe("selectStrengthProgressionEvidence", () => {
       latestEvidenceDate: "2026-11-17",
       evidence: { kind: "flat_benchmark", reps: 8 },
     });
+  });
+
+  it("ignores a later session that has no load or no reps recorded", () => {
+    const qualifying = [
+      evidenceRow(1, "2026-11-10"),
+      evidenceRow(2, "2026-11-12", { reps: 10 }),
+      evidenceRow(3, "2026-11-14", { reps: 10 }),
+    ];
+    const withoutLoad = decide([
+      ...qualifying,
+      evidenceRow(4, "2026-11-18", { weight_kg: null, reps: 12 }),
+    ]);
+    expect(withoutLoad).toHaveLength(1);
+    expect(withoutLoad[0]).toMatchObject({
+      status: "ready",
+      latestEvidenceDate: "2026-11-14",
+      evidence: { kind: "rep_improvement", weightKg: 60 },
+    });
+
+    const withoutReps = decide([...qualifying, evidenceRow(5, "2026-11-18", { reps: null })]);
+    expect(withoutReps).toHaveLength(1);
+    expect(withoutReps[0]).toMatchObject({
+      status: "ready",
+      latestEvidenceDate: "2026-11-14",
+      evidence: { kind: "rep_improvement" },
+    });
+  });
+
+  it("reports observations against their one-based recorded set slot", () => {
+    const result = decide([
+      evidenceRow(1, "2026-11-10", { set_index: 2 }),
+      evidenceRow(2, "2026-11-12", { set_index: 2, reps: 10 }),
+      evidenceRow(3, "2026-11-14", { set_index: 2, reps: 10 }),
+    ]);
+    expect(result[0]?.evidence.observations.map(({ setIndex }) => setIndex)).toEqual([3, 3, 3]);
+  });
+
+  it("cites the lowest provider and source set among merged duplicate copies", () => {
+    const whoopCopy = {
+      ...evidenceRow(1, "2026-11-10"),
+      set_activity_id: evidenceId(1099),
+      member_activity_ids: [evidenceId(1001), evidenceId(1099)],
+      set_provider: "whoop",
+      set_id: evidenceId(1098),
+      raw: { weight_kg: 60, number_of_reps: 8, rpe: 8 },
+    };
+    const strongCopy = evidenceRow(1, "2026-11-10");
+    const earlierStrongCopy = {
+      ...strongCopy,
+      set_activity_id: evidenceId(1097),
+      member_activity_ids: [evidenceId(1001), evidenceId(1097)],
+      set_id: evidenceId(1096),
+    };
+    const result = decide([
+      whoopCopy,
+      strongCopy,
+      earlierStrongCopy,
+      evidenceRow(2, "2026-11-12", { reps: 10 }),
+      evidenceRow(3, "2026-11-14", { reps: 10 }),
+    ]);
+    expect(result[0]?.evidence.effort.provider).toBe("strong-csv");
+    expect(
+      result[0]?.evidence.observations.find(({ date }) => date === "2026-11-10"),
+    ).toMatchObject({ provider: "strong-csv", sourceSetId: earlierStrongCopy.set_id });
+  });
+
+  it("treats an RPE spread of exactly 0.5 as comparable but a missing RPE as not", () => {
+    const boundary = decide([
+      evidenceRow(1, "2026-11-10", { rpe: 8 }),
+      evidenceRow(2, "2026-11-12", { reps: 10, rpe: 8.5 }),
+      evidenceRow(3, "2026-11-14", { reps: 10, rpe: 8 }),
+    ]);
+    expect(boundary[0]).toMatchObject({
+      status: "ready",
+      evidence: { effort: { rpeSpread: 0.5, comparable: true } },
+    });
+
+    const partial = decide([
+      evidenceRow(4, "2026-11-10", { rpe: 8 }),
+      evidenceRow(5, "2026-11-12", { reps: 10, rpe: null }),
+      evidenceRow(6, "2026-11-14", { reps: 10, rpe: 8 }),
+    ]);
+    expect(partial[0]).toMatchObject({
+      status: null,
+      evidence: { effort: { rpeSpread: 0, comparable: false } },
+    });
+  });
+
+  it("prefers the lower recorded slot then the lighter load on an equal ending date", () => {
+    const slotSeries = (setIndex: number, start: number) => [
+      evidenceRow(start, "2026-11-10", { set_index: setIndex }),
+      evidenceRow(start + 1, "2026-11-12", { set_index: setIndex, reps: 10 }),
+      evidenceRow(start + 2, "2026-11-14", { set_index: setIndex, reps: 10 }),
+    ];
+    const bySlot = decide([...slotSeries(1, 1), ...slotSeries(0, 4)]);
+    expect(bySlot[0]?.evidence).toMatchObject({ kind: "rep_improvement", slot: 1 });
+
+    const loadSeries = (weight: number, start: number) => [
+      evidenceRow(start, "2026-11-10", { weight_kg: weight }),
+      evidenceRow(start + 1, "2026-11-12", { weight_kg: weight, reps: 10 }),
+      evidenceRow(start + 2, "2026-11-14", { weight_kg: weight, reps: 10 }),
+    ];
+    const byWeight = decide([...loadSeries(70, 10), ...loadSeries(60, 13)]);
+    expect(byWeight[0]?.evidence).toMatchObject({ kind: "rep_improvement", weightKg: 60 });
+  });
+
+  it("orders multiple lifts by ending date, name, equipment, then exercise id", () => {
+    const lift = (
+      activity: number,
+      exerciseId: string,
+      exerciseName: string,
+      equipment: string,
+      dates: string[],
+    ) =>
+      [
+        evidenceRow(activity, dates[0] ?? "2026-11-10"),
+        evidenceRow(activity + 1, dates[1] ?? "2026-11-12", { reps: 10 }),
+        evidenceRow(activity + 2, dates[2] ?? "2026-11-14", { reps: 10 }),
+      ].map((row) => ({ ...row, exercise_id: exerciseId, exercise_name: exerciseName, equipment }));
+
+    const result = decide([
+      ...lift(1, evidenceId(201), "Bench Press", "Dumbbell", [
+        "2026-11-10",
+        "2026-11-12",
+        "2026-11-14",
+      ]),
+      ...lift(4, evidenceId(202), "Bench Press", "Barbell", [
+        "2026-11-10",
+        "2026-11-12",
+        "2026-11-14",
+      ]),
+      ...lift(7, evidenceId(203), "Squat", "Barbell", ["2026-11-10", "2026-11-12", "2026-11-14"]),
+      ...lift(10, evidenceId(204), "Bench Press", "Barbell", [
+        "2026-11-12",
+        "2026-11-14",
+        "2026-11-16",
+      ]),
+    ]);
+    expect(result.map(({ exerciseId: id }) => id)).toEqual([
+      evidenceId(204),
+      evidenceId(202),
+      evidenceId(201),
+      evidenceId(203),
+    ]);
+  });
+
+  it("keeps a two-session improvement observable but not ready, and never ready after a regression", () => {
+    const twoSessions = decide([
+      evidenceRow(1, "2026-11-10"),
+      evidenceRow(2, "2026-11-12", { reps: 10 }),
+    ]);
+    expect(twoSessions[0]?.evidence.observations).toHaveLength(2);
+    expect(twoSessions[0]?.status).toBeNull();
+
+    const regression = decide([
+      evidenceRow(3, "2026-11-10"),
+      evidenceRow(4, "2026-11-12", { reps: 10 }),
+      evidenceRow(5, "2026-11-14", { reps: 9 }),
+    ]);
+    expect(regression[0]?.status).toBeNull();
+  });
+
+  it("does not let later warm-up sessions replace a ready working series", () => {
+    const result = decide([
+      evidenceRow(1, "2026-11-10"),
+      evidenceRow(2, "2026-11-12", { reps: 10 }),
+      evidenceRow(3, "2026-11-14", { reps: 10 }),
+      evidenceRow(4, "2026-11-16", { set_type: "warmup" }),
+      evidenceRow(5, "2026-11-18", { set_type: "warmup", reps: 10 }),
+      evidenceRow(6, "2026-11-20", { set_type: "warmup", reps: 10 }),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ status: "ready", latestEvidenceDate: "2026-11-14" });
+  });
+
+  it("orders observations chronologically before presenting them newest first", () => {
+    const outOfOrder = decide([
+      evidenceRow(20, "2026-11-14", { reps: 10 }),
+      evidenceRow(21, "2026-11-12", { reps: 10 }),
+      evidenceRow(22, "2026-11-10"),
+    ]);
+    expect(outOfOrder[0]?.evidence.observations.map(({ date }) => date)).toEqual([
+      "2026-11-14",
+      "2026-11-12",
+      "2026-11-10",
+    ]);
   });
 });
