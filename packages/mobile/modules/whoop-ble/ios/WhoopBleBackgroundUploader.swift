@@ -19,6 +19,7 @@ final class WhoopBleBackgroundUploader: NSObject {
     private var token: String?
     private var headers: [String: String] = [:]
     private var active = Set<String>()
+    private var gzipSupport: [WhoopUploadStream: Bool] = [:]
     private var blocked = Set<WhoopUploadStream>()
     private var retryAfter: [WhoopUploadStream: Date] = [:]
     private var lastSubmission: [WhoopUploadStream: Date] = [:]
@@ -83,7 +84,9 @@ final class WhoopBleBackgroundUploader: NSObject {
         guard !userId.isEmpty, !token.isEmpty, !token.contains("\r"), !token.contains("\n") else {
             throw WhoopUploadError(message: "WHOOP upload requires a user ID and session token")
         }
-        let forbidden = Set(["authorization", "host", "cookie", "content-length", "content-type", "connection", "transfer-encoding"])
+        let forbidden = Set([
+            "authorization", "host", "cookie", "content-length", "content-type", "content-encoding", "connection", "transfer-encoding",
+        ])
         guard headers.allSatisfy({
             !forbidden.contains($0.key.lowercased()) && !$0.key.contains("\r") && !$0.key.contains("\n") &&
                 !$0.value.contains("\r") && !$0.value.contains("\n")
@@ -96,6 +99,7 @@ final class WhoopBleBackgroundUploader: NSObject {
             if bindingChanged {
                 lastUploadOutcome = nil
                 metrics.resetReservations()
+                gzipSupport.removeAll()
                 self.token = nil; self.headers = [:]
                 try cancelOwnedTasks()
                 active.removeAll(); submitted.removeAll(); authRetriedEpoch.removeAll()
@@ -158,6 +162,7 @@ final class WhoopBleBackgroundUploader: NSObject {
             try store.advanceErasureCutoff(to: cutoff, discardInbox: true)
         }
         active.removeAll()
+        gzipSupport.removeAll()
         tokenEpoch += 1; submitted.removeAll()
         authRetriedEpoch.removeAll()
         retryAfter.removeAll()
@@ -277,13 +282,6 @@ final class WhoopBleBackgroundUploader: NSObject {
                     stream: stream, includeInbox: false, reportWrites: recordReservationWrites) else { continue }
                 let identity = identity(batch)
                 guard !active.contains(identity) || refreshActive else { continue }
-                let file = directory.appendingPathComponent(identity + ".json")
-                // Always regenerate atomically; the database is the only source of truth.
-                try batch.body.write(to: file, options: .atomic)
-                #if os(iOS)
-                try FileManager.default.setAttributes(
-                    [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: file.path)
-                #endif
                 let route = stream.route
                 guard let url = URL(string: binding.serverURL + "/api/trpc/" + route) else {
                     throw WhoopUploadError(message: "Invalid WHOOP upload URL")
@@ -293,15 +291,41 @@ final class WhoopBleBackgroundUploader: NSObject {
                 for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-                active.insert(identity); lastSubmission[stream] = now()
+                let file = try writeBody(batch, identity: identity, for: &request)
                 submissionSequence += 1
+                guard transport.start(request: request, file: file, identity: identity, attempt: submissionSequence) else { continue }
+                active.insert(identity); lastSubmission[stream] = now()
                 submitted[identity] = (tokenEpoch, submissionSequence)
-                transport.start(request: request, file: file, identity: identity, attempt: submissionSequence)
             } catch {
                 retryAfter[stream] = now().addingTimeInterval(30)
                 record(error)
             }
         }
+    }
+
+    private func writeBody(_ batch: WhoopStoredBatch, identity: String, for request: inout URLRequest) throws -> URL {
+        var body = batch.body
+        var fileExtension = "json"
+        if gzipSupport[batch.stream] == true, body.count <= WhoopUploadStream.maxCompressedBodyBytes {
+            do {
+                let encoded = try WhoopUploadGzip.encode(body)
+                if encoded.count < body.count {
+                    body = encoded
+                    fileExtension = "gz"
+                    request.setValue("gzip", forHTTPHeaderField: "Content-Encoding")
+                }
+            } catch {
+                record(error)
+            }
+        }
+        let file = directory.appendingPathComponent(identity + "." + fileExtension)
+        // Always regenerate atomically from the immutable SQLite reservation.
+        try body.write(to: file, options: .atomic)
+        #if os(iOS)
+        try FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: file.path)
+        #endif
+        return file
     }
 
     private func isSuperseded(_ identity: String, attempt: Int?) -> Bool {
@@ -336,15 +360,16 @@ final class WhoopBleBackgroundUploader: NSObject {
                 occurredAt: Self.iso(now()))
             metrics.recordConnectionLoss(outcome, stream: batch.stream)
             guard try validateResponse(
-                identity: identity, batch: batch, response: response,
+                batch: batch, response: response, context: context,
                 outcome: &outcome, nextPartial: &nextPartial) else { return }
+            gzipSupport[batch.stream] = context.acceptsGzip && context.responseURL?.path == "/api/trpc/" + batch.stream.route
             let retired = try store.acknowledge(id: batch.id, generation: batch.generation)
             outcome?.stage = retired ? "outbox_retired" : "outbox_already_absent"
             outcome?.outboxState = retired ? "retired" : "absent"
             authRetriedEpoch[identity] = nil
             outcome?.connectionLossRecoveryDuration = metrics.finishReservation(identity, stream: batch.stream, retired: retired)
-            let file = directory.appendingPathComponent(identity + ".json")
-            if FileManager.default.fileExists(atPath: file.path) {
+            let bodyFiles = ["json", "gz"].map { directory.appendingPathComponent(identity + "." + $0) }
+            for file in bodyFiles where FileManager.default.fileExists(atPath: file.path) {
                 do { try removeBodyFile(file) } catch {
                     outcome?.stage = "outbox_retired_cleanup_failed"
                     cleanupError = error
@@ -395,9 +420,9 @@ private extension WhoopBleBackgroundUploader {
     }
 
     func validateResponse(
-        identity: String,
         batch: WhoopStoredBatch,
         response: WhoopUploadResponse,
+        context: WhoopUploadCompletionContext,
         outcome: inout WhoopUploadOutcome?,
         nextPartial: inout Bool?
     ) throws -> Bool {
@@ -417,7 +442,16 @@ private extension WhoopBleBackgroundUploader {
         outcome?.responseOriginValidated = true
         guard response.status == 200 else {
             outcome?.stage = "http_status_rejected"
+            if context.sentGzip, !context.acceptsGzip, response.status == 400 || response.status == 415 {
+                // The server may have rolled back since it last offered gzip.
+                gzipSupport[batch.stream] = false
+                if let outcome { reportOutcome(outcome) }
+                record(WhoopUploadError(message: "WHOOP upload endpoint rejected gzip"), outcome: outcome, reportToSentry: false)
+                nextPartial = true
+                return false
+            }
             if let status = response.status, (400..<500).contains(status), status != 408, status != 429 {
+                let identity = self.identity(batch)
                 if status == 401 || status == 403, token != nil,
                    submitted[identity]?.epoch != tokenEpoch,
                    authRetriedEpoch[identity] != tokenEpoch {

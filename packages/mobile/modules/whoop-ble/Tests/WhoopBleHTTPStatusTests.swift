@@ -41,7 +41,9 @@ extension WhoopBleBackgroundUploaderTests {
         let firstRetry = try XCTUnwrap(transport.requests.dropFirst().first)
         XCTAssertEqual(firstRetry.2, initial.2)
         XCTAssertEqual(try Data(contentsOf: firstRetry.1), initialBody)
-        transport.onCompletion?(initial.2, 408, Data(), (initialAttempt, initial.0.url, 1, "test"), nil)
+        transport.onCompletion?(initial.2, 408, Data(), WhoopUploadCompletionContext(
+            attempt: initialAttempt, responseURL: initial.0.url, taskIdentifier: 1, transportPath: "test"
+        ), nil)
         try settle(uploader)
         XCTAssertEqual(try uploader.diagnostics()["http408ResponseCount"] as? Int, 1)
         transport.complete(1, status: 408, body: "")

@@ -1,3 +1,4 @@
+import { gzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../src/db/test-helpers.ts";
 import { createSession } from "./auth/session.ts";
@@ -29,6 +30,7 @@ describe("tRPC API", () => {
   let baseUrl: string;
   let testCtx: TestContext;
   let sessionCookie: string;
+  let authorization: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -36,6 +38,7 @@ describe("tRPC API", () => {
     const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
+    authorization = `Bearer ${session.sessionId}`;
 
     const app = createApp(testCtx.db, noopSensorStore);
     await new Promise<void>((resolve) => {
@@ -56,6 +59,72 @@ describe("tRPC API", () => {
       });
     }
     await testCtx?.cleanup();
+  });
+
+  describe("WHOOP request compression", () => {
+    const input = JSON.stringify({ deviceId: "gzip-example", samples: [] });
+
+    function upload(
+      route: string,
+      body: string | Uint8Array<ArrayBuffer>,
+      contentEncoding?: string,
+      token?: string,
+    ) {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      if (contentEncoding) headers.set("Content-Encoding", contentEncoding);
+      if (token) headers.set("Authorization", token);
+      return fetch(`${baseUrl}/api/trpc/${route}`, { method: "POST", headers, body });
+    }
+
+    it.each([
+      ["whoopBleSync.pushRealtimeData", input],
+      ["whoopBleSync.pushSensorRecords", input],
+      [
+        "inertialMeasurementUnitSync.pushSamples",
+        JSON.stringify({ deviceId: "gzip-example", deviceType: "whoop", samples: [] }),
+      ],
+    ])("advertises gzip and acknowledges either encoding for %s", async (route, body) => {
+      const plain = await upload(route, body, undefined, authorization);
+      expect(plain.status).toBe(200);
+      expect(plain.headers.get("accept-encoding")).toBe("gzip");
+      await expect(plain.json()).resolves.toMatchObject({ result: { data: { inserted: 0 } } });
+
+      const compressed = await upload(
+        route,
+        Uint8Array.from(gzipSync(body)),
+        "gzip",
+        authorization,
+      );
+      expect(compressed.status).toBe(200);
+      await expect(compressed.json()).resolves.toMatchObject({ result: { data: { inserted: 0 } } });
+      const metrics = await fetch(`${baseUrl}/metrics`);
+      expect(await metrics.text()).toContain(`route="/api/trpc/${route}"`);
+    });
+
+    it("keeps authentication required for compressed requests", async () => {
+      const result = await upload(
+        "whoopBleSync.pushRealtimeData",
+        Uint8Array.from(gzipSync(input)),
+        "gzip",
+      );
+      expect(result.status).toBe(401);
+    });
+
+    it("rejects invalid gzip", async () => {
+      const result = await upload("whoopBleSync.pushRealtimeData", input, "gzip", authorization);
+      expect(result.status).toBe(400);
+    });
+
+    it("bounds the decompressed body", async () => {
+      const oversized = JSON.stringify({ deviceId: "x".repeat(262_144), samples: [] });
+      const result = await upload(
+        "whoopBleSync.pushRealtimeData",
+        Uint8Array.from(gzipSync(oversized)),
+        "gzip",
+        authorization,
+      );
+      expect(result.status).toBe(413);
+    });
   });
 
   describe("methodOverride: POST for queries", () => {

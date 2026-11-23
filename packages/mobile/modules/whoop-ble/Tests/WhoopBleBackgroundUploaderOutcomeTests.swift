@@ -2,6 +2,82 @@ import XCTest
 @testable import WhoopBLE
 
 extension WhoopBleBackgroundUploaderTests {
+    func testCredentialRefreshKeepsTheAttemptOfAnAcknowledgmentAlreadyInFlight() throws {
+        let (uploader, store, transport) = try setup()
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
+        try uploader.flush(); try settle(uploader)
+
+        transport.afterAllTasks = {
+            transport.afterAllTasks = nil
+            transport.terminalResultPending = true
+            transport.complete(0)
+        }
+        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "secret", headers: [:])
+        try settle(uploader)
+        XCTAssertEqual(transport.requests.count, 1)
+        XCTAssertTrue(try store.pendingBatches().isEmpty)
+        XCTAssertEqual(try store.queuedCount(stream: .realtime), 0)
+    }
+
+    func testOnlyCompressesAfterAnAcknowledgmentAdvertisesGzip() throws {
+        let (uploader, store, transport) = try setup()
+        let samples = Array(repeating: rows[0], count: 20)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: samples])
+        try uploader.flush(); try settle(uploader)
+
+        let first = try XCTUnwrap(transport.requests.first)
+        XCTAssertNil(first.0.value(forHTTPHeaderField: "Content-Encoding"))
+        let plain = try Data(contentsOf: first.1)
+        XCTAssertEqual(plain, try store.pendingBatches().first?.body)
+        transport.complete(0, responseURL: URL(string: "https://example.com/other-upload"), acceptsGzip: true)
+        try settle(uploader)
+
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: samples])
+        try uploader.flush(); try settle(uploader)
+        let direct = try XCTUnwrap(transport.requests.dropFirst().first)
+        XCTAssertNil(direct.0.value(forHTTPHeaderField: "Content-Encoding"))
+        transport.complete(1, acceptsGzip: true)
+        try settle(uploader)
+
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: samples, .imu: samples])
+        try uploader.flush(); try settle(uploader)
+
+        let upload = try XCTUnwrap(transport.requests.dropFirst(2).first { $0.0.url == first.0.url })
+        let imu = try XCTUnwrap(transport.requests.first { $0.0.url != first.0.url })
+        XCTAssertNil(imu.0.value(forHTTPHeaderField: "Content-Encoding"))
+        XCTAssertEqual(upload.0.value(forHTTPHeaderField: "Content-Encoding"), "gzip")
+        let compressed = try Data(contentsOf: upload.1)
+        XCTAssertEqual(Array(compressed.prefix(2)), [0x1f, 0x8b])
+        XCTAssertLessThan(compressed.count, plain.count)
+    }
+
+    func testGzipRejectionRetriesTheSameReservationUsingPlainJSON() throws {
+        let (uploader, store, transport) = try setup()
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
+        try uploader.flush(); try settle(uploader)
+        transport.complete(0, acceptsGzip: true)
+        try settle(uploader)
+
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: Array(repeating: rows[0], count: 20)])
+        try uploader.flush(); try settle(uploader)
+        let encoded = try XCTUnwrap(transport.requests.dropFirst().first)
+        XCTAssertEqual(encoded.0.value(forHTTPHeaderField: "Content-Encoding"), "gzip")
+        let reserved = try XCTUnwrap(store.pendingBatches().first)
+        transport.complete(1, status: 400, body: "")
+        try settle(uploader)
+
+        let retry = try XCTUnwrap(transport.requests.dropFirst(2).first)
+        XCTAssertEqual(retry.2, encoded.2)
+        XCTAssertNil(retry.0.value(forHTTPHeaderField: "Content-Encoding"))
+        XCTAssertNotEqual(retry.1, encoded.1)
+        XCTAssertEqual(try Data(contentsOf: retry.1), reserved.body)
+        transport.complete(2)
+        try settle(uploader)
+        XCTAssertTrue(try store.pendingBatches().isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: encoded.1.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: retry.1.path))
+    }
+
     func testConnectionLossRecoveryMeasuresUntilTheSameBatchIsAcknowledged() throws {
         var instant = ContinuousClock.now
         var errors: [Error] = []
@@ -188,6 +264,30 @@ extension WhoopBleBackgroundUploaderTests {
             .isValidatedHttp5xxRejection)
         XCTAssertFalse(outcome(stage: "transport_error", status: 503, originValidated: nil)
             .isValidatedHttp5xxRejection)
+    }
+
+    func testCrossOriginCompletionRetainsRowsAndBlocksUntilConfigure() throws {
+        let (uploader, store, transport) = try setup()
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
+        try uploader.flush(); try settle(uploader)
+        let identity = try XCTUnwrap(transport.requests.first?.2)
+        transport.tasks.removeAll()
+        transport.onCompletion?(identity, 200, Data("{\"result\":{\"data\":{\"inserted\":1}}}".utf8),
+                                WhoopUploadCompletionContext(
+                                    attempt: transport.attempts[identity],
+                                    responseURL: URL(string: "https://other.example/api/trpc/whoopBleSync.pushRealtimeData"),
+                                    taskIdentifier: nil, transportPath: nil
+                                ), nil)
+        try settle(uploader)
+        XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
+        XCTAssertEqual(try store.pendingBatches().count, 1)
+        XCTAssertEqual(try uploader.diagnostics()["blockedUploadStreams"] as? [String], ["realtime"])
+        try uploader.flush(); try settle(uploader)
+        XCTAssertEqual(transport.requests.count, 1)
+        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "new", headers: [:])
+        try settle(uploader)
+        XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertEqual(transport.requests.last?.2, identity)
     }
 
     func testNonHTTPSResponseOriginReportsRejectionAndBlocksStream() throws {

@@ -23,6 +23,7 @@ final class WhoopURLSessionTransportTests: XCTestCase {
             XCTAssertEqual(context.attempt, 2)
             XCTAssertEqual(context.responseURL, request.url)
             XCTAssertEqual(context.transportPath, "background")
+            XCTAssertTrue(context.acceptsGzip)
             XCTAssertNotNil(context.taskIdentifier)
             completion.fulfill()
         }
@@ -34,7 +35,7 @@ final class WhoopURLSessionTransportTests: XCTestCase {
             enumerated.fulfill()
         }
         await fulfillment(of: [started, enumerated], timeout: 3)
-        lock.withLock { source }?.succeed(Data("durable".utf8))
+        lock.withLock { source }?.succeed(Data("durable".utf8), headers: ["Accept-Encoding": "gzip"])
         await fulfillment(of: [completion], timeout: 3)
     }
 
@@ -76,6 +77,86 @@ final class WhoopURLSessionTransportTests: XCTestCase {
         current.setValue("current", forHTTPHeaderField: "X-Test-Credential")
         transport.start(request: current, file: file, identity: "generation.batch", attempt: 1)
         await fulfillment(of: [oldCanceled, completion], timeout: 3, enforceOrder: true)
+    }
+
+    func testAcknowledgmentRemainsOwnedUntilTheUploaderRetiresIt() async throws {
+        let completed = expectation(description: "The network acknowledgment is waiting for the uploader")
+        let enumerated = expectation(description: "The session has no replacement network task")
+        let lock = NSLock()
+        var background: URLSession?
+        var requestsStarted = 0
+        let (transport, request, file) = try makeTransport(makeBackgroundSession: { configuration, delegate, queue in
+            let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: queue)
+            lock.withLock { background = session }
+            return session
+        }, handler: { source in
+            let first = lock.withLock {
+                requestsStarted += 1
+                return requestsStarted == 1
+            }
+            if first { source.succeed(Data("durable".utf8)) }
+        })
+        transport.onCompletion = { _, _, _, _, _ in completed.fulfill() }
+        transport.start(request: request, file: file, identity: "generation.batch", attempt: 1)
+        await fulfillment(of: [completed], timeout: 3)
+
+        transport.start(request: request, file: file, identity: "generation.batch", attempt: 2)
+        lock.withLock { background }?.getAllTasks { tasks in
+            XCTAssertTrue(tasks.isEmpty)
+            enumerated.fulfill()
+        }
+        await fulfillment(of: [enumerated], timeout: 3)
+        transport.cancel(identity: "generation.batch")
+    }
+
+    func testMatchingCredentialsKeepARecoveredGzipTransfer() async throws {
+        let started = expectation(description: "One restored gzip task remains active")
+        let restored = expectation(description: "Task restored")
+        let enumerated = expectation(description: "Original gzip task remains in its session")
+        let completed = expectation(description: "The restored gzip task provides the acknowledgment")
+        let lock = NSLock()
+        var source: WhoopTransportURLProtocol?
+        var background: URLSession?
+        var retained = false
+        let (transport, request, file) = try makeTransport(
+            restored: true, requestHeaders: ["Content-Encoding": "gzip"],
+            makeBackgroundSession: { configuration, delegate, queue in
+                let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: queue)
+                lock.withLock { background = session }
+                return session
+            }, handler: { upload in
+                guard upload.request.value(forHTTPHeaderField: "Content-Encoding") == "gzip" else {
+                    XCTFail("The session replaced the recovered gzip task")
+                    return
+                }
+                lock.withLock { source = upload }
+                started.fulfill()
+            }
+        )
+        transport.allTasks { _ in restored.fulfill() }
+        await fulfillment(of: [started, restored], timeout: 3)
+        transport.onCompletion = { _, status, _, context, error in
+            XCTAssertEqual(status, 200)
+            XCTAssertTrue(context.sentGzip)
+            XCTAssertEqual(context.attempt, 1)
+            XCTAssertNil(error)
+            completed.fulfill()
+        }
+        var plain = request
+        plain.setValue(nil, forHTTPHeaderField: "Content-Encoding")
+        transport.start(request: plain, file: file, identity: "generation.batch", attempt: 1)
+        lock.withLock { background }?.getAllTasks { tasks in
+            let original = tasks.contains {
+                $0.state == .running && $0.originalRequest?.value(forHTTPHeaderField: "Content-Encoding") == "gzip"
+            }
+            lock.withLock { retained = original }
+            XCTAssertTrue(original)
+            enumerated.fulfill()
+        }
+        await fulfillment(of: [enumerated], timeout: 3)
+        guard lock.withLock({ retained }) else { return }
+        lock.withLock { source }?.succeed(Data("durable".utf8))
+        await fulfillment(of: [completed], timeout: 3)
     }
 
     func testRestoredBackgroundCompletionDoesNotRequireConfiguration() async throws {

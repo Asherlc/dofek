@@ -4,8 +4,9 @@ import SQLite3
 enum WhoopUploadStream: String, CaseIterable {
     case imu, realtime, sensorRecords
 
+    static let maxCompressedBodyBytes = 262_144
     var batchLimit: Int { self == .sensorRecords ? 16 : 500 }
-    var bodyLimit: Int { self == .sensorRecords ? 262_144 : Int.max }
+    var bodyLimit: Int { self == .sensorRecords ? Self.maxCompressedBodyBytes : Int.max }
     var route: String {
         switch self {
         case .imu: return "inertialMeasurementUnitSync.pushSamples"

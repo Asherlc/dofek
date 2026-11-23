@@ -97,6 +97,7 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
     var beforeAllTasks: (() -> Void)?
     var afterAllTasks: (() -> Void)?
     var holdTaskSnapshot: ((@escaping () -> Void) -> Void)?
+    var terminalResultPending = false
     func allTasks(_ completion: @escaping (Set<String>) -> Void) {
         reconciliationCount += 1
         beforeAllTasks?()
@@ -108,12 +109,14 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
         }
         afterAllTasks?()
     }
-    func start(request: URLRequest, file: URL, identity: String, attempt: Int) {
+    func start(request: URLRequest, file: URL, identity: String, attempt: Int) -> Bool {
+        guard !terminalResultPending else { return false }
         attempts[identity] = attempt
         if tasks.contains(identity),
-           let previous = requests.last(where: { $0.2 == identity }), previous.0 == request { return }
+           let previous = requests.last(where: { $0.2 == identity }), previous.0 == request { return true }
         if !tasks.contains(identity) { tasks.append(identity) }
         requests.append((request, file, identity))
+        return true
     }
     func cancel(identity: String) {
         cancellations.append(identity)
@@ -124,7 +127,8 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
         _ index: Int,
         status: Int = 200,
         body: String = "{\"result\":{\"data\":{\"inserted\":0}}}",
-        responseURL: URL? = nil
+        responseURL: URL? = nil,
+        acceptsGzip: Bool = false
     ) {
         let task = requests[index]
         guard requests.last(where: { $0.2 == task.2 })?.0 == task.0 else { return }
@@ -133,7 +137,11 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
             task.2,
             status,
             Data(body.utf8),
-            (attempts[task.2], responseURL ?? task.0.url, index + 1, "test"),
+            WhoopUploadCompletionContext(
+                attempt: attempts[task.2], responseURL: responseURL ?? task.0.url,
+                taskIdentifier: index + 1, transportPath: "test", acceptsGzip: acceptsGzip,
+                sentGzip: task.0.value(forHTTPHeaderField: "Content-Encoding") == "gzip"
+            ),
             nil
         )
     }
@@ -144,7 +152,9 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
             task.2,
             nil,
             Data(),
-            (attempts[task.2], nil, index + 1, "test"),
+            WhoopUploadCompletionContext(
+                attempt: attempts[task.2], responseURL: nil, taskIdentifier: index + 1, transportPath: "test"
+            ),
             error
         )
     }

@@ -341,11 +341,22 @@ application memory and iOS owns submitted request headers.
 Native callbacks can acknowledge restored batches before React loads.
 Credential changes cancel the old task and wait for its terminal callback
 before starting a replacement. A refresh with matching credentials keeps the
-active task. Queued callbacks carry an in-memory attempt number so retired
-results cannot block a newer submission. Account retirement cancels its tasks.
-Canonical mutation endpoints
-must serve directly: Apple's background service follows redirects, and a
-cross-origin final response is rejected as an acknowledgment.
+active task, including a gzip transfer restored after relaunch. A completed
+task holds its reservation until the uploader handles the result. Queued
+callbacks carry an in-memory attempt number so retired results cannot block
+a newer submission. Account retirement cancels its tasks.
+The uploader submits the next eligible reservation before releasing the
+background-session completion callback. Canonical mutation endpoints must
+serve directly because the background service follows redirects. An
+acknowledgment requires a response from the configured server origin.
+
+Each upload route starts with JSON. After a direct acknowledgment advertises
+`Accept-Encoding: gzip`, later requests on that route use gzip when the body
+fits the 262,144-byte decoded limit and compression reduces its size. Sample
+limits and reservation identities stay the same. A server that rejects gzip
+with HTTP 400 or 415 and omits the capability header receives the same
+reservation again as JSON. This uses standard HTTP request content
+negotiation. [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-12.5.3)
 
 Runtime preparation and background-session attachment use a serial utility queue,
 so opening or upgrading the durable database does not block the application

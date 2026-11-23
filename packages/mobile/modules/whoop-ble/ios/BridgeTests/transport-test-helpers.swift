@@ -5,6 +5,7 @@ import XCTest
 extension WhoopURLSessionTransportTests {
     func makeTransport(
         restored: Bool = false,
+        requestHeaders: [String: String] = [:],
         makeBackgroundSession: ((URLSessionConfiguration, URLSessionDelegate, OperationQueue) -> URLSession)? = nil,
         handler: @escaping (WhoopTransportURLProtocol) -> Void
     ) throws -> (WhoopURLSessionTransport, URLRequest, URL) {
@@ -15,6 +16,7 @@ extension WhoopURLSessionTransportTests {
         try Data("{}".utf8).write(to: file)
         var request = URLRequest(url: URL(string: "https://whoop-transport.invalid/" + UUID().uuidString)!)
         request.httpMethod = "POST"
+        for (name, value) in requestHeaders { request.setValue(value, forHTTPHeaderField: name) }
         WhoopTransportURLProtocol.handler = handler
         addTeardownBlock {
             WhoopTransportURLProtocol.handler = nil
@@ -66,15 +68,10 @@ final class WhoopTransportURLProtocol: URLProtocol {
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() { Self.handler?(self) }
     override func stopLoading() { Self.stopped?(self) }
-    func succeed(_ data: Data, status: Int = 200, finish: Bool = true) {
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+    func succeed(_ data: Data, headers: [String: String] = [:]) {
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
-        if finish { client?.urlProtocolDidFinishLoading(self) }
-    }
-    func finish(_ data: Data = Data()) {
-        if !data.isEmpty { client?.urlProtocol(self, didLoad: data) }
         client?.urlProtocolDidFinishLoading(self)
     }
-    func fail(_ error: Error) { client?.urlProtocol(self, didFailWithError: error) }
 }

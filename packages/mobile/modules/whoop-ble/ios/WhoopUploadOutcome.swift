@@ -1,8 +1,13 @@
 import Foundation
 
-typealias WhoopUploadCompletionContext = (
-    attempt: Int?, responseURL: URL?, taskIdentifier: Int?, transportPath: String?
-)
+struct WhoopUploadCompletionContext {
+    let attempt: Int?
+    let responseURL: URL?
+    let taskIdentifier: Int?
+    let transportPath: String?
+    var acceptsGzip = false
+    var sentGzip = false
+}
 typealias WhoopUploadCompletion = (
     String, Int?, Data, WhoopUploadCompletionContext, Error?
 ) -> Void

@@ -8,7 +8,7 @@ private final class BootstrapTransport: WhoopUploadTransport {
     func allTasks(_ completion: @escaping (Set<String>) -> Void) {
         completion([])
     }
-    func start(request: URLRequest, file: URL, identity: String, attempt: Int) {}
+    func start(request: URLRequest, file: URL, identity: String, attempt: Int) -> Bool { true }
     func cancel(identity: String) {}
 }
 

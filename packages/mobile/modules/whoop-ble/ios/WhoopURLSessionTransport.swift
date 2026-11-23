@@ -16,6 +16,7 @@ final class WhoopURLSessionTransport: NSObject, WhoopUploadTransport, URLSession
         let request: URLRequest?
         var attempt: Int?
         var cancelling = false
+        var completed = false
         var replacement: Submission?
     }
 
@@ -69,22 +70,34 @@ final class WhoopURLSessionTransport: NSObject, WhoopUploadTransport, URLSession
         }
     }
 
-    func start(request: URLRequest, file: URL, identity: String, attempt: Int) {
+    @discardableResult
+    func start(request: URLRequest, file: URL, identity: String, attempt: Int) -> Bool {
         // Complete submission before the uploader releases iOS's background callback.
         queue.sync {
             let submission = Submission(request: request, file: file, attempt: attempt)
             guard var delivery = self.deliveries[identity] else {
                 self.submit(submission, identity: identity)
-                return
+                return true
             }
-            if !delivery.cancelling, delivery.request == request {
+            guard !delivery.completed else { return false }
+            if !delivery.cancelling, self.matchesActiveRequest(delivery.request, request) {
                 delivery.attempt = attempt
                 self.deliveries[identity] = delivery
-                return
+            } else {
+                // Wait for the superseded task's terminal callback before creating its replacement.
+                self.cancel(delivery, identity: identity, replacement: submission)
             }
-            // Wait for the superseded task's terminal callback before creating its replacement.
-            self.cancel(delivery, identity: identity, replacement: submission)
+            return true
         }
+    }
+
+    private func matchesActiveRequest(_ active: URLRequest?, _ requested: URLRequest) -> Bool {
+        // The same reservation can be projected as JSON or gzip after relaunch.
+        var active = active
+        var requested = requested
+        active?.setValue(nil, forHTTPHeaderField: "Content-Encoding")
+        requested.setValue(nil, forHTTPHeaderField: "Content-Encoding")
+        return active == requested
     }
 
     private func submit(_ submission: Submission, identity: String) {
@@ -98,7 +111,11 @@ final class WhoopURLSessionTransport: NSObject, WhoopUploadTransport, URLSession
     func cancel(identity: String) {
         queue.async {
             if let delivery = self.deliveries[identity] {
-                self.cancel(delivery, identity: identity)
+                if delivery.completed {
+                    self.deliveries[identity] = nil
+                } else {
+                    self.cancel(delivery, identity: identity)
+                }
             } else {
                 // A cold cancellation may precede the first restoration snapshot.
                 self.session.getAllTasks { tasks in
@@ -126,7 +143,7 @@ final class WhoopURLSessionTransport: NSObject, WhoopUploadTransport, URLSession
                 guard task.state != .completed, task.state != .canceling else { continue }
                 if let current = self.deliveries[identity], current.task.taskIdentifier == task.taskIdentifier {
                     // A delayed enumeration cannot cancel a newer, locally submitted request.
-                    guard current.attempt == nil else { continue }
+                    guard !current.completed, current.attempt == nil else { continue }
                     self.cancel(current, identity: identity)
                 } else {
                     self.retire(task)
@@ -161,18 +178,24 @@ final class WhoopURLSessionTransport: NSObject, WhoopUploadTransport, URLSession
         let data = responses.removeValue(forKey: key) ?? Data()
         let wasOversized = oversized.remove(key) != nil
         guard retired.remove(key) == nil, let identity = task.taskDescription else { return }
-        let delivery = deliveries[identity]
-        if let delivery {
-            guard delivery.task.taskIdentifier == key else { return }
+        var delivery = deliveries[identity] ?? Delivery(task: task, request: task.originalRequest)
+        guard delivery.task.taskIdentifier == key, !delivery.completed else { return }
+        if delivery.cancelling {
             deliveries[identity] = nil
-            if delivery.cancelling {
-                if let replacement = delivery.replacement { submit(replacement, identity: identity) }
-                return
-            }
+            if let replacement = delivery.replacement { submit(replacement, identity: identity) }
+            return
         }
+        // Keep the reservation fenced until its owner applies this result.
+        delivery.completed = true
+        deliveries[identity] = delivery
         // OS-delivered completions are valid before the task is restored or React configures uploads.
         let response = task.response as? HTTPURLResponse
-        onCompletion?(identity, response?.statusCode, data, (delivery?.attempt, response?.url, key, "background"),
+        let context = WhoopUploadCompletionContext(
+            attempt: delivery.attempt, responseURL: response?.url, taskIdentifier: key, transportPath: "background",
+            acceptsGzip: response?.value(forHTTPHeaderField: "Accept-Encoding")?.lowercased() == "gzip",
+            sentGzip: task.originalRequest?.value(forHTTPHeaderField: "Content-Encoding") == "gzip"
+        )
+        onCompletion?(identity, response?.statusCode, data, context,
                       wasOversized ? WhoopUploadError(message: "WHOOP upload response exceeds 64 KiB") : error)
     }
 

@@ -6,6 +6,7 @@ import { constants as zlibConstants } from "node:zlib";
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
+import { WHOOP_SENSOR_BATCH_BYTES } from "@dofek/providers/whoop-sensors";
 import { TRPCError } from "@trpc/server";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
@@ -394,6 +395,37 @@ function setupRoutes(
 
   app.use(createAuthRouter(db));
 
+  const sensorUploadProcedures = [
+    "inertialMeasurementUnitSync.pushSamples",
+    "whoopBleSync.pushRealtimeData",
+    "whoopBleSync.pushSensorRecords",
+  ];
+  const parseCompressedSensorUpload = express.json({ limit: WHOOP_SENSOR_BATCH_BYTES });
+  for (const procedure of sensorUploadProcedures) {
+    app.post(`/api/trpc/${procedure}`, (req, res, next) => {
+      if (req.get("content-encoding")?.toLowerCase() === "gzip") {
+        parseCompressedSensorUpload(req, res, (error?: unknown) => {
+          if (typeof error === "object" && error !== null && "status" in error) {
+            if (error.status === 413) {
+              res.status(413).json({
+                error: `Compressed sensor upload exceeds ${WHOOP_SENSOR_BATCH_BYTES} bytes when decoded`,
+              });
+              return;
+            }
+            if (error.status === 400 || error.status === 415) {
+              res.status(error.status).json({ error: "Invalid compressed sensor upload" });
+              return;
+            }
+          }
+          next(error);
+        });
+        return;
+      }
+      // tRPC reads the original request stream for ordinary JSON uploads.
+      next();
+    });
+  }
+
   // tRPC API
   app.use(
     "/api/trpc",
@@ -440,6 +472,17 @@ function setupRoutes(
         if (error.code === "INTERNAL_SERVER_ERROR") {
           captureException(error.cause ?? error, { tags: { trpcPath: path } });
         }
+      },
+      responseMeta({ paths, type, errors }) {
+        if (
+          type === "mutation" &&
+          errors.length === 0 &&
+          paths?.length === 1 &&
+          sensorUploadProcedures.some((procedure) => procedure === paths[0])
+        ) {
+          return { headers: new Headers({ "Accept-Encoding": "gzip" }) };
+        }
+        return {};
       },
       allowMethodOverride: true,
     }),
