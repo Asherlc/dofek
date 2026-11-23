@@ -2,6 +2,8 @@ import { formatDurationMinutes } from "@dofek/format/format";
 import { formatSummaryDateContext } from "@dofek/format/summary-date-context";
 import { isConnectionFailure, userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
+import { useQueryClient } from "@tanstack/react-query";
+import { getQueryKey } from "@trpc/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -49,15 +51,15 @@ export default function OverviewScreen() {
     { staleTime: 10 * 60 * 1000, enabled: dashboardData != null },
   );
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   useFocusEffect(
     useCallback(() => {
-      void utils.insights.compute.refetch(
-        { days: overviewDays, endDate },
-        { exact: true, type: "active", stale: true },
+      const queryKey = getQueryKey(trpc.insights.compute, { days: overviewDays, endDate }, "query");
+      void queryClient.refetchQueries(
+        { queryKey, exact: true, type: "active", stale: true },
         { cancelRefetch: false },
       );
-    }, [utils, endDate]),
+    }, [queryClient, endDate]),
   );
 
   const lastNight = dashboardData?.sleep?.lastNight;
