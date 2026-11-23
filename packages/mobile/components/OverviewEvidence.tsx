@@ -223,7 +223,7 @@ export function OverviewEvidence({
           ) : (
             <SectionState
               query={insights}
-              empty="No insights to display"
+              empty="No relationships met the evidence threshold for this period."
               hideConnectionError={hideConnectionErrors}
             />
           )}

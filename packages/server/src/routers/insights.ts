@@ -19,6 +19,6 @@ export const insightsRouter = router({
       const repo = new InsightsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.computeInsights(range.days, input.endDate);
     },
-    { keyVersion: "insights-evidence-v1" },
+    { keyVersion: "insights-evidence-v3" },
   ),
 });

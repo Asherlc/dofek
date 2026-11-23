@@ -89,7 +89,7 @@ export function joinByDate(
     if (s.duration_minutes) {
       wakeDate.setMinutes(wakeDate.getMinutes() + s.duration_minutes);
     }
-    const dateStr = wakeDate.toISOString().slice(0, 10);
+    const dateStr = s.date ? toDateStr(s.date) : wakeDate.toISOString().slice(0, 10);
     const existing = sleepByWakeDate.get(dateStr);
     if (!existing || (s.duration_minutes ?? 0) > (existing.duration_minutes ?? 0)) {
       sleepByWakeDate.set(dateStr, s);

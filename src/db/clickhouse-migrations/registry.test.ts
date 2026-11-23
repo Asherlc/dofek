@@ -15,7 +15,7 @@ describe("clickHouseMigrations", () => {
     expect(migrations.at(0)?.id).toBe("0001_clickhouse_analytics_schema_cleanup");
     const migrationIds = migrations.map((migration) => migration.id);
     expect(new Set(migrationIds).size).toBe(migrationIds.length);
-    expect(migrationIds.slice(-7)).toEqual([
+    expect(migrationIds.slice(-8)).toEqual([
       "0111_daily_health_sensor",
       "0112_remove_healthspan",
       "0113_activity_fit_recovery_error",
@@ -23,9 +23,10 @@ describe("clickHouseMigrations", () => {
       "0115_restore_user_profile_ftp_mirror_column",
       "0116_exclude_catalog_only_daily_metrics",
       "0117_cycling_polarization_elapsed_seconds",
+      "0118_daily_sleep_wake_date_index",
     ]);
     expect(migrations.at(-1)).toMatchObject({
-      id: "0117_cycling_polarization_elapsed_seconds",
+      id: "0118_daily_sleep_wake_date_index",
     });
     const migrationNumbers = migrationIds.map((migrationId) => Number(migrationId.slice(0, 4)));
     expect(migrationNumbers).toEqual(

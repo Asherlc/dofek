@@ -39815,6 +39815,70 @@ Local qualification and CI are separate from production throughput acceptance. T
   [iOS Overview](../packages/mobile/app/(tabs)/index.tsx) ·
   [iOS sync refresh list](../packages/mobile/lib/invalidate-synced-health-data.ts).
 
+## 2026-11-23 — Overview calculation returned no qualifying relationship
+
+- **Impact and evidence.** One signed-in web Overview showed an empty Key
+  relationship card for August 26 through November 23. Production served
+  the web build from PR #3461. Axiom trace `0427d18404f25c0ebf95e68ebe3bcbfa`
+  records a 3,230 ms cache miss for `insights.compute` at 14:44:51 UTC and
+  HTTP 200 for the enclosing batch. In Axiom, filter `dofek-logs` and
+  `dofek-traces` by that `trace_id` in the November 23 14:44:45–14:45:00 UTC
+  window. The log contains `procedure=insights.compute` and the HTTP span is
+  `POST /api/trpc`.
+  [Axiom trace and log queries](axiom-observability-runbook.md#queries) ·
+  [Refresh PR](https://github.com/Asherlc/dofek/pull/3461) ·
+  [Production release](https://github.com/Asherlc/dofek/actions/runs/45118269517).
+- **Cause and validation.** The integration regression reproduces date
+  assignment and filtering across an inclusive historical window. The
+  previous queries used UTC dates for workouts and sleep, and workouts and
+  nutrition could include inputs after the requested end date. An empty
+  result can occur when the engine finds no relationship that meets the
+  evidence threshold.
+  [Repository](../packages/server/src/repositories/insights-repository.ts) ·
+  [Executable replay](../packages/server/src/repositories/insights-repository.integration.test.ts) ·
+  [Statistical filters](../packages/server/src/insights/engine.ts).
+- **Fix awaiting release.** The Overview reads workouts by their canonical
+  local start date and sleep by local wake date, and caps nutrition at the same
+  inclusive end date. The server cache key changed so refreshes use the
+  corrected calculation. The web and iOS cards explain when no
+  relationship meets the evidence threshold. The regression fixture
+  crosses a daylight-saving change and includes workouts and nutrition
+  after the historical end date. A ClickHouse minmax index on the UTC wake
+  date prunes older sleep data while the exact local filter controls which
+  nights qualify. The regression also verifies that an older version stays
+  excluded when a correction moves its wake date outside the window.
+  [Repository regression](../packages/server/src/repositories/insights-repository.integration.test.ts) ·
+  [Indexed sleep regression](../packages/server/src/repositories/clickhouse-sleep-repository.integration.test.ts) ·
+  [ClickHouse index materialization](https://clickhouse.com/docs/reference/statements/alter/skipping-index#materialize-index).
+
+## 2026-11-23 — Overview PR validation failed in unit and integration checks
+
+- **Impact and evidence.** PR #3465 was blocked. The server unit run expected
+  `insights-evidence-v1` and `AND started_at >` after the route had changed to
+  `insights-evidence-v2` and local calendar dates. The stale expectations
+  also prevented the three Stryker jobs from starting mutation testing.
+  [Unit log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137796538544) ·
+  [Stryker log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137797168711).
+- **Independent integration failure.** Shard 1 reported
+  `Kilter Board app sync failed: Connection aborted` in ten
+  climbing-board persistence tests. The server API suite registered
+  providers first in the shared Vitest worker. The climbing-board suite
+  reused the cached Kilter module bound to the real SDK, bypassing its
+  approved PowerSync fixture. The same two-file order reproduced all ten
+  failures locally.
+  [Integration log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137797003483) ·
+  [Vitest module cache API](https://vitest.dev/api/vi.html#vi-resetmodules).
+- **Fix and local verification.** The Overview unit tests now cover the
+  current cache key and local date query contract. The initial persistence
+  suite fix reset the module cache and imported Kilter after installing the
+  existing SDK fixture. The ordered integration pair passed all 60 tests, and
+  600 focused unit and mobile tests passed. All three changed-line
+  Stryker selections completed locally. The sleep query scored 100% on
+  its five active mutants. The final branch uses the equivalent module cache
+  reset before provider imports from PR #3464. Include the router tests in
+  future Overview cache or range changes and validate the climbing-board
+  fixture after the server suite. [Progression PR](https://github.com/Asherlc/dofek/pull/3464).
+
 ## 2026-11-22 — WHOOP Bluetooth startup reconnect on a new iOS build
 
 - **Impact.** At 19:29:32 Pacific, TestFlight build `1795402168` reported one
