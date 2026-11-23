@@ -4,10 +4,7 @@ import { WHOOP_SENSOR_BATCH_BYTES } from "@dofek/providers/whoop-sensors";
 import { TRPCError } from "@trpc/server";
 import express from "express";
 import { describe, expect, it } from "vitest";
-import {
-  createWhoopUploadEncodingRouter,
-  whoopUploadResponseMeta,
-} from "./whoop-upload-encoding.ts";
+import { mountTrpcWithWhoopEncoding, whoopUploadResponseMeta } from "./whoop-upload-encoding.ts";
 
 const uploadProcedures = [
   "inertialMeasurementUnitSync.pushSamples",
@@ -25,10 +22,11 @@ async function post(
   headers: Record<string, string> = {},
 ) {
   const app = express();
-  app.use(createWhoopUploadEncodingRouter());
-  app.post(/.*/, (req, res) => {
+  const downstream = express.Router();
+  downstream.post(/.*/, (req, res) => {
     res.json("body" in req ? { parsed: true, body: req.body } : { parsed: false });
   });
+  mountTrpcWithWhoopEncoding(app, downstream);
   const server = app.listen(0, "127.0.0.1");
   try {
     await once(server, "listening");
@@ -47,7 +45,7 @@ async function post(
   }
 }
 
-describe("createWhoopUploadEncodingRouter", () => {
+describe("mountTrpcWithWhoopEncoding", () => {
   it.each(uploadProcedures)("decodes gzip submitted to %s", async (procedure) => {
     const result = await post(procedure, compressed, { "content-encoding": "GZIP" });
     expect(result).toEqual({ status: 200, body: { parsed: true, body: sample } });

@@ -1,7 +1,7 @@
 import { WHOOP_SENSOR_BATCH_BYTES } from "@dofek/providers/whoop-sensors";
 import type { AnyRouter } from "@trpc/server";
 import type { ResponseMetaFn } from "@trpc/server/http";
-import { json, Router } from "express";
+import { type Express, json, type RequestHandler } from "express";
 
 const sensorUploadProcedures = [
   "inertialMeasurementUnitSync.pushSamples",
@@ -10,11 +10,10 @@ const sensorUploadProcedures = [
 ];
 
 /** Decode gzip only on the WHOOP upload endpoints before tRPC reads the stream. */
-export function createWhoopUploadEncodingRouter() {
-  const router = Router();
+export function mountTrpcWithWhoopEncoding(app: Express, trpcMiddleware: RequestHandler) {
   const parseCompressedSensorUpload = json({ limit: WHOOP_SENSOR_BATCH_BYTES });
   for (const procedure of sensorUploadProcedures) {
-    router.post(`/api/trpc/${procedure}`, (req, res, next) => {
+    app.post(`/api/trpc/${procedure}`, (req, res, next) => {
       if (req.get("content-encoding")?.toLowerCase() === "gzip") {
         parseCompressedSensorUpload(req, res, (error?: unknown) => {
           if (typeof error === "object" && error !== null && "status" in error) {
@@ -37,7 +36,7 @@ export function createWhoopUploadEncodingRouter() {
       next();
     });
   }
-  return router;
+  app.use("/api/trpc", trpcMiddleware);
 }
 
 type UploadResponseMetaOptions = Pick<

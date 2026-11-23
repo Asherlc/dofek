@@ -72,7 +72,7 @@ import { createOpenAiAppsChallengeRouter } from "./routes/openai-apps-challenge.
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
 import {
-  createWhoopUploadEncodingRouter,
+  mountTrpcWithWhoopEncoding,
   whoopUploadResponseMeta,
 } from "./routes/whoop-upload-encoding.ts";
 import type { Context } from "./trpc.ts";
@@ -398,11 +398,9 @@ function setupRoutes(
 
   app.use(createAuthRouter(db));
 
-  app.use(createWhoopUploadEncodingRouter());
-
   // tRPC API
-  app.use(
-    "/api/trpc",
+  mountTrpcWithWhoopEncoding(
+    app,
     createExpressMiddleware({
       router: appRouter,
       createContext: async ({ req }): Promise<Context> => {
