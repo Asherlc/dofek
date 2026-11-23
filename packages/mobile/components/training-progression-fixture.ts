@@ -39,7 +39,7 @@ export const repImprovementRow: StrengthRow = {
   latestEvidenceDate: "2026-11-20",
 };
 
-export const unbadgedRepImprovementRow: StrengthRow = {
+export const repImprovementWithoutBadge: StrengthRow = {
   ...repImprovementRow,
   identityKey: "bench-dumbbell",
   exerciseId: "dumbbell",
@@ -75,6 +75,6 @@ export const flatBenchmarkRow: StrengthRow = {
 };
 
 export const statusRowWithoutBadgeFirst: StrengthRow[] = [
-  unbadgedRepImprovementRow,
+  repImprovementWithoutBadge,
   repImprovementRow,
 ];

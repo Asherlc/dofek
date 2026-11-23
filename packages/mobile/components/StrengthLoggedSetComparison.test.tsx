@@ -8,7 +8,7 @@ import { loggedSetFixture } from "./strength-logged-set-fixture";
 import {
   flatBenchmarkRow,
   repImprovementRow,
-  unbadgedRepImprovementRow,
+  repImprovementWithoutBadge,
 } from "./training-progression-fixture";
 
 afterEach(cleanup);
@@ -112,7 +112,7 @@ it("shows the selected lift's progression status and follows exercise changes", 
     <StrengthLoggedSetComparison
       data={loggedSetFixture}
       units={new UnitConverter("metric")}
-      progressionRows={[unbadgedRepImprovementRow, repImprovementRow]}
+      progressionRows={[repImprovementWithoutBadge, repImprovementRow]}
     />,
   );
   expect(screen.getByLabelText("Training status: Ready to progress")).toBeTruthy();

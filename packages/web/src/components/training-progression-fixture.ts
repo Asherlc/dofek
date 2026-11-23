@@ -1,7 +1,6 @@
 import type { AppRouterOutputs } from "dofek-server/router";
 
 type StrengthRow = AppRouterOutputs["trainingProgression"]["strength"][number];
-type CyclingResult = AppRouterOutputs["trainingProgression"]["cycling"];
 
 const uuid = (digit: number) => `00000000-0000-0000-0000-${String(digit).padStart(12, "0")}`;
 
@@ -40,7 +39,7 @@ export const repImprovementRow: StrengthRow = {
   latestEvidenceDate: "2026-11-20",
 };
 
-export const unbadgedRepImprovementRow: StrengthRow = {
+export const repImprovementWithoutBadge: StrengthRow = {
   ...repImprovementRow,
   identityKey: "bench-dumbbell",
   exerciseId: "dumbbell",
@@ -76,86 +75,6 @@ export const flatBenchmarkRow: StrengthRow = {
 };
 
 export const statusRowWithoutBadgeFirst: StrengthRow[] = [
-  unbadgedRepImprovementRow,
+  repImprovementWithoutBadge,
   repImprovementRow,
 ];
-
-export const cyclingResultFixture: NonNullable<CyclingResult> = {
-  status: "ready",
-  basis: "recorded_work_protocol",
-  comparison: {
-    intervalCount: 2,
-    largestDurationDifferencePct: 2,
-    largestMeanPowerDifferencePct: 3,
-  },
-  rides: [
-    {
-      role: "selected",
-      activityId: uuid(7),
-      date: "2026-11-20",
-      sessionEffort: 4,
-      modality: "cycling",
-      exactWorkoutIdentities: [],
-      intervalCount: 2,
-      intervals: [
-        {
-          index: 1,
-          workDurationSeconds: 120,
-          meanPowerWatts: 220,
-          powerCoveragePct: 98,
-          sourceProvider: "zwift",
-          sourceActivityId: null,
-          sourceMemberActivityIds: [],
-        },
-        {
-          index: 2,
-          workDurationSeconds: 180,
-          meanPowerWatts: 210,
-          powerCoveragePct: 96,
-          sourceProvider: "zwift",
-          sourceActivityId: null,
-          sourceMemberActivityIds: [],
-        },
-      ],
-      powerProvenance: {
-        measurementKind: "direct",
-        providers: ["zwift"],
-        devices: ["kickr"],
-      },
-    },
-    {
-      role: "comparison",
-      activityId: uuid(8),
-      date: "2026-11-06",
-      sessionEffort: 4,
-      modality: "cycling",
-      exactWorkoutIdentities: [],
-      intervalCount: 2,
-      intervals: [
-        {
-          index: 1,
-          workDurationSeconds: 121,
-          meanPowerWatts: 218,
-          powerCoveragePct: 97,
-          sourceProvider: "zwift",
-          sourceActivityId: null,
-          sourceMemberActivityIds: [],
-        },
-        {
-          index: 2,
-          workDurationSeconds: 179,
-          meanPowerWatts: 212,
-          powerCoveragePct: 99,
-          sourceProvider: "zwift",
-          sourceActivityId: null,
-          sourceMemberActivityIds: [],
-        },
-      ],
-      powerProvenance: {
-        measurementKind: "direct",
-        providers: ["zwift"],
-        devices: ["kickr"],
-      },
-    },
-  ],
-};

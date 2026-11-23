@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { overviewEvidenceFixture } from "../../app-fixtures/(tabs)/overview-evidence";
 import {
   repImprovementRow,
-  unbadgedRepImprovementRow,
+  repImprovementWithoutBadge,
 } from "../../components/training-progression-fixture";
 
 const mockRouterPush = vi.fn();
@@ -263,7 +263,7 @@ describe("TodayScreen independent loading states", () => {
 
   it("shows one latest eligible strength status and opens the strength evidence", async () => {
     mockTrainingProgressionStrengthQuery.mockReturnValue({
-      data: [unbadgedRepImprovementRow, repImprovementRow],
+      data: [repImprovementWithoutBadge, repImprovementRow],
       isLoading: false,
       error: null,
     });

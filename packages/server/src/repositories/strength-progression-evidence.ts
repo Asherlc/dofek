@@ -49,7 +49,7 @@ function dateSpanDays(first: string, last: string): number {
 /**
  * A set's position is taken from its recorded exercise occurrence, ordinal, and
  * set type, never from a compacted list of working sets: dropping an invalid
- * neighbour must not move a valid set into another session's slot, and drop or
+ * neighbor must not move a valid set into another session's slot, and drop or
  * failure variants must not be compared as ordinary working sets.
  */
 function positionKey(set: EvidenceSet): string {
@@ -99,12 +99,14 @@ function assessEffort(observations: StrengthEvidenceObservation[]): EffortAssess
   const first = observations[0];
   if (!first) throw new Error("Effort assessment requires at least one observation");
   const providers = unique(observations.map((observation) => observation.provider));
-  const recordedRpes = observations.flatMap((observation) =>
+  const recordedRatings = observations.flatMap((observation) =>
     observation.rpe === null ? [] : [observation.rpe],
   );
-  const fullyRecorded = recordedRpes.length === observations.length;
+  const fullyRecorded = recordedRatings.length === observations.length;
   const spread =
-    recordedRpes.length === 0 ? null : Math.max(...recordedRpes) - Math.min(...recordedRpes);
+    recordedRatings.length === 0
+      ? null
+      : Math.max(...recordedRatings) - Math.min(...recordedRatings);
   return {
     provider: first.provider,
     rpeSpread: spread === null ? null : round(spread),

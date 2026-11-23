@@ -105,7 +105,7 @@ vi.mock("../lib/unitContext.ts", () => ({
 
 import {
   repImprovementRow,
-  unbadgedRepImprovementRow,
+  repImprovementWithoutBadge,
 } from "../components/training-progression-fixture.ts";
 import { Dashboard } from "./Dashboard";
 
@@ -183,7 +183,7 @@ describe("Dashboard", () => {
 
   it("shows one latest eligible strength status with a link that opens Strength", () => {
     mockTrainingProgressionStrengthQuery.mockReturnValue({
-      data: [unbadgedRepImprovementRow, repImprovementRow],
+      data: [repImprovementWithoutBadge, repImprovementRow],
       isLoading: false,
       error: null,
     });

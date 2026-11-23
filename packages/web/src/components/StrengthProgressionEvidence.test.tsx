@@ -5,7 +5,7 @@ import { StrengthProgressionEvidence } from "./StrengthProgressionEvidence.tsx";
 import {
   flatBenchmarkRow,
   repImprovementRow,
-  unbadgedRepImprovementRow,
+  repImprovementWithoutBadge,
 } from "./training-progression-fixture.ts";
 
 afterEach(cleanup);
@@ -35,7 +35,7 @@ it("shows effort on recorded sets that have an RPE", () => {
 });
 
 it("omits effort on recorded sets whose RPE is null", () => {
-  render(<StrengthProgressionEvidence row={unbadgedRepImprovementRow} />);
+  render(<StrengthProgressionEvidence row={repImprovementWithoutBadge} />);
   fireEvent.click(screen.getByText("See recorded sets"));
   expect(screen.queryByText(/Effort/)).toBeNull();
 });

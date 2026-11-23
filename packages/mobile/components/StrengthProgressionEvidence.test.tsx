@@ -5,7 +5,7 @@ import { StrengthProgressionEvidence } from "./StrengthProgressionEvidence";
 import {
   flatBenchmarkRow,
   repImprovementRow,
-  unbadgedRepImprovementRow,
+  repImprovementWithoutBadge,
 } from "./training-progression-fixture";
 
 afterEach(cleanup);
@@ -46,7 +46,7 @@ it("shows effort on recorded sets that have an RPE", () => {
 it("omits effort on recorded sets whose RPE is null", () => {
   render(
     <StrengthProgressionEvidence
-      row={unbadgedRepImprovementRow}
+      row={repImprovementWithoutBadge}
       units={new UnitConverter("metric")}
     />,
   );

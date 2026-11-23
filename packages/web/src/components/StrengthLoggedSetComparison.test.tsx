@@ -7,7 +7,7 @@ import { loggedSetFixture } from "./strength-logged-set-fixture.ts";
 import {
   flatBenchmarkRow,
   repImprovementRow,
-  unbadgedRepImprovementRow,
+  repImprovementWithoutBadge,
 } from "./training-progression-fixture.ts";
 
 afterEach(cleanup);
@@ -74,7 +74,7 @@ it("shows the selected lift's progression status and follows exercise changes", 
   render(
     <StrengthLoggedSetComparison
       data={loggedSetFixture}
-      progressionRows={[unbadgedRepImprovementRow, repImprovementRow]}
+      progressionRows={[repImprovementWithoutBadge, repImprovementRow]}
     />,
   );
   const status = () => screen.getByRole("region", { name: "Training progression status" });

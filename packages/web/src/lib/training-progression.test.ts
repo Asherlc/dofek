@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   flatBenchmarkRow,
   repImprovementRow,
+  repImprovementWithoutBadge,
   statusRowWithoutBadgeFirst,
-  unbadgedRepImprovementRow,
 } from "../components/training-progression-fixture.ts";
 import {
   firstStatusRow,
@@ -24,7 +24,9 @@ describe("training progression client formatting", () => {
   });
 
   it("summarizes recorded rep improvement without assigning a status", () => {
-    expect(strengthEvidenceSummary(unbadgedRepImprovementRow)).toBe("More reps at the same weight");
+    expect(strengthEvidenceSummary(repImprovementWithoutBadge)).toBe(
+      "More reps at the same weight",
+    );
     expect(strengthEvidenceSummary(repImprovementRow)).toBe("More reps at the same weight");
   });
 
