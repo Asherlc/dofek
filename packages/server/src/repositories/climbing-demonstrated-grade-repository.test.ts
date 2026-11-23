@@ -338,3 +338,43 @@ describe("ClimbingDemonstratedGradeRepository published grades", () => {
     expect(cell?.grades.map(({ grade }) => grade)).toEqual(grades);
   });
 });
+
+describe("ClimbingDemonstratedGradeRepository Kaya color display", () => {
+  it("uses recorded Kaya colors for unnamed boulders", async () => {
+    const rows = ["blue", "green", "red"].map((color) => ({
+      attempt_id: color,
+      target_id: color,
+      log_entry_id: color,
+      climb_external_id: color,
+      provider: "Kaya",
+      provider_id: "kaya",
+      climb_kind: "boulder" as const,
+      climb_setting: "indoor" as const,
+      rope_method: null,
+      climbed_on: "2026-11-01",
+      published_grades: [{ value: "V4", system: "v_scale" }],
+      wall_angle: null,
+      log_raw: { climb: { color } },
+      title: null,
+      climb_name: null,
+      activity_id: null,
+      source_completed: true,
+      source_result: "Send",
+      ascent_style: "Send",
+      fell_or_hung: false,
+      used_aid: false,
+      dabbed: false,
+    }));
+
+    const repository = new ClimbingDemonstratedGradeRepository(
+      { execute: vi.fn().mockResolvedValue(rows) },
+      "owner",
+    );
+    const result = await repository.getDemonstratedGrade({ endDate: "2026-11-21" });
+    const cell = result.cells.find(
+      ({ type, setting }) => type === "bouldering" && setting === "indoor",
+    );
+    const displayNames = cell?.grades[0]?.sends.map((send) => send.displayName).sort();
+    expect(displayNames).toEqual(["Blue boulder", "Green boulder", "Red boulder"]);
+  });
+});
