@@ -39789,3 +39789,24 @@ Local qualification and CI are separate from production throughput acceptance. T
   effort read permission. A workout resync preserves existing ratings. The
   fix requires a new native iOS build. Physical-device validation of the
   battery impact remains pending.
+
+## 2026-11-22 — WHOOP Bluetooth startup reconnect on a new iOS build
+
+- **Impact.** At 19:29:32 Pacific, TestFlight build `1795402168` reported one
+  handled `Error: Disconnected` during background WHOOP startup sync. The
+  startup connection request failed for one user. Native streaming resumed
+  345 ms after the disconnect. [Sentry event](https://east-bay-software.sentry.io/issues/7862510884/events/be99543b8b874956a8442b5840695ce5/)
+  · [TestFlight upload](https://github.com/Asherlc/dofek/actions/runs/45104042610/job/137461189371).
+- **Cause and evidence.** Axiom's `dofek-logs` recorded the restored connection
+  timing out in service discovery at `03:29:32.326 UTC`. The explicit startup
+  connection request reached the native manager in `disconnecting` at
+  `03:29:32.334 UTC`, where the manager rejects the request with `Disconnected`.
+  The same launch finished downloading an Expo update about one second before
+  the error and was still running the build's embedded bundle. The reason
+  service discovery stalled is unresolved. [Axiom query guide](axiom-observability-runbook.md#queries)
+  · [Deployed connection guard](https://github.com/Asherlc/dofek/blob/b69aa23852017d61b79f0f859d2a9dee7ee073be/packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift#L168-L178)
+  · [Expo update behavior](https://docs.expo.dev/eas-update/download-updates/).
+- **Recovery and follow-up.** The existing automatic reconnect restored
+  streaming at `03:29:32.686 UTC` on the same bundle. Axiom's next capture
+  snapshot recorded fresh Bluetooth samples. If the alert recurs, inspect
+  whether native streaming recovers and whether uploads catch up. [Deployed reconnect path](https://github.com/Asherlc/dofek/blob/b69aa23852017d61b79f0f859d2a9dee7ee073be/packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager%2BCoreBluetooth.swift#L113-L132).
