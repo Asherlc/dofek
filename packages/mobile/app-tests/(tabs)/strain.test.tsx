@@ -37,6 +37,7 @@ import {
   mockRouteComparisonQuery,
   mockRouterPush,
   mockRunningInvalidate,
+  mockStrengthProgressionQuery,
   mockStrengthsState,
   mockTrainingInvalidate,
   mockTrainingState,
@@ -45,6 +46,15 @@ import {
 } from "./strain-test-helpers";
 
 describe("StrainScreen", () => {
+  it("loads strength progression rows for the Strength section", async () => {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    render(<TrainingAnalysis section="strength" isFocused />);
+    expect(mockStrengthProgressionQuery).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ enabled: true }),
+    );
+  });
+
   it("requests the power profile for the selected Cycling range", async () => {
     mockQueryState.timeRangePreference.days = 30;
     const { TrainingAnalysis } = await import("../../app/strain");

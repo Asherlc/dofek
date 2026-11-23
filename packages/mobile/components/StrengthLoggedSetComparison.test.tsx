@@ -5,6 +5,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { StrengthLoggedSetComparison } from "./StrengthLoggedSetComparison";
 import { loggedSetFixture } from "./strength-logged-set-fixture";
+import {
+  flatBenchmarkRow,
+  repImprovementRow,
+  unbadgedRepImprovementRow,
+} from "./training-progression-fixture";
 
 afterEach(cleanup);
 it("renders exact rep evidence and missing sessions", () => {
@@ -100,4 +105,50 @@ it("preserves server calendar dates in sessions and comparison endpoints", () =>
   expect(screen.getByText("Nov 3, 2026 to Nov 20, 2026")).toBeTruthy();
   expect(screen.getByText("Nov 3, 2026 · 3 logged sets")).toBeTruthy();
   expect(screen.getByText("Nov 12, 2026 · 2 logged sets")).toBeTruthy();
+});
+
+it("shows the selected lift's progression status and follows exercise changes", () => {
+  render(
+    <StrengthLoggedSetComparison
+      data={loggedSetFixture}
+      units={new UnitConverter("metric")}
+      progressionRows={[unbadgedRepImprovementRow, repImprovementRow]}
+    />,
+  );
+  expect(screen.getByLabelText("Training status: Ready to progress")).toBeTruthy();
+  expect(screen.getByLabelText("Training progression status: Bench press · Barbell")).toBeTruthy();
+  expect(screen.getByText("More reps at the same weight")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Bench press · Dumbbell" }));
+  expect(screen.queryByLabelText("Training status: Ready to progress")).toBeNull();
+  expect(screen.getByLabelText("Training progression status: Bench press · Dumbbell")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Bench press · Barbell" }));
+  expect(screen.getByLabelText("Training status: Ready to progress")).toBeTruthy();
+});
+
+it("shows a flat benchmark status for the selected lift", () => {
+  render(
+    <StrengthLoggedSetComparison
+      data={loggedSetFixture}
+      units={new UnitConverter("metric")}
+      progressionRows={[{ ...flatBenchmarkRow, exerciseId: "bench" }]}
+    />,
+  );
+  expect(screen.getByLabelText("Training status: Stagnating")).toBeTruthy();
+  expect(
+    screen.getByText("Estimated strength held steady across 7 comparable sessions."),
+  ).toBeTruthy();
+});
+
+it("keeps the comparison usable when no progression rows match", () => {
+  render(
+    <StrengthLoggedSetComparison
+      data={loggedSetFixture}
+      units={new UnitConverter("metric")}
+      progressionRows={[]}
+    />,
+  );
+  expect(screen.queryByLabelText("Training status: Ready to progress")).toBeNull();
+  expect(screen.getByText("12")).toBeTruthy();
 });

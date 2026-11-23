@@ -11,6 +11,13 @@ import { OverviewEvidence, overviewDays } from "../../components/OverviewEvidenc
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProviderGuide } from "../../components/ProviderGuide";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
+import { StrengthProgressionEvidence } from "../../components/StrengthProgressionEvidence";
+import { TrainingProgressionStatusCard } from "../../components/TrainingProgressionStatusCard";
+import {
+  firstStatusRow,
+  strengthEvidenceSummary,
+  strengthHeadline,
+} from "../../lib/training-progression";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
@@ -29,6 +36,8 @@ export default function OverviewScreen() {
   const insightsQuery = trpc.insights.compute.useQuery(overviewInput, overviewOptions);
   const trendsQuery = trpc.dailyMetrics.trends.useQuery(overviewInput, overviewOptions);
   const heartRateQuery = trpc.dailyMetrics.hrvBaseline.useQuery(overviewInput, overviewOptions);
+  const strengthProgression = trpc.trainingProgression.strength.useQuery();
+  const latestStrengthStatus = firstStatusRow(strengthProgression.data);
 
   // Consolidated dashboard data fetch
   const dashboardQuery = trpc.mobileDashboard.dashboardV2.useQuery(
@@ -61,6 +70,7 @@ export default function OverviewScreen() {
     trendsQuery.error,
     heartRateQuery.error,
     processingStatusQuery.error,
+    strengthProgression.error,
   ].filter((error) => error != null && isConnectionFailure(error));
   const sharedConnectionFailure = connectionFailures.length > 1;
 
@@ -73,6 +83,7 @@ export default function OverviewScreen() {
         heartRateQuery.refetch(),
         anomalyQuery.refetch(),
         processingStatusQuery.refetch(),
+        strengthProgression.refetch(),
       ]);
     },
     invalidate: null,
@@ -125,6 +136,33 @@ export default function OverviewScreen() {
         }
         loading={processingStatusQuery.isLoading}
       />
+
+      {strengthProgression.error &&
+      !(sharedConnectionFailure && isConnectionFailure(strengthProgression.error)) ? (
+        <QueryStatePanel
+          variant="error"
+          message={getQueryErrorMessage(strengthProgression.error)}
+          minHeight={72}
+        />
+      ) : null}
+      {latestStrengthStatus ? (
+        <TrainingProgressionStatusCard
+          status={latestStrengthStatus.status}
+          headline={strengthHeadline(latestStrengthStatus)}
+          summary={strengthEvidenceSummary(latestStrengthStatus)}
+          details={<StrengthProgressionEvidence row={latestStrengthStatus} units={units} />}
+          action={
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={() =>
+                router.push({ pathname: "/training/[section]", params: { section: "strength" } })
+              }
+            >
+              <Text style={styles.statusLink}>Open Strength</Text>
+            </TouchableOpacity>
+          }
+        />
+      ) : null}
 
       <OverviewEvidence
         endDate={endDate}
@@ -251,6 +289,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textTertiary,
   },
+  statusLink: { color: colors.accent, fontSize: 14 },
   // Anomaly banner
   anomalyBanner: {
     flexDirection: "row",

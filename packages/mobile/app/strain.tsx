@@ -222,6 +222,10 @@ export function TrainingAnalysis({
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
+  const strengthProgressionQuery = trpc.trainingProgression.strength.useQuery(undefined, {
+    enabled: isHydrated && show("strength"),
+    placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+  });
   useReportQueryError(loggedSetsQuery);
   const strengthVolumeQuery = trpc.strength.volumeOverTime.useQuery(
     { days },
@@ -510,6 +514,7 @@ export function TrainingAnalysis({
             loading={loggedSetsQuery.isLoading}
             error={loggedSetsQuery.error}
             units={units}
+            progressionRows={strengthProgressionQuery.data}
           />
           {strengthVolumeQuery.error ? (
             <QueryStatePanel variant="error" message={strengthVolumeQuery.error.message} />

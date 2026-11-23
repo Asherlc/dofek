@@ -42,6 +42,13 @@ export const mockAttemptIncreaseInvalidate = vi.fn();
 export const mockBestOnsightQuery = vi.fn();
 export const mockBestOnsightRefetch = vi.fn();
 export const mockBestOnsightInvalidate = vi.fn();
+export const mockStrengthProgressionQuery = vi.fn(
+  (): { data: unknown[]; isLoading: boolean; error: unknown } => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  }),
+);
 type MockRangeQueryOptions = {
   enabled?: boolean;
   refetchInterval?: (query: {
@@ -251,6 +258,9 @@ vi.mock("../../lib/trpc", () => ({
       },
       demonstratedGrade: { useQuery: mockDemonstratedGradeQuery },
     },
+    trainingProgression: {
+      strength: { useQuery: mockStrengthProgressionQuery },
+    },
     strength: {
       loggedSetComparison: {
         useQuery: (input: { days: number | null }, options: MockRangeQueryOptions) => {
@@ -421,6 +431,11 @@ export function resetStrainMocks() {
   });
   mockBestOnsightRefetch.mockReset().mockResolvedValue(undefined);
   mockBestOnsightInvalidate.mockReset().mockResolvedValue(undefined);
+  mockStrengthProgressionQuery.mockReset().mockReturnValue({
+    data: [],
+    isLoading: false,
+    error: null,
+  });
   mockQueryState.runningData = { ...runningData, data: [] };
   mockQueryState.runningLoading = false;
   mockQueryState.runningError = null;
