@@ -291,7 +291,9 @@ describe("TodayScreen independent loading states", () => {
     rerender(<OverviewScreen />);
 
     expect(screen.getByRole("button", { name: "Open last night sleep details" })).toBeTruthy();
-    expect(screen.getByText("14.0 breaths/min")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Respiratory rate/ }).textContent).toContain(
+      "14.0 breaths/min",
+    );
     expect(screen.getByText("92.0%")).toBeTruthy();
     expect(screen.getByText("52 bpm")).toBeTruthy();
     expect(screen.getAllByText("Waiting for a connection")).toHaveLength(2);

@@ -504,7 +504,65 @@ describe("HealthStatusBar", () => {
       expect(within(row).getByText(metric.label)).toBeTruthy();
       expect(within(row).getByText(metric.valueText)).toBeTruthy();
       expect(within(row).getByText(/Near baseline/)).toBeTruthy();
+
+      const renderedOrder = row.textContent ?? "";
+      expect(renderedOrder.indexOf(metric.label)).toBeLessThan(
+        renderedOrder.indexOf(metric.valueText),
+      );
+      expect(renderedOrder.indexOf(metric.valueText)).toBeLessThan(
+        renderedOrder.indexOf("Near baseline"),
+      );
     }
+  });
+
+  it("keeps one grouped tile open at a time while preserving each tile's details", () => {
+    const hrvExplanation = "HRV is close to your usual range.";
+    const stepsExplanation = "Steps is close to your usual range.";
+    render(
+      <HealthStatusBar
+        grouped
+        metrics={[
+          {
+            ...serverMetric,
+            metric: "hrv",
+            label: "Heart Rate Variability (HRV)",
+            valueText: "52 ms",
+            explanation: hrvExplanation,
+          },
+          {
+            ...serverMetric,
+            metric: "steps",
+            label: "Steps",
+            valueText: "7,640",
+            explanation: stepsExplanation,
+          },
+        ]}
+      />,
+    );
+
+    const hrv = screen.getByRole("button", {
+      name: "Heart Rate Variability (HRV), 52 ms, Near baseline. Show details",
+    });
+    const steps = screen.getByRole("button", {
+      name: "Steps, 7,640, Near baseline. Show details",
+    });
+
+    fireEvent.click(hrv);
+    expect(hrv.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText(hrvExplanation)).toBeTruthy();
+    expect(screen.queryByText(stepsExplanation)).toBeNull();
+
+    fireEvent.click(steps);
+    expect(hrv.getAttribute("aria-expanded")).toBe("false");
+    expect(steps.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.queryByText(hrvExplanation)).toBeNull();
+    expect(screen.getByText(stepsExplanation)).toBeTruthy();
+
+    fireEvent.click(hrv);
+    expect(hrv.getAttribute("aria-expanded")).toBe("true");
+    expect(steps.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText(hrvExplanation)).toBeTruthy();
+    expect(screen.queryByText(stepsExplanation)).toBeNull();
   });
 
   it("keeps the grouped blocked action outside the disclosure and reuses expanded details", () => {

@@ -37,6 +37,16 @@ const statusSymbols: Record<HealthStatusMetric["statusToken"], string> = {
   far_from_baseline: "×",
 };
 
+const groupedTileGridClass =
+  "grid grid-cols-1 items-start gap-2 @min-[15rem]:grid-cols-2 @md:grid-cols-3";
+
+const groupedInterpretationColors: Record<HealthStatusMetric["statusColor"], string> = {
+  positive: "text-accent",
+  warning: "text-amber-700 dark:text-amber-400",
+  danger: "text-danger",
+  muted: "text-subtle",
+};
+
 function MetricValue({ value }: { value: number | null }) {
   const decimals = value != null && !Number.isInteger(value) ? 1 : 0;
   const display = useCountUp(value, 600, decimals);
@@ -259,80 +269,92 @@ function GroupedHealthStatusList({
   const [expandedMetric, setExpandedMetric] = useState<HealthMetricKey | null>(null);
   const idPrefix = useId();
   return (
-    <div className="card divide-y divide-border overflow-hidden">
-      {metrics.map((metric) => {
-        const formatter = formatters[metric.metric];
-        const comparisonDeltaFormatter = comparisonFormatters[metric.metric] ?? formatter;
-        const baselineContext = baselineRelative.find(
-          (candidate) => candidate.metric === metric.metric,
-        );
-        const { baselineDetails, comparisonDetails } = metricDetailText({
-          metric,
-          baselineContext,
-          formatter,
-          comparisonDeltaFormatter,
-          unit: units[metric.metric],
-        });
-        const blocked = metric.baselineProgress.blocker !== null;
-        const interpretation = formatHealthStatusLabel(metric);
-        const expanded = expandedMetric === metric.metric;
-        const detailsId = `${idPrefix}-${metric.metric}`;
-        const accessibleName = `${metric.label}, ${metricValueText(metric, formatter, units[metric.metric])}, ${interpretation}. ${expanded ? "Hide" : "Show"} details`;
-        return (
-          <div key={metric.metric}>
-            <button
-              type="button"
-              aria-expanded={expanded}
-              aria-controls={detailsId}
-              aria-label={accessibleName}
-              onClick={() => setExpandedMetric(expanded ? null : metric.metric)}
-              className="flex min-h-14 w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 text-left hover:bg-surface"
-            >
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-[11px] font-medium uppercase leading-tight tracking-wide text-muted">
+    <div className="@container">
+      <div className={groupedTileGridClass}>
+        {metrics.map((metric) => {
+          const formatter = formatters[metric.metric];
+          const comparisonDeltaFormatter = comparisonFormatters[metric.metric] ?? formatter;
+          const baselineContext = baselineRelative.find(
+            (candidate) => candidate.metric === metric.metric,
+          );
+          const { baselineDetails, comparisonDetails } = metricDetailText({
+            metric,
+            baselineContext,
+            formatter,
+            comparisonDeltaFormatter,
+            unit: units[metric.metric],
+          });
+          const blocked = metric.baselineProgress.blocker !== null;
+          const interpretation = formatHealthStatusLabel(metric);
+          const expanded = expandedMetric === metric.metric;
+          const detailsId = `${idPrefix}-${metric.metric}`;
+          const accessibleName = `${metric.label}, ${metricValueText(metric, formatter, units[metric.metric])}, ${interpretation}. ${expanded ? "Hide" : "Show"} details`;
+          return (
+            <div key={metric.metric} className="card">
+              <button
+                type="button"
+                aria-expanded={expanded}
+                aria-controls={detailsId}
+                aria-label={accessibleName}
+                onClick={() => setExpandedMetric(expanded ? null : metric.metric)}
+                className="flex w-full flex-col items-start gap-1 px-2.5 py-2 text-left"
+              >
+                <span className="text-[13px] font-medium leading-tight text-muted [overflow-wrap:anywhere]">
                   {metric.label}
                 </span>
-                <span className="text-[11px] leading-tight text-subtle">{interpretation}</span>
-              </span>
-              <span className="flex shrink-0 items-center gap-2">
-                <span className="font-mono text-base font-semibold tabular-nums">
-                  <MetricDisplay
-                    metric={metric}
-                    formatter={formatter}
-                    unit={units[metric.metric]}
-                  />
+                <span className="flex w-full items-start justify-between gap-2">
+                  <span className="min-w-0 font-mono text-xl font-semibold tabular-nums [overflow-wrap:anywhere]">
+                    <MetricDisplay
+                      metric={metric}
+                      formatter={formatter}
+                      unit={units[metric.metric]}
+                    />
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className={`mt-1 shrink-0 text-base leading-none text-dim transition-transform ${expanded ? "rotate-90" : ""}`}
+                  >
+                    ›
+                  </span>
                 </span>
                 <span
-                  aria-hidden="true"
-                  className={`inline-block text-base leading-none text-dim transition-transform ${expanded ? "rotate-90" : ""}`}
+                  className={`text-[11px] leading-tight [overflow-wrap:anywhere] ${
+                    metric.statusToken === "near_baseline"
+                      ? "text-subtle"
+                      : groupedInterpretationColors[metric.statusColor]
+                  }`}
                 >
-                  ›
+                  {interpretation}
                 </span>
-              </span>
-            </button>
-            {blocked && metric.baselineProgress.blocker !== "syncing" ? (
-              <section
-                aria-label={`${metric.label} baseline progress`}
-                className="px-4 pb-3 text-[11px] font-medium text-foreground"
+              </button>
+              {blocked && metric.baselineProgress.blocker !== "syncing" ? (
+                <section
+                  aria-label={`${metric.label} baseline progress`}
+                  className="mt-2 px-2.5 pb-2 text-[11px] font-medium text-foreground [overflow-wrap:anywhere]"
+                >
+                  {metric.baselineProgress.action}
+                </section>
+              ) : null}
+              <div
+                id={detailsId}
+                hidden={!expanded}
+                className="mt-2 border-t border-border px-2.5 pb-2 pt-2"
               >
-                {metric.baselineProgress.action}
-              </section>
-            ) : null}
-            <div id={detailsId} hidden={!expanded} className="px-4 pb-3">
-              <div className="space-y-1 border-l border-border pl-2 text-[11px] text-subtle">
-                {expanded ? (
-                  <HealthMetricDetailsBody
-                    metric={metric}
-                    baselineDetails={baselineDetails}
-                    comparisonDetails={comparisonDetails}
-                    showBlockedEvaluationRule
-                  />
-                ) : null}
+                <div className="space-y-1 text-[11px] text-subtle [overflow-wrap:anywhere]">
+                  {expanded ? (
+                    <HealthMetricDetailsBody
+                      metric={metric}
+                      baselineDetails={baselineDetails}
+                      comparisonDetails={comparisonDetails}
+                      showBlockedEvaluationRule
+                    />
+                  ) : null}
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -349,12 +371,14 @@ export function HealthStatusBar({
   if (loading) {
     if (grouped) {
       return (
-        <div className="card divide-y divide-border overflow-hidden">
-          {["skeleton-1", "skeleton-2", "skeleton-3", "skeleton-4", "skeleton-5"].map((id) => (
-            <div key={id} className="h-14 px-4 py-3">
-              <div className="h-4 w-2/3 rounded shimmer" />
-            </div>
-          ))}
+        <div className="@container">
+          <div className={groupedTileGridClass}>
+            {["skeleton-1", "skeleton-2", "skeleton-3", "skeleton-4", "skeleton-5"].map((id) => (
+              <div key={id} className="card h-20 p-3">
+                <div className="h-4 w-2/3 rounded shimmer" />
+              </div>
+            ))}
+          </div>
         </div>
       );
     }
