@@ -1,5 +1,9 @@
 vi.mock("../../components/StrengthLoggedSetComparison", () => ({
-  StrengthLoggedSetComparison: () => <div />,
+  StrengthLoggedSetComparison: ({
+    progressionRows,
+  }: {
+    progressionRows?: Array<{ identityKey: string }>;
+  }) => <div data-testid="progression-rows-count">{progressionRows?.length ?? 0}</div>,
 }));
 
 /** @vitest-environment jsdom */
@@ -25,10 +29,12 @@ const state: {
     error: Error | null;
   };
   dailyMetricsQuery: { data: unknown; isLoading: boolean; error: Error | null };
+  trainingProgressionStrengthQuery: { data: unknown; isLoading: boolean; error: Error | null };
 } = {
   days: 90,
   queryCalls: [],
   routeComponents: {},
+  trainingProgressionStrengthQuery: { data: [], isLoading: false, error: null },
   trainingVolumeQuery: { data: [], isLoading: false, error: null },
   trainingHrZonesQuery: {
     data: {
@@ -159,6 +165,14 @@ vi.mock("../../lib/trpc.ts", () => ({
         },
       },
     },
+    trainingProgression: {
+      strength: {
+        useQuery: (input: unknown, options?: unknown) => {
+          state.queryCalls.push({ name: "trainingProgression.strength", input, options });
+          return state.trainingProgressionStrengthQuery;
+        },
+      },
+    },
     strength: {
       loggedSetComparison: { useQuery: recordQuery("strength.loggedSetComparison") },
       estimatedOneRepMax: { useQuery: recordQuery("strength.estimatedOneRepMax") },
@@ -208,6 +222,7 @@ export function expectRegistryInputs(
 export function resetRangePlumbingState() {
   state.days = 90;
   state.queryCalls.length = 0;
+  state.trainingProgressionStrengthQuery = { data: [], isLoading: false, error: null };
   state.trainingVolumeQuery = { data: [], isLoading: false, error: null };
   state.dailyMetricsQuery = { data: [], isLoading: false, error: null };
   state.trainingHrZonesQuery = {

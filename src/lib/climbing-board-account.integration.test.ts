@@ -11,18 +11,24 @@ import { executeWithSchema } from "../db/typed-sql.ts";
 import { AuroraBoardProvider } from "../providers/aurora-board.ts";
 import { DecoyProvider } from "../providers/decoy.ts";
 import { GrasshopperProvider } from "../providers/grasshopper.ts";
+import { KilterProvider } from "../providers/kilter.ts";
 import { SoillProvider } from "../providers/soill.ts";
 import { SyncRun } from "../providers/sync-run.ts";
 import { SyncWindow } from "../providers/sync-window.ts";
 import { TensionProvider } from "../providers/tension.ts";
 import { TouchstoneProvider } from "../providers/touchstone.ts";
 import type { SyncProvider } from "../providers/types.ts";
-import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 
-const sdk = vi.hoisted(() => ({
-  getAll: vi.fn<(query: string) => Promise<unknown[]>>(),
-}));
+const sdk = await vi.hoisted(async () => {
+  const { createIntegrationMswFixture } = await import("../test/early-msw-lifecycle.ts");
+  vi.resetModules();
+  return {
+    getAll: vi.fn<(query: string) => Promise<unknown[]>>(),
+    server: createIntegrationMswFixture(),
+  };
+});
+const server = sdk.server;
 // Approved SDK-only exception: PowerSync's private Undici socket bypasses MSW.
 // REST remains on MSW, and persistence uses real PostgreSQL.
 vi.mock("@powersync/node", async (original) => ({
@@ -79,10 +85,8 @@ const bid = {
   climbed_at: "2026-10-02 00:00:00",
   bid_count: 2,
 };
-const server = createIntegrationMswFixture();
 
 describe("board account canonical persistence", () => {
-  let KilterProvider: typeof import("../providers/kilter.ts").KilterProvider;
   let context: TestContext;
   let logs: unknown;
   let syncedLogs: Array<typeof syncedLog>;
@@ -90,10 +94,6 @@ describe("board account canonical persistence", () => {
   let pageIndex: number;
 
   beforeAll(async () => {
-    // Earlier suites can load Kilter with the real SDK in this shared worker.
-    // Keep the already registered MSW fixture and reimport Kilter with the SDK mock.
-    vi.resetModules();
-    ({ KilterProvider } = await import("../providers/kilter.ts"));
     context = await setupTestDatabase();
     server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await context.db.execute(
@@ -145,7 +145,7 @@ describe("board account canonical persistence", () => {
     await context.db.delete(area);
   });
   afterAll(async () => {
-    server.deactivate();
+    server?.deactivate();
     await context.cleanup();
   });
 

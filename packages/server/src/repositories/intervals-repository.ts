@@ -156,12 +156,20 @@ function sourcePrecedence(source: ComparableIntervalSource): number {
   return 0;
 }
 
+export interface MergeComparableIntervalsOptions {
+  /** Keep contributing peers on provider-recorded groups with multiple exact peers. */
+  retainSourceEvidence?: boolean;
+}
+
 /**
  * Resolves only equal, activity-relative boundaries. The selected interval
  * retains provider-recorded facts while every contributing member remains in
  * provenance for duplicate activity groups.
  */
-export function mergeComparableIntervals(intervals: ComparableInterval[]): ComparableInterval[] {
+export function mergeComparableIntervals(
+  intervals: ComparableInterval[],
+  options: MergeComparableIntervalsOptions = {},
+): ComparableInterval[] {
   const groups = new Map<string, ComparableInterval[]>();
   for (const interval of intervals) {
     const key = `${interval.startOffsetSeconds}:${interval.endOffsetSeconds}`;
@@ -218,6 +226,12 @@ export function mergeComparableIntervals(intervals: ComparableInterval[]): Compa
         conflicts.push("completionPct");
       }
       result.conflicts = conflicts;
+      result.sourceEvidence = group;
+    } else if (
+      options.retainSourceEvidence &&
+      preferred.source === "provider_recorded" &&
+      group.length > 1
+    ) {
       result.sourceEvidence = group;
     }
     return result;

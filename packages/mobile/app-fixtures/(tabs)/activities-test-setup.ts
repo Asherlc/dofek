@@ -47,6 +47,8 @@ export const activityMocks: {
   invalidateUpcoming: CallableVitestMock;
   invalidateCalendarData: CallableVitestMock;
   invalidateActivityList: CallableVitestMock;
+  resetTrainingProgressionStrength: CallableVitestMock;
+  resetTrainingProgressionCycling: CallableVitestMock;
   invalidateDataHealth: CallableVitestMock;
   mockDataHealthQuery: {
     data: unknown;
@@ -84,6 +86,8 @@ export const activityMocks: {
   invalidateUpcoming: vi.fn(),
   invalidateCalendarData: vi.fn(),
   invalidateActivityList: vi.fn(),
+  resetTrainingProgressionStrength: vi.fn(),
+  resetTrainingProgressionCycling: vi.fn(),
   invalidateDataHealth: vi.fn(),
   mockDataHealthQuery: { data: undefined, isLoading: false, error: null },
   processingStatusInput: undefined,
@@ -217,6 +221,10 @@ vi.mock("../../lib/trpc", () => ({
     },
     useUtils: () => ({
       activityLocation: { search: { invalidate: vi.fn() } },
+      trainingProgression: {
+        strength: { reset: activityMocks.resetTrainingProgressionStrength },
+        cycling: { reset: activityMocks.resetTrainingProgressionCycling },
+      },
       calendar: {
         weekListV2: {
           invalidate: activityMocks.invalidateWeekList,
@@ -308,6 +316,8 @@ beforeEach(() => {
   activityMocks.invalidateActivityOverview = vi.fn();
   activityMocks.invalidateCalendarData = vi.fn();
   activityMocks.invalidateActivityList = vi.fn();
+  activityMocks.resetTrainingProgressionStrength = vi.fn();
+  activityMocks.resetTrainingProgressionCycling = vi.fn();
   activityMocks.mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
   activityMocks.processingStatusInput = undefined;
   activityMocks.invalidateDataHealth = vi.fn();

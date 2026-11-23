@@ -58,6 +58,9 @@ vi.mock("./routers/strength.ts", () => ({ strengthRouter: mockRouter }));
 vi.mock("./routers/stress.ts", () => ({ stressRouter: mockRouter }));
 vi.mock("./routers/sync.ts", () => ({ syncRouter: mockRouter }));
 vi.mock("./routers/training.ts", () => ({ trainingRouter: mockRouter }));
+vi.mock("./routers/training-progression.ts", () => ({
+  trainingProgressionRouter: mockRouter,
+}));
 vi.mock("./routers/trends.ts", () => ({ trendsRouter: mockRouter }));
 vi.mock("./routers/watch-altitude-sync.ts", () => ({ watchAltitudeSyncRouter: mockRouter }));
 vi.mock("./routers/whoop-auth.ts", () => ({ whoopAuthRouter: mockRouter }));
@@ -136,6 +139,7 @@ describe("appRouter", () => {
       "providerGuide",
       "sync",
       "training",
+      "trainingProgression",
       "trends",
       "calendar",
       "clinicalRecords",

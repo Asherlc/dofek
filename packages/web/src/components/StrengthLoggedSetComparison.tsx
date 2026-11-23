@@ -3,22 +3,32 @@ import { formatMeasurementText } from "@dofek/format/units";
 import { providerLabel } from "@dofek/providers/providers";
 import type { LoggedSetComparison } from "dofek-server/types";
 import { useState } from "react";
+import {
+  type StrengthProgressionRow,
+  strengthEvidenceSummary,
+  strengthHeadline,
+} from "../lib/training-progression.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
+import { StrengthProgressionEvidence } from "./StrengthProgressionEvidence.tsx";
+import { TrainingProgressionStatusCard } from "./TrainingProgressionStatusCard.tsx";
 export function StrengthLoggedSetComparison({
   data,
   loading = false,
   error,
+  progressionRows,
 }: {
   data?: LoggedSetComparison;
   loading?: boolean;
   error?: { message: string } | null;
+  progressionRows?: StrengthProgressionRow[];
 }) {
   const units = useUnitConverter();
   const [exerciseKey, setExerciseKey] = useState<string | null>(null);
   const [reps, setReps] = useState<number | null>(null);
   const exercise =
     data?.exercises.find((item) => item.exerciseId === exerciseKey) ?? data?.exercises[0];
+  const progressionRow = progressionRows?.find((row) => row.exerciseId === exercise?.exerciseId);
   const comparison =
     exercise?.comparisons.find((item) => item.reps === reps) ?? exercise?.comparisons[0];
   const weight = (value: number) => formatMeasurementText(units.formatWeight(value));
@@ -73,6 +83,14 @@ export function StrengthLoggedSetComparison({
               </select>
             ) : null}
           </div>
+          {progressionRow ? (
+            <TrainingProgressionStatusCard
+              status={progressionRow.status}
+              headline={strengthHeadline(progressionRow)}
+              summary={strengthEvidenceSummary(progressionRow)}
+              details={<StrengthProgressionEvidence row={progressionRow} />}
+            />
+          ) : null}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="rounded-lg bg-surface p-3">
               <p>Logged sets with load and reps</p>

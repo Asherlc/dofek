@@ -14,6 +14,8 @@ import { demonstratedGradeFixture } from "../../components/climbing-demonstrated
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 import { intervalRun, runningData } from "../../components/running-training-test-helpers";
+import { loggedSetFixture } from "../../components/strength-logged-set-fixture";
+import { repImprovementRow } from "../../components/training-progression-fixture";
 import { trainingSections } from "../../lib/training-sections";
 import {
   mockAttemptIncreaseQuery,
@@ -37,6 +39,8 @@ import {
   mockRouteComparisonQuery,
   mockRouterPush,
   mockRunningInvalidate,
+  mockStrengthProgressionQuery,
+  mockStrengthProgressionRefetch,
   mockStrengthsState,
   mockTrainingInvalidate,
   mockTrainingState,
@@ -45,6 +49,83 @@ import {
 } from "./strain-test-helpers";
 
 describe("StrainScreen", () => {
+  it("loads strength progression rows for the Strength section", async () => {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    render(<TrainingAnalysis section="strength" isFocused />);
+    expect(mockStrengthProgressionQuery).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it("shows the strength progression error only inside the Strength section", async () => {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    const error = new Error("Strength progression refresh failed");
+    mockStrengthProgressionQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error,
+      refetch: mockStrengthProgressionRefetch,
+    });
+
+    render(<TrainingAnalysis section="strength" isFocused />);
+    expect(screen.getByText(error.message)).toBeTruthy();
+  });
+
+  it("hides the strength progression error outside the Strength section", async () => {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    const error = new Error("Strength progression refresh failed");
+    mockStrengthProgressionQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error,
+      refetch: mockStrengthProgressionRefetch,
+    });
+
+    render(<TrainingAnalysis section="cycling" isFocused />);
+    expect(screen.queryByText(error.message)).toBeNull();
+  });
+
+  it("shows a compact loading panel while strength progression loads without a cache", async () => {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    mockStrengthProgressionQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+      refetch: mockStrengthProgressionRefetch,
+    });
+
+    render(<TrainingAnalysis section="strength" isFocused />);
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+  });
+
+  it("keeps cached progression rows visible while a refresh is loading", async () => {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    mockQueryState.loggedSets = loggedSetFixture;
+    mockStrengthProgressionQuery.mockReturnValue({
+      data: [repImprovementRow],
+      isLoading: true,
+      error: null,
+      refetch: mockStrengthProgressionRefetch,
+    });
+
+    render(<TrainingAnalysis section="strength" isFocused />);
+    expect(screen.queryByTestId("query-state-loading")).toBeNull();
+    expect(
+      screen.getByLabelText("Training progression status: Bench press · Barbell"),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "See recorded sets" }));
+    expect(screen.getByText(/Nov 20, 2026 · 10 reps at 60\.0 kg · Effort 7\/10/)).toBeTruthy();
+  });
+
+  it("includes strength progression in pull-to-refresh for the Strength section", async () => {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    render(<TrainingAnalysis section="strength" isFocused />);
+
+    await mockQueryState.refreshInvalidate?.();
+    expect(mockStrengthProgressionRefetch).toHaveBeenCalledOnce();
+  });
+
   it("requests the power profile for the selected Cycling range", async () => {
     mockQueryState.timeRangePreference.days = 30;
     const { TrainingAnalysis } = await import("../../app/strain");

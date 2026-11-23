@@ -52,6 +52,7 @@ import { supportRouter } from "./routers/support.ts";
 import { syncRouter } from "./routers/sync.ts";
 import { tokenAuthRouter } from "./routers/token-auth.ts";
 import { trainingRouter } from "./routers/training.ts";
+import { trainingProgressionRouter } from "./routers/training-progression.ts";
 import { trendsRouter } from "./routers/trends.ts";
 import { watchAltitudeSyncRouter } from "./routers/watch-altitude-sync.ts";
 import { whoopAuthRouter } from "./routers/whoop-auth.ts";
@@ -82,6 +83,7 @@ const appRouterProcedures = {
   providerGuide: providerGuideRouter,
   sync: syncRouter,
   training: trainingRouter,
+  trainingProgression: trainingProgressionRouter,
   trends: trendsRouter,
   calendar: calendarRouter,
   clinicalRecords: clinicalRecordsRouter,

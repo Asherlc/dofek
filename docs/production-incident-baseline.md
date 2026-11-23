@@ -39852,6 +39852,34 @@ Local qualification and CI are separate from production throughput acceptance. T
   November 16.
   [Repository regression](../packages/server/src/repositories/insights-repository.integration.test.ts).
 
+## 2026-11-23 — Overview PR validation failed in unit and integration checks
+
+- **Impact and evidence.** PR #3465 was blocked. The server unit run expected
+  `insights-evidence-v1` and `AND started_at >` after the route had changed to
+  `insights-evidence-v2` and local calendar dates. The stale expectations
+  also prevented the three Stryker jobs from starting mutation testing.
+  [Unit log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137796538544) ·
+  [Stryker log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137797168711).
+- **Independent integration failure.** Shard 1 reported
+  `Kilter Board app sync failed: Connection aborted` in ten
+  climbing-board persistence tests. The server API suite registered
+  providers first in the shared Vitest worker. The climbing-board suite
+  reused the cached Kilter module bound to the real SDK, bypassing its
+  approved PowerSync fixture. The same two-file order reproduced all ten
+  failures locally.
+  [Integration log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137797003483) ·
+  [Vitest module cache API](https://vitest.dev/api/vi.html#vi-resetmodules).
+- **Fix and local verification.** The Overview unit tests now cover the
+  current cache key and local date query contract. The initial persistence
+  suite fix reset the module cache and imported Kilter after installing the
+  existing SDK fixture. The ordered integration pair passed all 60 tests, and
+  600 focused unit and mobile tests passed. All three changed-line
+  Stryker selections completed locally. The sleep query scored 100% on
+  its five active mutants. The final branch uses the equivalent module cache
+  reset before provider imports from PR #3464. Include the router tests in
+  future Overview cache or range changes and validate the climbing-board
+  fixture after the server suite. [Progression PR](https://github.com/Asherlc/dofek/pull/3464).
+
 ## 2026-11-22 — WHOOP Bluetooth startup reconnect on a new iOS build
 
 - **Impact.** At 19:29:32 Pacific, TestFlight build `1795402168` reported one
@@ -39873,29 +39901,20 @@ Local qualification and CI are separate from production throughput acceptance. T
   snapshot recorded fresh Bluetooth samples. If the alert recurs, inspect
   whether native streaming recovers and whether uploads catch up. [Deployed reconnect path](https://github.com/Asherlc/dofek/blob/b69aa23852017d61b79f0f859d2a9dee7ee073be/packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager%2BCoreBluetooth.swift#L113-L132).
 
-## 2026-11-23 — Overview PR validation failed in unit and integration checks
+## 2026-11-23 — Progression PR exposed Kilter test isolation
 
-- **Impact and evidence.** PR #3465 was blocked. The server unit run expected
-  `insights-evidence-v1` and `AND started_at >` after the route had changed to
-  `insights-evidence-v2` and local calendar dates. The stale expectations
-  also prevented the three Stryker jobs from starting mutation testing.
-  [Unit log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137796538544) ·
-  [Stryker log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137797168711).
-- **Independent integration failure.** Shard 1 reported
-  `Kilter Board app sync failed: Connection aborted` in ten
-  climbing-board persistence tests. The server API suite registered
-  providers first in the shared Vitest worker. The climbing-board suite
-  reused the cached Kilter module bound to the real SDK, bypassing its
-  approved PowerSync fixture. The same two-file order reproduced all ten
-  failures locally.
-  [Integration log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137797003483) ·
-  [Vitest module cache API](https://vitest.dev/api/vi.html#vi-resetmodules).
-- **Fix and local verification.** The Overview unit tests now cover the
-  current cache key and local date query contract. The persistence suite
-  resets the module cache and imports Kilter after installing the existing
-  SDK fixture. The ordered integration pair passed all 60 tests, and
-  600 focused unit and mobile tests passed. All three changed-line
-  Stryker selections completed locally. The sleep query scored 100% on
-  its five active mutants. The changes are limited to test code. Include
-  the router tests in future Overview cache or range changes and
-  validate the climbing-board fixture after the server suite.
+- Integration shard 1 on PR #3464 reported ten Kilter persistence failures
+  with `Kilter Board app sync failed: Connection aborted`. The failures blocked
+  PR validation. Production was unaffected. [Failed integration job](https://github.com/Asherlc/dofek/actions/runs/45198554695/job/137777375758).
+- The shard ran the server entry-point suite before the board fixture. The
+  server suite loaded Kilter in the shared Vitest worker before the fixture
+  mocked the PowerSync database. A local run in the same order reproduced
+  all ten failures.
+- The board fixture now captures the setup-owned MSW instance before resetting
+  the module cache. Its provider imports then pick up the approved PowerSync
+  mock. Both suites passed all 60 tests in the failing order with retries
+  disabled, real PostgreSQL, and the original MSW listener.
+  [Board fixture](../src/lib/climbing-board-account.integration.test.ts).
+- **Remaining risk and follow-up.** Other fixtures that mock dependencies
+  already imported into a shared worker can still depend on suite order. If the
+  failure recurs, reproduce the shard order and check mock and MSW ownership.

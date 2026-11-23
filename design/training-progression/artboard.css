@@ -1,0 +1,80 @@
+:root {
+  --artboard-appearance: dark;
+  --insight-radius: 17px;
+  color-scheme: var(--artboard-appearance);
+}
+
+body { margin: 0; }
+
+#dofek-progression-board {
+  --paper: light-dark(#fbfaf7, #1d2027);
+  --panel: light-dark(#fff, #252931);
+  --ink: light-dark(#202429, #f3f4f2);
+  --muted-ink: light-dark(#575e65, #b3bbc5);
+  --line: light-dark(#dddfe0, #404750);
+  --teal: light-dark(#075844, #8ee5bd);
+  --teal-tint: light-dark(#e8f5ed, #233b33);
+  --amber: light-dark(#77501e, #f6c982);
+  --amber-tint: light-dark(#fbf1df, #413327);
+  --blue: light-dark(#244a8c, #a7c5ff);
+  --blue-tint: light-dark(#edf2fc, #28354d);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+  color: var(--ink);
+}
+#dofek-progression-board *, #dofek-progression-board *::before { box-sizing: border-box; }
+#dofek-progression-board .phone {
+  background: var(--paper);
+  min-height: 100vh;
+  overflow: hidden; display: flex; flex-direction: column; line-height: 1.43;
+}
+#dofek-progression-board .topbar {
+  padding: 12px 20px; border-bottom: 1px solid var(--line); font-weight: 650;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+#dofek-progression-board .topbar span { color: var(--muted-ink); font-size: 12px; font-weight: 550; }
+#dofek-progression-board .brand { display: inline-flex; align-items: center; gap: 7px; }
+#dofek-progression-board .body { flex: 1; padding: 19px 20px 16px; }
+#dofek-progression-board .intro { margin-bottom: 15px; }
+#dofek-progression-board h2, #dofek-progression-board h3, #dofek-progression-board p { margin: 0; }
+#dofek-progression-board h2 { color: var(--ink); font-size: 31px; line-height: 1.09; letter-spacing: -.9px; font-weight: 730; }
+#dofek-progression-board h3 { color: var(--ink); font-size: 18px; line-height: 1.18; letter-spacing: -.25px; font-weight: 700; }
+#dofek-progression-board .sub { color: var(--muted-ink); font-size: 12px; margin-top: 5px; }
+#dofek-progression-board .insight { padding: 15px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--insight-radius); }
+#dofek-progression-board .flag { width: fit-content; font-size: 12px; font-weight: 680; border-radius: 5px; padding: 3px 7px; margin-bottom: 9px; background: var(--teal-tint); color: var(--teal); }
+#dofek-progression-board .flag.caution { background: var(--amber-tint); color: var(--amber); }
+#dofek-progression-board .flag.cycle { background: var(--blue-tint); color: var(--blue); }
+#dofek-progression-board .hero {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 9px;
+  font-variant-numeric: tabular-nums; margin-top: 6px;
+}
+#dofek-progression-board .hero strong { color: var(--ink); font-size: 34px; font-weight: 760; line-height: 1.1; letter-spacing: -1.2px; }
+#dofek-progression-board .hero span { color: var(--muted-ink); font-size: 12px; }
+#dofek-progression-board .copy { margin-top: 9px; }
+#dofek-progression-board summary {
+  display: list-item; padding: 12px 0 5px; color: var(--teal); font-weight: 660; min-height: 44px;
+}
+#dofek-progression-board summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+#dofek-progression-board details { margin-top: 6px; }
+#dofek-progression-board .history { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; text-align: left; font-size: 12px; }
+#dofek-progression-board .history :is(th, td) { border-top: 1px solid var(--line); padding: 6px 2px 6px 0; }
+#dofek-progression-board .history th { color: var(--muted-ink); font-weight: 570; }
+#dofek-progression-board .foot { border-top: 1px solid var(--line); display: flex; justify-content: space-around; gap: 4px; padding: 10px 9px 12px; background: var(--panel); color: var(--muted-ink); font-size: 11px; }
+#dofek-progression-board .foot strong { color: var(--teal); }
+#dofek-progression-board .plot { margin: 10px 0 14px; }
+#dofek-progression-board .plot-area { display: flex; align-items: stretch; gap: 9px; height: 91px; }
+#dofek-progression-board .plot-y { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; min-width: 32px; color: var(--muted-ink); font-size: 11px; }
+#dofek-progression-board .plot-points { flex: 1; display: grid; grid-template-columns: repeat(6, 1fr); background: linear-gradient(var(--line),var(--line)) center/100% 1px no-repeat; border-block: 1px solid var(--line); position: relative; }
+#dofek-progression-board .plot-points::before { content: ''; position: absolute; inset: 35% 0; background: var(--teal-tint); }
+#dofek-progression-board .plot-point { position: relative; }
+#dofek-progression-board .plot-point::after { content: ''; position: absolute; left: 50%; top: var(--level); width: 8px; height: 8px; transform: translate(-50%, -50%); border-radius: 50%; background: var(--teal); }
+#dofek-progression-board .plot-dates { display: flex; justify-content: space-between; padding-left: 40px; margin-top: 4px; color: var(--muted-ink); font-size: 11px; }
+#dofek-progression-board .plot-caption { font-size: 12px; font-weight: 680; margin-bottom: 7px; }
+#dofek-progression-board .intervals { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: end; gap: 8px; margin: 14px 0 9px; }
+#dofek-progression-board .interval { text-align: center; color: var(--muted-ink); font-size: 11px; }
+#dofek-progression-board .interval strong { display: block; background: var(--blue-tint); color: var(--blue); padding: 18px 2px; border-radius: 6px; font-size: 13px; }
+#dofek-progression-board .interval span { display: block; margin-top: 4px; }
+#dofek-progression-board .session-meta { color: var(--muted-ink); font-size: 12px; }
+@media (max-width: 400px) {
+  #dofek-progression-board .body, #dofek-progression-board .topbar { padding-inline: 13px; }
+  #dofek-progression-board .insight { padding-inline: 12px; }
+}

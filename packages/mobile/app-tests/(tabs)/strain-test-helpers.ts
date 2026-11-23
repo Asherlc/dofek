@@ -1,3 +1,4 @@
+import type { AppRouterOutputs } from "dofek-server/router";
 import { createElement } from "react";
 import { vi } from "vitest";
 import { defaultMockTrainingData } from "../../app-fixtures/(tabs)/strain-test-helpers";
@@ -42,6 +43,20 @@ export const mockAttemptIncreaseInvalidate = vi.fn();
 export const mockBestOnsightQuery = vi.fn();
 export const mockBestOnsightRefetch = vi.fn();
 export const mockBestOnsightInvalidate = vi.fn();
+export const mockStrengthProgressionRefetch = vi.fn();
+export const mockStrengthProgressionQuery = vi.fn(
+  (): {
+    data: AppRouterOutputs["trainingProgression"]["strength"] | undefined;
+    isLoading: boolean;
+    error: unknown;
+    refetch: () => Promise<unknown>;
+  } => ({
+    data: [],
+    isLoading: false,
+    error: null,
+    refetch: mockStrengthProgressionRefetch,
+  }),
+);
 type MockRangeQueryOptions = {
   enabled?: boolean;
   refetchInterval?: (query: {
@@ -93,6 +108,7 @@ export const mockQueryState: {
   focused: boolean;
   refreshInvalidate: (() => Promise<void> | void) | null | undefined;
   trainingDataDays: number;
+  loggedSets: AppRouterOutputs["strength"]["loggedSetComparison"] | undefined;
   rangeQueryCalls: MockRangeQueryCalls;
   timeRangePreference: { days: number; isHydrated: boolean; setDays: ReturnType<typeof vi.fn> };
 } = {
@@ -103,6 +119,7 @@ export const mockQueryState: {
   focused: true,
   refreshInvalidate: undefined,
   trainingDataDays: 90,
+  loggedSets: undefined,
   rangeQueryCalls: emptyRangeQueryCalls(),
   timeRangePreference: { days: 90, isHydrated: true, setDays: vi.fn() },
 };
@@ -251,12 +268,15 @@ vi.mock("../../lib/trpc", () => ({
       },
       demonstratedGrade: { useQuery: mockDemonstratedGradeQuery },
     },
+    trainingProgression: {
+      strength: { useQuery: mockStrengthProgressionQuery },
+    },
     strength: {
       loggedSetComparison: {
         useQuery: (input: { days: number | null }, options: MockRangeQueryOptions) => {
           mockQueryState.rangeQueryCalls.loggedSets.push({ input, options });
           return {
-            data: undefined,
+            data: mockQueryState.loggedSets,
             isLoading: false,
             isFetching: false,
             isError: false,
@@ -421,6 +441,13 @@ export function resetStrainMocks() {
   });
   mockBestOnsightRefetch.mockReset().mockResolvedValue(undefined);
   mockBestOnsightInvalidate.mockReset().mockResolvedValue(undefined);
+  mockStrengthProgressionRefetch.mockReset().mockResolvedValue(undefined);
+  mockStrengthProgressionQuery.mockReset().mockReturnValue({
+    data: [],
+    isLoading: false,
+    error: null,
+    refetch: mockStrengthProgressionRefetch,
+  });
   mockQueryState.runningData = { ...runningData, data: [] };
   mockQueryState.runningLoading = false;
   mockQueryState.runningError = null;
@@ -449,6 +476,7 @@ export function resetStrainMocks() {
   mockPolarizationInvalidate.mockResolvedValue(undefined);
   mockQueryState.refreshInvalidate = undefined;
   mockQueryState.trainingDataDays = 90;
+  mockQueryState.loggedSets = undefined;
   mockQueryState.rangeQueryCalls = emptyRangeQueryCalls();
   mockQueryState.timeRangePreference = {
     days: 90,

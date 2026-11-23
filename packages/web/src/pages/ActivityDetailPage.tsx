@@ -13,6 +13,7 @@ import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx
 import { ActivityMetricSourcePicker } from "../components/ActivityMetricSourcePicker.tsx";
 import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
 import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
+import { CyclingProgressionEvidence } from "../components/CyclingProgressionEvidence.tsx";
 import { CyclingThresholdDetails } from "../components/CyclingThresholdDetails.tsx";
 import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
@@ -20,6 +21,7 @@ import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MapProcessingIndicator } from "../components/MapProcessingIndicator.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { TrainingProgressionStatusCard } from "../components/TrainingProgressionStatusCard.tsx";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ActivityClimbingPanel } from "./activity-detail/components/ActivityClimbingPanel.tsx";
@@ -70,6 +72,10 @@ export function ActivityDetailPage() {
   const plannedIntervals = trpc.intervals.plannedByActivity.useQuery(
     { activityId: id },
     { enabled: isCycling },
+  );
+  const cyclingProgression = trpc.trainingProgression.cycling.useQuery(
+    { activityId: id },
+    { enabled: isCycling && !!id },
   );
   const route = trpc.activity.route.useQuery(
     { id, maxPoints: 500 },
@@ -220,6 +226,20 @@ export function ActivityDetailPage() {
         <QueryStatePanel error={powerWork.error} height={72} />
       ) : null}
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
+      {isCycling && cyclingProgression.error ? (
+        <QueryStatePanel error={cyclingProgression.error} height={72} />
+      ) : null}
+      {isCycling && cyclingProgression.isLoading && !cyclingProgression.data ? (
+        <QueryStatePanel variant="loading" height={72} contextLabel="Cycling progression" />
+      ) : null}
+      {isCycling && cyclingProgression.data ? (
+        <TrainingProgressionStatusCard
+          status={cyclingProgression.data.status}
+          headline="Cycling progression"
+          summary="Two rides had similar interval duration and power at moderate whole-ride effort."
+          details={<CyclingProgressionEvidence result={cyclingProgression.data} />}
+        />
+      ) : null}
 
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 

@@ -215,6 +215,32 @@ describe("mergeComparableIntervals", () => {
     expect(result[0]?.conflicts).toBeUndefined();
   });
 
+  it("retains exact peers only on opted-in provider-recorded multi-peer groups", () => {
+    const peers = [
+      interval({ sourceMemberActivityIds: ["a"] }),
+      interval({ sourceMemberActivityIds: ["b"] }),
+    ];
+
+    expect(mergeComparableIntervals(peers)[0]?.sourceEvidence).toBeUndefined();
+    expect(
+      mergeComparableIntervals(peers, { retainSourceEvidence: true })[0]?.sourceEvidence,
+    ).toEqual(peers);
+    expect(
+      mergeComparableIntervals([interval({ sourceMemberActivityIds: ["a"] })], {
+        retainSourceEvidence: true,
+      })[0]?.sourceEvidence,
+    ).toBeUndefined();
+    expect(
+      mergeComparableIntervals(
+        [
+          interval({ source: "inferred", sourceMemberActivityIds: ["a"] }),
+          interval({ source: "inferred", sourceMemberActivityIds: ["b"] }),
+        ],
+        { retainSourceEvidence: true },
+      )[0]?.sourceEvidence,
+    ).toBeUndefined();
+  });
+
   it.each([
     ["range minimum", planOf({ kind: "range", minWatts: 240, maxWatts: 265 }, 134)],
     ["range maximum", planOf({ kind: "range", minWatts: 250, maxWatts: 270 }, 134)],

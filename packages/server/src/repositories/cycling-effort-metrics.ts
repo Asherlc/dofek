@@ -22,6 +22,7 @@ import {
 import {
   type ComparableInterval,
   inferIntervalResult,
+  type MergeComparableIntervalsOptions,
   mergeComparableIntervals,
   type PlannedIntervalFacts,
 } from "./intervals-repository.ts";
@@ -810,6 +811,7 @@ function plannedFacts(row: z.infer<typeof intervalRowSchema>): PlannedIntervalFa
 export function recordedIntervalsForActivity(
   activity: CyclingEffortActivity,
   rows: z.infer<typeof intervalRowSchema>[],
+  options: MergeComparableIntervalsOptions = {},
 ): RecordedIntervalEvidence[] {
   const members = new Set(activity.member_activity_ids);
   const startedAt = Date.parse(activity.started_at);
@@ -847,7 +849,7 @@ export function recordedIntervalsForActivity(
     return [interval.source === "inferred" ? inferIntervalResult(interval) : interval];
   });
 
-  return mergeComparableIntervals(comparable).map((interval) => ({
+  return mergeComparableIntervals(comparable, options).map((interval) => ({
     input: {
       index: interval.intervalIndex,
       type: normalizeIntervalType(

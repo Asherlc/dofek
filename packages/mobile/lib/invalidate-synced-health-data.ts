@@ -6,6 +6,8 @@ const HEALTH_SYNC_INITIAL_FETCH_PATHS = new Set([
   "climbing.volumeIncrease",
   "climbing.attemptIncrease",
   "climbing.bestOnsight",
+  "trainingProgression.strength",
+  "trainingProgression.cycling",
   "insights.compute",
 ]);
 

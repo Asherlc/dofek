@@ -648,6 +648,8 @@ describe("ActivitiesScreen", () => {
       expect(activityMocks.invalidateActivityOverview).toHaveBeenCalled();
       expect(activityMocks.invalidateCalendarData).toHaveBeenCalled();
       expect(activityMocks.invalidateActivityList).toHaveBeenCalled();
+      expect(activityMocks.resetTrainingProgressionStrength).toHaveBeenCalledOnce();
+      expect(activityMocks.resetTrainingProgressionCycling).toHaveBeenCalledOnce();
     });
   });
 
@@ -673,6 +675,8 @@ describe("ActivitiesScreen", () => {
       expect(activityMocks.invalidateActivityOverview).toHaveBeenCalled();
       expect(activityMocks.invalidateCalendarData).toHaveBeenCalled();
       expect(activityMocks.invalidateActivityList).toHaveBeenCalled();
+      expect(activityMocks.resetTrainingProgressionStrength).toHaveBeenCalledOnce();
+      expect(activityMocks.resetTrainingProgressionCycling).toHaveBeenCalledOnce();
     });
   });
 

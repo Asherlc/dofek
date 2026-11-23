@@ -222,6 +222,10 @@ export function TrainingAnalysis({
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
+  const strengthProgressionQuery = trpc.trainingProgression.strength.useQuery(undefined, {
+    enabled: isHydrated && show("strength"),
+    placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+  });
   useReportQueryError(loggedSetsQuery);
   const strengthVolumeQuery = trpc.strength.volumeOverTime.useQuery(
     { days },
@@ -329,6 +333,7 @@ export function TrainingAnalysis({
         utils.training.hrZones.invalidate(),
         utils.training.sportVolume.invalidate(),
         ...(section === "cycling" ? [utils.cycling.powerProfile.invalidate()] : []),
+        ...(show("strength") ? [strengthProgressionQuery.refetch()] : []),
         utils.hiking.activityComparison.invalidate(),
         utils.efficiency.polarizationTrend.invalidate(),
         utils.processing.status.invalidate(),
@@ -505,11 +510,18 @@ export function TrainingAnalysis({
       ) : null}
       {show("strength") ? (
         <>
+          {strengthProgressionQuery.error ? (
+            <QueryStatePanel variant="error" message={strengthProgressionQuery.error.message} />
+          ) : null}
+          {strengthProgressionQuery.isLoading && !strengthProgressionQuery.data ? (
+            <QueryStatePanel variant="loading" minHeight={72} />
+          ) : null}
           <StrengthLoggedSetComparison
             data={loggedSetsQuery.data}
             loading={loggedSetsQuery.isLoading}
             error={loggedSetsQuery.error}
             units={units}
+            progressionRows={strengthProgressionQuery.data}
           />
           {strengthVolumeQuery.error ? (
             <QueryStatePanel variant="error" message={strengthVolumeQuery.error.message} />
