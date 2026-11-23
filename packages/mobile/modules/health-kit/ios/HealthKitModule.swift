@@ -186,46 +186,6 @@ public class HealthKitModule: Module {
         return points
     }
 
-    /// Reads reported workout-effort samples related to workouts in the supplied scope.
-    /// A missing result has ambiguous authorization and never clears a previously stored rating;
-    /// only a positively read, qualified sample is returned.
-    @available(iOS 18.0, *)
-    private func workoutEffortSnapshots(predicate: NSPredicate) async throws -> [WorkoutEffortSampleSnapshot] {
-        guard let effortType = HKQuantityType.quantityType(forIdentifier: .workoutEffortScore) else {
-            return []
-        }
-        let unit = HKUnit.appleEffortScore()
-        let descriptor = HealthKitWorkoutEffortSelection.relationshipQuery(predicate: predicate)
-        do {
-            let result = try await descriptor.result(for: self.healthStore)
-            return result.relationships.flatMap { relationship in
-                (relationship.samples ?? []).compactMap { sample -> WorkoutEffortSampleSnapshot? in
-                    guard let quantity = sample as? HKQuantitySample,
-                          quantity.quantityType == effortType,
-                          quantity.quantity.is(compatibleWith: unit),
-                          self.accountStateStore.shouldInclude(sampleDate: sample.startDate)
-                    else {
-                        return nil
-                    }
-                    return WorkoutEffortSampleSnapshot(
-                        uuid: sample.uuid,
-                        workoutUUID: relationship.workout.uuid,
-                        activityUUID: relationship.activity?.uuid,
-                        quantityTypeIdentifier: quantity.quantityType.identifier,
-                        unitIdentifier: unit.unitString,
-                        value: quantity.quantity.doubleValue(for: unit),
-                        startDate: sample.startDate,
-                        endDate: sample.endDate,
-                        sourceName: sample.sourceRevision.source.name,
-                        sourceBundle: sample.sourceRevision.source.bundleIdentifier
-                    )
-                }
-            }
-        } catch let error where HealthKitErrorDetails.isAuthorizationNotDetermined(error) {
-            return []
-        }
-    }
-
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     public func definition() -> ModuleDefinition {
         Name("HealthKit")
@@ -526,39 +486,9 @@ public class HealthKitModule: Module {
                 let workouts = (results as? [HKWorkout])?
                     .filter {
                         self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
-                    } ?? []
-                guard #available(iOS 18.0, *),
-                      workouts.contains(where: { $0.workoutActivityType == .cycling }) else {
-                    promise.resolve(workouts.map(HealthKitWorkoutTransport.encode))
-                    return
-                }
-                let effortPredicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-                    predicate,
-                    HKQuery.predicateForWorkouts(with: .cycling),
-                ])
-                Task {
-                    do {
-                        let efforts = try await self.workoutEffortSnapshots(predicate: effortPredicate)
-                        let effortsByWorkout = Dictionary(grouping: efforts, by: \.workoutUUID)
-                        let encoded = workouts.map { workout in
-                            HealthKitWorkoutTransport.encode(
-                                workout,
-                                effort: HealthKitWorkoutEffortSelection.select(
-                                    for: workout.uuid,
-                                    from: effortsByWorkout[workout.uuid, default: []]
-                                )
-                            )
-                        }
-                        promise.resolve(encoded)
-                    } catch {
-                        self.rejectHealthKitError(
-                            promise,
-                            operation: "queryWorkouts.effort",
-                            fallbackCode: "QUERY_ERROR",
-                            error: error
-                        )
                     }
-                }
+                    .map(HealthKitWorkoutTransport.encode) ?? []
+                promise.resolve(workouts)
             }
             self.healthStore.execute(query)
         }

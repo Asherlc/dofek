@@ -1,5 +1,8 @@
 # WHOOP Provider
 
+See the [WHOOP Android app inspection](whoop-android-apk.md) for a versioned
+reference on the app's strap connection, local storage, and upload scheduling.
+
 ## Authentication
 
 Uses WHOOP's internal Cognito-based auth (not the public developer OAuth2 API). This gives access to the same endpoints the mobile/web app uses.

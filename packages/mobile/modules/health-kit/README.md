@@ -28,26 +28,10 @@ can resolve the model from previously retained [HKDevice facts](https://develope
 Existing uploads need a workout resync from an updated native build to acquire
 the newly retained identifier.
 
-On iOS 18 and later, cycling workout sync also reads self-reported whole-workout
-effort linked through HealthKit. Allow the workout-effort read permission when
-Apple Health requests it. A workout sync imports the available 1–10 rating into
-the existing **Session effort** field and retains its source, sample ID, and
-sample dates. An edited rating replaces the previous value when that ride is
-synced again. Estimated and sub-activity scores are excluded. [Apple effort
-scale](https://www.apple.com/newsroom/2024/09/watchos-11-is-available-today/) ·
-[HealthKit workout effort](https://developer.apple.com/documentation/Updates/HealthKit)
-
-Multiple eligible ratings from a HealthKit relationship are ambiguous. The
-Postgres activity view takes any projected effort sample from the same source
-row as the selected rating.
-
-HealthKit can return an empty result when read permission is denied or a rating
-is absent. An empty result therefore preserves a previously imported rating.
-An effort-only deletion is currently indistinguishable from that empty read.
-The sample dates describe the sample interval, and eligibility for a protocol
-that requires Borg CR10 and a post-workout entry time remains unknown.
-[HealthKit authorization](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data) ·
-[HealthKit sample dates](https://developer.apple.com/documentation/healthkit/hksample/startdate)
+The iOS app imports Apple Health workouts and their workout details. New
+cycling-effort acquisition is paused. A workout resync that omits a rating
+preserves the saved **Session effort** and its provenance. Earlier iOS builds
+can still send an optional rating.
 
 ## Structure
 
