@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "title": "Health Monitor · Layout options",
+  "kind": "prototype",
+  "description": "Compare three tile layouts with the current and compact Health Monitor lists.",
+  "artboards": [
+    {
+      "id": "current",
+      "title": "Current · 56 px rows",
+      "file": "current.html",
+      "width": 390,
+      "group": "Phone width"
+    },
+    {
+      "id": "compact",
+      "title": "Compact · 44 px rows",
+      "file": "compact.html",
+      "width": 390,
+      "group": "Phone width"
+    },
+    {
+      "id": "wide",
+      "title": "Compact · Wide",
+      "file": "wide.html",
+      "width": 640
+    },
+    {
+      "id": "highlights-and-tiles",
+      "title": "Highlights + readings",
+      "file": "highlights-and-tiles.html",
+      "width": 390,
+      "group": "Tile layouts"
+    },
+    {
+      "id": "metric-tiles",
+      "title": "Equal-weight tiles · Selected",
+      "file": "metric-tiles.html",
+      "width": 390,
+      "group": "Tile layouts"
+    },
+    {
+      "id": "changes-only",
+      "title": "Changes only",
+      "file": "changes-only.html",
+      "width": 390,
+      "group": "Tile layouts"
+    }
+  ]
+}
