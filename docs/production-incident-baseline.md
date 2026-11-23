@@ -7,14 +7,14 @@
   memory. The two main sleep heart-rate statements accounted for 21,135 of
   38,720 CPU seconds reported by completed initial ClickHouse queries over
   24 hours. User-facing latency and availability impact were unmeasured.
-- **Root cause.** The window and sample models joined each candidate heart-rate
-  sample to workouts by user before checking timestamp overlap. In the latest
-  profiled run of each model, that join built from roughly 5,000 workout rows
-  and took 111–123 seconds. The sample model also applied its user/day filter
-  as a join after reading the sensor table. On 16 recent windows, moving that
-  filter into the sensor read reduced the plan from 12,681 to 1,177 sensor
-  granules. [Window model](../analytics/models/read_models/sleep_heart_rate_window.sql#L252)
-  · [Sample model](../analytics/models/read_models/sleep_heart_rate_sample.sql#L159)
+- **Root cause.** Both models use a workout join with user and timestamp-overlap
+  predicates. In the latest profiled run of each model, the join built from
+  roughly 5,000 workout rows and took 111–123 seconds. The exact predicate
+  evaluation order remains unconfirmed. The sample model used a join to filter
+  the sensor data by user and day. On 16 recent windows, moving that filter into
+  the sensor read reduced the plan from 12,681 to 1,177 sensor granules.
+  [Window join](../analytics/models/read_models/sleep_heart_rate_window.sql#L278)
+  · [Sample join](../analytics/models/read_models/sleep_heart_rate_sample.sql#L179)
   · [ClickHouse query plans](https://clickhouse.com/docs/reference/statements/explain)
   · [ClickHouse processor profiles](https://clickhouse.com/docs/reference/system-tables/processors_profile_log)
 - **Validation and mitigation.** Read-only probes first selected active

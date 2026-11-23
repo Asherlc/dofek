@@ -27,6 +27,11 @@ variable "runner_image" {
   type        = string
   description = "Immutable runner image digest (e.g. registry/repo@sha256:...)"
   default     = null
+
+  validation {
+    condition     = var.runner_image == null || can(regex("^[^@[:space:]]+@sha256:[0-9a-f]{64}$", var.runner_image))
+    error_message = "runner_image must be null or an image reference pinned with @sha256 and 64 lowercase hexadecimal characters."
+  }
 }
 
 resource "fly_app" "runner" {
