@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "nextNumber": 2,
+  "comments": [
+    {
+      "id": "c-710b4a714542",
+      "number": 1,
+      "body": "this one",
+      "anchor": {
+        "artboardId": "metric-tiles",
+        "path": "body > main:nth-of-type(1)",
+        "tag": "main",
+        "text": "Health monitor Sample readings Heart rate variability 64 ms Moving as intended Resting heart rate 58 bpm Near baseline Respiratory rate 15.2 breaths/min Far above baseline Sleep efficiency 83.1% Notab",
+        "html": "<main aria-labelledby=\"health-monitor-heading\">\n      <header class=\"section-heading\">\n        <h1 id=\"health-monitor-heading\" data-dc-id=\"heading\">Health monitor</h1>\n        <p>Sample readings</p>\n      </header>\n      <div class=\"tile-grid all-readings\" data-dc-id=\"all-readings\">\n        <details class=\"tile good\" name=\"metric-details\">\n          <summary data-dc-id=\"hrv\">\n            <span class=\"metric\">Heart rate variability</span>\n            <span class=\"reading\">64 <span class=\"unit\">ms</span></span>\n            <span class=\"chevron\" aria-hidden=\"true\"></span>\n            <span class=\"status\">Moving as intended</span>\n          </summary>\n          <div class=\"tile-detail\" data-dc-id=\"hrv-detail\">\n            <dl class=\"comparison\">\n              <dt>Recent average</dt>\n              <dd>60 ms</dd>\n            </dl>\n          </div>\n        </details>\n        <details class=\"tile neutral\" name=\"metric-details\">\n          <summary data-dc-id=\"resting-heart-rate\">\n            <span class=\"metric\">Resting heart rate</span>\n            <span class=\"reading\">58 <span class=\"unit\">bpm</span></span>\n            <span class=\"chevron\" aria-hidden=\"true\"></span>\n            <span cl",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 415.5
+        }
+      },
+      "status": "resolved",
+      "createdAt": 1795399441096,
+      "sentAt": 1795399442435,
+      "resolvedAt": 1795399459894,
+      "resolution": "Marked Equal-weight tiles as the selected direction in its canvas title."
+    }
+  ]
+}

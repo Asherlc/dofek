@@ -33,7 +33,7 @@
     },
     {
       "id": "metric-tiles",
-      "title": "Equal-weight tiles",
+      "title": "Equal-weight tiles · Selected",
       "file": "metric-tiles.html",
       "width": 390,
       "group": "Tile layouts"
