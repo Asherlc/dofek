@@ -173,7 +173,11 @@ final class WhoopBleConnectionManager {
             }
 
             guard self.state != .disconnecting else {
-                completion(.failure(.disconnected(nil)))
+                if self.connectedPeripheral?.identifier == uuid, self.autoReconnect {
+                    self.addJoinedConnectWaiter(completion)
+                } else {
+                    completion(.failure(.disconnected(nil)))
+                }
                 return
             }
 
