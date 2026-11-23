@@ -382,4 +382,71 @@ describe("selectStrengthProgressionEvidence", () => {
     expect(result[0]?.evidence.observations).toHaveLength(3);
     expect(result[0]?.status).toBe("ready");
   });
+
+  it("does not treat a drop-set baseline as ordinary working-set improvement", () => {
+    const result = decide([
+      evidenceRow(1, "2026-11-10", { set_type: "dropset", reps: 8 }),
+      evidenceRow(2, "2026-11-12", { reps: 10 }),
+      evidenceRow(3, "2026-11-14", { reps: 10 }),
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  it("cites the Failure-bearing source row for flat benchmark observations", () => {
+    const failureRow = benchmarkRow(1, "2026-10-20", 100);
+    const noFailureCopy = {
+      ...failureRow,
+      set_activity_id: evidenceId(1099),
+      member_activity_ids: [evidenceId(1001), evidenceId(1099)],
+      set_id: evidenceId(1098),
+      raw: { weight: 100, weightUnit: "kg", reps: 5, rpe: 8 },
+    };
+    const result = decide([
+      failureRow,
+      noFailureCopy,
+      benchmarkRow(2, "2026-10-25", 100),
+      benchmarkRow(3, "2026-10-30", 101),
+      benchmarkRow(4, "2026-11-04", 101),
+      benchmarkRow(5, "2026-11-09", 100),
+      benchmarkRow(6, "2026-11-17", 100),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(
+      result[0]?.evidence.observations.find(({ date }) => date === "2026-10-20"),
+    ).toMatchObject({
+      sourceSetId: failureRow.set_id,
+      provider: "strong-csv",
+    });
+  });
+
+  it("selects the newest qualifying flat benchmark ending on the latest eligible date", () => {
+    const benchmarkWithReps = (
+      activity: number,
+      date: string,
+      weight: number,
+      reps: number,
+      setIndex: number,
+    ) =>
+      evidenceRow(activity, date, {
+        weight_kg: weight,
+        reps,
+        set_index: setIndex,
+        raw: failureRaw(weight, reps),
+      });
+    const weights = [100, 100, 101, 101, 100, 100];
+    const result = decide([
+      ...["2026-09-01", "2026-09-06", "2026-09-11", "2026-09-16", "2026-09-21", "2026-09-29"].map(
+        (date, index) => benchmarkWithReps(index + 1, date, weights[index] ?? 100, 5, 0),
+      ),
+      ...["2026-10-20", "2026-10-25", "2026-10-30", "2026-11-04", "2026-11-09", "2026-11-17"].map(
+        (date, index) => benchmarkWithReps(index + 10, date, weights[index] ?? 100, 8, 1),
+      ),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      status: "stagnating",
+      latestEvidenceDate: "2026-11-17",
+      evidence: { kind: "flat_benchmark", reps: 8 },
+    });
+  });
 });

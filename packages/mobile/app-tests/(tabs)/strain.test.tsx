@@ -38,6 +38,7 @@ import {
   mockRouterPush,
   mockRunningInvalidate,
   mockStrengthProgressionQuery,
+  mockStrengthProgressionRefetch,
   mockStrengthsState,
   mockTrainingInvalidate,
   mockTrainingState,
@@ -53,6 +54,42 @@ describe("StrainScreen", () => {
       undefined,
       expect.objectContaining({ enabled: true }),
     );
+  });
+
+  it("shows the strength progression error only inside the Strength section", async () => {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    const error = new Error("Strength progression refresh failed");
+    mockStrengthProgressionQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error,
+      refetch: mockStrengthProgressionRefetch,
+    });
+
+    render(<TrainingAnalysis section="strength" isFocused />);
+    expect(screen.getByText(error.message)).toBeTruthy();
+  });
+
+  it("hides the strength progression error outside the Strength section", async () => {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    const error = new Error("Strength progression refresh failed");
+    mockStrengthProgressionQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error,
+      refetch: mockStrengthProgressionRefetch,
+    });
+
+    render(<TrainingAnalysis section="cycling" isFocused />);
+    expect(screen.queryByText(error.message)).toBeNull();
+  });
+
+  it("includes strength progression in pull-to-refresh for the Strength section", async () => {
+    const { TrainingAnalysis } = await import("../../app/strain");
+    render(<TrainingAnalysis section="strength" isFocused />);
+
+    await mockQueryState.refreshInvalidate?.();
+    expect(mockStrengthProgressionRefetch).toHaveBeenCalledOnce();
   });
 
   it("requests the power profile for the selected Cycling range", async () => {

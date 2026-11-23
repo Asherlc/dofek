@@ -2,7 +2,11 @@ import { UnitConverter } from "@dofek/format/units";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { StrengthProgressionEvidence } from "./StrengthProgressionEvidence";
-import { repImprovementRow } from "./training-progression-fixture";
+import {
+  flatBenchmarkRow,
+  repImprovementRow,
+  unbadgedRepImprovementRow,
+} from "./training-progression-fixture";
 
 afterEach(cleanup);
 
@@ -29,4 +33,32 @@ it("marks the disclosure expanded so assistive technology can follow it", () => 
   expect(
     screen.getByRole("button", { name: "See recorded sets" }).getAttribute("aria-expanded"),
   ).toBe("true");
+});
+
+it("shows effort on recorded sets that have an RPE", () => {
+  render(
+    <StrengthProgressionEvidence row={repImprovementRow} units={new UnitConverter("metric")} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "See recorded sets" }));
+  expect(screen.getAllByText(/Effort 7\/10/)).toHaveLength(2);
+});
+
+it("omits effort on recorded sets whose RPE is null", () => {
+  render(
+    <StrengthProgressionEvidence
+      row={unbadgedRepImprovementRow}
+      units={new UnitConverter("metric")}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "See recorded sets" }));
+  expect(screen.queryByText(/Effort/)).toBeNull();
+});
+
+it("shows the estimated one-rep max range above the sets for a flat benchmark", () => {
+  render(
+    <StrengthProgressionEvidence row={flatBenchmarkRow} units={new UnitConverter("metric")} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "See recorded sets" }));
+  expect(screen.getByText(/Estimated one-rep max range/)).toBeTruthy();
+  expect(screen.getByText(/100.0 kg – 101.5 kg/)).toBeTruthy();
 });

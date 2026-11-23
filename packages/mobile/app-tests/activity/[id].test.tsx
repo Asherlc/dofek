@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { AppRouterOutputs } from "dofek-server/router";
 import type React from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -448,6 +449,8 @@ describe("ActivityDetailScreen", () => {
       expect(mocks.calendarWeekListInvalidate).toHaveBeenCalledOnce();
       expect(mocks.calendarActivityOverviewInvalidate).toHaveBeenCalledOnce();
       expect(mocks.calendarDataInvalidate).toHaveBeenCalledOnce();
+      expect(mocks.trainingProgressionStrengthReset).toHaveBeenCalledOnce();
+      expect(mocks.trainingProgressionCyclingReset).toHaveBeenCalledOnce();
       expect(mocks.routerBack).toHaveBeenCalledOnce();
     });
   });
@@ -1263,4 +1266,76 @@ it("keeps the performance section empty when no metric is available", () => {
 
   expect(screen.queryByRole("button", { name: /^Performance metrics:/ })).toBeNull();
   expect(screen.queryByRole("button", { name: /View .* data/ })).toBeNull();
+});
+
+it("enables the cycling progression query only for cycling activities", () => {
+  mocks.byIdQuery.mockReturnValue(defaultObserver(yogaActivity));
+  renderActivityDetail();
+
+  expect(getQueryEnabledFlag(mocks.trainingProgressionCyclingQuery.mock.calls.at(-1)?.[1])).toBe(
+    false,
+  );
+  expect(screen.queryByText("Ready to progress")).toBeNull();
+});
+
+it("shows ready cycling evidence with both dated rides and session effort separated", async () => {
+  const ride = (role: "selected" | "comparison", date: string, watts: number) => ({
+    role,
+    activityId:
+      role === "selected"
+        ? "00000000-0000-4000-8000-000000000001"
+        : "00000000-0000-4000-8000-000000000002",
+    date,
+    sessionEffort: 4,
+    modality: "cycling",
+    exactWorkoutIdentities: [],
+    intervalCount: 1,
+    intervals: [
+      {
+        index: 1,
+        workDurationSeconds: 120,
+        meanPowerWatts: watts,
+        powerCoveragePct: 98,
+        sourceProvider: "zwift",
+        sourceActivityId: null,
+        sourceMemberActivityIds: [],
+      },
+    ],
+    powerProvenance: { measurementKind: "direct" as const, providers: ["zwift"], devices: [] },
+  });
+  const ready: NonNullable<AppRouterOutputs["trainingProgression"]["cycling"]> = {
+    status: "ready",
+    basis: "recorded_work_protocol",
+    comparison: {
+      intervalCount: 1,
+      largestDurationDifferencePct: 1,
+      largestMeanPowerDifferencePct: 2,
+    },
+    rides: [ride("selected", "2026-11-20", 220), ride("comparison", "2026-11-06", 218)],
+  };
+  mocks.trainingProgressionCyclingQuery.mockReturnValue(defaultObserver(ready));
+  renderActivityDetail();
+
+  expect(getQueryEnabledFlag(mocks.trainingProgressionCyclingQuery.mock.calls.at(-1)?.[1])).toBe(
+    true,
+  );
+  expect(await screen.findByText("Ready to progress")).toBeTruthy();
+  expect(screen.getByText("Cycling progression")).toBeTruthy();
+  fireEvent.click(screen.getByText("See interval evidence"));
+  expect(screen.getByText(/Selected ride/)).toBeTruthy();
+  expect(screen.getByText(/Comparison ride/)).toBeTruthy();
+  expect(screen.getAllByText("Session effort: 4/10")).toHaveLength(2);
+  expect(screen.getAllByText(/220 W/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/218 W/).length).toBeGreaterThan(0);
+});
+
+it("keeps the recorded Session effort when cycling evidence is empty", () => {
+  mocks.byIdQuery.mockReturnValue(
+    defaultObserver({ ...baseCyclingActivity, perceivedExertion: 7 }),
+  );
+  renderActivityDetail();
+
+  expect(screen.getByLabelText("Session perceived exertion")).toBeTruthy();
+  expect(screen.getByText("7/10")).toBeTruthy();
+  expect(screen.queryByText("Ready to progress")).toBeNull();
 });

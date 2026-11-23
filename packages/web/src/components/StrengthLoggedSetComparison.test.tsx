@@ -1,9 +1,14 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 
 import { StrengthLoggedSetComparison } from "./StrengthLoggedSetComparison.tsx";
 import { loggedSetFixture } from "./strength-logged-set-fixture.ts";
+import {
+  flatBenchmarkRow,
+  repImprovementRow,
+  unbadgedRepImprovementRow,
+} from "./training-progression-fixture.ts";
 
 afterEach(cleanup);
 it("renders exact rep evidence and missing sessions", () => {
@@ -63,4 +68,49 @@ it("preserves server calendar dates in sessions and comparison endpoints", () =>
   expect(screen.getByText("Nov 3, 2026 to Nov 20, 2026")).toBeTruthy();
   expect(screen.getByRole("rowheader", { name: "Nov 3, 2026" })).toBeTruthy();
   expect(screen.getByRole("rowheader", { name: "Nov 12, 2026" })).toBeTruthy();
+});
+
+it("shows the selected lift's progression status and follows exercise changes", () => {
+  render(
+    <StrengthLoggedSetComparison
+      data={loggedSetFixture}
+      progressionRows={[unbadgedRepImprovementRow, repImprovementRow]}
+    />,
+  );
+  const status = () => screen.getByRole("region", { name: "Training progression status" });
+  expect(within(status()).getByText("Ready to progress")).toBeTruthy();
+  expect(within(status()).getByText("Bench press · Barbell")).toBeTruthy();
+  expect(within(status()).getByText("More reps at the same weight")).toBeTruthy();
+
+  fireEvent.change(screen.getByRole("combobox", { name: "Exercise and equipment" }), {
+    target: { value: "dumbbell" },
+  });
+  expect(within(status()).queryByText("Ready to progress")).toBeNull();
+  expect(within(status()).getByText("Bench press · Dumbbell")).toBeTruthy();
+  expect(within(status()).getByText("More reps at the same weight")).toBeTruthy();
+
+  fireEvent.change(screen.getByRole("combobox", { name: "Exercise and equipment" }), {
+    target: { value: "bench" },
+  });
+  expect(within(status()).getByText("Ready to progress")).toBeTruthy();
+});
+
+it("shows a flat benchmark status for the selected lift", () => {
+  render(
+    <StrengthLoggedSetComparison
+      data={loggedSetFixture}
+      progressionRows={[{ ...flatBenchmarkRow, exerciseId: "bench" }]}
+    />,
+  );
+  const status = within(screen.getByRole("region", { name: "Training progression status" }));
+  expect(status.getByText("Stagnating")).toBeTruthy();
+  expect(
+    status.getByText("Estimated strength held steady across 7 comparable sessions."),
+  ).toBeTruthy();
+});
+
+it("keeps the comparison usable when no progression rows match", () => {
+  render(<StrengthLoggedSetComparison data={loggedSetFixture} progressionRows={[]} />);
+  expect(screen.queryByRole("region", { name: "Training progression status" })).toBeNull();
+  expect(screen.getByText("12")).toBeTruthy();
 });

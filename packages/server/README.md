@@ -432,6 +432,24 @@ lists stay readable without hiding the time axis.
 
 `strength.exerciseHistory` pairs each exercise's estimated-strength observations with optional Crimpd order evidence in one selected-range response, and keeps order-only lifts when no estimate exists. The repository reads only active, user-scoped Crimpd member workouts, verifies the raw `ACTIVITY_ORDER`, `SET_ORDER`, and `LOG_ID` positions, and requires completed sets with finite recorded `RESISTANCE` and `WEIGHT_UNIT` (`KG` or `LBS`) values. Loads stay in their recorded unit. The contract is defined in [strength-exercise-history.ts](src/contracts/strength-exercise-history.ts); source fields follow the [Crimpd set export](https://crimpd.com/docs/data-export/#setscsv).
 
+### Training progression status
+
+The web and iOS Home, Strength, and cycling Activity Detail surfaces render
+read-only results from the [training progression router](src/routers/training-progression.ts).
+Strength compares canonical sets from the last 56 days. Repeated same-load rep
+improvements at comparable recorded effort can show **Ready to progress**.
+When effort is unavailable, completed-set evidence can still show the rep
+improvement. A flat set of comparable strength estimates can show **Stagnating**
+when it covers at least six dates and spans at least 28 days. The 2.5% range
+limit is an application rule for the recorded benchmark.
+
+Cycling compares two authorized rides with comparable provider-recorded work
+intervals, directly measured power, and imported whole-ride Session effort.
+The comparison uses a bounded prior-ride search and returns an empty status
+when evidence is incomplete. The [strength](src/contracts/training-progression-strength.ts)
+and [cycling](src/contracts/training-progression-cycling.ts) contracts include the
+dated observations that support each result.
+
 ### MCP activity and cycling analytics
 
 The read-only MCP keeps the existing `get_activity_streams` and

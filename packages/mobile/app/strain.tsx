@@ -333,6 +333,7 @@ export function TrainingAnalysis({
         utils.training.hrZones.invalidate(),
         utils.training.sportVolume.invalidate(),
         ...(section === "cycling" ? [utils.cycling.powerProfile.invalidate()] : []),
+        ...(show("strength") ? [strengthProgressionQuery.refetch()] : []),
         utils.hiking.activityComparison.invalidate(),
         utils.efficiency.polarizationTrend.invalidate(),
         utils.processing.status.invalidate(),
@@ -509,6 +510,9 @@ export function TrainingAnalysis({
       ) : null}
       {show("strength") ? (
         <>
+          {strengthProgressionQuery.error ? (
+            <QueryStatePanel variant="error" message={strengthProgressionQuery.error.message} />
+          ) : null}
           <StrengthLoggedSetComparison
             data={loggedSetsQuery.data}
             loading={loggedSetsQuery.isLoading}

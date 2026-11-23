@@ -50,6 +50,7 @@ async function invalidateActivityListCaches(userId: string): Promise<void> {
     queryCache.invalidateByPrefix(`${userId}:activity.`),
     queryCache.invalidateByPrefix(`${userId}:calendar.`),
     queryCache.invalidateByPrefix(`${userId}:climbing.locationMap:`),
+    queryCache.invalidateByPrefix(`${userId}:trainingProgression.`),
   ]);
 }
 

@@ -48,6 +48,7 @@ export async function invalidateActivityVisibilityCaches(userId: string): Promis
     queryCache.invalidateByPrefix(`${userId}:calendar.`),
     queryCache.invalidateByPrefix(`${userId}:training.`),
     queryCache.invalidateByPrefix(`${userId}:running.`),
+    queryCache.invalidateByPrefix(`${userId}:trainingProgression.`),
   ]);
 }
 

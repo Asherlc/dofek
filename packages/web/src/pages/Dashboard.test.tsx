@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { UnitConverter } from "@dofek/format/units";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PageLoadProvider } from "../lib/page-load-context.tsx";
@@ -34,6 +34,9 @@ const mockInsightsQuery = vi.hoisted(() =>
   })),
 );
 const mockDataHealthQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
+);
+const mockTrainingProgressionStrengthQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
 );
 const mockDashboardEvidenceOverview = vi.hoisted(() => vi.fn());
@@ -74,8 +77,13 @@ vi.mock("../hooks/useTodayQueryDate.ts", () => ({
   useTodayQueryDate: () => "2026-05-27",
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+}));
+
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
+    trainingProgression: { strength: { useQuery: mockTrainingProgressionStrengthQuery } },
     dailyMetrics: {
       trends: { useQuery: mockTrendsQuery },
       hrvBaseline: { useQuery: mockHeartRateBaselineQuery },
@@ -95,6 +103,10 @@ vi.mock("../lib/unitContext.ts", () => ({
   useUnitConverter: () => new UnitConverter("metric"),
 }));
 
+import {
+  repImprovementRow,
+  unbadgedRepImprovementRow,
+} from "../components/training-progression-fixture.ts";
 import { Dashboard } from "./Dashboard";
 
 afterEach(cleanup);
@@ -161,7 +173,61 @@ describe("Dashboard", () => {
       error: null,
     });
     mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
+    mockTrainingProgressionStrengthQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+    });
     mockDashboardEvidenceOverview.mockClear();
+  });
+
+  it("shows one latest eligible strength status with a link that opens Strength", () => {
+    mockTrainingProgressionStrengthQuery.mockReturnValue({
+      data: [unbadgedRepImprovementRow, repImprovementRow],
+      isLoading: false,
+      error: null,
+    });
+    render(<Dashboard />);
+    const status = screen.getByRole("region", { name: "Training progression status" });
+    expect(within(status).getByText("Ready to progress")).toBeTruthy();
+    expect(within(status).getByText("Bench press · Barbell")).toBeTruthy();
+    expect(within(status).getByRole("link", { name: "Open Strength" })).toBeTruthy();
+    expect(within(status).getByText("See recorded sets")).toBeTruthy();
+  });
+
+  it("discloses dated strength evidence on Home without leaving the summary", () => {
+    mockTrainingProgressionStrengthQuery.mockReturnValue({
+      data: [repImprovementRow],
+      isLoading: false,
+      error: null,
+    });
+    render(<Dashboard />);
+    const status = screen.getByRole("region", { name: "Training progression status" });
+    expect(within(status).queryByText(/Nov 20, 2026/)).toBeNull();
+    fireEvent.click(within(status).getByText("See recorded sets"));
+    expect(within(status).getByText(/Nov 20, 2026 · 10 reps at/)).toBeTruthy();
+  });
+
+  it("shows a strength refresh error while keeping the cached status visible", () => {
+    mockTrainingProgressionStrengthQuery.mockReturnValue({
+      data: [repImprovementRow],
+      isLoading: false,
+      error: new Error("Could not refresh strength progression"),
+    });
+    render(<Dashboard />);
+    expect(screen.getByText("Could not refresh strength progression")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Training progression status" })).toBeTruthy();
+  });
+
+  it("keeps dashboard content usable when no strength status is available", () => {
+    mockTrainingProgressionStrengthQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+    });
+    render(<Dashboard />);
+    expect(screen.queryByRole("region", { name: "Training progression status" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Dashboard overview" })).toBeTruthy();
   });
 
   it("shows one notice when dashboard and processing status queries fail from the same offline condition", () => {

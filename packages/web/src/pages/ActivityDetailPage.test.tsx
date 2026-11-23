@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import type { AppRouterOutputs } from "dofek-server/router";
 import type { ComponentType } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
@@ -59,6 +60,7 @@ import {
   mockStreamPoints,
   mockStreamUseQuery,
   mockStrengthExercisesUseQuery,
+  mockTrainingProgressionCyclingUseQuery,
   queryResult,
   renderWithUnits,
   resetActivityDetailPageMocks,
@@ -1135,6 +1137,88 @@ describe("ActivityDetailPage", () => {
         expect(screen.getByText("Power zones refresh failed")).toBeTruthy();
         expect(screen.getByText("Applied FTP: 250 W")).toBeTruthy();
         expect(screen.queryByRole("link", { name: "Set FTP" })).toBeNull();
+      });
+    });
+
+    describe("cycling progression evidence", () => {
+      const readyRide = (role: "selected" | "comparison", date: string, watts: number) => ({
+        role,
+        activityId:
+          role === "selected"
+            ? "00000000-0000-4000-8000-000000000001"
+            : "00000000-0000-4000-8000-000000000002",
+        date,
+        sessionEffort: 4,
+        modality: "cycling",
+        exactWorkoutIdentities: [],
+        intervalCount: 1,
+        intervals: [
+          {
+            index: 1,
+            workDurationSeconds: 120,
+            meanPowerWatts: watts,
+            powerCoveragePct: 98,
+            sourceProvider: "zwift",
+            sourceActivityId: null,
+            sourceMemberActivityIds: [],
+          },
+        ],
+        powerProvenance: {
+          measurementKind: "direct" as const,
+          providers: ["zwift"],
+          devices: [],
+        },
+      });
+      const ready: NonNullable<AppRouterOutputs["trainingProgression"]["cycling"]> = {
+        status: "ready",
+        basis: "recorded_work_protocol",
+        comparison: {
+          intervalCount: 1,
+          largestDurationDifferencePct: 1,
+          largestMeanPowerDifferencePct: 2,
+        },
+        rides: [
+          readyRide("selected", "2026-11-20", 220),
+          readyRide("comparison", "2026-11-06", 218),
+        ],
+      };
+
+      it("only enables the cycling progression query for cycling activities", () => {
+        renderWithUnits(<ActivityDetailPage />);
+        expect(getQueryEnabledFlag(mockTrainingProgressionCyclingUseQuery.mock.calls[0]?.[1])).toBe(
+          false,
+        );
+        expect(screen.queryByText("Ready to progress")).toBeNull();
+      });
+
+      it("shows ready cycling evidence with both dated rides and session effort separated", async () => {
+        setCyclingPowerActivity();
+        mockTrainingProgressionCyclingUseQuery.mockReturnValue(queryResult(ready));
+        renderWithUnits(<ActivityDetailPage />);
+
+        expect(mockTrainingProgressionCyclingUseQuery).toHaveBeenCalledWith(
+          { activityId: "test-123" },
+          expect.objectContaining({ enabled: true }),
+        );
+        expect(await screen.findByText("Ready to progress")).toBeDefined();
+        fireEvent.click(screen.getByText("See interval evidence"));
+        expect(screen.getByText(/Selected ride/)).toBeDefined();
+        expect(screen.getByText(/Comparison ride/)).toBeDefined();
+        expect(screen.getAllByText(/Session effort: 4\/10/)).toHaveLength(2);
+        expect(screen.getAllByText(/220 W/).length).toBeGreaterThan(0);
+        expect(screen.getAllByText(/218 W/).length).toBeGreaterThan(0);
+      });
+
+      it("keeps the recorded Session effort when cycling evidence is empty", () => {
+        setCyclingPowerActivity();
+        mockActivityByIdUseQuery.mockReturnValue(
+          queryResult({ ...mockActivity, perceivedExertion: 7 }),
+        );
+        renderWithUnits(<ActivityDetailPage />);
+
+        expect(screen.getByText("Session effort")).toBeDefined();
+        expect(screen.getByText("7/10")).toBeDefined();
+        expect(screen.queryByText("Ready to progress")).toBeNull();
       });
     });
   });

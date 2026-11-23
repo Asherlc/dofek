@@ -30,11 +30,19 @@ export function StrengthProgressionEvidence({
       </Pressable>
       {expanded ? (
         <View style={styles.list}>
+          {row.evidence.kind === "flat_benchmark" ? (
+            <Text style={styles.text}>
+              Estimated one-rep max range:{" "}
+              {formatMeasurementText(units.formatWeight(row.evidence.observedRangeKg.min))} –{" "}
+              {formatMeasurementText(units.formatWeight(row.evidence.observedRangeKg.max))}
+            </Text>
+          ) : null}
           {observations.map((observation) => (
             <View key={observation.sourceSetId} style={styles.row}>
               <Text style={styles.text}>
                 {formatDateMedium(observation.date, { timeZone: "UTC" })} · {observation.reps} reps
                 at {formatMeasurementText(units.formatWeight(observation.weightKg))}
+                {observation.rpe !== null ? ` · Effort ${observation.rpe}/10` : null}
               </Text>
               <Text style={styles.meta}>{providerLabel(observation.provider)}</Text>
             </View>

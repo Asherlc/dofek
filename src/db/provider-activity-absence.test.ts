@@ -65,7 +65,8 @@ describe("provider activity absence cache invalidation", () => {
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:running.`);
-    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:trainingProgression.`);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(5);
   });
 
   it("invalidates activity, calendar, and training caches after reconciliation", async () => {
@@ -82,7 +83,7 @@ describe("provider activity absence cache invalidation", () => {
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:running.`);
-    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(5);
   });
 
   it("skips tombstone SQL when the provider list is empty", async () => {
@@ -95,7 +96,7 @@ describe("provider activity absence cache invalidation", () => {
     });
 
     expect(mockExecute).not.toHaveBeenCalled();
-    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(5);
   });
 
   it("reconciles an explicitly authoritative empty list and invalidates visibility caches", async () => {
@@ -108,7 +109,7 @@ describe("provider activity absence cache invalidation", () => {
       userId,
     });
     expect(mockExecute).toHaveBeenCalledTimes(1);
-    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(5);
   });
 
   it("invalidates activity, calendar, and training caches after marking absent", async () => {
@@ -126,7 +127,7 @@ describe("provider activity absence cache invalidation", () => {
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:running.`);
-    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(5);
   });
 
   it("invalidates activity, calendar, and training caches after marking present", async () => {
@@ -148,7 +149,7 @@ describe("provider activity absence cache invalidation", () => {
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:running.`);
-    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(5);
   });
 
   it("restores every listed activity in one statement pair without invalidating caches", async () => {

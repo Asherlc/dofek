@@ -199,6 +199,8 @@ export default function ActivitiesScreen() {
       await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
       await trpcUtils.calendar.upcomingWorkouts.invalidate();
+      await trpcUtils.trainingProgression.strength.reset();
+      await trpcUtils.trainingProgression.cycling.reset();
       setSelectedActivities(new Map());
       setSelectMode(false);
     },
@@ -212,6 +214,8 @@ export default function ActivitiesScreen() {
       await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
       await trpcUtils.calendar.upcomingWorkouts.invalidate();
+      await trpcUtils.trainingProgression.strength.reset();
+      await trpcUtils.trainingProgression.cycling.reset();
       setSelectedActivities(new Map());
       setSelectMode(false);
     },

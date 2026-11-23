@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { keepPreviousData } from "@tanstack/react-query";
-import { cleanup } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import {
@@ -25,6 +25,24 @@ describe("strength route range plumbing", () => {
     state.days = null;
     await renderRoute("/training/strength", () => import("./strength.lazy.tsx"));
     expectRegistryInputs("strength", null);
+  });
+
+  it("loads training progression rows for the Strength evidence card", async () => {
+    await renderRoute("/training/strength", () => import("./strength.lazy.tsx"));
+    expect(state.queryCalls).toContainEqual(
+      expect.objectContaining({ name: "trainingProgression.strength" }),
+    );
+  });
+
+  it("shows a strength progression refresh error while keeping cached rows visible", async () => {
+    state.trainingProgressionStrengthQuery = {
+      data: [1],
+      isLoading: false,
+      error: new Error("Could not refresh strength progression"),
+    };
+    await renderRoute("/training/strength", () => import("./strength.lazy.tsx"));
+    expect(screen.getByText("Could not refresh strength progression")).toBeTruthy();
+    expect(screen.getByTestId("progression-rows-count").textContent).toBe("1");
   });
 
   it("keeps previous logged-set data across selected ranges with slow query options", async () => {

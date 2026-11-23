@@ -1174,7 +1174,7 @@ describe("activityRouter", () => {
       expect(execute).toHaveBeenCalledTimes(4);
     });
 
-    it("invalidates activity, calendar, and climbing map caches after delete", async () => {
+    it("invalidates activity, calendar, climbing map, and training progression caches after delete", async () => {
       const execute = vi
         .fn()
         .mockResolvedValueOnce([{ member_activity_id: "00000000-0000-0000-0000-000000000001" }])
@@ -1192,6 +1192,7 @@ describe("activityRouter", () => {
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.locationMap:");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:trainingProgression.");
     });
 
     it("enqueues an activity analytics refresh after delete", async () => {
@@ -1361,7 +1362,7 @@ describe("activityRouter", () => {
       });
     });
 
-    it("invalidates activity, calendar, and climbing map caches after bulkDelete", async () => {
+    it("invalidates activity, calendar, climbing map, and training progression caches after bulkDelete", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
@@ -1376,6 +1377,7 @@ describe("activityRouter", () => {
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.locationMap:");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:trainingProgression.");
     });
 
     it("reports analytics enqueue failures to Sentry without failing bulkDelete", async () => {

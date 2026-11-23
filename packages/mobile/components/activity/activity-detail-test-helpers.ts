@@ -155,10 +155,13 @@ export const routeMocks = {
   powerZonesQuery: vi.fn(),
   powerWorkQuery: vi.fn(),
   plannedIntervalsQuery: vi.fn(),
+  trainingProgressionCyclingQuery: vi.fn(),
   strengthExercisesQuery: vi.fn(),
   climbingEntriesQuery: vi.fn(),
   hangboardDetailsQuery: vi.fn(),
   deleteMutate: vi.fn(),
+  trainingProgressionStrengthReset: vi.fn(),
+  trainingProgressionCyclingReset: vi.fn(),
   restoreProviderAbsentMutate: vi.fn(),
   restoreResult: vi.fn<() => { analyticsJobId: string } | undefined>(() => undefined),
   restoreStatus: vi.fn<
@@ -468,6 +471,8 @@ export function resetActivityDetailMocks(options: {
     isPlaceholderData: false,
     error: null,
   });
+  mocks.trainingProgressionCyclingQuery.mockReset();
+  mocks.trainingProgressionCyclingQuery.mockReturnValue(defaultObserver(null));
   mocks.powerWorkQuery.mockReset();
   mocks.powerWorkQuery.mockReturnValue({
     data: { workKilojoules: null, coverage: { coveredSeconds: 0, coveragePct: 0 } },
@@ -484,6 +489,8 @@ export function resetActivityDetailMocks(options: {
   mocks.hangboardDetailsQuery.mockReset();
   mocks.hangboardDetailsQuery.mockReturnValue(defaultObserver(undefined));
   mocks.deleteMutate.mockClear();
+  mocks.trainingProgressionStrengthReset.mockClear();
+  mocks.trainingProgressionCyclingReset.mockClear();
   mocks.attachEntryMutate.mockClear();
   mocks.activityByIdInvalidate.mockClear();
   mocks.activityInvalidate.mockClear();
@@ -522,6 +529,11 @@ export function makeTrpcMock() {
       intervals: {
         plannedByActivity: {
           useQuery: (...args: unknown[]) => mocks.plannedIntervalsQuery(...args),
+        },
+      },
+      trainingProgression: {
+        cycling: {
+          useQuery: (...args: unknown[]) => mocks.trainingProgressionCyclingQuery(...args),
         },
       },
       activity: {
@@ -603,6 +615,10 @@ export function makeTrpcMock() {
       },
       useUtils: () => ({
         mobileDashboard: { trainingV2: { invalidate: mocks.mobileTrainingInvalidate } },
+        trainingProgression: {
+          strength: { reset: mocks.trainingProgressionStrengthReset },
+          cycling: { reset: mocks.trainingProgressionCyclingReset },
+        },
         activity: {
           invalidate: mocks.activityInvalidate,
           images: { invalidate: mocks.activityImagesInvalidate },

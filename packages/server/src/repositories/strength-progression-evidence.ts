@@ -47,12 +47,13 @@ function dateSpanDays(first: string, last: string): number {
 }
 
 /**
- * A set's position is taken from its recorded exercise occurrence and ordinal,
- * never from a compacted list of working sets: dropping an invalid neighbour
- * must not move a valid set into another session's slot.
+ * A set's position is taken from its recorded exercise occurrence, ordinal, and
+ * set type, never from a compacted list of working sets: dropping an invalid
+ * neighbour must not move a valid set into another session's slot, and drop or
+ * failure variants must not be compared as ordinary working sets.
  */
 function positionKey(set: EvidenceSet): string {
-  return JSON.stringify([set.row.exercise_index, set.row.set_index]);
+  return JSON.stringify([set.row.exercise_index, set.row.set_index, set.row.set_type]);
 }
 
 function recordedSlot(set: EvidenceSet): number {
@@ -220,17 +221,24 @@ function flatBenchmarkCandidate(sets: EvidenceSet[]): EvidenceCandidate | null {
     if (flags.length > 0) continue;
     const estimate = estimateConsolidatedStrengthSet(set, flags);
     const { weight_kg: weight, reps } = set.row;
-    if (estimate.value === null || weight === null || weight <= 0 || reps === null || reps <= 0) {
+    const source = estimate.source;
+    if (
+      estimate.value === null ||
+      source === null ||
+      weight === null ||
+      weight <= 0 ||
+      reps === null ||
+      reps <= 0
+    ) {
       continue;
     }
-    const key = JSON.stringify([positionKey(set), reps, representativeSource(set).set_provider]);
+    const key = JSON.stringify([positionKey(set), reps, source.set_provider]);
     const group = byProtocol.get(key) ?? { reps, observations: [] };
-    group.observations.push(
-      observationOf(set, representativeSource(set), weight, reps, estimate.value),
-    );
+    group.observations.push(observationOf(set, source, weight, reps, estimate.value));
     byProtocol.set(key, group);
   }
 
+  const candidates: EvidenceCandidate[] = [];
   for (const group of byProtocol.values()) {
     const observations = dailyObservations(group.observations);
     if (observations.length < FLAT_BENCHMARK_MIN_DATES) continue;
@@ -260,7 +268,7 @@ function flatBenchmarkCandidate(sets: EvidenceSet[]): EvidenceCandidate | null {
     };
     if (!effort.comparable) continue;
     const newestFirst = [...observations].reverse();
-    return {
+    candidates.push({
       evidence: {
         kind: "flat_benchmark",
         formula: "Epley",
@@ -273,9 +281,13 @@ function flatBenchmarkCandidate(sets: EvidenceSet[]): EvidenceCandidate | null {
       },
       status: "stagnating",
       latestDate: newestFirst[0]?.date ?? "",
-    };
+    });
   }
-  return null;
+  // An older qualifying protocol must not suppress a newer flat group that ends
+  // on the lift's latest eligible exposure date. JS sort is stable, so ties keep
+  // the original protocol discovery order.
+  candidates.sort((a, b) => b.latestDate.localeCompare(a.latestDate));
+  return candidates[0] ?? null;
 }
 
 /**

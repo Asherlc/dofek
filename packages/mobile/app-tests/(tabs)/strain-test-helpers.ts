@@ -42,11 +42,13 @@ export const mockAttemptIncreaseInvalidate = vi.fn();
 export const mockBestOnsightQuery = vi.fn();
 export const mockBestOnsightRefetch = vi.fn();
 export const mockBestOnsightInvalidate = vi.fn();
+export const mockStrengthProgressionRefetch = vi.fn();
 export const mockStrengthProgressionQuery = vi.fn(
-  (): { data: unknown[]; isLoading: boolean; error: unknown } => ({
+  (): { data: unknown[]; isLoading: boolean; error: unknown; refetch: () => Promise<unknown> } => ({
     data: [],
     isLoading: false,
     error: null,
+    refetch: mockStrengthProgressionRefetch,
   }),
 );
 type MockRangeQueryOptions = {
@@ -431,10 +433,12 @@ export function resetStrainMocks() {
   });
   mockBestOnsightRefetch.mockReset().mockResolvedValue(undefined);
   mockBestOnsightInvalidate.mockReset().mockResolvedValue(undefined);
+  mockStrengthProgressionRefetch.mockReset().mockResolvedValue(undefined);
   mockStrengthProgressionQuery.mockReset().mockReturnValue({
     data: [],
     isLoading: false,
     error: null,
+    refetch: mockStrengthProgressionRefetch,
   });
   mockQueryState.runningData = { ...runningData, data: [] };
   mockQueryState.runningLoading = false;
