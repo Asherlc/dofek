@@ -1,7 +1,7 @@
 import { localTimeSourceSchema } from "@dofek/format/record-local-time";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
-import type { RangeDays } from "../lib/date-window.ts";
+import { clickHouseDateRangePredicate, type RangeDays } from "../lib/date-window.ts";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorQueryOptions, ActivitySensorStore } from "./activity-repository.ts";
 
@@ -83,6 +83,7 @@ export interface FetchSleepNightsInput {
   timezone: string;
   endDate: string;
   days: RangeDays;
+  dateBasis?: "wake";
   accessWindow?: AccessWindow;
   order?: "asc" | "desc";
   limit?: number;
@@ -176,14 +177,19 @@ export async function fetchSleepNights(
 ): Promise<ClickHouseSleepNight[]> {
   const orderDirection = input.order === "desc" ? "DESC" : "ASC";
   const limitClause = input.limit != null ? "\nLIMIT {limit:UInt32}" : "";
-  const sleepLowerBoundClause =
-    input.days === null
-      ? ""
-      : "AND sleep.date >= subtractDays(toDate({endDate:String}), {days:UInt32})";
+  const wakeDate = input.dateBasis === "wake";
+  const dateExpression = wakeDate
+    ? "toDate(toTimeZone(coalesce(sleep.ended_at, addMinutes(sleep.started_at, ifNull(sleep.duration_minutes, 0))), {timezone:String}))"
+    : "sleep.date";
+  const sleepLowerBoundClause = clickHouseDateRangePredicate({
+    expression: dateExpression,
+    days: input.days,
+    operator: wakeDate ? ">" : ">=",
+  });
   const rows = await input.sensorStore.query(
     clickHouseSleepNightSchema,
     `SELECT
-      toString(sleep.date) AS date,
+      toString(${dateExpression}) AS date,
       sleep.provider_id AS provider_id,
       sleep.source_name AS source_name,
       sleep.source_providers AS source_providers,
@@ -205,13 +211,14 @@ export async function fetchSleepNights(
     WHERE sleep.user_id = {userId:UUID}
       AND sleep.is_deleted = 0
       ${sleepLowerBoundClause}
-      AND sleep.date <= toDate({endDate:String})
+      AND ${dateExpression} <= toDate({endDate:String})
       ${dateAccessWindowClause(input.accessWindow)}
     ORDER BY sleep.date ${orderDirection}${limitClause}`,
     {
       userId: input.userId,
       endDate: input.endDate,
       ...(input.days === null ? {} : { days: input.days }),
+      ...(wakeDate ? { timezone: input.timezone } : {}),
       ...(input.limit != null ? { limit: input.limit } : {}),
       ...accessWindowParams(input.accessWindow),
     },

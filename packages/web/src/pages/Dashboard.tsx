@@ -189,7 +189,11 @@ export function Dashboard() {
   ) : !insightsQuery.isFetched ? (
     <QueryStatePanel variant="loading" height={160} />
   ) : !topInsight ? (
-    <QueryStatePanel variant="empty" message="No insights to display." height={160} />
+    <QueryStatePanel
+      variant="empty"
+      message="No relationships met the evidence threshold for this period."
+      height={160}
+    />
   ) : null;
 
   return (

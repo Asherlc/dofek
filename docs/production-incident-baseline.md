@@ -39841,3 +39841,13 @@ Local qualification and CI are separate from production throughput acceptance. T
   empty-state message. This investigation made no runtime changes.
   [Date helpers](../packages/server/src/lib/date-window.ts) ·
   [Input join](../packages/server/src/insights/data-join.ts).
+- **Fix awaiting release.** The Overview reads workouts by local start
+  date and sleep by local wake date, and caps nutrition at the same
+  inclusive end date. The server cache key changed so refreshes use the
+  corrected calculation. The web and iOS cards explain when no
+  relationship meets the evidence threshold. The regression fixture
+  crosses a daylight-saving change and includes workouts and nutrition
+  after the historical end date. A read-only replay with the corrected
+  code returned zero eligible candidates for November 23 and one for
+  November 16.
+  [Repository regression](../packages/server/src/repositories/insights-repository.integration.test.ts).

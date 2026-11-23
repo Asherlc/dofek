@@ -26,6 +26,8 @@ export interface DailyRow {
 
 export interface SleepRow {
   [key: string]: string | number | Date | boolean | null | undefined;
+  /** Canonical local calendar date when supplied by the source query. */
+  date?: string | Date;
   started_at: string;
   duration_minutes: number | null;
   deep_minutes: number | null;

@@ -282,6 +282,21 @@ describe("TodayScreen independent loading states", () => {
     });
   });
 
+  it("explains an empty successful insights result on the Overview", async () => {
+    mockInsightsQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+    render(<OverviewScreen />);
+
+    expect(
+      screen.getByText("No relationships met the evidence threshold for this period."),
+    ).toBeTruthy();
+  });
+
   it("uses health monitor fixtures that match the server contract", () => {
     for (const metric of overviewEvidenceFixture.trends.data.healthStatus) {
       expect(healthStatusMetricSchema.safeParse(metric).success).toBe(true);

@@ -9,10 +9,10 @@ import {
 } from "../insights/schemas.ts";
 import {
   clickHouseWindowStartPredicate,
+  dateWindowEnd,
   dateWindowStartPredicate,
   dateWindowStartStringOrUndefined,
   type RangeDays,
-  timestampWindowStartPredicate,
 } from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -44,6 +44,7 @@ export class InsightsRepository {
 
   async computeInsights(days: RangeDays, endDate: string) {
     const metricWindowStart = dateWindowStartStringOrUndefined(endDate, days);
+    const activityDate = sql`(started_at AT TIME ZONE ${this.#timezone})::date`;
     const [metricRows, restingHeartRateRows, sleep, activities, nutrition, bodyComp] =
       await Promise.all([
         this.#sensorStore.query(
@@ -83,10 +84,12 @@ export class InsightsRepository {
           timezone: this.#timezone,
           endDate,
           days,
+          dateBasis: "wake",
           order: "asc",
         }).then((rows) =>
           rows.map((row) =>
             sleepRowSchema.parse({
+              date: row.date,
               started_at: row.started_at,
               duration_minutes: row.duration_minutes,
               deep_minutes: row.deep_minutes,
@@ -101,10 +104,11 @@ export class InsightsRepository {
         executeWithSchema(
           this.#db,
           activityRowSchema,
-          sql`SELECT started_at, ended_at, canonical_type
+          sql`SELECT ${activityDate} AS date, started_at, ended_at, canonical_type
             FROM fitness.v_activity
             WHERE user_id = ${this.#userId}
-              ${timestampWindowStartPredicate(sql`started_at`, endDate, days)}
+              ${dateWindowStartPredicate(activityDate, endDate, days)}
+              AND ${activityDate} <= ${dateWindowEnd(endDate)}
             ORDER BY started_at ASC`,
         ),
         executeWithSchema(
@@ -115,6 +119,7 @@ export class InsightsRepository {
             WHERE user_id = ${this.#userId}
               AND resolution_status = 'available'
               ${dateWindowStartPredicate(sql`date`, endDate, days)}
+              AND date <= ${dateWindowEnd(endDate)}
             ORDER BY date ASC`,
         ),
         fetchBodyCompRows(this.#sensorStore, this.#userId, this.#timezone, endDate, days),

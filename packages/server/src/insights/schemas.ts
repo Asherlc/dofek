@@ -13,6 +13,7 @@ export const dailyRowSchema = z.object({
 
 /** Zod schema for sleep rows used by insights/correlation queries. */
 export const sleepRowSchema = z.object({
+  date: dateStringSchema.optional(),
   started_at: timestampStringSchema,
   duration_minutes: z.number().nullable(),
   deep_minutes: z.number().nullable(),
