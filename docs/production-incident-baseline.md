@@ -1,5 +1,36 @@
 # Production Incident Baseline
 
+## 2026-11-24 — PR #3474 CI: deduped_sensor fixture contract and dotenv-linter install 503
+
+- **Impact.** [CI run 45336998012](https://github.com/Asherlc/dofek/actions/runs/45336998012)
+  for [PR #3474](https://github.com/Asherlc/dofek/pull/3474) failed required checks before
+  merge.
+- **Evidence / cause.**
+  [Integration shard 2/5 job 138252930888](https://github.com/Asherlc/dofek/actions/runs/45336998012/job/138252930888)
+  failed `src/db/clickhouse-deduped-sensor.integration.test.ts` with
+  `Number of columns doesn't match (source: 18 and result: 17)` on the intentional legacy
+  dbt insert path, and
+  `analytics/models/read_models/activity_sensor_dirty_keys.integration.test.ts` with
+  `Syntax error … { this }} FINAL`.
+  [Integration shard 4/5 job 138252930864](https://github.com/Asherlc/dofek/actions/runs/45336998012/job/138252930864)
+  failed `activity_heart_rate_distribution.integration.test.ts` with the same
+  `{{ this }}` residual after incremental `deduped_sensor.sql` replay.
+  [Dotenv Lint job 138251360215](https://github.com/Asherlc/dofek/actions/runs/45336998012/job/138251360215)
+  failed `Install dotenv-linter` with `curl: (22) The requested URL returned error: 503`
+  while fetching the pinned `raw.githubusercontent.com` install script.
+- **Fix.** Legacy dbt insert now `EXCEPT`s both `source_refreshed_at` and
+  `heart_rate_changed_at`. Activity performance fixtures resolve `{{ this }}` to the
+  fixture `deduped_sensor` and include `heart_rate_changed_at DateTime64(9, 'UTC')` in
+  DDL/projection. Dotenv Lint downloads the
+  [v4.0.0 linux-x86_64 release tarball](https://github.com/dotenv-linter/dotenv-linter/releases/download/v4.0.0/dotenv-linter-linux-x86_64.tar.gz)
+  into `RUNNER_TEMP`, verifies SHA-256
+  `9e2f1f6eb88a71ac15ef209f78f5a68644db82f132d2677112b4f80ec2bd2127`, extracts only
+  `dotenv-linter`, and runs `dotenv-linter check .`.
+- **Validation.** Local ClickHouse reproduced all three fixture failures. After
+  the repair, 54 integration tests, repository lint, workspace type checks, and
+  workflow lint passed. The verified Linux binary also passed dotenv lint on
+  Ubuntu 26.04. The GitHub Actions rerun is pending.
+
 ## 2026-11-18 — Vertical-Life search and detail disagree on a crag's broader area
 
 - **Impact.** Sentry reported 29 occurrences of `DOFEK-SERVER-89` from

@@ -31,7 +31,8 @@ export async function createActivityPerformanceFixture(client: ClickHouseClient,
     `CREATE TABLE ${database}.deduped_sensor (
       user_id UUID, channel String, recorded_date Date MATERIALIZED toDate(recorded_at),
       recorded_at DateTime64(6, 'UTC'), scalar Nullable(Float64), provider_id String DEFAULT 'first',
-      source_activity_id Nullable(UUID), refresh_version UInt64, is_deleted UInt8
+      source_activity_id Nullable(UUID), refresh_version UInt64, is_deleted UInt8,
+      heart_rate_changed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (user_id, channel, recorded_date, recorded_at)`,
     `CREATE TABLE ${database}.sensor_scalar_sample (
@@ -127,11 +128,13 @@ export async function refreshPerformanceCanonicalSensors(
 ) {
   const sql = renderDbtModelSql(readModelSql("deduped_sensor.sql"), {
     isIncremental: true,
-  }).replaceAll("{{ ref('sensor_scalar_sample') }}", `${database}.sensor_scalar_sample`);
+  })
+    .replaceAll("{{ ref('sensor_scalar_sample') }}", `${database}.sensor_scalar_sample`)
+    .replaceAll("{{ this }}", `${database}.deduped_sensor`);
   await client.command({
     query: `INSERT INTO ${database}.deduped_sensor
-    (user_id, channel, recorded_at, scalar, provider_id, source_activity_id, refresh_version, is_deleted)
-    SELECT user_id, channel, recorded_at, scalar, provider_id, source_activity_id, refresh_version, is_deleted
+    (user_id, channel, recorded_at, scalar, provider_id, source_activity_id, refresh_version, is_deleted, heart_rate_changed_at)
+    SELECT user_id, channel, recorded_at, scalar, provider_id, source_activity_id, refresh_version, is_deleted, heart_rate_changed_at
     FROM (${sql})`,
   });
 }

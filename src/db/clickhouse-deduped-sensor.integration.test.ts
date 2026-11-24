@@ -98,7 +98,7 @@ describe("deduped sensor source activity attribution", () => {
           ),
       );
       await command(
-        `INSERT INTO ${database}.deduped_sensor SELECT * EXCEPT (source_refreshed_at)
+        `INSERT INTO ${database}.deduped_sensor SELECT * EXCEPT (source_refreshed_at, heart_rate_changed_at)
           FROM (${deduped})`,
       );
     } else {
