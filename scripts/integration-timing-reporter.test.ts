@@ -75,10 +75,11 @@ async function fixture() {
       .getRootProject()
       .createSpecification(join(root, `src/${fileIndex}.integration.test.ts`)),
   );
+  // Match Vitest 5.1+: shard before onTestRunStart receives the selected specs.
+  const selected = await new IntegrationTestSequencer(context).shard(specs);
   const reporter = new IntegrationTimingReporter();
   reporter.onInit(context);
-  reporter.onTestRunStart(specs);
-  const selected = await new IntegrationTestSequencer(context).shard(specs);
+  reporter.onTestRunStart(selected);
   const completed = { duration: 25, failed: false, lastRun: Date.now() };
   vi.spyOn(context.cache, "getTestSpecificationResult").mockReturnValue(completed);
   const modules = selected.map((spec, index) => {

@@ -1,7 +1,7 @@
 import type { ConnectionOptions, Processor } from "bullmq";
 import { type Queue, RedisConnection, Worker } from "bullmq";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { captureException } from "../lib/error-reporting.ts";
+import * as errorReporting from "../lib/error-reporting.ts";
 import { runPortableSyncQueues } from "./portable-sync-queues.ts";
 import { createPortableSyncSlot } from "./portable-sync-slot.ts";
 import { getProviderQueueConfig } from "./provider-queue-config.ts";
@@ -11,11 +11,6 @@ import {
   providerSyncQueueName,
   type SyncJobData,
 } from "./queues.ts";
-
-vi.mock("../lib/error-reporting.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../lib/error-reporting.ts")>()),
-  captureException: vi.fn(),
-}));
 
 /**
  * Real-Redis coverage for the portable one-job-at-a-time queue selector.
@@ -284,6 +279,7 @@ describe("portable sync queues (integration)", () => {
   }, 30_000);
 
   it("leaves a failed job's retry to BullMQ and keeps selecting", async () => {
+    using reportError = vi.spyOn(errorReporting, "captureException");
     const providerIds = ["wahoo"];
     const queue = await freshQueue("wahoo");
 
@@ -309,7 +305,7 @@ describe("portable sync queues (integration)", () => {
     // to delayed, and the next sweep's delayed-count check opens a fresh worker
     // that promotes and runs the retry. No selector-level retry is involved.
     expect(attempts).toEqual([0, 1]);
-    expect(captureException).toHaveBeenCalledWith(failure, {
+    expect(reportError).toHaveBeenCalledWith(failure, {
       tags: { source: "portable-sync-worker", queue: queue.name },
     });
   }, 30_000);

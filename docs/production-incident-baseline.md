@@ -1,5 +1,23 @@
 # Production Incident Baseline
 
+## 2026-11-23 — Vitest drops the diagnostics reporter's hook event
+
+- **Impact.** The required server unit check for PR #3469 stopped at
+  `Runner did not reach the checkpoint before abort` in
+  `scripts/integration-diagnostics-reporter.test.ts`. That blocked the Fly
+  sync rollout. [Failed CI job](https://github.com/Asherlc/dofek/actions/runs/45336804769/job/138251492382)
+- **Cause and fix.** When the throttle timer fired at exactly 100 ms, Vitest
+  5.0.5 retained the expired timer and dropped the pending hook update. The
+  workspace now pins Vitest and its V8 coverage provider to 5.1.1, which
+  clears the expired timer before checking whether to flush.
+  [Upstream fix](https://github.com/vitest-dev/vitest/commit/8e837b87a219791afa554df659f6cd9b62829b63)
+- **Validation and follow-up.** The reporter test failed locally on 5.0.5.
+  A deterministic timer fixture reproduced the dropped update on 5.0.5 and
+  observed it flush on 5.1.1. The real reporter test passed on 5.1.1 with V8
+  coverage enabled. The integration timing reporter also validates the selected
+  files because Vitest 5.1.1 now applies sharding before reporting the run start.
+  [Vitest 5.1.1 release notes](https://github.com/vitest-dev/vitest/releases/tag/v5.1.1)
+
 ## 2026-11-23 — Sleep heart-rate refresh consumes ClickHouse CPU
 
 - **Impact.** The scheduled sleep refresh competed with other work on the
