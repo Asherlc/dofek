@@ -170,7 +170,12 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
         INSERT INTO fitness.provider (id, name, user_id) VALUES (${id}, ${name}, ${owner}::uuid)
       `);
 
-    for (const [index, climbId] of ["v4-a", "v4-b", "v4-c"].entries()) {
+    const boulders = [
+      { name: "The Arete", title: "Recorded title", raw: { climb: { slug: "v4-arete" } } },
+      { name: null, title: null, raw: { climb: { slug: "v4-blue", color: { name: "blue" } } } },
+      { name: null, title: null, raw: { climb: { slug: "v4-green" }, color: "green" } },
+    ];
+    for (const [index, boulder] of boulders.entries()) {
       const activityId = randomUUID();
       await insertActivity({
         id: activityId,
@@ -187,11 +192,12 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
             activityId,
             climbedOn: `2026-11-1${index + 1}`,
             discipline: "rock_climbing",
-            raw: { climb: { slug: `v4-climb-${index}` } },
+            title: boulder.title,
+            raw: boulder.raw,
             climb: {
-              externalId: climbId,
+              externalId: `v4-climb-${index}`,
               kind: "boulder",
-              name: `V4 climb ${index}`,
+              name: boulder.name,
               setting: "indoor",
               areas: [{ externalId: "gym-wall", name: "Gym wall" }],
               publishedGrades: [{ value: "V4", system: "v_scale" }],
@@ -223,6 +229,23 @@ describe("ClimbingDemonstratedGradeRepository database semantics", () => {
         send.sourceUrl?.startsWith("https://kaya-app.kayaclimb.com/climb/"),
       ),
     ).toBe(true);
+  });
+
+  it("uses the activity detail names for demonstrated-grade sends", async () => {
+    const result = await repository().getDemonstratedGrade({
+      endDate: "2026-11-21",
+      sources: [kayaProvider],
+    });
+    const sends = result.cells.find(
+      (cell) => cell.type === "bouldering" && cell.setting === "indoor",
+    )?.grades[0]?.sends;
+    expect(sends).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ climbExternalId: "v4-climb-0", displayName: "The Arete" }),
+        expect.objectContaining({ climbExternalId: "v4-climb-1", displayName: "Blue boulder" }),
+        expect.objectContaining({ climbExternalId: "v4-climb-2", displayName: "Green boulder" }),
+      ]),
+    );
   });
 
   it.each([

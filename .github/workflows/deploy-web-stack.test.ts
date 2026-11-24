@@ -283,8 +283,8 @@ function webStackSteps() {
   }) }) }).parse(parse(workflowText)).jobs["web-stack"].steps;
 }
 
-function workflowStackWebFilter(): string {
-  return z.string().optional().parse(parseDocument(workflowText).getIn(["jobs", "web-stack", "env", "STACK_WEB_FILTER"])) ?? "";
+function workflowStackServiceFilter(): string {
+  return z.string().min(1).parse(parseDocument(workflowText).getIn(["jobs", "web-stack", "env", "STACK_SERVICE_FILTER"]));
 }
 
 function deployedStackServices(stdout: string): unknown {
@@ -982,7 +982,7 @@ ${workflowRunScript("Select migration deployment mode from image histories")}
           APP_IMAGE: deployTestOldImage,
           MIGRATION_DEPLOYMENT_MODE: mode,
           MIGRATION_MAINTENANCE_BOUNDARY: "0148_compute_climbing_attempt_outcome",
-          STACK_WEB_FILTER: workflowStackWebFilter(),
+          STACK_SERVICE_FILTER: workflowStackServiceFilter(),
         },
       });
       expect(result.status, result.stderr).toBe(0);
@@ -1005,7 +1005,7 @@ ${workflowRunScript("Select migration deployment mode from image histories")}
   it("applies only the old web service with its pre-migration environment", () => {
     const result = runDeployImageFixture({
       script: ["Create dotenv command runner", "Apply pre-migration web configuration"].map(workflowRunScript).join("\n"),
-      environment: { APP_IMAGE: deployTestOldImage, STACK_WEB_FILTER: workflowStackWebFilter() },
+      environment: { APP_IMAGE: deployTestOldImage, STACK_SERVICE_FILTER: workflowStackServiceFilter() },
     });
     expect(result.status, result.stderr).toBe(0);
     expect(deployedStackServices(result.stdout)).toEqual({

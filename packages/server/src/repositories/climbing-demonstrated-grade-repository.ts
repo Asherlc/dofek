@@ -16,6 +16,7 @@ import {
   gradeSortValue,
   isValidClimbingGrade,
 } from "@dofek/training/climbing-grades";
+import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -29,7 +30,7 @@ const evidenceRowSchema = z.object({
   attempt_id: z.string(),
   target_id: z.string(),
   provider: z.string(),
-  provider_id: z.string().nullable(),
+  provider_id: z.string(),
   climb_kind: z.enum(["boulder", "route"]),
   climb_setting: z.enum(["indoor", "outdoor"]).nullable(),
   rope_method: z.enum(["lead", "top_rope", "follow", "unroped"]).nullable(),
@@ -38,7 +39,8 @@ const evidenceRowSchema = z.object({
   wall_angle: z.record(z.string(), z.unknown()).nullable(),
   log_raw: z.json(),
   ascent_style: z.string().nullable(),
-  display_name: z.string().nullable(),
+  title: z.string().nullable(),
+  climb_name: z.string().nullable(),
   log_entry_id: z.string(),
   activity_id: z.string().nullable(),
   climb_external_id: z.string().nullable(),
@@ -318,7 +320,8 @@ export class ClimbingDemonstratedGradeRepository extends BaseRepository {
           ce.published_grades,
           ce.wall_angle,
           ce.raw AS log_raw,
-          COALESCE(NULLIF(BTRIM(ce.title), ''), climb.name) AS display_name,
+          ce.title,
+          climb.name AS climb_name,
           ce.id AS log_entry_id,
           ce.activity_id,
           climb.external_id AS climb_external_id,
@@ -406,11 +409,16 @@ export class ClimbingDemonstratedGradeRepository extends BaseRepository {
         ascentStyle: row.ascent_style,
         climbedOn: row.climbed_on,
         gradeComponents,
-        displayName: row.display_name,
+        displayName: climbingLogEntryName({
+          providerId: row.provider_id,
+          raw: row.log_raw,
+          title: row.title,
+          climb: { name: row.climb_name, kind: row.climb_kind },
+        }),
         logEntryId: row.log_entry_id,
         activityId: row.activity_id,
         climbExternalId: row.climb_external_id,
-        sourceUrl: climbingSourceLinks(row.provider_id ?? "", row.log_raw)[0]?.url ?? null,
+        sourceUrl: climbingSourceLinks(row.provider_id, row.log_raw)[0]?.url ?? null,
       };
     });
 

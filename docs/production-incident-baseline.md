@@ -39848,6 +39848,98 @@ Local qualification and CI are separate from production throughput acceptance. T
   [iOS Overview](../packages/mobile/app/(tabs)/index.tsx) ·
   [iOS sync refresh list](../packages/mobile/lib/invalidate-synced-health-data.ts).
 
+## 2026-11-23 — Overview calculation returned no qualifying relationship
+
+- **Impact and evidence.** One signed-in web Overview showed an empty Key
+  relationship card for August 26 through November 23. Production served
+  the web build from PR #3461. Axiom trace `0427d18404f25c0ebf95e68ebe3bcbfa`
+  records a 3,230 ms cache miss for `insights.compute` at 14:44:51 UTC and
+  HTTP 200 for the enclosing batch. In Axiom, filter `dofek-logs` and
+  `dofek-traces` by that `trace_id` in the November 23 14:44:45–14:45:00 UTC
+  window. The log contains `procedure=insights.compute` and the HTTP span is
+  `POST /api/trpc`.
+  [Axiom trace and log queries](axiom-observability-runbook.md#queries) ·
+  [Refresh PR](https://github.com/Asherlc/dofek/pull/3461) ·
+  [Production release](https://github.com/Asherlc/dofek/actions/runs/45118269517).
+- **Cause and validation.** The integration regression reproduces date
+  assignment and filtering across an inclusive historical window. The
+  previous queries used UTC dates for workouts and sleep, and workouts and
+  nutrition could include inputs after the requested end date. An empty
+  result can occur when the engine finds no relationship that meets the
+  evidence threshold.
+  [Repository](../packages/server/src/repositories/insights-repository.ts) ·
+  [Executable replay](../packages/server/src/repositories/insights-repository.integration.test.ts) ·
+  [Statistical filters](../packages/server/src/insights/engine.ts).
+- **Fix awaiting release.** The Overview reads workouts by their canonical
+  local start date and sleep by local wake date, and caps nutrition at the same
+  inclusive end date. The server cache key changed so refreshes use the
+  corrected calculation. The web and iOS cards explain when no
+  relationship meets the evidence threshold. The regression fixture
+  crosses a daylight-saving change and includes workouts and nutrition
+  after the historical end date. A ClickHouse minmax index on the UTC wake
+  date prunes older sleep data while the exact local filter controls which
+  nights qualify. The regression also verifies that an older version stays
+  excluded when a correction moves its wake date outside the window.
+  [Repository regression](../packages/server/src/repositories/insights-repository.integration.test.ts) ·
+  [Indexed sleep regression](../packages/server/src/repositories/clickhouse-sleep-repository.integration.test.ts) ·
+  [ClickHouse index materialization](https://clickhouse.com/docs/reference/statements/alter/skipping-index#materialize-index).
+
+## 2026-11-23 — Overview evidence cutoff changed across 90-day windows
+
+- **Impact and evidence.** One Overview still showed the empty Key relationship
+  card after the refresh and date-window fixes shipped. A read-only replay of the
+  deployed repository at `4d047b49` joined 90 dates for both reported windows.
+  The unmodified engine returned zero relationships for the window ending
+  November 23 and one for the window ending November 16.
+  [Production release](https://github.com/Asherlc/dofek/actions/runs/45288590785) ·
+  [Date-window fix](https://github.com/Asherlc/dofek/pull/3465).
+- **Cause.** The engine filters predefined correlations by observed effect size
+  before applying the Benjamini–Hochberg correction. A second comparison crossed
+  the effect-size floor in the newer window. Adding it moved the first-ranked
+  cutoff from 0.05 to 0.025. The second comparison also failed the correction.
+  The first-ranked comparison's p-value stayed between those cutoffs. The
+  conditional, monthly, and discovery analyses also returned zero qualifying
+  relationships for the newer window.
+  [Engine filters](../packages/server/src/insights/engine.ts) ·
+  [Correction implementation](../packages/server/src/insights/stats.ts).
+- **Fix and validation.** The conditional, predefined correlation, and
+  exploratory families now correct across all testable comparisons before
+  applying the display filters. The server versions its cache key to refresh
+  results after release. Synthetic regressions failed with the deployed engine
+  and passed with the corrected engine. A read-only calculation with the
+  corrected code returned zero qualifying relationships for both windows.
+  Confirm the new cache version after deployment.
+  [Engine regressions](../packages/server/src/insights/engine.test.ts) ·
+  [Overview evidence contract](../packages/server/README.md#overview-relationship-evidence).
+
+## 2026-11-23 — Overview PR validation failed in unit and integration checks
+
+- **Impact and evidence.** PR #3465 was blocked. The server unit run expected
+  `insights-evidence-v1` and `AND started_at >` after the route had changed to
+  `insights-evidence-v2` and local calendar dates. The stale expectations
+  also prevented the three Stryker jobs from starting mutation testing.
+  [Unit log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137796538544) ·
+  [Stryker log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137797168711).
+- **Independent integration failure.** Shard 1 reported
+  `Kilter Board app sync failed: Connection aborted` in ten
+  climbing-board persistence tests. The server API suite registered
+  providers first in the shared Vitest worker. The climbing-board suite
+  reused the cached Kilter module bound to the real SDK, bypassing its
+  approved PowerSync fixture. The same two-file order reproduced all ten
+  failures locally.
+  [Integration log](https://github.com/Asherlc/dofek/actions/runs/45204343013/job/137797003483) ·
+  [Vitest module cache API](https://vitest.dev/api/vi.html#vi-resetmodules).
+- **Fix and local verification.** The Overview unit tests now cover the
+  current cache key and local date query contract. The initial persistence
+  suite fix reset the module cache and imported Kilter after installing the
+  existing SDK fixture. The ordered integration pair passed all 60 tests, and
+  600 focused unit and mobile tests passed. All three changed-line
+  Stryker selections completed locally. The sleep query scored 100% on
+  its five active mutants. The final branch uses the equivalent module cache
+  reset before provider imports from PR #3464. Include the router tests in
+  future Overview cache or range changes and validate the climbing-board
+  fixture after the server suite. [Progression PR](https://github.com/Asherlc/dofek/pull/3464).
+
 ## 2026-11-22 — WHOOP Bluetooth startup reconnect on a new iOS build
 
 - **Impact.** At 19:29:32 Pacific, TestFlight build `1795402168` reported one
@@ -39886,3 +39978,68 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Remaining risk and follow-up.** Other fixtures that mock dependencies
   already imported into a shared worker can still depend on suite order. If the
   failure recurs, reproduce the shard order and check mock and MSW ownership.
+
+## 2026-11-23 — WHOOP upload queue checkpoints caused excessive iOS disk writes
+
+- **Impact.** MetricKit reported three disk-write warnings for one user from
+  November 20 to 23. The two earlier events reported about 4.29 GB written and
+  ran during upload acknowledgment. The latest reported 1.07 GB and ran during
+  upload scheduling. All three stacks show a SQLite automatic checkpoint. No
+  thread crashed. The effect on sample delivery is unverified.
+  [Sentry DOFEK-MOBILE-31](https://east-bay-software.sentry.io/issues/7859388787/).
+- **Cause and fix.** The switch from 4 KiB to 1 KiB pages shrank SQLite's
+  1,000-page checkpoint threshold from roughly 4 MiB to 1 MiB. More frequent
+  checkpoints wrote more versions of the same database pages. The native store
+  now uses a 4,000-page threshold and keeps fully synchronous commits.
+  [Page-size change](https://github.com/Asherlc/dofek/pull/3413)
+  · [SQLite automatic checkpoints](https://www.sqlite.org/wal.html#automatic_checkpoint).
+- **Validation and follow-up.** A native macOS replay acknowledged all 12,240
+  samples in each run. Writes to the main database dropped from 6.09 MB to
+  2.03 MB and total SQLite writes from 23.10 MB to 19.04 MB, including the final
+  checkpoint. The real SQLite regression failed before the fix when a 2 MiB
+  commit checkpointed early, then passed with the restored target. Profile a
+  sustained capture and upload on a rebuilt iPhone app before closing the Sentry
+  issue. The phone was locked during diagnosis.
+  [Apple disk-write profiling](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
+
+## 2026-11-23 — Climbing schema maintenance interrupted Dofek web access
+
+- **Impact and evidence.** Dofek web displayed `Auth bootstrap failed: 503`
+  when `/api/auth/me` was unavailable. Direct requests to `/` and
+  `/api/auth/me` reproduced HTTP 503 with `no available server`. Axiom logged
+  85 web-router 503 responses with origin status `0` from 23:33:01 through
+  23:40:14 UTC. The count is requests, and the number of affected users is
+  unknown. [Release job](https://github.com/Asherlc/dofek/actions/runs/45288590785/job/138092541142)
+  · [Traefik log query](axiom-observability-runbook.md#traefik-server-error-access-logs).
+- **Cause.** The release drained both web replicas before migration
+  `0197_remove_climbing_area_groups`, which drops the old grouping column and
+  table. Swarm reported `0/0` web replicas and the maintenance target matched
+  the migration. Traefik returned 503 while no web replica was available.
+  [Migration](../drizzle/0197_remove_climbing_area_groups.sql)
+  · [Maintenance overlay](../deploy/stack.maintenance.yml)
+  · [Traefik fallback](../deploy/traefik-web-unavailable.yml).
+- **Recovery and validation.** The migration step succeeded at 23:40:03 UTC.
+  By 23:40:59 UTC, the rollout had restored both web replicas and the worker.
+  `/`, `/healthz`, and `/api/auth/providers` returned HTTP 200. An unauthenticated
+  `/api/auth/me` request returned the expected HTTP 401. The release workflow
+  was still running its remaining checks at the recovery verification.
+  [Production release](https://github.com/Asherlc/dofek/actions/runs/45288590785).
+- **Remaining risk and follow-up.** Future maintenance-mode releases can
+  present the same session error. Consider showing a maintenance message at
+  the proxy and in the web session screen when the fallback route handles
+  the request.
+
+## 2026-11-23 — Maintenance notice PR failed two deploy workflow tests
+
+- **Impact and evidence.** PR #3470's `Check Server / Unit Tests` job failed
+  during `pnpm exec vitest run --project unit --coverage`. The first failing
+  test reported `STACK_SERVICE_FILTER: unbound variable`. The failure was
+  confined to PR validation. The focused deploy workflow suite reproduced
+  both failures locally. [CI job](https://github.com/Asherlc/dofek/actions/runs/45298874681/job/138126527690).
+- **Cause and fix.** The workflow renamed the stack filter to select the
+  maintenance service as well as web. Two fixtures still injected the old
+  variable. The fixtures now use the renamed variable and require the filter
+  to be present in the workflow. All 88 deploy workflow tests passed locally
+  after the fix. Run that suite before pushing changes to a workflow
+  environment variable it consumes.
+  [Workflow tests](../.github/workflows/deploy-web-stack.test.ts).

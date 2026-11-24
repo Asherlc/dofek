@@ -76,8 +76,9 @@ export function computeInsights(
   const insights: Insight[] = [];
 
   // 1. Conditional analysis (primary method)
-  // Collect all candidates first, then apply FDR correction
-  const conditionalCandidates: Array<Insight & { rawPValue: number }> = [];
+  // Display eligibility must not shrink the family used for FDR correction.
+  const conditionalPValues: number[] = [];
+  const conditionalCandidates = new Map<number, Insight>();
   const conditionalTests = getConditionalTests();
   for (const test of conditionalTests) {
     const trueValues: number[] = [];
@@ -110,6 +111,7 @@ export function computeInsights(
 
     const effectSize = cohensD(trueValues, falseValues);
     const tResult = welchTTest(trueValues, falseValues);
+    const testIndex = conditionalPValues.push(tResult.pValue) - 1;
     const confidence = classifyConfidence(effectSize, effectiveMinN, tResult.pValue);
     if (confidence === "insufficient") continue;
 
@@ -124,7 +126,7 @@ export function computeInsights(
         : `Observed association: ${test.metric} is ${diffLabel} ${scopePhrase} ${test.action}`;
 
     const confounders = findConfounders(test, joined);
-    conditionalCandidates.push({
+    conditionalCandidates.set(testIndex, {
       id: test.id,
       type: "conditional",
       confidence,
@@ -141,25 +143,20 @@ export function computeInsights(
         withAction: downsample(trueValues, MAX_DATA_POINTS),
         withoutAction: downsample(falseValues, MAX_DATA_POINTS),
       },
-      rawPValue: tResult.pValue,
     });
   }
 
   // Apply FDR correction to conditional test p-values
-  if (conditionalCandidates.length > 0) {
-    const pValues = conditionalCandidates.map((c) => c.rawPValue);
-    const significant = benjaminiHochberg(pValues, 0.05);
-    for (let i = 0; i < conditionalCandidates.length; i++) {
-      const candidate = conditionalCandidates[i];
-      if (significant[i] && candidate) {
-        const { rawPValue: _, ...insight } = candidate;
-        insights.push(insight);
-      }
+  if (conditionalCandidates.size > 0) {
+    const significant = benjaminiHochberg(conditionalPValues, 0.05);
+    for (const [testIndex, insight] of conditionalCandidates) {
+      if (significant[testIndex]) insights.push(insight);
     }
   }
 
   // 2. Continuous correlations (supplementary)
-  const correlationInsights: Array<Insight & { rawPValue: number }> = [];
+  const correlationPValues: number[] = [];
+  const correlationInsights = new Map<number, Insight>();
   const correlationPairs = getCorrelationPairs();
   for (const pair of correlationPairs) {
     const samples: CorrelationSample[] = [];
@@ -186,6 +183,8 @@ export function computeInsights(
     if (xs.length < minimumSamples) continue;
 
     const corr = spearmanCorrelation(xs, ys);
+    if (!Number.isFinite(corr.pValue)) continue;
+    const testIndex = correlationPValues.push(corr.pValue) - 1;
     if (Math.abs(corr.rho) < 0.2) continue;
 
     const direction = corr.rho > 0 ? "positively" : "negatively";
@@ -204,7 +203,7 @@ export function computeInsights(
       allPoints.push({ x: xVal, y: yVal, date: joinedDay.date });
     }
 
-    correlationInsights.push({
+    correlationInsights.set(testIndex, {
       id: pair.id,
       type: "correlation",
       confidence: classifyCorrelationConfidence(corr.rho, xs.length),
@@ -219,20 +218,14 @@ export function computeInsights(
       correlation: corr,
       confounders: confounders.length > 0 ? confounders : undefined,
       dataPoints: downsample(allPoints, MAX_DATA_POINTS),
-      rawPValue: corr.pValue,
     });
   }
 
   // Apply FDR correction to correlation p-values
-  if (correlationInsights.length > 0) {
-    const pValues = correlationInsights.map((c) => c.rawPValue);
-    const significant = benjaminiHochberg(pValues, 0.05);
-    for (let i = 0; i < correlationInsights.length; i++) {
-      const ci = correlationInsights[i];
-      if (significant[i] && ci) {
-        const { rawPValue: _, ...insight } = ci;
-        insights.push(insight);
-      }
+  if (correlationInsights.size > 0) {
+    const significant = benjaminiHochberg(correlationPValues, 0.05);
+    for (const [testIndex, insight] of correlationInsights) {
+      if (significant[testIndex]) insights.push(insight);
     }
   }
 

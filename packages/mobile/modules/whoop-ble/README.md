@@ -231,6 +231,10 @@ and newest timestamps. Grouping index updates follows Apple's
 [disk-write guidance](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
 
 The queue uses 1 KiB SQLite pages to reduce bytes written per notification.
+Automatic checkpoints start at 4,000 pages, preserving the approximately
+4 MiB target used before the page-size reduction. This lets SQLite combine
+more updates to the same page before writing it back to the database.
+[SQLite automatic checkpoints](https://www.sqlite.org/wal.html#automatic_checkpoint).
 Opening an older queue rebuilds it in place once, before capture or upload uses
 it, then restores WAL mode. If startup is interrupted, the next open resumes
 from the persisted page size. The one-time rebuild requires temporary free

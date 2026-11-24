@@ -1,5 +1,12 @@
-import { normalizeCatalogueName } from "@dofek/climbing-catalogue/matching";
-import { type Area, climbingLogEntryAreaPath } from "@dofek/training/climbing-log";
+import {
+  catalogueAreasAreNearby,
+  normalizeCatalogueName,
+} from "@dofek/climbing-catalogue/matching";
+import {
+  type Area,
+  type ClimbSetting,
+  climbingLogEntryAreaPath,
+} from "@dofek/training/climbing-log";
 import { z } from "zod";
 import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts.ts";
 
@@ -32,11 +39,12 @@ export function climbingSourceSession(log: Pick<ClimbingLogEntryDetail, "raw">):
   return sessionId ?? snakeSessionId ?? null;
 }
 
-interface GymArea {
+interface LocatedArea {
   area: Area;
   parents: readonly Area[];
   owner: string;
-  explicitGroup: string | null;
+  setting: ClimbSetting | null;
+  conflictingSettings: boolean;
 }
 
 function gymNamesAgree(first: string, second: string): boolean {
@@ -56,11 +64,7 @@ function gymNamesAgree(first: string, second: string): boolean {
   );
 }
 
-function gymsAgree(first: GymArea, second: GymArea): boolean {
-  if (first.owner !== second.owner) return false;
-  if (first.explicitGroup && first.explicitGroup === second.explicitGroup) return true;
-  if (first.explicitGroup && second.explicitGroup) return false;
-  if (first.area.providerId === second.area.providerId) return false;
+function gymsAgree(first: LocatedArea, second: LocatedArea): boolean {
   if (
     first.parents.length !== second.parents.length ||
     first.parents.some((parent, index) => {
@@ -69,38 +73,81 @@ function gymsAgree(first: GymArea, second: GymArea): boolean {
     })
   )
     return false;
-  const origin = first.area.coordinates;
-  const destination = second.area.coordinates;
-  if (!origin || !destination || !gymNamesAgree(first.area.name, second.area.name)) return false;
-  const radians = Math.PI / 180;
-  const haversine =
-    Math.sin(((destination.latitude - origin.latitude) * radians) / 2) ** 2 +
-    Math.cos(origin.latitude * radians) *
-      Math.cos(destination.latitude * radians) *
-      Math.sin(((destination.longitude - origin.longitude) * radians) / 2) ** 2;
-  // Gym entrance and board pins can differ. This is not the outdoor route policy.
-  return 2 * 6_371_000 * Math.asin(Math.sqrt(Math.min(1, haversine))) <= 200;
+  return (
+    gymNamesAgree(first.area.name, second.area.name) &&
+    catalogueAreasAreNearby(first.area, second.area, 200)
+  );
 }
 
-function gymGroups(logs: readonly ClimbingLogEntryDetail[]): Map<string, string> {
-  const areas = new Map<string, GymArea>();
+function outdoorAreasAgree(first: LocatedArea, second: LocatedArea): boolean {
+  const leafName = normalizeCatalogueName(first.area.name);
+  if (!leafName || leafName !== normalizeCatalogueName(second.area.name)) return false;
+  const nearby = catalogueAreasAreNearby(first.area, second.area);
+  if (first.area.coordinates && second.area.coordinates && !nearby) return false;
+
+  const firstParents = first.parents.map((parent) => normalizeCatalogueName(parent.name));
+  const secondParents = second.parents.map((parent) => normalizeCatalogueName(parent.name));
+  if (
+    firstParents.length === secondParents.length &&
+    firstParents.every((name, index) => name !== "" && name === secondParents[index])
+  )
+    return true;
+
+  // A provider may include extra regional levels or qualify the crag as a park.
+  const sharedDepth = Math.min(firstParents.length, secondParents.length);
+  if (sharedDepth < 2 && !(sharedDepth === 1 && nearby)) return false;
+  const localParents = (parents: string[]) =>
+    parents
+      .slice(-sharedDepth)
+      .map((name, index) => (index === sharedDepth - 1 ? name.replace(/ park$/u, "") : name));
+  const otherParents = localParents(secondParents);
+  return localParents(firstParents).every(
+    (name, index) => name !== "" && name === otherParents[index],
+  );
+}
+
+function areasAgree(first: LocatedArea, second: LocatedArea): boolean {
+  if (
+    first.owner !== second.owner ||
+    first.area.providerId === second.area.providerId ||
+    first.conflictingSettings ||
+    second.conflictingSettings
+  )
+    return false;
+  const indoor = first.setting === "indoor";
+  if (indoor !== (second.setting === "indoor")) return false;
+  return indoor ? gymsAgree(first, second) : outdoorAreasAgree(first, second);
+}
+
+function areaGroups(logs: readonly ClimbingLogEntryDetail[]): Map<string, string> {
+  const areas = new Map<string, LocatedArea>();
   for (const log of logs) {
-    if (log.providerAbsentAt !== null || log.climb?.setting !== "indoor") continue;
+    if (log.providerAbsentAt !== null) continue;
     const path = climbingLogEntryAreaPath(log);
     const area = path.at(-1);
-    if (area)
-      areas.set(`${log.userId}:${area.id}`, {
-        area,
-        parents: path.slice(0, -1),
-        owner: log.userId,
-        explicitGroup: log.areaGroupId ?? null,
-      });
+    if (!area) continue;
+    const key = `${log.userId}:${area.id}`;
+    const setting = log.climb?.setting ?? null;
+    const previous = areas.get(key);
+    if (previous) {
+      previous.conflictingSettings ||=
+        previous.setting !== null && setting !== null && previous.setting !== setting;
+      previous.setting ??= setting;
+      continue;
+    }
+    areas.set(key, {
+      area,
+      parents: path.slice(0, -1),
+      owner: log.userId,
+      setting,
+      conflictingSettings: false,
+    });
   }
   const nodes = [...areas.entries()];
   const neighbors = new Map(nodes.map(([key]) => [key, new Set<string>()]));
   nodes.forEach(([leftKey, left], index) => {
     for (const [rightKey, right] of nodes.slice(index + 1)) {
-      if (gymsAgree(left, right)) {
+      if (areasAgree(left, right)) {
         neighbors.get(leftKey)?.add(rightKey);
         neighbors.get(rightKey)?.add(leftKey);
       }
@@ -118,17 +165,13 @@ function gymGroups(logs: readonly ClimbingLogEntryDetail[]): Map<string, string>
       pending.push(...(neighbors.get(current) ?? []));
     }
     const members = nodes.filter(([key]) => component.has(key));
-    // Pairwise agreement prevents proximity chains and competing same-source gyms.
-    const unambiguous = members.every(([, left], index) =>
-      members.slice(index + 1).every(([, right]) => gymsAgree(left, right)),
+    // Pairwise agreement prevents proximity chains and competing same-source areas.
+    const unambiguous = members.every(
+      ([memberKey]) => neighbors.get(memberKey)?.size === members.length - 1,
     );
-    const explicit = members.map(([, node]) => node.explicitGroup).find((group) => group !== null);
-    const anchor = members.map(([, node]) => node.area.id).sort()[0];
+    const anchor = unambiguous ? members.map(([, node]) => node.area.id).sort()[0] : undefined;
     for (const [memberKey, member] of members) {
-      groups.set(
-        memberKey,
-        unambiguous && anchor ? (explicit ?? anchor) : (member.explicitGroup ?? member.area.id),
-      );
+      groups.set(memberKey, anchor ?? member.area.id);
     }
   }
   return groups;
@@ -138,12 +181,12 @@ function gymGroups(logs: readonly ClimbingLogEntryDetail[]): Map<string, string>
 export function resolveClimbingLocations<T extends ClimbingLogEntryDetail>(
   logs: readonly T[],
 ): T[] {
-  const groups = gymGroups(logs);
+  const groups = areaGroups(logs);
   const located = logs.map((log) => {
     const area = climbingLogEntryAreaPath(log).at(-1);
     const group =
-      area && log.climb?.setting === "indoor" ? groups.get(`${log.userId}:${area.id}`) : null;
-    return group ? { ...log, areaGroupId: group } : log;
+      area && log.providerAbsentAt === null ? groups.get(`${log.userId}:${area.id}`) : undefined;
+    return { ...log, areaGroupId: group ?? null };
   });
   const sessions = new Map<string, T[]>();
   const nativeLocationSessions = new Set<string>();

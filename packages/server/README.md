@@ -91,8 +91,9 @@ and [mobile training screen](../mobile/app/strain.tsx).
   the nearest coordinate-bearing Area in the selected source graph; consolidation
   retains that graph's map ownership. See the [map contract](../training/src/climbing-map.ts).
   The [location resolver](src/services/climbing-location-resolution.ts) groups
-  indoor gym Areas using corroborating names and coordinates and fills missing
-  log locations only from an unambiguous exact source session. It computes the
+  indoor gyms using names and coordinates and outdoor Areas using local
+  ancestry and available coordinates. It fills missing indoor log locations
+  only from an unambiguous exact source session. It computes the
   existing response grouping, path and map fields without writing source facts
   or adding a display label; see [location rules](../../docs/climbing-context.md#ownership-and-location).
   Both use the same [grade display conversion](./src/repositories/climbing-grade-display.ts).
@@ -368,8 +369,10 @@ The shared web and mobile `strength.loggedSetComparison` query compares observed
 rep counts within the selected timestamp range and request access window. It counts canonical,
 deduplicated sets with positive normalized load and reps that pass the existing working-volume
 quality checks, excluding warm-ups, rests, missing values, and ambiguous or conflicting observations.
-Session and set evidence retain provider attribution; first/latest comparisons require distinct
-local dates. The response includes context from the
+The [comparison repository](src/repositories/strength-progression-repository.ts) groups confirmed
+exercise aliases before consolidating mirrored sets. It matches explicitly recorded equipment and
+preserves movement qualifiers such as seated. Session and set evidence retain provider attribution,
+and first/latest comparisons require distinct local dates. The response includes context from the
 [Schoenfeld et al. trial](https://pmc.ncbi.nlm.nih.gov/articles/pmid/30153194/), which used supervised
 sets to failure and tested squat and bench-press strength, without prescribing set targets or
 inferring personal causation.
@@ -396,6 +399,20 @@ that date so an older daily total does not appear as current progress. See the
 [status builder](./src/services/health-status.ts),
 [baseline requirements](./src/services/baseline-progress.ts), and
 [selected-date database regression](./src/routers/daily-metrics.integration.test.ts).
+
+### Overview relationship evidence
+
+[Overview Insights](src/routers/insights.ts) joins data in the selected date
+window and evaluates predefined group comparisons, predefined correlations, and
+exploratory correlations. Each of these test families applies the
+Benjamini–Hochberg correction to every test with enough samples and a defined
+p-value. Effect size, confidence, and duplicate suppression govern which
+corrected results the engine returns. A comparison's observed effect can
+therefore change its own display eligibility without changing how many tests
+enter the correction. The Overview shows an empty card when it has no
+qualifying relationship. [Insight engine](src/insights/engine.ts) ·
+[Exploratory correlations](src/insights/discovery.ts) ·
+[Research on filtering before correction](https://pmc.ncbi.nlm.nih.gov/articles/PMC2906865/).
 
 ### Correlation evidence contract
 

@@ -142,18 +142,30 @@ jobs:
       DOCKER_SSH_COMMAND: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10
       DEPLOY_ENVIRONMENT: ${{ inputs.infisical_environment || 'prod' }}
       STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
-      STACK_WEB_FILTER: |
+      STACK_SERVICE_FILTER: |
         import { parse } from "yaml";
         process.stdin.setEncoding("utf8");
         let input = "";
         for await (const chunk of process.stdin) input += chunk;
         const config = parse(input);
-        if (!config?.services?.web) throw new Error("Resolved stack config is missing services.web");
-        if (process.argv[1] === "only") config.services = { web: config.services.web };
-        else delete config.services.web;
+        const [operation, service = "web"] = process.argv.slice(1);
+        if (!config?.services?.[service]) throw new Error(`Resolved stack config is missing services.${service}`);
+        if (operation === "only") config.services = { [service]: config.services[service] };
+        else delete config.services[service];
         // Swarm resolves env files when rendering, even with --skip-interpolation.
         // Escape literal dollars so the deploy command preserves the resolved values.
         process.stdout.write(JSON.stringify(config).replaceAll("$", () => "$$"));
+      APPLY_MAINTENANCE_NOTICE: |
+        stack_file_flags=()
+        read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
+        if [ "$1" = "active" ]; then
+          stack_file_flags+=(-c deploy/stack.maintenance-notice.yml)
+        fi
+        node "$RUNNER_TEMP/run-with-dotenv-env.mjs" env APP_IMAGE="$APP_IMAGE" \
+          docker stack config "${stack_file_flags[@]}" \
+          | node --input-type=module -e "$STACK_SERVICE_FILTER" only web-maintenance \
+          | node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+              docker stack deploy -c - --with-registry-auth --detach=true "$STACK_NAME"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -814,6 +826,60 @@ jobs:
           MACHINE_ID: ${{ steps.fly_runner.outputs.machine_id }}
         run: flyctl machine stop "$MACHINE_ID" --app "$FLY_SYNC_APP_NAME" --signal SIGTERM --timeout 300 --wait-timeout 6m
 
+      - name: Enable scheduled maintenance notice before web drains
+        env:
+          APP_IMAGE: ${{ steps.pull_images.outputs.pre_migration_image_ref }}
+          MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
+        run: |
+          set -euo pipefail
+          services="$(docker service ls --format '{{.Name}}')"
+          notice_was_active=false
+          if grep -Fxq "${STACK_NAME}_web-maintenance" <<< "$services"; then
+            notice_was_active="$(docker service inspect "${STACK_NAME}_web-maintenance" \
+              --format '{{index .Spec.Labels "traefik.enable"}}')"
+          fi
+
+          # Older manually selected source revisions lack the notice service.
+          if [ ! -f deploy/stack.maintenance-notice.yml ]; then
+            if [ "$notice_was_active" = "true" ]; then
+              echo "::error::An interrupted maintenance notice is active. Select a release that supports the maintenance notice."
+              exit 1
+            fi
+            exit 0
+          fi
+
+          # The first deploy has no public web service to put into maintenance.
+          if [ "$notice_was_active" != "true" ] && { \
+            [ "$MIGRATION_DEPLOYMENT_MODE" != "maintenance" ] || \
+            ! grep -Fxq "${STACK_NAME}_web" <<< "$services" || \
+            ! grep -Fxq "${STACK_NAME}_traefik" <<< "$services"; \
+          }; then
+            exit 0
+          fi
+
+          # A failed activation may have installed the route even though the
+          # public check failed. Only undo activation begun by this attempt.
+          if [ "$notice_was_active" != "true" ]; then
+            trap 'bash -euo pipefail -c "$APPLY_MAINTENANCE_NOTICE" -- inactive || echo "::error::Could not disable the unverified maintenance notice"' EXIT
+          fi
+          bash -euo pipefail -c "$APPLY_MAINTENANCE_NOTICE" -- active
+
+          deadline=$((SECONDS + 120))
+          while true; do
+            response="$(curl -sS --max-time 5 -o /dev/null \
+              -w '%{http_code}:%header{x-dofek-maintenance}' "${PUBLIC_URL%/}/api/auth/me")" || response="connection failed"
+            if [ "$response" = "503:1" ]; then
+              break
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::The maintenance notice did not become reachable through Traefik (last HTTP status and maintenance header: $response)"
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "MAINTENANCE_NOTICE_ACTIVE=true" >> "$GITHUB_ENV"
+          trap - EXIT
+
       - name: Drain deployed migration publishers before dependency stack apply
         id: drain_migration_publishers
         env:
@@ -830,6 +896,9 @@ jobs:
           stack_file_flags=()
           read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
           stack_file_flags+=(-c deploy/stack.cdc-quiesce.yml -c deploy/stack.migration-quiesce.yml)
+          if [ "${MAINTENANCE_NOTICE_ACTIVE:-false}" = "true" ]; then
+            stack_file_flags+=(-c deploy/stack.maintenance-notice.yml)
+          fi
           web_env_file="${WEB_PRE_MIGRATION_ENV_FILE:?WEB_PRE_MIGRATION_ENV_FILE is required}"
           echo "Applying dependency changes with app image ${APP_IMAGE} before migrations (${MIGRATION_DEPLOYMENT_MODE})."
           if [ "$MIGRATION_DEPLOYMENT_MODE" = "maintenance" ]; then
@@ -843,7 +912,7 @@ jobs:
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
               env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$web_env_file" \
               docker stack config "${stack_file_flags[@]}" \
-              | node --input-type=module -e "$STACK_WEB_FILTER" without \
+              | node --input-type=module -e "$STACK_SERVICE_FILTER" without \
               | node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
                 env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$web_env_file" \
                 docker stack deploy -c - --with-registry-auth --detach=true "$STACK_NAME"
@@ -991,7 +1060,7 @@ jobs:
           node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
             env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$web_env_file" \
             docker stack config "${stack_file_flags[@]}" \
-            | node --input-type=module -e "$STACK_WEB_FILTER" only \
+            | node --input-type=module -e "$STACK_SERVICE_FILTER" only \
             | node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
               env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$web_env_file" \
               docker stack deploy -c - --with-registry-auth --detach=true "$STACK_NAME"
@@ -1190,6 +1259,9 @@ jobs:
           echo "web_convergence_failed=false" >> "$GITHUB_OUTPUT"
           stack_file_flags=()
           read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
+          if [ "${MAINTENANCE_NOTICE_ACTIVE:-false}" = "true" ]; then
+            stack_file_flags+=(-c deploy/stack.maintenance-notice.yml)
+          fi
           set +e
           timeout 35m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" env APP_IMAGE="$APP_IMAGE" docker stack deploy "${stack_file_flags[@]}" -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
           status=$?
@@ -1221,11 +1293,13 @@ jobs:
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
-              if [ "$MIGRATION_DEPLOYMENT_MODE" = "maintenance" ] && [ "$service" = "web" ]; then
+              if [ "$service" = "web" ] && { \
+                [ "$MIGRATION_DEPLOYMENT_MODE" = "maintenance" ] || [ "${MAINTENANCE_NOTICE_ACTIVE:-false}" = "true" ]; \
+              }; then
                 case "$update_state" in
                   rollback_*|paused)
                     docker service ps "$service_name" --no-trunc
-                    echo "::error::Maintenance rollout failed; the previous web specification has zero replicas. Resolve the rollout and rerun the deployment before restoring consumers."
+                    echo "::error::Maintenance rollout failed. Resolve the web rollout and rerun the deployment before restoring consumers."
                     exit 1
                     ;;
                 esac
@@ -1292,6 +1366,21 @@ jobs:
                     pnpm tsx scripts/verify-deploy-image.ts "$APP_IMAGE" "$service_name"
                     ;;
                 esac
+                if [ "$service" = "web" ] && [ "${MAINTENANCE_NOTICE_ACTIVE:-false}" = "true" ]; then
+                  if [ "$desired_replicas" -le 0 ]; then
+                    echo "::error::Cannot clear the maintenance notice without healthy web replicas"
+                    exit 1
+                  fi
+                  bash -euo pipefail -c "$APPLY_MAINTENANCE_NOTICE" -- inactive
+                  deadline=$((SECONDS + 60))
+                  while ! curl -fsS --max-time 5 "${PUBLIC_URL%/}/healthz" | jq -e '.status == "ok"' >/dev/null; do
+                    if [ "$SECONDS" -ge "$deadline" ]; then
+                      echo "::error::The web service did not resume serving public traffic after maintenance"
+                      exit 1
+                    fi
+                    sleep 2
+                  done
+                fi
                 break
               fi
               if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then

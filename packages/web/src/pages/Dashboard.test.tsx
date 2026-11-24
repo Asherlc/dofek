@@ -521,7 +521,9 @@ describe("Dashboard", () => {
     render(<Dashboard />);
 
     expect(screen.getByTestId("query-state-empty")).toBeTruthy();
-    expect(screen.getByText("No insights to display.")).toBeTruthy();
+    expect(
+      screen.getByText("No relationships met the evidence threshold for this period."),
+    ).toBeTruthy();
     expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
   });
 

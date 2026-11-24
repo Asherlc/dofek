@@ -3,6 +3,10 @@
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, date)',
+    indexes=[{
+        'name': 'wake_utc_date_minmax',
+        'definition': "toDate(coalesce(ended_at, addMinutes(started_at, ifNull(duration_minutes, 0))), 'UTC') TYPE minmax GRANULARITY 1"
+    }],
     query_settings={
         'max_threads': 1,
         'join_use_nulls': 1

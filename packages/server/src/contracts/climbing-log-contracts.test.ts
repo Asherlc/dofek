@@ -13,7 +13,7 @@ import {
 } from "./climbing-log-contracts.ts";
 
 describe("versioned climbing detail responses", () => {
-  it("retains explicit area membership in V5 while preserving strict older responses", () => {
+  it("retains the computed area group in V5 while preserving strict older responses", () => {
     const original = climbingLogEntryFixture();
     const entry = { ...original, areaGroupId: "30000000-0000-4000-8000-000000000001" };
     expect(decodeClimbingLogEntryDetailResponse(entry)).toEqual(entry);

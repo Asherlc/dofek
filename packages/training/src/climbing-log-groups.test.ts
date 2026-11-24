@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { groupClimbingLogEntriesByArea } from "./climbing-log-groups.ts";
 
 describe("groupClimbingLogEntriesByArea", () => {
-  it("groups explicitly linked source areas across different names and preserves entry order", () => {
+  it("uses the computed display group across source names and preserves entry order", () => {
     const kaya = {
       id: "kaya-log",
       areaGroupId: "confirmed-gym",
@@ -53,7 +53,7 @@ describe("groupClimbingLogEntriesByArea", () => {
     ["linked-b", "linked-a", "unmapped"],
     ["unmapped", "linked-b", "linked-a"],
   ])(
-    "keeps distinct explicit groups separate from an unmapped same-name area (%s, %s, %s)",
+    "keeps distinct computed groups separate from a same-name area with no group (%s, %s, %s)",
     (...order) => {
       const entries = order.map((id) => ({
         id,
@@ -67,15 +67,6 @@ describe("groupClimbingLogEntriesByArea", () => {
       ).toEqual(order.map((id) => [id]));
     },
   );
-
-  it("lets an explicit mapping override same-provider name ambiguity", () => {
-    const entries = ["old-id", "new-id"].map((id) => ({
-      areaGroupId: "confirmed-gym",
-      climb: { areaPath: [{ id, name: "Gym", providerId: "kaya" }] },
-    }));
-    expect(groupClimbingLogEntriesByArea(entries)).toHaveLength(1);
-    expect(groupClimbingLogEntriesByArea(entries)[0]?.entries).toHaveLength(2);
-  });
 
   it("groups repeat board problems by the gym recorded on each log", () => {
     const climb = { areaPath: [] };

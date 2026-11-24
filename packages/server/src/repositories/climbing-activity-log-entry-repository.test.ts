@@ -8,6 +8,7 @@ import {
   climbingAttemptFixture,
   climbingBoardSeshGradeSortFixtures,
   climbingClimbFixture,
+  climbingConsolidationCases,
   climbingGradeSortFixtures,
   climbingLogDatabaseFixture,
   climbingLogEntryFixture,
@@ -377,21 +378,10 @@ describe("ClimbingActivityLogEntryRepository", () => {
       });
     },
   );
-  it.each([
-    ["30000000-0000-4000-8000-000000000001", "30000000-0000-4000-8000-000000000002", 2],
-    ["30000000-0000-4000-8000-000000000001", null, 2],
-    [null, "30000000-0000-4000-8000-000000000001", 2],
-    ["30000000-0000-4000-8000-000000000001", "30000000-0000-4000-8000-000000000001", 1],
-    [null, null, 1],
-  ])(
-    "respects explicit area membership when consolidating (%s, %s)",
-    async (first, second, count) => {
-      const api = named("kaya");
-      api.areaGroupId = first;
-      const exported = named("kaya-export", "20000000-0000-4000-8000-000000000011");
-      exported.areaGroupId = second;
-      const logs = await repository([api, exported]).getActivityLogEntries("activity");
-      expect(logs).toHaveLength(count);
+  it.each(climbingConsolidationCases())(
+    "consolidates same-name climbs with $scenario",
+    async ({ entries, count }) => {
+      expect(await repository(entries).getActivityLogEntries("activity")).toHaveLength(count);
     },
   );
   it("retains distinct recorded times from consolidated sources", async () => {

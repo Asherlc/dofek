@@ -58,8 +58,9 @@ export function catalogueLocalArea(locations: CatalogueLocation[]): CatalogueLoc
 export const CATALOGUE_LOCAL_AREA_METRES = 100;
 
 export function catalogueAreasAreNearby(
-  left: CatalogueLocation,
-  right: CatalogueLocation,
+  left: Pick<CatalogueLocation, "coordinates">,
+  right: Pick<CatalogueLocation, "coordinates">,
+  maximumMetres = CATALOGUE_LOCAL_AREA_METRES,
 ): boolean {
   if (!left.coordinates || !right.coordinates) return false;
   const radians = Math.PI / 180;
@@ -71,7 +72,7 @@ export function catalogueAreasAreNearby(
       Math.cos(destination.latitude * radians) *
       Math.sin(((destination.longitude - origin.longitude) * radians) / 2) ** 2;
   const metres = 2 * 6_371_000 * Math.asin(Math.sqrt(Math.min(1, haversine)));
-  return metres <= CATALOGUE_LOCAL_AREA_METRES;
+  return metres <= maximumMetres;
 }
 
 function sameAreaName(left: CatalogueLocation, right: CatalogueLocation): boolean {

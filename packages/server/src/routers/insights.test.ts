@@ -50,6 +50,8 @@ import { insightsRouter } from "./insights.ts";
 
 const createCaller = createTestCallerFactory(insightsRouter);
 
+const inclusiveEndCap = "2026-03-28::date";
+
 function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
@@ -64,7 +66,7 @@ describe("insightsRouter", () => {
     it("versions the server-authored evidence cache contract", () => {
       expect(cachedQueryOptions).toContainEqual({
         maxAge: 600_000,
-        keyVersion: "insights-evidence-v1",
+        keyVersion: "insights-evidence-v4",
       });
     });
 
@@ -105,19 +107,18 @@ describe("insightsRouter", () => {
       const dailyMetricsQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       const dailyMetricsQueryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
       const restingHeartRateParams = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
-      const sleepQueryText = vi.mocked(sensorStore.query).mock.calls[2]?.[1];
+      const sleepQueryParams = vi.mocked(sensorStore.query).mock.calls[2]?.[2];
       const bodyQueryText = vi.mocked(sensorStore.query).mock.calls[3]?.[1];
       expect(dailyMetricsQueryText).toContain("daily_metrics.date > toDate({windowStart:String})");
       expect(dailyMetricsQueryParams).toMatchObject({ windowStart: "2025-12-28" });
       expect(restingHeartRateParams).toHaveProperty("rhrWindowStart");
-      expect(sleepQueryText).toContain("subtractDays(toDate({endDate:String}), {days:UInt32})");
+      expect(sleepQueryParams).toMatchObject({ timezone: "UTC", endDate: "2026-03-28", days: 90 });
       expect(bodyQueryText).toContain("subtractDays(");
       expect(bodyQueryText).toContain("{days:UInt32}");
 
-      const activityQueryText = collectSqlText(execute.mock.calls[0]?.[0]);
       const nutritionQueryText = collectSqlText(execute.mock.calls[1]?.[0]);
-      expect(activityQueryText).toContain("AND started_at >");
       expect(nutritionQueryText).toContain("AND date >");
+      expect(nutritionQueryText).toContain(`AND date <= ${inclusiveEndCap}`);
     });
 
     it("omits lower bounds when days is null", async () => {
@@ -136,7 +137,6 @@ describe("insightsRouter", () => {
       const dailyMetricsQueryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
       const restingHeartRateQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
       const restingHeartRateParams = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
-      const sleepQueryText = vi.mocked(sensorStore.query).mock.calls[2]?.[1];
       const sleepQueryParams = vi.mocked(sensorStore.query).mock.calls[2]?.[2];
       const bodyQueryText = vi.mocked(sensorStore.query).mock.calls[3]?.[1];
       const bodyQueryParams = vi.mocked(sensorStore.query).mock.calls[3]?.[2];
@@ -145,17 +145,15 @@ describe("insightsRouter", () => {
       expect(dailyMetricsQueryParams).not.toHaveProperty("windowStart");
       expect(restingHeartRateQueryText).not.toContain("rhrWindowStart");
       expect(restingHeartRateParams).not.toHaveProperty("rhrWindowStart");
-      expect(sleepQueryText).not.toContain("subtractDays");
+      expect(sleepQueryParams).toMatchObject({ timezone: "UTC", endDate: "2026-03-28" });
       expect(sleepQueryParams).not.toHaveProperty("days");
       expect(bodyQueryText).not.toContain("subtractDays");
       expect(bodyQueryParams).not.toHaveProperty("days");
 
-      const activityQueryText = collectSqlText(execute.mock.calls[0]?.[0]);
       const nutritionQueryText = collectSqlText(execute.mock.calls[1]?.[0]);
-      expect(activityQueryText).toContain("WHERE user_id =");
-      expect(activityQueryText).not.toContain("started_at >");
       expect(nutritionQueryText).toContain("WHERE user_id =");
-      expect(nutritionQueryText).not.toContain("date >");
+      expect(nutritionQueryText).not.toContain("AND date >");
+      expect(nutritionQueryText).toContain(`AND date <= ${inclusiveEndCap}`);
     });
   });
 });

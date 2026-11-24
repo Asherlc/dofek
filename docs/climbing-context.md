@@ -7,7 +7,6 @@ A climbing log entry records an occurrence on a Climb, optionally associated wit
 | Model | Canonical facts |
 | --- | --- |
 | Area | Owner/provider, verified source identity, name, nullable parent Area and coordinates |
-| AreaGroup | Owner-scoped explicit identity linking source Areas that describe the same place |
 | Climb | Owner/provider, verified source identity, nullable name/kind/Area/setting, advertised route protection, coordinates, ordered published grades |
 | Pitch | Required Climb, nullable verified identity/number/name, ordered published grades |
 | ClimbingLogEntry | Owner/provider, occurrence identity, optional Climb/Activity, independently nullable source date, discipline/title/notes, reported grades, board/angle/hold types, raw source record and retention metadata |
@@ -15,36 +14,34 @@ A climbing log entry records an occurrence on a Climb, optionally associated wit
 
 Areas form an adjacency list through `parentAreaId`. PostgreSQL recursive queries build the current path; ownership constraints and cycle checks protect the hierarchy. Shared metadata updates apply to past logs referencing the same verified source object. Unidentified objects remain local to their log; matching names do not establish identity. See the [schema](../src/db/schema/climbing.ts) and PostgreSQL [recursive queries](https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-RECURSIVE).
 
-An explicit `area.group_id` links source Areas without replacing their names,
-provider IDs, hierarchy, or coordinates. The owner-scoped foreign key prevents
-cross-account membership. Source sync updates only source facts and preserves
-this relationship through renames. The activity-log repository returns the
-effective leaf Area's `areaGroupId`, preferring the location recorded on the log
-over the shared Climb location. The existing list grouping uses explicit groups
-before name paths and never bridges explicit groups through an unmapped name.
-See the [schema](../src/db/schema/climbing.ts),
-[repository](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts),
-[shared grouping](../packages/training/src/climbing-log-groups.ts), and
-[PostgreSQL foreign keys](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-FK).
-
 The [server location resolver](../packages/server/src/services/climbing-location-resolution.ts)
-also groups indoor gym Areas automatically in the requested log projection.
-It requires both nearby recorded leaf-Area coordinates (within 200 metres) and
-compatible normalized names. Generic facility words do not distinguish gyms;
-remaining name tokens must agree or share at least two words covering the smaller
-name. This is an application matching heuristic, not proof from distance alone.
-The existing [catalogue normalization](../packages/climbing-catalogue/src/matching.ts)
-is reused without changing its separate outdoor route proximity policy.
-Ambiguous source identities, incompatible branches, and proximity chains remain
-separate. Corresponding parent paths must also agree, so a common wall name
-cannot merge different gyms. All members of an automatic group must agree pairwise, and conflicting
-explicit groups never merge. Outdoor Areas retain their existing behavior.
+groups source Areas on read. It uses the location recorded on the log when
+available and otherwise uses the Climb's Area path. Each group is scoped to one
+account and has pairwise agreement across distinct providers. Conflicting
+coordinates or recorded settings, competing source identities and proximity
+chains stay separate.
 
-Response `areaGroupId` is a display grouping identity: explicit membership wins;
-automatic groups use a deterministic source Area UUID without inserting an
-`area_group` row. A singleton indoor Area also receives a display identity so
-the older name-only grouping cannot override a rejected geographic match.
-Source names, IDs, coordinates and stored membership remain unchanged.
+- Indoor gyms require compatible names, matching parent paths and recorded
+  leaf-Area coordinates within 200 metres. After removing generic facility
+  words, the names must agree or share at least two words covering the shorter
+  name.
+- Outdoor Areas require the same normalized leaf name. Full paths can agree
+  directly. When source breadcrumbs differ, the shorter local ancestry must
+  align with the end of the longer one. The matcher accepts a trailing `Park`
+  qualifier on the immediate parent. It requires two aligned ancestors, or one
+  aligned parent with nearby leaf coordinates. When both leaf pins are available,
+  the [catalogue's 100-metre comparison](../packages/climbing-catalogue/src/matching.ts)
+  rules out distant matches. Records with an unspecified setting can use these
+  path rules.
+
+The server computes `areaGroupId` from a source Area UUID. An ungrouped active
+Area uses its own UUID. Web and mobile use the value to share a display heading
+while each log retains its own source path, attribution, and coordinates.
+Occurrence consolidation compares exact normalized recorded and catalogue
+paths. Outdoor comparisons check available leaf pins for conflicts. Indoor
+comparisons also require the same resolved Area group.
+See the [repository](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts)
+and [shared list grouping](../packages/training/src/climbing-log-groups.ts).
 
 An unlocated indoor log can use a location from its exact upstream session when
 the eligible peers resolve to one gym. Source sessions are scoped to the owner
@@ -62,40 +59,9 @@ therefore benefits on read without a resync or manual gym mapping. The
 [PostgreSQL regressions](../packages/server/src/repositories/climbing-area-group.integration.test.ts)
 verify the read projection and preservation of stored source facts.
 
-### Assigning a confirmed location group
-
-After the schema is deployed, an operator can assign a confirmed pair with
-stock `psql`. Run the block as a script with `psql -v ON_ERROR_STOP=1 -f <file>`.
-Set `user_id`, `area_a`, and `area_b` to the verified owner and
-source Area UUIDs. Inspect their provider/external IDs and names first. If an
-Area already belongs to a group, review that group's complete membership before
-changing it; this transaction deliberately accepts only two ungrouped Areas.
-No data-specific mapping belongs in a deploy migration. The transaction uses
-[row locks](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-ROWS)
-and [psql's `\gset` and error handling](https://www.postgresql.org/docs/current/app-psql.html)
-to stop when the pair is missing, duplicated, differently owned, or already mapped.
-
-```sql
-\set ON_ERROR_STOP on
-\unset location_group_id
-BEGIN;
-WITH selected AS MATERIALIZED (
-  SELECT user_id FROM fitness.area
-  WHERE user_id = :'user_id'::uuid
-    AND id IN (:'area_a'::uuid, :'area_b'::uuid)
-    AND group_id IS NULL
-  FOR UPDATE
-)
-INSERT INTO fitness.area_group (user_id)
-SELECT user_id FROM selected GROUP BY user_id HAVING count(*) = 2
-RETURNING id AS location_group_id \gset
-
-UPDATE fitness.area SET group_id = :'location_group_id'::uuid
-WHERE user_id = :'user_id'::uuid
-  AND id IN (:'area_a'::uuid, :'area_b'::uuid)
-RETURNING provider_id, external_id, name, group_id;
-COMMIT;
-```
+The [manual-link retirement migration](../drizzle/0197_remove_climbing_area_groups.sql)
+uses the [existing maintenance rollout](../deploy/README.md) to stop old readers
+before dropping the manual membership column and table.
 
 API coordinates use `GpsCoordinates { latitude, longitude }`. PostgreSQL stores one native `point`, with x = longitude and y = latitude. Coordinates must be finite and within ±180° longitude and ±90° latitude; zero is valid. See the [value type](../packages/climbing-catalogue/src/geometry.ts) and PostgreSQL's [geometric types](https://www.postgresql.org/docs/current/datatype-geometric.html).
 
@@ -160,7 +126,7 @@ storage path. Input and output validation follow
 | `2` | Complete nullable `holdTypes` collection; no scalar alias. | Complete nullable numeric-or-category object. |
 | `3` | Same complete grip collection as `2`, plus attributed recorded `tags`. | Complete nullable numeric-or-category object. |
 | `4` | Same as `3`, plus the log's effective `areaPath`. | Complete nullable numeric-or-category object. |
-| `5` | Same as `4`, plus explicit location membership in `areaGroupId`. | Complete nullable numeric-or-category object. |
+| `5` | Same as `4`, plus the computed display group in `areaGroupId`. | Complete nullable numeric-or-category object. |
 
 Web and mobile activity screens request version `5`; provider record details
 and attachment pickers request version `4`. Updated decoders accept all five

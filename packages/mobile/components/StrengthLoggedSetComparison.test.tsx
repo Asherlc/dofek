@@ -141,6 +141,37 @@ it("shows a flat benchmark status for the selected lift", () => {
   ).toBeTruthy();
 });
 
+it("preserves a selected alias and shows the newest matching progression evidence", () => {
+  const units = new UnitConverter("metric");
+  const { rerender } = render(
+    <StrengthLoggedSetComparison data={loggedSetFixture} units={units} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Bench press · Dumbbell" }));
+  const exercises = loggedSetFixture.exercises.map((exercise) =>
+    exercise.exerciseId === "dumbbell"
+      ? {
+          ...exercise,
+          exerciseId: "dumbbell-current",
+          exerciseIds: ["dumbbell", "dumbbell-current"],
+        }
+      : exercise,
+  );
+  rerender(
+    <StrengthLoggedSetComparison
+      data={{ ...loggedSetFixture, exercises }}
+      units={units}
+      progressionRows={[
+        { ...repImprovementRow, exerciseId: "dumbbell", equipment: "Dumbbell" },
+        { ...repImprovementWithoutBadge, exerciseId: "dumbbell-current" },
+      ]}
+    />,
+  );
+  expect(
+    screen.getByRole("button", { name: "Bench press · Dumbbell" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(screen.getByLabelText("Training status: Ready to progress")).toBeTruthy();
+});
+
 it("keeps the comparison usable when no progression rows match", () => {
   render(
     <StrengthLoggedSetComparison

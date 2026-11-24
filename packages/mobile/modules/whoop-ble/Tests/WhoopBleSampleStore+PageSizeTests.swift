@@ -2,6 +2,22 @@ import XCTest
 @testable import WhoopBLE
 
 extension WhoopBleSampleStoreTests {
+    func testAutomaticCheckpointRetainsFourMegabyteTarget() throws {
+        let url = try directory()
+        let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: url) }
+        defer { withExtendedLifetime(store) {} }
+        try probe.executeFixture("CREATE TABLE checkpoint_probe(payload BLOB NOT NULL)")
+        try probe.executeFixture("PRAGMA wal_checkpoint(TRUNCATE)")
+        let databasePath = url.appendingPathComponent("samples.sqlite")
+        let initialSize = try Data(contentsOf: databasePath).count
+
+        try probe.executeFixture("INSERT INTO checkpoint_probe VALUES (zeroblob(2 * 1024 * 1024))")
+        XCTAssertEqual(try Data(contentsOf: databasePath).count, initialSize, "2 MiB should stay in the WAL")
+
+        try probe.executeFixture("INSERT INTO checkpoint_probe VALUES (zeroblob(3 * 1024 * 1024))")
+        XCTAssertGreaterThan(try Data(contentsOf: databasePath).count, 5 * 1024 * 1024)
+    }
+
     func testFreshQueueWritesFewerWALBytesPerNotification() throws {
         let currentDirectory = try directory()
         let legacyDirectory = try directory()

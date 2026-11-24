@@ -107,16 +107,20 @@ const MIN_RHO = 0.15;
 
 export function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): Insight[] {
   const metrics = getAllMetrics();
-  const candidates: Array<{
-    id: string;
-    xLabel: string;
-    yLabel: string;
-    lag: number;
-    rho: number;
-    pValue: number;
-    n: number;
-    dataPoints: Array<{ x: number; y: number; date: string }>;
-  }> = [];
+  const pValues: number[] = [];
+  const candidates = new Map<
+    number,
+    {
+      id: string;
+      xLabel: string;
+      yLabel: string;
+      lag: number;
+      rho: number;
+      pValue: number;
+      n: number;
+      dataPoints: Array<{ x: number; y: number; date: string }>;
+    }
+  >();
 
   // Group keys that are derived from the same underlying metric or category
   const derivedGroups: Record<string, string> = {
@@ -178,13 +182,11 @@ export function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): 
         const id = `disc-${mx.key}-${my.key}-lag${lag}`;
         const lagLabel =
           lag === 0 ? my.label : `${lag === 1 ? "next day" : `${lag} days later`} ${my.label}`;
-        if (
+        const alreadyReported =
           existingIds.has(`${mx.label}::${lagLabel}`) ||
           existingIds.has(`${mx.label}::${my.label}`) ||
           existingIds.has(`${lagLabel}::${mx.label}`) ||
-          existingIds.has(`${my.label}::${mx.label}`)
-        )
-          continue;
+          existingIds.has(`${my.label}::${mx.label}`);
 
         const xs: number[] = [];
         const ys: number[] = [];
@@ -206,7 +208,10 @@ export function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): 
         if (xs.length < MIN_SAMPLES) continue;
 
         const corr = spearmanCorrelation(xs, ys);
-        if (Math.abs(corr.rho) < MIN_RHO) continue;
+        if (!Number.isFinite(corr.pValue)) continue;
+        // Count every performed test before applying the display filters.
+        const testIndex = pValues.push(corr.pValue) - 1;
+        if (alreadyReported || Math.abs(corr.rho) < MIN_RHO) continue;
 
         const rawPoints: { x: number; y: number; date: string }[] = [];
         for (let j = 0; j < xs.length; j++) {
@@ -218,7 +223,7 @@ export function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): 
           }
         }
 
-        candidates.push({
+        candidates.set(testIndex, {
           id,
           xLabel: mx.label,
           yLabel: my.label,
@@ -232,15 +237,13 @@ export function exhaustiveSweep(joined: JoinedDay[], existingIds: Set<string>): 
     }
   }
 
-  if (candidates.length === 0) return [];
+  if (candidates.size === 0) return [];
 
-  const pValues = candidates.map((c) => c.pValue);
   const significant = benjaminiHochberg(pValues, 0.05);
 
   const discoveries: Insight[] = [];
-  for (let i = 0; i < candidates.length; i++) {
-    const candidate = candidates[i];
-    if (!significant[i] || !candidate) continue;
+  for (const [testIndex, candidate] of candidates) {
+    if (!significant[testIndex]) continue;
     const absRho = Math.abs(candidate.rho);
     const direction = candidate.rho > 0 ? "positively" : "negatively";
     const strength = absRho >= 0.6 ? "strongly" : absRho >= 0.4 ? "moderately" : "";
