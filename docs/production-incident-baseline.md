@@ -39851,6 +39851,34 @@ Local qualification and CI are separate from production throughput acceptance. T
   [Indexed sleep regression](../packages/server/src/repositories/clickhouse-sleep-repository.integration.test.ts) ·
   [ClickHouse index materialization](https://clickhouse.com/docs/reference/statements/alter/skipping-index#materialize-index).
 
+## 2026-11-23 — Overview evidence cutoff changed across 90-day windows
+
+- **Impact and evidence.** One Overview still showed the empty Key relationship
+  card after the refresh and date-window fixes shipped. A read-only replay of the
+  deployed repository at `4d047b49` joined 90 dates for both reported windows.
+  The unmodified engine returned zero relationships for the window ending
+  November 23 and one for the window ending November 16.
+  [Production release](https://github.com/Asherlc/dofek/actions/runs/45288590785) ·
+  [Date-window fix](https://github.com/Asherlc/dofek/pull/3465).
+- **Cause.** The engine filters predefined correlations by observed effect size
+  before applying the Benjamini–Hochberg correction. A second comparison crossed
+  the effect-size floor in the newer window. Adding it moved the first-ranked
+  cutoff from 0.05 to 0.025. The second comparison also failed the correction.
+  The first-ranked comparison's p-value stayed between those cutoffs. The
+  conditional, monthly, and discovery analyses also returned zero qualifying
+  relationships for the newer window.
+  [Engine filters](../packages/server/src/insights/engine.ts) ·
+  [Correction implementation](../packages/server/src/insights/stats.ts).
+- **Fix and validation.** The conditional, predefined correlation, and
+  exploratory families now correct across all testable comparisons before
+  applying the display filters. The server versions its cache key to refresh
+  results after release. Synthetic regressions failed with the deployed engine
+  and passed with the corrected engine. A read-only calculation with the
+  corrected code returned zero qualifying relationships for both windows.
+  Confirm the new cache version after deployment.
+  [Engine regressions](../packages/server/src/insights/engine.test.ts) ·
+  [Overview evidence contract](../packages/server/README.md#overview-relationship-evidence).
+
 ## 2026-11-23 — Overview PR validation failed in unit and integration checks
 
 - **Impact and evidence.** PR #3465 was blocked. The server unit run expected

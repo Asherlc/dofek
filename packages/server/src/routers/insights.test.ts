@@ -66,7 +66,7 @@ describe("insightsRouter", () => {
     it("versions the server-authored evidence cache contract", () => {
       expect(cachedQueryOptions).toContainEqual({
         maxAge: 600_000,
-        keyVersion: "insights-evidence-v3",
+        keyVersion: "insights-evidence-v4",
       });
     });
 
