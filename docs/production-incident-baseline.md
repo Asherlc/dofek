@@ -40056,3 +40056,23 @@ Local qualification and CI are separate from production throughput acceptance. T
   reconciliation for the pending operations.
   [Deployment verification](https://github.com/Asherlc/dofek/actions/runs/45332102234/job/138243564133)
   · [Reconciliation and stalled-operation cutoff](processing-status-runbook.md#runtime-progression).
+
+## 2026-11-24 — Overview relationship card empty after the evidence fix
+
+- **Reported behavior and production evidence.** One account saw the empty
+  Key relationship card. Both web replicas were running the revision with the
+  evidence filtering fix. Axiom recorded fresh authenticated
+  `insights.compute` calculations around 14:26 UTC and HTTP 200 responses.
+  [Deployment verification](https://github.com/Asherlc/dofek/actions/runs/45332102234/job/138243564133)
+  · [Axiom query guide](axiom-observability-runbook.md#queries).
+- **Replay and conclusion.** A read-only replay of the deployed calculation
+  for the 90-day Pacific time windows ending November 23 and 24 joined 90
+  dates in each window. Hundreds of comparisons had enough observations to
+  run, and none passed the statistical correction in either window. Both
+  replays returned zero relationships, so the empty card was expected for
+  these windows. The investigation required no mitigation.
+  [Overview evidence contract](../packages/server/README.md#overview-relationship-evidence).
+- **Follow-up.** The current message covers both untestable windows and
+  windows where comparisons ran and none qualified. On a repeat report,
+  check the date range, time zone, and number of testable comparisons before
+  diagnosing the empty card as a refresh or ingestion failure.
