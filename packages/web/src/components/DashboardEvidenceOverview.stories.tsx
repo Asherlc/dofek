@@ -139,6 +139,7 @@ export const SmoothedRecentTrend: Story = {
 export const Loading: Story = {
   args: {
     topInsight: undefined,
+    insightError: <QueryStatePanel variant="loading" height={160} />,
     trend: {
       latestRestingHeartRate: undefined,
       averageRestingHeartRate: undefined,
@@ -163,6 +164,7 @@ export const Empty: Story = {
   tags: ["review-scenario", "review-scenario-empty-data"],
   args: {
     topInsight: undefined,
+    insightError: undefined,
     trend: {
       latestRestingHeartRate: null,
       averageRestingHeartRate: null,

@@ -51,16 +51,21 @@ vi.mock("../components/DashboardEvidenceOverview.tsx", () => ({
     healthMonitor?: ReactNode;
     insightError?: ReactNode;
     restingHeartRateError?: Error | null;
-    hideInsightCard?: boolean;
+    topInsight?: { message?: string } | null;
   }) => {
     mockDashboardEvidenceOverview(props);
     return (
       <section aria-label="Dashboard overview">
         {props.healthMonitor}
         {props.restingHeartRateError ? <div>{props.restingHeartRateError.message}</div> : null}
-        {props.hideInsightCard
-          ? null
-          : (props.insightError ?? <div>Sleep consistency + Heart Rate Variability</div>)}
+        {props.topInsight || props.insightError ? (
+          <>
+            {props.insightError}
+            {props.topInsight ? (
+              <div>{props.topInsight.message ?? "Sleep consistency + Heart Rate Variability"}</div>
+            ) : null}
+          </>
+        ) : null}
       </section>
     );
   },
@@ -280,7 +285,8 @@ describe("Dashboard", () => {
     expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
     expect(mockDashboardEvidenceOverview).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        hideInsightCard: true,
+        topInsight: undefined,
+        insightError: null,
         hideTrendCard: true,
         hideHealthMonitor: true,
       }),
@@ -346,7 +352,10 @@ describe("Dashboard", () => {
     expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
     expect(screen.getAllByText(message)).toHaveLength(1);
     expect(mockDashboardEvidenceOverview).toHaveBeenLastCalledWith(
-      expect.objectContaining({ hideInsightCard: false }),
+      expect.objectContaining({
+        topInsight: undefined,
+        insightError: expect.anything(),
+      }),
     );
   });
 
@@ -517,14 +526,54 @@ describe("Dashboard", () => {
     expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
   });
 
-  it("uses an empty panel when no insights are available", () => {
+  it("omits the relationship card when insights settle empty and keeps Overview visible", () => {
     render(<Dashboard />);
 
-    expect(screen.getByTestId("query-state-empty")).toBeTruthy();
     expect(
-      screen.getByText("No relationships met the evidence threshold for this period."),
-    ).toBeTruthy();
+      screen.queryByText("No relationships met the evidence threshold for this period."),
+    ).toBeNull();
     expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
+    expect(screen.queryByTestId("query-state-empty")).toBeNull();
+    expect(screen.getByRole("region", { name: "Dashboard overview" })).toBeTruthy();
+    expect(screen.getByText("Health status bar")).toBeTruthy();
+    expect(mockDashboardEvidenceOverview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ topInsight: undefined, insightError: null }),
+    );
+  });
+
+  it("omits the relationship card when only insufficient insights are available", () => {
+    mockInsightsQuery.mockReturnValue({
+      data: [
+        {
+          id: "insufficient-insight",
+          type: "correlation",
+          confidence: "insufficient",
+          metric: "Heart Rate Variability",
+          action: "Sleep consistency",
+          message: "Insufficient sleep consistency relationship",
+          detail: "Too few paired days",
+          whenTrue: { mean: 1, n: 2 },
+          whenFalse: { mean: 0, n: 2 },
+          effectSize: 0.1,
+          pValue: 0.5,
+        },
+      ],
+      isLoading: false,
+      isFetched: true,
+      error: null,
+    });
+
+    render(<Dashboard />);
+
+    expect(
+      screen.queryByText("No relationships met the evidence threshold for this period."),
+    ).toBeNull();
+    expect(screen.queryByText("Insufficient sleep consistency relationship")).toBeNull();
+    expect(screen.getByRole("region", { name: "Dashboard overview" })).toBeTruthy();
+    expect(screen.getByText("Health status bar")).toBeTruthy();
+    expect(mockDashboardEvidenceOverview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ topInsight: undefined, insightError: null }),
+    );
   });
 
   it("passes server-smoothed resting heart rate chart points into the dashboard overview", () => {

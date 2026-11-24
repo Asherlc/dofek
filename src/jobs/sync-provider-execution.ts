@@ -95,11 +95,13 @@ export async function executeSyncProvider(
 
   const processingOperation = await SyncProcessingOperation.start(job, db, provider);
   const syncStart = Date.now();
+  let attemptStartedAt: number | undefined;
 
   try {
     if (!(await accountErasureAllowsQueuedUserWork(db, job.data.userId, `${provider.name} sync`))) {
       return false;
     }
+    attemptStartedAt = performance.now();
     logger.info(`[worker] Starting ${provider.name}...`);
     const homeTimezone = await loadUserHomeTimezone(db, job.data.userId);
     const result = await runWithProviderUserIngestContext(
@@ -233,6 +235,13 @@ export async function executeSyncProvider(
       providerSyncDeferralErrors(err).length === 0
     ) {
       throw err;
+    }
+  } finally {
+    if (attemptStartedAt !== undefined) {
+      logger.info("provider.sync_attempt", {
+        provider: provider.id,
+        duration_ms: Math.round(performance.now() - attemptStartedAt),
+      });
     }
   }
   return true;

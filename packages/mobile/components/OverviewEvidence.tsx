@@ -2,7 +2,7 @@ import { formatDateShort, shiftDateYmd } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { isConnectionFailure } from "@dofek/format/user-facing-error";
 import type { AppRouterOutputs } from "dofek-server/router";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
 import {
@@ -73,7 +73,7 @@ function isGroupedNoData(hideConnectionErrors: boolean, query: QueryResult<unkno
   return hideConnectionErrors && query.data == null && isConnectionFailure(query.error);
 }
 
-function SectionState({
+function renderSectionState({
   query,
   empty,
   hideConnectionError = false,
@@ -81,7 +81,7 @@ function SectionState({
   query: QueryResult<unknown>;
   empty?: string;
   hideConnectionError?: boolean;
-}) {
+}): ReactNode {
   if (query.error) {
     if (hideConnectionError && isConnectionFailure(query.error)) return null;
     return (
@@ -162,8 +162,10 @@ export function OverviewEvidence({
   )?.baselineProgress;
   const startDate = shiftDateYmd(endDate, 1 - overviewDays);
   const dateOptions = { timeZone: "UTC" };
-  const hideInsightCard =
-    hideConnectionErrors && isConnectionFailure(insights.error) && topInsight == null;
+  const insightStatus = renderSectionState({
+    query: insights,
+    hideConnectionError: hideConnectionErrors,
+  });
   // A distinct heart rate failure still owns the trend card even when the
   // grouped trend query has no data — keep the card so its error stays visible.
   const hasDistinctHeartRateError =
@@ -178,7 +180,7 @@ export function OverviewEvidence({
       <Text style={styles.date}>
         {formatDateShort(startDate, dateOptions)} – {formatDateShort(endDate, dateOptions)}
       </Text>
-      {hideInsightCard ? null : (
+      {topInsight || insightStatus ? (
         <View style={styles.card}>
           <Text style={styles.eyebrow}>{association ? "Key association" : "Key correlation"}</Text>
           {topInsight ? (
@@ -218,17 +220,11 @@ export function OverviewEvidence({
                   <LinkButton label="Open Correlation" onPress={openCorrelation} />
                 </>
               ) : null}
-              <SectionState query={insights} hideConnectionError={hideConnectionErrors} />
             </>
-          ) : (
-            <SectionState
-              query={insights}
-              empty="No relationships met the evidence threshold for this period."
-              hideConnectionError={hideConnectionErrors}
-            />
-          )}
+          ) : null}
+          {insightStatus}
         </View>
-      )}
+      ) : null}
       {hideTrendCard ? null : (
         <View style={styles.card}>
           <Text style={styles.eyebrow}>Recent trend</Text>
@@ -248,17 +244,20 @@ export function OverviewEvidence({
               {hasTrend ? (
                 <SparkLine data={heartRateTrend} height={51} color={colors.accent} />
               ) : (
-                <SectionState
-                  query={heartRate}
-                  empty="No trend available"
-                  hideConnectionError={hideConnectionErrors}
-                />
+                renderSectionState({
+                  query: heartRate,
+                  empty: "No trend available",
+                  hideConnectionError: hideConnectionErrors,
+                })
               )}
             </View>
           </View>
-          {hasTrend ? (
-            <SectionState query={heartRate} hideConnectionError={hideConnectionErrors} />
-          ) : null}
+          {hasTrend
+            ? renderSectionState({
+                query: heartRate,
+                hideConnectionError: hideConnectionErrors,
+              })
+            : null}
           <LinkButton label="View heart rate data" onPress={openHeartRate} />
           {baselineProgress && baselineProgress.blocker !== null ? (
             <View style={styles.baseline}>
@@ -292,11 +291,11 @@ export function OverviewEvidence({
               }
             />
           ) : null}
-          <SectionState
-            query={trends}
-            empty={healthStatus.length === 0 ? "No health measurements to display" : undefined}
-            hideConnectionError={hideConnectionErrors}
-          />
+          {renderSectionState({
+            query: trends,
+            empty: healthStatus.length === 0 ? "No health measurements to display" : undefined,
+            hideConnectionError: hideConnectionErrors,
+          })}
         </>
       )}
     </View>

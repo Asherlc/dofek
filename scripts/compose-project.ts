@@ -13,7 +13,8 @@ export function resolveComposeProjectIdentity(
   arguments_: readonly string[],
 ): ComposeProjectIdentity {
   const projectSuffixIndex = arguments_.indexOf(projectSuffixFlag);
-  const projectSuffix = projectSuffixIndex === -1 ? null : arguments_[projectSuffixIndex + 1];
+  const projectSuffix =
+    projectSuffixIndex === -1 ? null : (arguments_[projectSuffixIndex + 1] ?? null);
   if (projectSuffixIndex !== -1) {
     if (!projectSuffix || !/^[a-z0-9][a-z0-9_-]*$/.test(projectSuffix)) {
       throw new Error("--project-suffix requires a lowercase alphanumeric Compose name suffix");

@@ -390,20 +390,32 @@ describe("TodayScreen independent loading states", () => {
     });
   });
 
-  it("explains an empty successful insights result on the Overview", async () => {
-    mockInsightsQuery.mockReturnValue({
-      data: [],
-      isLoading: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-    const { default: OverviewScreen } = await import("../../app/(tabs)/index");
-    render(<OverviewScreen />);
+  it.each([
+    ["empty", () => []],
+    [
+      "only insufficient",
+      () => [{ ...overviewEvidenceFixture.insights.data[0], confidence: "insufficient" }],
+    ],
+  ] as const)(
+    "omits the relationship card when insights settle %s",
+    async (_name, insightsData) => {
+      mockInsightsQuery.mockReturnValue({
+        data: insightsData(),
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+      });
+      mockTrendsQuery.mockReturnValue(overviewEvidenceFixture.trends);
+      mockHeartRateQuery.mockReturnValue(overviewEvidenceFixture.heartRate);
+      const { default: OverviewScreen } = await import("../../app/(tabs)/index");
+      render(<OverviewScreen />);
 
-    expect(
-      screen.getByText("No relationships met the evidence threshold for this period."),
-    ).toBeTruthy();
-  });
+      expect(screen.queryByText("Key correlation")).toBeNull();
+      expect(screen.getByText("Recent trend")).toBeTruthy();
+      expect(screen.getByText("Health monitor")).toBeTruthy();
+      expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+    },
+  );
 
   it("uses health monitor fixtures that match the server contract", () => {
     for (const metric of overviewEvidenceFixture.trends.data.healthStatus) {

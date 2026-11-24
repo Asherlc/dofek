@@ -40199,3 +40199,88 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Follow-up.** The amd64 image built successfully. The emulated amd64
   extraction run reached the memory cap and used swap. Verify memory and
   metered transfer on native amd64 after the first Fly release.
+
+## 2026-11-24 — Archived Paseo workspaces retained Docker containers
+
+- **Impact and evidence.** Local Docker Desktop had 14 running containers
+  owned by seven archived Dofek workspaces. Docker's Compose working-directory
+  labels matched Paseo's archived workspace records. The containers accounted
+  for about 2.2 GiB in `docker stats`, including 1.1 GiB from the unhealthy
+  ClickHouse instance in `placid-armadillo`.
+  [Docker memory accounting](https://docs.docker.com/reference/cli/docker/container/stats/).
+- **Cause.** The archive script's project list omitted
+  `noxious-goat-deletion-qualification`, a custom project created from the
+  `noxious-goat` worktree. The other six projects used names covered by the
+  hook. Their archive requests predated the retained daemon logs, leaving
+  the reason for the missed cleanup unresolved. Paseo can record the archive
+  even when teardown fails. The containers were created before archive and
+  configured with the `unless-stopped` restart policy.
+  [Archive script](../scripts/workspace-archive.ts)
+  · [Paseo teardown](https://paseo.sh/docs/worktrees#setup-and-teardown).
+- **Recovery and validation.** Stopped and removed the 14 containers by ID.
+  After confirming the volumes had no container references, removed 23 named
+  volumes with matching Compose project labels. Docker listed no containers
+  from the seven workspaces afterward and retained the other 75 volumes.
+  [Docker container removal](https://docs.docker.com/reference/cli/docker/container/rm/)
+  · [Docker volume removal](https://docs.docker.com/reference/cli/docker/volume/rm/).
+- **Follow-up.** Discover additional Compose projects by exact workspace
+  directory during teardown and check for remaining containers after shutdown.
+  A read-only check against Paseo's active workspace list can detect leftovers
+  when teardown fails before that verification runs. A regression test should
+  cover a custom-suffix project and a neighboring workspace.
+  [Docker container label filters](https://docs.docker.com/reference/cli/docker/container/ls/#label)
+  · [Workspace lifecycle runbook](development-environment.md#workspace-setup-and-archive).
+
+## 2026-11-24 — Knip rejected the Paseo CLI in the workspace doctor
+
+- **Impact and cause.** PR #3476 failed the repository checks at `Run pnpm knip`.
+  The first fatal diagnostic was `Unlisted binaries (1)`, which identified
+  `paseo` in `scripts/dev-environment.ts`. The doctor uses the locally installed
+  Paseo CLI in a Paseo worktree, and pnpm does not provide that executable.
+  The repository and CI gates inherited the Knip failure.
+  [Failing job](https://github.com/Asherlc/dofek/actions/runs/45416888076/job/138525495384).
+- **Fix and validation.** Added `paseo` to the root Knip configuration's
+  `ignoreBinaries` list for external commands. The same `pnpm knip` command
+  passed locally with the CI fixture environment. Future checks that invoke
+  externally installed tools should run Knip with that fixture before push.
+  [Knip configuration](https://knip.dev/reference/configuration#ignorebinaries).
+
+## 2026-11-24 — Overview relationship card empty after the evidence fix
+
+- **Reported behavior and production evidence.** One account saw the empty
+  Key relationship card. Both web replicas were running the revision with the
+  evidence filtering fix. Axiom recorded fresh authenticated
+  `insights.compute` calculations around 14:26 UTC and HTTP 200 responses.
+  [Deployment verification](https://github.com/Asherlc/dofek/actions/runs/45332102234/job/138243564133)
+  · [Axiom query guide](axiom-observability-runbook.md#queries).
+- **Replay and conclusion.** A read-only replay of the deployed calculation
+  for the 90-day Pacific time windows ending November 23 and 24 joined 90
+  dates in each window. Hundreds of comparisons had enough observations to
+  run, and none passed the statistical correction in either window. Both
+  replays returned zero relationships, so the empty card was expected for
+  these windows. The investigation required no mitigation.
+  [Overview evidence contract](../packages/server/README.md#overview-relationship-evidence).
+- **Follow-up.** The current message covers both untestable windows and
+  windows where comparisons ran and none qualified. On a repeat report,
+  check the date range, time zone, and number of testable comparisons before
+  diagnosing the empty card as a refresh or ingestion failure.
+
+## 2026-11-24 — Overview PR server integration fixture could not start ClickHouse
+
+- **Impact and evidence.** PR #3477's server integration shard 3 of 5 failed
+  in `Run pnpm exec vitest run --project integration --coverage --shard=3/5`.
+  The setup hook for `analytics-microbatch-bounds.integration.test.ts` failed
+  with `No such image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine`.
+  The other 82 suites in that shard passed. The failure blocked PR validation.
+  [Failing integration job](https://github.com/Asherlc/dofek/actions/runs/45433379669/job/138585872259).
+- **Cause and fix.** The fixture used a separate mirror reference from the
+  digest-pinned ClickHouse image that the job had already pulled for its
+  service. It now uses the same registry, tag, and digest as the CI service
+  and workspace Compose. The test still starts a disposable ClickHouse
+  container for the empty database it exercises.
+  [Integration fixture](../src/processing/analytics-microbatch-bounds.integration.test.ts)
+  · [CI service image](../.github/workflows/check-server.yml).
+- **Validation and follow-up.** The focused integration test passed against
+  the pinned image locally. The next CI run validates the fixture in the
+  complete integration shard. When updating the ClickHouse version, keep
+  the fixture aligned with the CI and workspace image references.

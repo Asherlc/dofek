@@ -90,8 +90,10 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - `start` fails fast without Docker, starts the workspace Compose stack,
     applies database migrations, and runs the doctor.
   - `doctor` verifies every required CLI, the CodeGraph index, Docker Compose,
-    and vcpkg. The `cloud:init` mise task sequences the prebuild and start
-    phases.
+    and vcpkg, then compares active Paseo workspaces (including background)
+    against Compose container working directories and reports stale projects
+    read-only. Non-Paseo environments skip that check when Paseo is unavailable.
+    The `cloud:init` mise task sequences the prebuild and start phases.
   - Usage: `mise run cloud:prebuild`, `mise run cloud:start`,
     `mise run cloud:init`, or `mise run doctor`.
   - mise documents that tasks receive the tools and environment declared in
@@ -334,9 +336,15 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - Usage: `pnpm compose -- ps` or `pnpm compose -- --profile metric-stream up -d`.
   - Docker documents [Compose project-name isolation](https://docs.docker.com/compose/how-tos/project-name/) and the [`--project-directory` option](https://docs.docker.com/reference/cli/docker/compose/).
 - `compose-env.ts`: Generates workspace-specific ports and connection URLs in `.env.local`; `--up` also starts Postgres, ClickHouse, and Redis through the pinned Compose identity.
+- `compose-container-inventory.ts`: Shared Docker Compose container inventory
+  used by archive verification and the environment doctor. Reads
+  `docker ps --all` rows filtered by `com.docker.compose.project`, including
+  working-directory and config-file labels.
+  [Compose project labels](https://github.com/docker/compose/blob/v5.3.1/pkg/api/labels.go).
 - `workspace-archive.ts`: Shared Paseo teardown and Conductor archive command.
   Runs the Compose wrapper with all profiles and `down --remove-orphans --volumes`
-  for the workspace's default, E2E, and PeerDB integration projects. The default
+  for the workspace's default, E2E, and PeerDB integration projects, then any
+  additional projects owned by the workspace working-directory label. The default
   and PeerDB integration shutdowns include the PeerDB overlay so its declared
   volumes are removed too. Shared images and build cache remain available;
   see [Compose shutdown options](https://docs.docker.com/reference/cli/docker/compose/down/).
