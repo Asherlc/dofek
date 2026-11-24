@@ -13,14 +13,21 @@ import {
 } from "@dofek/training/ghost-sessions";
 import { TRPCError } from "@trpc/server";
 import { readGhostHistoryEvidence } from "dofek/analytics/ghost-history-evidence";
+import { readGhostMapLabelsRegion } from "dofek/analytics/ghost-route-label-config";
 import type { Database } from "dofek/db";
+import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "dofek/db/account-erasure";
 import {
   ghostScalarProofProviders,
   ghostScalarProofSql,
   ghostScalarProofWindowColumns,
   ghostScalarProofWindowRow,
 } from "dofek/db/activity-ghost-scalar-sample";
+import { readGhostMapLabelConsent } from "dofek/db/ghost-map-label-consent";
 import {
+  ghostRouteLabelsSourceVersion,
   hasActiveGhostMember as hasActiveMember,
   readGhostTrackEvidence,
   resolveActiveGhostMembers,
@@ -28,6 +35,13 @@ import {
   type GhostTrackEvidence as TrackEvidence,
   ghostTrackStampSchema as trackStampSchema,
 } from "dofek/db/ghost-track-evidence";
+import { enqueueGhostRouteLabels } from "dofek/jobs/queues";
+import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
+import {
+  type GhostRouteLabelsCacheResult,
+  readGhostRouteLabelsCache,
+} from "dofek/lib/ghost-route-labels-cache";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { ActivityRepository } from "./activity-repository.ts";
@@ -37,6 +51,15 @@ import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-
 type Interval = GhostSessionsCompareResponse["anchor"];
 type Section = GhostSessionsGetResponse["sections"][number];
 type Pass = GhostSessionsPassesResponse["passes"][number];
+type ReadyTrack = Extract<TrackEvidence, { status: "ready" }>;
+type CachedNamedSections = Extract<
+  GhostRouteLabelsCacheResult,
+  { status: "ready" | "unavailable" }
+>["sections"];
+type RouteLabels =
+  | { status: "ready"; sections: CachedNamedSections }
+  | { status: "disabled" | "processing" | "unavailable" | "error" };
+type LabelDatabase = Pick<Database, "execute" | "transaction">;
 
 interface SavedMatch extends Pass {
   kind: "full-route" | "shared-stretch";
@@ -63,7 +86,7 @@ type SavedAnchor =
       gpsCoverage: NonNullable<GhostSessionsGetResponse["gpsCoverage"]>;
       anchor: Interval | null;
       geometry: Section["geometry"];
-      source: SelectedMember;
+      source: ReadyTrack;
       generation: string;
       historyCoverage: GhostSessionsGetResponse["historyCoverage"];
       checkedActivityIds: readonly string[];
@@ -72,6 +95,7 @@ type SavedAnchor =
 
 interface GhostSessionReads {
   readAnchor(window: ActivitySensorWindow, checkCompleteHistory: boolean): Promise<SavedAnchor>;
+  readLabels(window: ActivitySensorWindow, source: ReadyTrack): Promise<RouteLabels>;
   readComparison(
     window: ActivitySensorWindow,
     match: SavedMatch,
@@ -99,6 +123,7 @@ interface SectionMatches {
 
 const pageSize = 20;
 const sectionLimit = 64;
+const namedSectionLimit = 8;
 const cursorPositionSchema = z.strictObject({
   passStartedAtMs: z.number(),
   activityId: z.uuid(),
@@ -182,6 +207,37 @@ function summarizeSection(
         suggestedGhost: latest ? { passId: latest.passId, reason: "most-recent" as const } : null,
       };
   return { kind, sectionId, anchor, ...(geometry && { geometry }), ...recommendation };
+}
+
+const sectionSchema = ghostSessionsGetResponseSchema.shape.sections.element;
+
+function namedSections(activityId: string, sections: CachedNamedSections) {
+  return sections.flatMap(({ kind, name, attribution, start: from, end: through }) => {
+    const { originalIndex: startIndex, ...start } = from;
+    const { originalIndex: endIndex, ...end } = through;
+    if (startIndex >= endIndex) return [];
+    const id = createHash("sha256")
+      .update(
+        JSON.stringify([
+          activityId,
+          kind,
+          start.timestampMs,
+          end.timestampMs,
+          startIndex,
+          endIndex,
+        ]),
+      )
+      .digest("hex");
+    const named = sectionSchema.safeParse({
+      kind,
+      name,
+      attribution,
+      sectionId: `named:${id}`,
+      suggestedGhost: null,
+      anchor: { start, end, elapsedMs: end.timestampMs - start.timestampMs },
+    });
+    return named.success ? [named.data] : [];
+  });
 }
 
 export class GhostSessionsRepository {
@@ -280,15 +336,30 @@ export class GhostSessionsRepository {
       };
     }
     const { sections, historyCoverage } = await this.#visibleSections(window, saved);
+    const labels: RouteLabels =
+      saved.gpsCoverage === "unusable"
+        ? { status: "disabled" }
+        : await this.#dependencies.reads.readLabels(window, saved.source);
+    const named =
+      labels.status === "ready"
+        ? namedSections(window.activityId, labels.sections).slice(0, namedSectionLimit)
+        : [];
+    const routeId = routeSectionId(window.activityId);
+    const route = sections.get(routeId);
+    sections.delete(routeId);
+    const leadingSections = route
+      ? [summarizeSection(routeId, route, historyCoverage), ...named]
+      : named;
+    const stretches = [...sections]
+      .slice(0, sectionLimit - leadingSections.length)
+      .map(([sectionId, section]) => summarizeSection(sectionId, section, historyCoverage));
     return {
       availability: "ready",
       sport: saved.sport,
       gpsCoverage: saved.gpsCoverage,
       historyCoverage,
-      nameStatus: "disabled",
-      sections: [...sections]
-        .slice(0, sectionLimit)
-        .map(([sectionId, section]) => summarizeSection(sectionId, section, historyCoverage)),
+      nameStatus: labels.status === "ready" && named.length === 0 ? "unavailable" : labels.status,
+      sections: [...leadingSections, ...stretches],
     };
   }
 
@@ -709,6 +780,62 @@ async function readSavedComparison(
       };
 }
 
+async function readRouteLabels(
+  db: LabelDatabase,
+  store: ActivitySensorQueryStore,
+  window: ActivitySensorWindow,
+  source: ReadyTrack,
+): Promise<RouteLabels> {
+  try {
+    if (!readGhostMapLabelsRegion(process.env.GHOST_MAP_LABELS_REGION))
+      return { status: "disabled" };
+    const consent = await readGhostMapLabelConsent(db, window.userId);
+    if (!consent) return { status: "disabled" };
+    const revision = {
+      userId: window.userId,
+      activityId: window.activityId,
+      sourceVersion: ghostRouteLabelsSourceVersion(source),
+      consentRevision: consent.revision,
+    };
+    const cached = await readGhostRouteLabelsCache(queryCache, revision);
+    if (cached && cached.status !== "ready") return { status: cached.status };
+    return await withAccountErasureUserWriteFence(
+      db,
+      window.userId,
+      async (transaction): Promise<RouteLabels> => {
+        const current = (await readTrackEvidence(store, window, [])).get(window.activityId);
+        if (
+          current?.status !== "ready" ||
+          ghostRouteLabelsSourceVersion(current) !== revision.sourceVersion
+        )
+          return { status: "unavailable" };
+        const active = await resolveActiveGhostMembers(transaction, window.userId, [
+          current.memberActivityId,
+        ]);
+        const member = active.get(current.memberActivityId);
+        if (
+          !hasActiveMember(active, current) ||
+          member?.sport !== current.sport ||
+          member.modality !== current.modality
+        )
+          return { status: "disabled" };
+        if (
+          (await readGhostMapLabelConsent(transaction, window.userId))?.revision !==
+          revision.consentRevision
+        )
+          return { status: "disabled" };
+        if (cached) return { status: "ready", sections: cached.sections };
+        await enqueueGhostRouteLabels(revision);
+        return { status: "processing" };
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof AccountErasureUserFencedError) return { status: "disabled" };
+    captureException(error, { tags: { source: "ghost-route-labels-detail" } });
+    return { status: "error" };
+  }
+}
+
 export function createGhostSessionsRepository({
   db,
   userId,
@@ -716,7 +843,7 @@ export function createGhostSessionsRepository({
   accessWindow,
   sensorStore,
 }: {
-  db: Pick<Database, "execute">;
+  db: LabelDatabase;
   userId: string;
   timezone: string;
   accessWindow: AccessWindow;
@@ -730,6 +857,7 @@ export function createGhostSessionsRepository({
     resolveActiveMembers: (memberIds) => resolveActiveGhostMembers(db, userId, memberIds),
     reads: {
       readAnchor: (window, checkHistory) => readSavedAnchor(sensorStore, window, checkHistory),
+      readLabels: (window, source) => readRouteLabels(db, sensorStore, window, source),
       readComparison: (window, match) => readSavedComparison(sensorStore, window, match),
     },
   });

@@ -1,9 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { createClient } from "@clickhouse/client";
+import { readGhostMapLabelConsent } from "dofek/db/ghost-map-label-consent";
+import {
+  getGhostTrackEvidence,
+  ghostRouteLabelsSourceVersion,
+} from "dofek/db/ghost-track-evidence";
+import { queryCache } from "dofek/lib/cache";
+import { ghostRouteLabelsCacheKey } from "dofek/lib/ghost-route-labels-cache";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AnalyticsQueryOwner } from "../../../../src/analytics/analytics-query-owner.ts";
+import { recordedGhostRouteChunks } from "../../../../src/analytics/ghost-route-matching.ts";
 import { runGhostSessionHistory } from "../../../../src/analytics/ghost-session-history-runner.ts";
+import { getGhostTrack } from "../../../../src/db/activity-ghost-track.ts";
 import {
   createActivityLocationMemberChangeSql,
   createActivityLocationSampleSql,
@@ -19,6 +28,7 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
+import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { appRouter } from "../router.ts";
 
 const ownerId = randomUUID();
@@ -85,10 +95,10 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
     const startedAt = time(fixture, 0);
     const endedAt = time(fixture, fixture.secondsBetweenPositions * 20);
     await postgres.db.execute(sql`INSERT INTO fitness.activity (
-      id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+      id, group_id, provider_id, user_id, external_id, canonical_type, provider_type, modality,
       started_at, ended_at, name
     ) VALUES (${memberId}, ${fixture.activityId}, ${providerId}, ${ownerId},
-      ${memberId}, 'cycling', 'ride', ${startedAt}, ${endedAt}, 'Private fixture title')`);
+      ${memberId}, 'cycling', 'ride', 'road', ${startedAt}, ${endedAt}, 'Private fixture title')`);
   }
 
   async function seedTrack(fixture: Recording) {
@@ -238,6 +248,70 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
       }
     }
     await postgres?.cleanup();
+  });
+
+  it("serves cached recorded names for an older canonical alias until consent is withdrawn", async () => {
+    vi.stubEnv("GHOST_MAP_LABELS_REGION", "eu");
+    const settings = new SettingsRepository(postgres.db, ownerId);
+    await settings.set("ghostMapLabels", true);
+    const activity = { userId: ownerId, activityId: anchor.activityId };
+    const consent = await readGhostMapLabelConsent(postgres.db, ownerId);
+    const evidence = await getGhostTrackEvidence(nativeClient, activity);
+    const track = await getGhostTrack(nativeClient, activity);
+    if (!consent || evidence?.status !== "ready" || track.status !== "ready")
+      throw new Error("Expected published recording with current consent");
+    const [recorded] = recordedGhostRouteChunks(track.points).chunks;
+    const origin = recorded?.[2];
+    const finish = recorded?.[12];
+    if (!origin || !finish) throw new Error("Expected original timed waypoints");
+    const { originalIndex: startIndex, ...start } = origin;
+    const { originalIndex: endIndex, ...end } = finish;
+    const cacheKey = ghostRouteLabelsCacheKey({
+      ...activity,
+      sourceVersion: ghostRouteLabelsSourceVersion(evidence),
+      consentRevision: consent.revision,
+    });
+    await queryCache.set(
+      cacheKey,
+      {
+        status: "ready",
+        sections: [
+          {
+            kind: "named-road",
+            name: "Fixture Road",
+            start: { ...start, originalIndex: startIndex },
+            end: { ...end, originalIndex: endIndex },
+            attribution: "© OpenStreetMap contributors · Powered by Geoapify",
+          },
+        ],
+        coverage: { sampledWaypoints: 21, confirmedWaypoints: 21, bounded: false },
+      },
+      60_000,
+    );
+    try {
+      const owner = caller();
+      const detail = await owner.get({ activityId: aliasId });
+      expect(detail.nameStatus).toBe("ready");
+      expect(detail.sections.find(({ kind }) => kind === "named-road")).toEqual({
+        kind: "named-road",
+        sectionId: expect.any(String),
+        name: "Fixture Road",
+        suggestedGhost: null,
+        attribution: "© OpenStreetMap contributors · Powered by Geoapify",
+        anchor: { start, end, elapsedMs: 20_000 },
+      });
+      await settings.set("ghostMapLabels", false);
+      expect(await queryCache.get(cacheKey)).toBeDefined();
+      await expect(owner.get({ activityId: aliasId })).resolves.toEqual({
+        ...detail,
+        nameStatus: "disabled",
+        sections: detail.sections.filter(({ kind }) => kind !== "named-road"),
+      });
+    } finally {
+      await queryCache.invalidate(cacheKey);
+      await settings.set("ghostMapLabels", false);
+      vi.unstubAllEnvs();
+    }
   });
 
   it("drops a provider-absent selected candidate before the CDC mirror changes", async () => {
