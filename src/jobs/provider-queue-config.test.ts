@@ -53,6 +53,13 @@ describe("getProviderQueueConfig", () => {
     expect(config.syncTier).toBe("daily");
   });
 
+  it("runs Trailforks syncs daily with one worker", () => {
+    expect(getProviderQueueConfig("trailforks")).toStrictEqual({
+      concurrency: 1,
+      syncTier: "daily",
+    });
+  });
+
   it("returns frequent tier for whoop with step-chain job limiter", () => {
     const config = getProviderQueueConfig("whoop");
     expect(config.syncTier).toBe("frequent");
@@ -111,7 +118,7 @@ describe("config values are reasonable", () => {
 describe("getConfiguredProviderIds", () => {
   it("returns all known provider IDs", () => {
     const ids = getConfiguredProviderIds();
-    expect(ids).toHaveLength(37);
+    expect(ids).toHaveLength(38);
     expect(ids).toContain("intervals.icu");
     expect(ids).toContain("crimpd");
     expect(ids).toContain("eight-a");
@@ -123,6 +130,7 @@ describe("getConfiguredProviderIds", () => {
     expect(ids).toContain("openbeta");
     expect(ids).toContain("thecrag");
     expect(ids).toContain("ziva");
+    expect(ids).toContain("trailforks");
     expect(ids).toContain("boardsesh");
     expect(ids).toContain(new CyclingAnalyticsProvider().id);
   });

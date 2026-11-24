@@ -69,6 +69,10 @@ async function doRegisterProviders() {
     ["peloton", () => import("dofek/providers/peloton").then((m) => new m.PelotonProvider())],
     ["fatsecret", () => import("dofek/providers/fatsecret").then((m) => new m.FatSecretProvider())],
     ["ziva", () => import("dofek/providers/ziva").then((m) => new m.ZivaProvider())],
+    [
+      "trailforks",
+      () => import("dofek/providers/trailforks").then((m) => new m.TrailforksProvider()),
+    ],
     ["whoop", () => import("dofek/providers/whoop").then((m) => new m.WhoopProvider())],
     ["kaya", () => import("dofek/providers/kaya-sync").then((m) => new m.KayaSyncProvider())],
     [

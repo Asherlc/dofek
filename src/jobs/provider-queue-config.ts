@@ -97,6 +97,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
 
   // ── Daily tier ──
   ["fatsecret", { concurrency: 2, syncTier: "daily" }],
+  ["trailforks", { concurrency: 1, syncTier: "daily" }],
   ["thecrag", { concurrency: 1, syncTier: "daily" }],
 
   // ── On-demand tier ──

@@ -120,6 +120,7 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   "eight-sleep": { label: "Eight Sleep", logo: { type: "svg" } },
   fatsecret: { label: "fatsecret", logo: { type: "png" } },
   ziva: { label: "Ziva", logo: { type: "png" } },
+  trailforks: { label: "Trailforks" },
   mapmyfitness: { label: "MapMyFitness", logo: { type: "png" } },
   runalyze: { label: "Runalyze" },
   ultrahuman: { label: "Ultrahuman", logo: { type: "png" } },
