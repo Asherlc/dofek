@@ -1672,4 +1672,219 @@ describe("DataSourcesPanel", () => {
     expect(mockProvidersInvalidate).not.toHaveBeenCalled();
     expect(mockSyncMutateAsync).not.toHaveBeenCalled();
   });
+
+  describe("activity type tabs", () => {
+    function mockMixedProviders() {
+      mockProvidersQuery.mockReturnValue({
+        data: [
+          {
+            id: "concept2",
+            name: "Concept2",
+            authorized: true,
+            authType: "oauth",
+            importOnly: false,
+            pushOnly: false,
+            needsReauth: false,
+          },
+          {
+            id: "strava",
+            name: "Strava",
+            authorized: true,
+            authType: "oauth",
+            importOnly: false,
+            pushOnly: false,
+            needsReauth: false,
+          },
+          {
+            id: "garmin",
+            name: "Garmin",
+            authorized: true,
+            authType: "oauth",
+            importOnly: false,
+            pushOnly: false,
+            needsReauth: false,
+          },
+          {
+            id: "garmin-dump",
+            name: "Garmin Dump",
+            authorized: false,
+            authType: "file-import",
+            importOnly: true,
+            pushOnly: false,
+            needsReauth: false,
+          },
+          {
+            id: "brand-new-source",
+            name: "Brand New Source",
+            authorized: false,
+            authType: "oauth",
+            importOnly: false,
+            pushOnly: false,
+            needsReauth: false,
+          },
+          {
+            id: "ziva",
+            name: "Ziva",
+            authorized: true,
+            authType: "oauth",
+            importOnly: false,
+            pushOnly: false,
+            needsReauth: false,
+          },
+        ],
+        isLoading: false,
+        error: null,
+      });
+    }
+
+    it("defaults to All and resets to All after filtering", () => {
+      mockMixedProviders();
+      render(<DataSourcesPanel />);
+
+      const tablist = screen.getByRole("tablist", { name: "Activity types" });
+      expect(within(tablist).getByRole("tab", { name: "All" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(screen.getByTestId("provider-card-concept2")).toBeVisible();
+      expect(screen.getByTestId("provider-card-ziva")).toBeVisible();
+      expect(screen.getByTestId("file-import-apple_health")).toBeVisible();
+
+      fireEvent.click(within(tablist).getByRole("tab", { name: "Rowing" }));
+      expect(screen.getByTestId("provider-card-concept2")).toBeVisible();
+      expect(screen.getByTestId("provider-card-ziva")).not.toBeVisible();
+
+      fireEvent.click(within(tablist).getByRole("tab", { name: "All" }));
+      expect(screen.getByTestId("provider-card-ziva")).toBeVisible();
+      expect(screen.getByTestId("provider-card-brand-new-source")).toBeVisible();
+    });
+
+    it("shows a specialist in its category and a multi-category source in each match", () => {
+      mockMixedProviders();
+      render(<DataSourcesPanel />);
+      const tablist = screen.getByRole("tablist", { name: "Activity types" });
+
+      fireEvent.click(within(tablist).getByRole("tab", { name: "Rowing" }));
+      expect(screen.getByTestId("provider-card-concept2")).toBeVisible();
+      expect(screen.getByTestId("provider-card-ziva")).not.toBeVisible();
+
+      fireEvent.click(within(tablist).getByRole("tab", { name: "Cycling" }));
+      expect(screen.getByTestId("provider-card-strava")).toBeVisible();
+      expect(screen.getByRole("region", { name: "Garmin connection methods" })).toBeVisible();
+      // Concept2 remains: bike erg imports as cycling alongside rowing.
+      expect(screen.getByTestId("provider-card-concept2")).toBeVisible();
+      expect(screen.getByTestId("provider-card-ziva")).not.toBeVisible();
+
+      fireEvent.click(within(tablist).getByRole("tab", { name: "Running" }));
+      expect(screen.getByTestId("provider-card-strava")).toBeVisible();
+      expect(screen.getByTestId("provider-card-concept2")).not.toBeVisible();
+    });
+
+    it("keeps every available Garmin method under a matching category", () => {
+      mockMixedProviders();
+      render(<DataSourcesPanel />);
+      fireEvent.click(screen.getByRole("tab", { name: "Cycling" }));
+
+      expect(screen.getByRole("region", { name: "Garmin connection methods" })).toBeVisible();
+      expect(screen.getByRole("button", { name: "Garmin Connect" })).toBeVisible();
+      expect(screen.getByRole("button", { name: "Data export" })).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "Data export" }));
+      expect(screen.getByTestId("file-import-garmin-dump")).toBeVisible();
+    });
+
+    it("keeps an unknown ID only under All", () => {
+      mockMixedProviders();
+      render(<DataSourcesPanel />);
+      expect(screen.getByTestId("provider-card-brand-new-source")).toBeVisible();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Nutrition" }));
+      expect(screen.getByTestId("provider-card-brand-new-source")).not.toBeVisible();
+      expect(screen.getByTestId("provider-card-ziva")).toBeVisible();
+    });
+
+    it("keeps Apple Health in a specialty tab when no server providers match", () => {
+      mockProvidersQuery.mockReturnValue({
+        data: [
+          {
+            id: "ziva",
+            name: "Ziva",
+            authorized: true,
+            authType: "oauth",
+            importOnly: false,
+            pushOnly: false,
+            needsReauth: false,
+          },
+        ],
+        isLoading: false,
+        error: null,
+      });
+      render(<DataSourcesPanel />);
+      fireEvent.click(screen.getByRole("tab", { name: "Rowing" }));
+      expect(screen.getByTestId("provider-card-ziva")).not.toBeVisible();
+      expect(screen.getByTestId("file-import-apple_health")).toBeVisible();
+      expect(screen.getByRole("tablist", { name: "Activity types" })).toBeVisible();
+    });
+
+    it("operates the tabs with keyboard traversal", () => {
+      mockMixedProviders();
+      render(<DataSourcesPanel />);
+      const allTab = screen.getByRole("tab", { name: "All" });
+      allTab.focus();
+      expect(allTab).toHaveFocus();
+
+      fireEvent.keyDown(allTab, { key: "ArrowRight" });
+      const cyclingTab = screen.getByRole("tab", { name: "Cycling" });
+      expect(cyclingTab).toHaveAttribute("aria-selected", "true");
+      expect(cyclingTab).toHaveFocus();
+      expect(screen.getByTestId("provider-card-strava")).toBeVisible();
+
+      fireEvent.keyDown(cyclingTab, { key: "Home" });
+      expect(screen.getByRole("tab", { name: "All" })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("tab", { name: "All" })).toHaveFocus();
+
+      fireEvent.keyDown(screen.getByRole("tab", { name: "All" }), { key: "End" });
+      expect(screen.getByRole("tab", { name: "Body Composition" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    });
+
+    it("keeps the same import card DOM node when hiding and restoring a category", () => {
+      mockProvidersQuery.mockReturnValue({
+        data: [
+          {
+            id: "kaya-export",
+            name: "Kaya",
+            authorized: true,
+            authType: "file-import",
+            importOnly: true,
+            pushOnly: false,
+            needsReauth: false,
+          },
+          {
+            id: "ziva",
+            name: "Ziva",
+            authorized: true,
+            authType: "oauth",
+            importOnly: false,
+            pushOnly: false,
+            needsReauth: false,
+          },
+        ],
+        isLoading: false,
+        error: null,
+      });
+      render(<DataSourcesPanel />);
+      const importCard = screen.getByTestId("file-import-kaya-export");
+      expect(importCard).toBeVisible();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Nutrition" }));
+      expect(importCard).not.toBeVisible();
+      expect(screen.getByTestId("file-import-kaya-export")).toBe(importCard);
+
+      fireEvent.click(screen.getByRole("tab", { name: "Climbing" }));
+      expect(screen.getByTestId("file-import-kaya-export")).toBe(importCard);
+      expect(importCard).toBeVisible();
+    });
+  });
 });
