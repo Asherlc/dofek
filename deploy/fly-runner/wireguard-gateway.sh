@@ -26,7 +26,9 @@ printf '%s\n' \
     exit 1
   }
 
-ip link set dofekwg up
+# MTU 1200 matches the wireproxy peer and leaves room for WireGuard encapsulation
+# on this constrained Fly-to-Oracle path (default 1420 drops large Redis writes).
+ip link set dev dofekwg mtu 1200 up
 
 # The relay needs no credentials after setup.
 unset SYNC_WIREGUARD_PRIVATE_KEY SYNC_WIREGUARD_PEER_PUBLIC_KEY

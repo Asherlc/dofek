@@ -46,9 +46,12 @@ on_signal() {
 # Feed peer config over stdin so no private material appears in argv or a file.
 # -s suppresses verbose tunnel logs; fatal errors still surface on stderr.
 # Bind only the three Oracle gateway services on loopback.
+# MTU 1200 matches the gateway peer and leaves room for WireGuard encapsulation
+# on this constrained Fly-to-Oracle path (default 1420 drops large Redis writes).
 wireproxy -s -c /dev/stdin <<EOF &
 [Interface]
 Address = 10.253.0.2/32
+MTU = 1200
 PrivateKey = ${SYNC_WIREGUARD_PRIVATE_KEY}
 
 [Peer]
