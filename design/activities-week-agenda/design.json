@@ -2,7 +2,7 @@
   "version": 1,
   "title": "Activities · Date range",
   "kind": "prototype",
-  "description": "Dofek web and iOS Activities mockups with planned and completed workouts in one date-filtered agenda. Uses sample data.",
+  "description": "Dofek web and iOS Activities mockups with planned and completed workouts in one agenda using the existing Activities date range control. Uses sample data.",
   "artboards": [
     {
       "id": "web",

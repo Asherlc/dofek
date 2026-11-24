@@ -16,10 +16,21 @@
   </header>
   <main class="workspace">
     <h1 class="page-title" data-dc-id="page-title">Activities</h1>
+    <div class="activity-filters" data-dc-id="activity-filters">
+      <label class="range-label">Date range
+        <select data-dc-id="date-range">
+          <option data-start="2026-11-23" data-end="2026-11-29">This week</option>
+          <option data-start="2026-10-27" data-end="2026-11-24">4 weeks</option>
+          <option data-start="2026-09-29" data-end="2026-11-24">8 weeks</option>
+          <option data-start="2026-09-01" data-end="2026-11-24">12 weeks</option>
+          <option data-start="2026-11-25" data-end="2027-02-22">Next 90 days</option>
+        </select>
+      </label>
+    </div>
     <section class="agenda" aria-labelledby="agenda-heading" data-dc-id="week-agenda">
       <header class="agenda-head" data-dc-id="week-header">
         <h2 id="agenda-heading">Workout calendar</h2>
-        <button type="button" class="range" aria-haspopup="dialog" aria-label="Date range, Nov 23–29, 2026" data-dc-id="date-range">Nov 23–29, 2026</button>
+        <p class="range-caption" data-dc-id="selected-dates">Nov 23–29, 2026</p>
       </header>
       <ol class="week" aria-label="Days in the selected range">
         <li class="day" data-dc-id="previous-week-friday" hidden>
@@ -104,24 +115,6 @@
       <p class="range-empty" hidden>No workouts in this date range.</p>
       <p class="visually-hidden" role="status" data-range-status></p>
     </section>
-    <dialog class="range-dialog" id="range-dialog" aria-labelledby="range-dialog-heading" data-dc-id="date-range-picker">
-      <form method="dialog" class="range-form">
-        <h2 id="range-dialog-heading">Date range</h2>
-        <div class="range-presets" aria-label="Date range shortcuts">
-          <button type="button" data-start="2026-11-16" data-end="2026-11-22" data-dc-id="previous-week">Previous week</button>
-          <button type="button" data-start="2026-11-23" data-end="2026-11-29" data-dc-id="this-week">This week</button>
-          <button type="button" data-start="2026-11-30" data-end="2026-12-06" data-dc-id="next-week">Next week</button>
-        </div>
-        <div class="date-fields">
-          <label data-dc-id="start-date">Start date <input name="startDate" type="date" value="2026-11-23" required></label>
-          <label data-dc-id="end-date">End date <input name="endDate" type="date" value="2026-11-29" required></label>
-        </div>
-        <div class="range-actions">
-          <button type="button" data-dc-id="cancel-range">Cancel</button>
-          <button type="submit" class="apply-range" data-dc-id="apply-range">Apply</button>
-        </div>
-      </form>
-    </dialog>
     <section class="history" aria-labelledby="history-heading" data-dc-id="activity-history">
       <h2 id="history-heading">Activity history</h2>
       <p>Training time this week · 1 h 33 min across 2 completed activities</p>

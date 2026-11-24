@@ -18,9 +18,9 @@
 body { margin: 0; background: var(--page); color: var(--ink); }
 h1, h2, h3, h4, p, ol { margin: 0; }
 h1, h2 { letter-spacing: -.035em; }
-button, input { font: inherit; color: inherit; }
+button, select { font: inherit; color: inherit; }
 button, summary { cursor: pointer; }
-:is(button, input, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+:is(button, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -63,25 +63,36 @@ button, summary { cursor: pointer; }
 .app-nav { display: flex; gap: 25px; align-items: center; color: var(--muted); font-weight: 550; }
 .app-nav [aria-current] { color: var(--accent); font-weight: 750; }
 .workspace { width: min(100% - 72px, 920px); margin: 0 auto; padding: 26px 0 30px; }
-.page-title { font-size: 32px; line-height: 1.15; margin-bottom: 17px; }
+.page-title { font-size: 32px; line-height: 1.15; margin-bottom: 10px; }
+.activity-filters { display: flex; justify-content: flex-end; margin-bottom: 11px; }
+.range-label { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; }
+.range-label select {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+}
 .agenda { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
-.agenda-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 13px 20px 11px; }
+.agenda-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 16px 20px 14px; }
 .agenda-head h2 { font-size: 23px; line-height: 1.2; }
-.range, .range-form button {
+.range-caption { color: var(--muted); font-size: 13px; font-weight: 600; text-align: right; }
+.filter-chip {
   display: inline-flex;
   justify-content: center;
   align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 6px 10px;
+  gap: 7px;
+  min-height: 44px;
+  padding: 7px 11px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface);
+  color: var(--muted);
   font-size: 13px;
-  font-weight: 680;
+  font-weight: 650;
 }
-.range { color: var(--accent); }
-.range::after {
+.filter-chip[aria-pressed="true"] { color: var(--accent); background: var(--green-wash); }
+.range-toggle::after {
   content: "";
   flex: 0 0 6px;
   height: 6px;
@@ -89,37 +100,8 @@ button, summary { cursor: pointer; }
   border-bottom: 1.5px solid;
   transform: translateY(-2px) rotate(45deg);
 }
-.range:hover, .range-form button:hover { background: var(--green-wash); }
-.range-dialog {
-  width: min(400px, calc(100% - 28px));
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: 0 22px 60px #0f171230;
-}
-.range-dialog::backdrop { background: #0f171266; }
-.range-form { display: grid; gap: 15px; padding: 17px; }
-.range-form h2 { font-size: 22px; }
-.range-presets, .range-actions { display: flex; flex-wrap: wrap; gap: 7px; }
-.range-presets button { color: var(--accent); }
-.date-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.date-fields label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 650; }
-.date-fields input {
-  width: 100%;
-  min-width: 0;
-  min-height: 40px;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--page);
-  color: var(--ink);
-  font-size: 14px;
-}
-.range-actions { justify-content: flex-end; }
-.range-form .apply-range { border-color: var(--accent); background: var(--accent); color: var(--surface); }
-.range-form .apply-range:hover { filter: brightness(.91); }
+.range-toggle[aria-expanded="true"]::after { transform: translateY(2px) rotate(225deg); }
+.range-options { display: flex; flex-wrap: wrap; gap: 6px; }
 .range-empty { padding: 15px 20px 21px; color: var(--muted); }
 .week { list-style: none; padding: 0 20px 8px; }
 .day {
@@ -158,12 +140,11 @@ button, summary { cursor: pointer; }
 
 .ios .workspace { width: auto; margin: 0; padding: 9px 14px 88px; }
 .ios .system-status { display: flex; justify-content: space-between; padding: 12px 23px 5px; color: var(--ink); font-weight: 700; }
-.ios .page-title { margin: 1px 2px 13px; font-size: 31px; }
+.ios .page-title { margin: 1px 2px 9px; font-size: 31px; }
+.ios .activity-filters { align-items: start; flex-direction: column; gap: 6px; margin-inline: 2px; }
 .ios .agenda-head { padding: 13px 12px 11px; }
 .ios .agenda-head h2 { font-size: 21px; }
-.ios .range { min-height: 44px; font-size: 12px; }
-.ios .range-form :is(button, input) { min-height: 44px; }
-.ios .range-dialog { margin: auto auto 66px; }
+.ios .range-caption { font-size: 12px; }
 .ios .week { padding: 0 12px 5px; }
 .ios .day { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 7px 0; }
 .ios .day.is-today { margin-inline: -6px; padding-inline: 6px; }

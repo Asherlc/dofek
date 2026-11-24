@@ -1,8 +1,5 @@
-const openRange = document.querySelector('[data-dc-id="date-range"]');
-const rangeDialog = document.querySelector("#range-dialog");
-const rangeForm = rangeDialog.querySelector("form");
-const startField = rangeForm.elements.namedItem("startDate");
-const endField = rangeForm.elements.namedItem("endDate");
+const rangeControl = document.querySelector('[data-dc-id="date-range"]');
+const caption = document.querySelector(".range-caption");
 const days = Array.from(document.querySelectorAll(".week > .day"), (element) => ({
   element,
   date: element.querySelector("time").dateTime,
@@ -15,49 +12,40 @@ const dateLabel = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   timeZone: "UTC",
 });
-let selectedStart = startField.value;
-let selectedEnd = endField.value;
 
-function applyRange(start, end) {
-  selectedStart = start;
-  selectedEnd = end;
+function applyRange({ dataset: { start, end } }) {
   const label = dateLabel.formatRange(new Date(start), new Date(end));
-  openRange.textContent = label;
-  openRange.setAttribute("aria-label", `Date range, ${label}`);
+  caption.textContent = label;
 
-  let visible = 0;
   for (const { element, date } of days) {
     element.hidden = date < start || date > end;
-    if (!element.hidden) visible += 1;
   }
-  empty.hidden = visible > 0;
-  rangeStatus.textContent = visible === 0
-    ? `${label}. No workouts in this date range.`
-    : `Showing ${label}.`;
-  rangeDialog.close();
+  empty.hidden = days.some(({ element }) => !element.hidden);
+  rangeStatus.textContent = empty.hidden ? `Showing ${label}.` : `${label}. No workouts in this date range.`;
 }
 
-openRange.addEventListener("click", () => {
-  startField.value = selectedStart;
-  endField.value = selectedEnd;
-  endField.setCustomValidity("");
-  rangeDialog.showModal();
-});
+if (rangeControl instanceof HTMLSelectElement) {
+  rangeControl.addEventListener("change", () => applyRange(rangeControl.selectedOptions[0]));
+} else {
+  const options = document.querySelector("#range-options");
+  const choices = options.querySelectorAll("button");
 
-rangeForm.addEventListener("input", () => endField.setCustomValidity(""));
-rangeForm.querySelector('[data-dc-id="cancel-range"]').addEventListener("click", () => {
-  rangeDialog.close();
-});
-rangeForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  if (endField.value < startField.value) {
-    endField.setCustomValidity("Choose an end date on or after the start date.");
-    endField.reportValidity();
-    return;
+  rangeControl.addEventListener("click", () => {
+    options.hidden = !options.hidden;
+    rangeControl.setAttribute("aria-expanded", String(!options.hidden));
+  });
+
+  for (const choice of choices) {
+    choice.addEventListener("click", () => {
+      applyRange(choice);
+      for (const option of choices) {
+        option.setAttribute("aria-pressed", String(option === choice));
+      }
+      rangeControl.textContent = choice.textContent;
+      rangeControl.setAttribute("aria-label", `Date range, ${choice.textContent}`);
+      rangeControl.setAttribute("aria-expanded", "false");
+      options.hidden = true;
+      rangeControl.focus();
+    });
   }
-  applyRange(startField.value, endField.value);
-});
-
-for (const preset of rangeForm.querySelectorAll("[data-start]")) {
-  preset.addEventListener("click", () => applyRange(preset.dataset.start, preset.dataset.end));
 }
