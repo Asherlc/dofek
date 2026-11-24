@@ -36,6 +36,15 @@ export const DEFAULT_QUEUE_CONFIG: ProviderQueueConfig = {
   syncTier: "frequent",
 };
 
+export function parseSyncWorkerProviders(configured: string | undefined): Set<string> {
+  return new Set(
+    configured
+      ?.split(",")
+      .map((providerId) => providerId.trim())
+      .filter(Boolean),
+  );
+}
+
 // ── Provider configs ──
 
 function realtimeProvider(concurrency = 3, limiter?: RateLimiterConfig): ProviderQueueConfig {

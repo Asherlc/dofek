@@ -19,7 +19,7 @@ export default class IntegrationTimingReporter implements Reporter {
   #run:
     | {
         directory: string;
-        inventory: string[];
+        selected: string[];
         startedAt: number;
       }
     | undefined;
@@ -43,6 +43,7 @@ export default class IntegrationTimingReporter implements Reporter {
     const context = this.#context;
     if (!context) throw new Error("Timing reporter was not initialized");
     const shard = context.config.shard;
+    // Vitest 5.1+ shards before onTestRunStart, so specifications are already selected.
     if (!shard || specifications.some((spec) => spec.project.name !== "integration")) return;
     const startedAt = Date.now();
     const directory = path.resolve(
@@ -53,7 +54,7 @@ export default class IntegrationTimingReporter implements Reporter {
     const keys = specifications.map((specification) => this.#key(specification));
     if (new Set(keys).size !== keys.length)
       throw new Error("Timing run contains duplicate integration specifications");
-    this.#run = { directory, inventory: keys.sort(), startedAt };
+    this.#run = { directory, selected: keys.sort(), startedAt };
   }
 
   onTestRunEnd(
@@ -67,7 +68,7 @@ export default class IntegrationTimingReporter implements Reporter {
     if (reason !== "passed" || unhandledErrors.length) return;
     const context = this.#context;
     if (!context) throw new Error("Timing reporter was not initialized");
-    // Vitest shards inside the pool, after onTestRunStart. Read the assignment only now.
+    // Sequencer writes assignment during sharding, which Vitest 5.1+ finishes before onTestRunStart.
     const assignment = timingAssignmentSchema.parse(
       JSON.parse(readFileSync(path.join(run.directory, "assignment.json"), "utf8")),
     );
@@ -77,9 +78,9 @@ export default class IntegrationTimingReporter implements Reporter {
       assignment.index !== context.config.shard?.index ||
       assignment.count !== context.config.shard.count ||
       assignment.provenance.vitestVersion !== context.version ||
-      JSON.stringify(run.inventory) !== JSON.stringify([...assignment.inventory].sort())
+      JSON.stringify(run.selected) !== JSON.stringify([...assignment.selected].sort())
     )
-      throw new Error("Timing run inventory does not match the current shard assignment");
+      throw new Error("Timing run selected modules do not match the current shard assignment");
     const specifications = modules.map((module) => {
       if (!module.ok()) throw new Error("Timing export requires every selected module to succeed");
       return module.toTestSpecification();
@@ -95,11 +96,13 @@ export default class IntegrationTimingReporter implements Reporter {
       return [this.#key(specification), cached && cachedTimingSchema.parse(cached)] as const;
     });
     const finishedAt = Date.now();
+    const earliestResultAt = Math.max(run.startedAt, assignment.assignedAt);
     if (
+      finishedAt < earliestResultAt ||
       results.some(
         ([, result]) =>
           result?.lastRun === undefined ||
-          result.lastRun < run.startedAt ||
+          result.lastRun < earliestResultAt ||
           result.lastRun > finishedAt,
       )
     )

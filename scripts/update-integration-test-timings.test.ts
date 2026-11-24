@@ -136,6 +136,23 @@ describe("integration whole-suite timing export and refresh", () => {
     setup.merge();
     expect(readFileSync(setup.output, "utf8")).toBe(first);
   });
+  it("accepts either runStartedAt-before or after-assignedAt ordering when results are still fresh", () => {
+    const setup = fixture();
+    setup.edit(0, "completed-results.json", (cache) => {
+      cache.runStartedAt = 1000;
+      required(cache.results[0])[1].lastRun = 1100;
+    });
+    setup.edit(1, "completed-results.json", (cache) => {
+      cache.runStartedAt = 1150;
+      required(cache.results[0])[1].lastRun = 1150;
+    });
+    expect(() =>
+      runIntegrationTimingCommand(["export", required(setup.directories[0])], setup.environment),
+    ).not.toThrow();
+    expect(() =>
+      runIntegrationTimingCommand(["export", required(setup.directories[1])], setup.environment),
+    ).not.toThrow();
+  });
   it.each([
     "stale",
     "missing",

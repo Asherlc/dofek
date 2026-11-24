@@ -31,6 +31,64 @@
   workflow lint passed. The verified Linux binary also passed dotenv lint on
   Ubuntu 26.04. The GitHub Actions rerun is pending.
 
+## 2026-11-23 — Vitest drops the diagnostics reporter's hook event
+
+- **Impact.** The required server unit check for PR #3469 stopped at
+  `Runner did not reach the checkpoint before abort` in
+  `scripts/integration-diagnostics-reporter.test.ts`. That blocked the Fly
+  sync rollout. [Failed CI job](https://github.com/Asherlc/dofek/actions/runs/45336804769/job/138251492382)
+- **Cause and fix.** When the throttle timer fired at exactly 100 ms, Vitest
+  5.0.5 retained the expired timer and dropped the pending hook update. The
+  workspace now pins Vitest and its V8 coverage provider to 5.1.1, which
+  clears the expired timer before checking whether to flush.
+  [Upstream fix](https://github.com/vitest-dev/vitest/commit/8e837b87a219791afa554df659f6cd9b62829b63)
+- **Validation.** The reporter test failed locally on 5.0.5.
+  A deterministic timer fixture reproduced the dropped update on 5.0.5 and
+  observed it flush on 5.1.1. The real reporter test passed on 5.1.1 with V8
+  coverage enabled. The integration timing reporter also validates the selected
+  files because Vitest 5.1.1 now applies sharding before reporting the run start.
+  [Vitest 5.1.1 release notes](https://github.com/vitest-dev/vitest/releases/tag/v5.1.1)
+- **Remaining risk and follow-up.** The required server unit job passed on
+  GitHub. The first Fly release still needs to show `provider-sync-ready`
+  passing on the deployed Machine version and Axiom events from both hosts.
+  [Passing CI job](https://github.com/Asherlc/dofek/actions/runs/45409126832/job/138499652967)
+  · [Host attribution query](../deploy/fly-runner/README.md#see-which-host-ran-sync-jobs)
+
+## 2026-11-23 — Sleep heart-rate refresh consumes ClickHouse CPU
+
+- **Impact.** The scheduled sleep refresh competed with other work on the
+  four-core OCI host. At inspection the host had about 14 GiB of available
+  memory. The two main sleep heart-rate statements accounted for 21,135 of
+  38,720 CPU seconds reported by completed initial ClickHouse queries over
+  24 hours. User-facing latency and availability impact were unmeasured.
+- **Root cause.** Both models use a workout join with user and timestamp-overlap
+  predicates. In the latest profiled run of each model, the join built from
+  roughly 5,000 workout rows and took 111–123 seconds. The exact predicate
+  evaluation order remains unconfirmed. The sample model used a join to filter
+  the sensor data by user and day. On 16 recent windows, moving that filter into
+  the sensor read reduced the plan from 12,681 to 1,177 sensor granules.
+  The timings and granule counts are transcribed from the operator session.
+  Raw profiles and query plans are unavailable in the repository.
+  [Window join](../analytics/models/read_models/sleep_heart_rate_window.sql#L278)
+  · [Sample join](../analytics/models/read_models/sleep_heart_rate_sample.sql#L179)
+  · [ClickHouse query plans](https://clickhouse.com/docs/reference/statements/explain)
+  · [ClickHouse processor profiles](https://clickhouse.com/docs/reference/system-tables/processors_profile_log)
+- **Validation and mitigation.** Read-only probes first selected active
+  workouts that could overlap each sleep window, then checked exact sample
+  timestamps against those workouts. The sample probe also applied the
+  user/day filter at the sensor read. The window probe took 1.75 seconds and
+  matched stored counts for all 16 windows. The sample probe took 2.15 seconds
+  and matched the stored count and checksum of 730,989 active samples. An
+  original window query restricted to three recent windows hit the probe's
+  24-second limit. These probes left the scheduled models unchanged.
+- **Remaining risk and follow-up.** This profile predates the merged
+  [PR #3474](https://github.com/Asherlc/dofek/pull/3474) fix. See also the later
+  [Sleep heart-rate builds dominated ClickHouse query CPU](#2026-11-23--sleep-heart-rate-builds-dominated-clickhouse-query-cpu)
+  section. Measure query CPU, rows read, and refresh freshness after deploying
+  the fix. Before further model changes, cover empty windows, late data, deletions,
+  and workout overlaps at sleep boundaries in real ClickHouse tests. The probes
+  exercised active windows only.
+
 ## 2026-11-18 — Vertical-Life search and detail disagree on a crag's broader area
 
 - **Impact.** Sentry reported 29 occurrences of `DOFEK-SERVER-89` from
@@ -40120,6 +40178,27 @@ Local qualification and CI are separate from production throughput acceptance. T
   reconciliation for the pending operations.
   [Deployment verification](https://github.com/Asherlc/dofek/actions/runs/45332102234/job/138243564133)
   · [Reconciliation and stalled-operation cutoff](processing-status-runbook.md#runtime-progression).
+
+## 2026-11-24 — Semgrep flags the Fly runner's privileged entry point
+
+- **Impact and cause.** The [Semgrep OSS check](https://github.com/Asherlc/dofek/runs/138563273681)
+  on PR #3469 reported `dockerfile.security.missing-user-entrypoint` at
+  `Dockerfile:237`. The image started as root to configure kernel WireGuard
+  before dropping privileges for the worker. The Machine was parked.
+- **Fix.** Build Wireproxy from the upstream revision that includes the
+  [listener permission fix](https://github.com/windtf/wireproxy/pull/219).
+  The tunnel and worker now start as UID/GID 1000. Terraform configures
+  loopback Redis and OTLP endpoints on the existing Machine. The release
+  stages the matching PostgreSQL endpoint for the same Oracle peer.
+- **Validation.** The Dockerfile scan went from one finding to zero. The native
+  Linux ARM64 fixture completed both queue jobs, delivered both execution
+  events, and peaked at 267 MiB in a 512 MiB container with swap disabled.
+  SIGTERM exited cleanly, and tunnel termination stopped the container with
+  exit code 1. Terraform applied one in-place update and the follow-up plan
+  found no drift. The Machine remained stopped.
+- **Follow-up.** The amd64 image built successfully. The emulated amd64
+  extraction run reached the memory cap and used swap. Verify memory and
+  metered transfer on native amd64 after the first Fly release.
 
 ## 2026-11-24 — Archived Paseo workspaces retained Docker containers
 

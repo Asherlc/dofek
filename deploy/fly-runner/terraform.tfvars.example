@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+# The app name must be globally unique on Fly.
+# Leave runner_image commented to plan an app-only configuration (no Machine).
+
+app_name = "replace-me"
+fly_org  = "personal"
+
+# runner_image = "registry.fly.io/<app>@sha256:<digest>"

@@ -15,6 +15,7 @@ import {
   runQueuedUserWorkUnlessAccountErasing,
 } from "./account-erasure-work-guard.ts";
 import { createAccountErasureWorker } from "./account-erasure-worker.ts";
+import { createPortableSyncSlot, yieldSyncToPortableWorker } from "./portable-sync-slot.ts";
 import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
 import {
   loadActivityImageBackfillProvider,
@@ -31,7 +32,12 @@ import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
 import { processZipEntryExtractJob } from "./process-zip-entry-extract-job.ts";
 import { createProviderDataDeletionDependencies } from "./provider-data-deletion-dependencies.ts";
-import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
+import {
+  getConfiguredProviderIds,
+  getProviderQueueConfig,
+  parseSyncWorkerProviders,
+} from "./provider-queue-config.ts";
+import { createProviderSyncProcessor } from "./provider-sync-processor.ts";
 import {
   ACTIVITY_DELETE_ANALYTICS_QUEUE,
   ACTIVITY_IMAGE_QUEUE,
@@ -45,6 +51,7 @@ import {
   type FitFileImportBatchJobData,
   type FitFileImportJobData,
   type getRedisConnection,
+  getSharedRedisConnection,
   IMPORT_QUEUE,
   type ImportJobData,
   POST_SYNC_QUEUE,
@@ -85,22 +92,25 @@ export function createWorkerQueues({
   // ── Per-provider sync workers ──
 
   const providerWorkers = new Map<string, Worker<SyncJobData>>();
+  const providerSyncProcessor = createProviderSyncProcessor(db, accountErasureWorkLockPool);
+  const portableProviders = parseSyncWorkerProviders(process.env.SYNC_WORKER_PROVIDERS);
 
   for (const providerId of getConfiguredProviderIds()) {
     const config = getProviderQueueConfig(providerId);
-    const worker = new Worker<SyncJobData>(
+    const worker: Worker<SyncJobData> = new Worker<SyncJobData>(
       providerSyncQueueName(providerId),
-      (job, _token, signal) =>
-        jobContext.run(job, () =>
-          runQueuedUserWorkUnlessAccountErasing(
-            accountErasureWorkLockPool,
-            db,
-            job.data.userId,
-            "provider sync",
-            () => processSyncJob(job, db, signal),
-            job.data.providerId,
-          ),
-        ),
+      async (job, token, signal) => {
+        if (portableProviders.has(providerId) && !config.limiter) {
+          await yieldSyncToPortableWorker(
+            async () => createPortableSyncSlot(await getSharedRedisConnection().client),
+            worker,
+            providerId,
+            job,
+            token,
+          );
+        }
+        return providerSyncProcessor(job, token, signal);
+      },
       {
         autorun: false,
         connection,

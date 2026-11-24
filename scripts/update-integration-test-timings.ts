@@ -173,12 +173,12 @@ export function checkIntegrationTimingResults(value: unknown, assignment: Assign
     JSON.stringify(cache.provenance) !== JSON.stringify(assignment.provenance)
   )
     throw new Error("Timing completion assignment/provenance mismatch");
+  // Vitest 5.0 recorded onTestRunStart before sharding; 5.1+ shards first. Accept either order.
+  const earliestResultAt = Math.max(cache.runStartedAt, assignment.assignedAt);
   if (
-    cache.runStartedAt > assignment.assignedAt ||
-    cache.runFinishedAt < assignment.assignedAt ||
-    cache.runFinishedAt < cache.runStartedAt ||
+    cache.runFinishedAt < earliestResultAt ||
     cache.results.some(
-      ([, result]) => result.lastRun < cache.runStartedAt || result.lastRun > cache.runFinishedAt,
+      ([, result]) => result.lastRun < earliestResultAt || result.lastRun > cache.runFinishedAt,
     )
   )
     throw new Error("Timing cache has no complete current-run result");

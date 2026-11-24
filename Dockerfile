@@ -120,24 +120,17 @@ RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,required=false \
     && pnpm --filter dofek-mcp-app build \
     && cd packages/web && pnpm run build
 
-# ── Server image (Express API + sync runner) ────────────────────────────
-FROM base AS server
+# ── Shared Node runtime ────────────────────────────────────────────────
+FROM base AS runtime
 ARG COMMIT_HASH
 ENV NODE_ENV=production
 ENV SENTRY_RELEASE=${COMMIT_HASH}
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates libbz2 libstdc++
-COPY --from=dbt-tools /usr/local/bin/python3.13 /usr/local/bin/python3.13
-COPY --from=dbt-tools /usr/local/bin/dbt /usr/local/bin/dbt
-COPY --from=dbt-tools /usr/local/bin/sqlfluff /usr/local/bin/sqlfluff
-COPY --from=dbt-tools /usr/local/lib/python3.13 /usr/local/lib/python3.13
-COPY --from=dbt-tools /usr/local/lib/libpython3.13.so* /usr/local/lib/
 COPY --from=fit-decoder-build /src/.build/fit-decoder/bin/dofek-fit-decoder /usr/local/bin/
 
 COPY --from=source --chown=node:node /app/src ./src
-COPY --from=source --chown=node:node /app/analytics ./analytics
-COPY --from=source --chown=node:node /app/drizzle ./drizzle
 COPY --from=source --chown=node:node /app/package.json .
 COPY --from=source --chown=node:node /app/pnpm-workspace.yaml .
 COPY --from=server-deps --chown=node:node /app/node_modules ./node_modules
@@ -146,7 +139,6 @@ COPY --from=source --chown=node:node /app/packages/server/src ./packages/server/
 COPY --from=source --chown=node:node /app/packages/server/package.json ./packages/server/
 COPY --from=source --chown=node:node /app/packages/mcp-contracts/src ./packages/mcp-contracts/src
 COPY --from=source --chown=node:node /app/packages/mcp-contracts/package.json ./packages/mcp-contracts/
-COPY --from=client-build --chown=node:node /app/packages/mcp-app/dist ./packages/mcp-app/dist
 COPY --from=source --chown=node:node /app/packages/whoop-whoop/src ./packages/whoop-whoop/src
 COPY --from=source --chown=node:node /app/packages/whoop-whoop/package.json ./packages/whoop-whoop/
 COPY --from=source --chown=node:node /app/packages/eight-sleep/src ./packages/eight-sleep/src
@@ -234,16 +226,46 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/recovery node_modules/@dofek/recovery && \
     ln -sfn /app/packages/zones node_modules/@dofek/zones
 
-# Seed script for preview/dev environments
-COPY --from=source --chown=node:node /app/scripts ./scripts
-
 # Non-secret config (.env)
 COPY --from=source --chown=node:node /app/.env .
+COPY --chown=node:node entrypoint.sh .
+
+# ── Userspace WireGuard client for the portable Fly runner ─────────────
+# Pin the post-v1.1.3 Landlock/TCP listener fix. go list -m maps the commit to
+# v1.1.4-0.20261116004624-e00074911d2e (https://github.com/windtf/wireproxy).
+FROM golang:1.27.4-alpine3.24@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS wireproxy-build
+RUN apk add --no-cache ca-certificates git
+ENV CGO_ENABLED=0
+RUN GOBIN=/out go install -trimpath -ldflags="-s -w" \
+    github.com/windtf/wireproxy/cmd/wireproxy@e00074911d2e8b23bac6b74703fa1a2b522cff2b
+
+# ── Portable provider sync worker ──────────────────────────────────────
+FROM runtime AS pipeline-runner
+RUN apk add --no-cache bash
+COPY --from=wireproxy-build /out/wireproxy /usr/local/bin/wireproxy
+COPY --from=wireproxy-build \
+  /go/pkg/mod/github.com/windtf/wireproxy@v1.1.4-0.20261116004624-e00074911d2e/LICENSE \
+  /usr/share/licenses/wireproxy/LICENSE
+COPY deploy/fly-runner/wireguard-client.sh ./deploy/fly-runner/
+USER 1000:1000
+ENTRYPOINT ["bash", "/app/deploy/fly-runner/wireguard-client.sh"]
+
+# ── Server image (Express API + sync worker) ────────────────────────────
+FROM runtime AS server
+RUN apk add --no-cache iproute2 wireguard-tools haproxy
+COPY deploy/fly-runner/wireguard-gateway.sh deploy/fly-runner/haproxy.cfg ./deploy/fly-runner/
+COPY --from=dbt-tools /usr/local/bin/python3.13 /usr/local/bin/python3.13
+COPY --from=dbt-tools /usr/local/bin/dbt /usr/local/bin/dbt
+COPY --from=dbt-tools /usr/local/bin/sqlfluff /usr/local/bin/sqlfluff
+COPY --from=dbt-tools /usr/local/lib/python3.13 /usr/local/lib/python3.13
+COPY --from=dbt-tools /usr/local/lib/libpython3.13.so* /usr/local/lib/
+COPY --from=source --chown=node:node /app/analytics ./analytics
+COPY --from=source --chown=node:node /app/drizzle ./drizzle
+COPY --from=source --chown=node:node /app/scripts ./scripts
+COPY --from=client-build --chown=node:node /app/packages/mcp-app/dist ./packages/mcp-app/dist
 
 # Built web shell for Express; Vite assets may be served from the configured CDN base.
 COPY --from=client-build --chown=node:node /app/packages/web/dist ./packages/web/dist
-
-COPY --chown=node:node entrypoint.sh .
 
 # Create job-files directory for upload chunks (volume mount point)
 RUN mkdir -p /app/job-files && chown node:node /app/job-files
