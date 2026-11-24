@@ -40165,3 +40165,43 @@ Local qualification and CI are separate from production throughput acceptance. T
   passed locally with the CI fixture environment. Future checks that invoke
   externally installed tools should run Knip with that fixture before push.
   [Knip configuration](https://knip.dev/reference/configuration#ignorebinaries).
+
+## 2026-11-24 — Overview relationship card empty after the evidence fix
+
+- **Reported behavior and production evidence.** One account saw the empty
+  Key relationship card. Both web replicas were running the revision with the
+  evidence filtering fix. Axiom recorded fresh authenticated
+  `insights.compute` calculations around 14:26 UTC and HTTP 200 responses.
+  [Deployment verification](https://github.com/Asherlc/dofek/actions/runs/45332102234/job/138243564133)
+  · [Axiom query guide](axiom-observability-runbook.md#queries).
+- **Replay and conclusion.** A read-only replay of the deployed calculation
+  for the 90-day Pacific time windows ending November 23 and 24 joined 90
+  dates in each window. Hundreds of comparisons had enough observations to
+  run, and none passed the statistical correction in either window. Both
+  replays returned zero relationships, so the empty card was expected for
+  these windows. The investigation required no mitigation.
+  [Overview evidence contract](../packages/server/README.md#overview-relationship-evidence).
+- **Follow-up.** The current message covers both untestable windows and
+  windows where comparisons ran and none qualified. On a repeat report,
+  check the date range, time zone, and number of testable comparisons before
+  diagnosing the empty card as a refresh or ingestion failure.
+
+## 2026-11-24 — Overview PR server integration fixture could not start ClickHouse
+
+- **Impact and evidence.** PR #3477's server integration shard 3 of 5 failed
+  in `Run pnpm exec vitest run --project integration --coverage --shard=3/5`.
+  The setup hook for `analytics-microbatch-bounds.integration.test.ts` failed
+  with `No such image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine`.
+  The other 82 suites in that shard passed. The failure blocked PR validation.
+  [Failing integration job](https://github.com/Asherlc/dofek/actions/runs/45433379669/job/138585872259).
+- **Cause and fix.** The fixture used a separate mirror reference from the
+  digest-pinned ClickHouse image that the job had already pulled for its
+  service. It now uses the same registry, tag, and digest as the CI service
+  and workspace Compose. The test still starts a disposable ClickHouse
+  container for the empty database it exercises.
+  [Integration fixture](../src/processing/analytics-microbatch-bounds.integration.test.ts)
+  · [CI service image](../.github/workflows/check-server.yml).
+- **Validation and follow-up.** The focused integration test passed against
+  the pinned image locally. The next CI run validates the fixture in the
+  complete integration shard. When updating the ClickHouse version, keep
+  the fixture aligned with the CI and workspace image references.

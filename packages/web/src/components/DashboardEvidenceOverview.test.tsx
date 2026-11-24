@@ -18,6 +18,10 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 describe("DashboardEvidenceOverview helpers", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it("formats the dashboard date range inclusively", () => {
     expect(formatDashboardRange("2026-05-27", 30)).toBe("Apr 28 - May 27");
   });
@@ -162,6 +166,7 @@ describe("DashboardEvidenceOverview", () => {
     );
     expect(screen.getByText("Recent trend")).toBeTruthy();
     expect(screen.getByText("7-day average")).toBeTruthy();
+    expect(document.querySelector(".lg\\:grid-cols-2")).not.toBeNull();
     expect(screen.queryByText("Compare sources")).toBeNull();
     expect(screen.queryByText("Connected source coverage")).toBeNull();
     expect(screen.getByText("Health monitor")).toBeTruthy();
@@ -178,7 +183,6 @@ describe("DashboardEvidenceOverview", () => {
         days={30}
         endDate="2026-05-27"
         trend={{ latestRestingHeartRate: null, averageRestingHeartRate: null }}
-        hideInsightCard
         hideTrendCard
         hideHealthMonitor
         healthMonitor={<div>Health monitor values</div>}
@@ -191,6 +195,25 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.queryByText("Health monitor")).toBeNull();
     expect(screen.queryByText("Health monitor values")).toBeNull();
     expect(screen.getByRole("region", { name: "Dashboard overview" })).toBeTruthy();
+  });
+
+  it("omits the relationship card when there is no qualifying insight or loading/error panel", () => {
+    const { container } = render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.queryByText("Key relationship")).toBeNull();
+    expect(screen.queryByText("Key correlation")).toBeNull();
+    expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
+    expect(screen.getByText("Recent trend")).toBeTruthy();
+    expect(container.querySelector(".lg\\:grid-cols-2")).toBeNull();
+    expect(screen.getByText("Health monitor")).toBeTruthy();
+    expect(screen.getByText("Latest values vs. rolling average")).toBeTruthy();
   });
 
   it("derives the dashboard relationship heading and value from conditional evidence", () => {
@@ -397,7 +420,9 @@ describe("DashboardEvidenceOverview", () => {
     );
 
     expect(loadingResult.container.querySelector(".animate-spin")).not.toBeNull();
-    expect(screen.getAllByText("No chart data to display.")).toHaveLength(1);
+    expect(screen.getByTestId("chart-loading-skeleton")).toBeTruthy();
+    expect(screen.queryByText("No chart data to display.")).toBeNull();
+    expect(screen.queryByText("Key relationship")).toBeNull();
 
     loadingResult.unmount();
 
@@ -412,7 +437,8 @@ describe("DashboardEvidenceOverview", () => {
     );
 
     expect(screen.getByText("Resting heart rate chart failed.")).toBeTruthy();
-    expect(screen.getAllByText("No chart data to display.")).toHaveLength(1);
+    expect(screen.queryByText("No chart data to display.")).toBeNull();
+    expect(screen.queryByText("Key relationship")).toBeNull();
   });
 
   it("labels resting heart rate axes with observed values instead of padded domains", () => {
@@ -527,5 +553,6 @@ describe("DashboardEvidenceOverview", () => {
 
     expect(screen.getByText("Could not load insights.")).toBeTruthy();
     expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
+    expect(screen.getByText("Key relationship")).toBeTruthy();
   });
 });

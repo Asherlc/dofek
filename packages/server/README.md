@@ -409,8 +409,8 @@ Benjamini–Hochberg correction to every test with enough samples and a defined
 p-value. Effect size, confidence, and duplicate suppression govern which
 corrected results the engine returns. A comparison's observed effect can
 therefore change its own display eligibility without changing how many tests
-enter the correction. The Overview shows an empty card when it has no
-qualifying relationship. [Insight engine](src/insights/engine.ts) ·
+enter the correction. The web and iOS Overview omit the relationship card
+when a completed calculation has no qualifying relationship. [Insight engine](src/insights/engine.ts) ·
 [Exploratory correlations](src/insights/discovery.ts) ·
 [Research on filtering before correction](https://pmc.ncbi.nlm.nih.gov/articles/PMC2906865/).
 

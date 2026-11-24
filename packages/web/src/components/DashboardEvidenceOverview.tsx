@@ -95,7 +95,6 @@ export function DashboardEvidenceOverview({
   restingHeartRateLoading = false,
   restingHeartRateError = null,
   healthMonitor,
-  hideInsightCard = false,
   hideTrendCard = false,
   hideHealthMonitor = false,
 }: {
@@ -107,7 +106,6 @@ export function DashboardEvidenceOverview({
   restingHeartRateLoading?: boolean;
   restingHeartRateError?: unknown;
   healthMonitor: ReactNode;
-  hideInsightCard?: boolean;
   hideTrendCard?: boolean;
   hideHealthMonitor?: boolean;
 }) {
@@ -145,6 +143,8 @@ export function DashboardEvidenceOverview({
       .map((point) => ({ date: point.date, xValue: point.x, yValue: point.y })) ?? [];
   const restingHeartRatePoints =
     trend.restingHeartRatePoints?.filter((point) => Number.isFinite(point.value)) ?? [];
+  const showInsightCard = Boolean(topInsight || insightError);
+  const showTrendCard = !hideTrendCard;
 
   return (
     <section aria-label="Dashboard overview" className="dashboard-hero card space-y-5 p-5 sm:p-6">
@@ -153,15 +153,17 @@ export function DashboardEvidenceOverview({
         <p className="mt-1 text-sm text-muted">{formatDashboardRange(endDate, days)}</p>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        {hideInsightCard ? null : (
+      <div
+        className={showInsightCard && showTrendCard ? "grid gap-3 lg:grid-cols-2" : "grid gap-3"}
+      >
+        {showInsightCard ? (
           <EvidenceCard eyebrow={`Key ${relationshipHeading.toLowerCase()}`}>
             <div className="space-y-4">
               {insightError}
-              {topInsight || !insightError ? (
+              {topInsight ? (
                 <div>
                   <h3 className="text-base font-medium leading-snug text-foreground">
-                    {topInsight?.message ?? "Sleep consistency + Heart Rate Variability"}
+                    {topInsight.message}
                   </h3>
                   <div className="mt-5 grid grid-cols-[0.7fr_1fr] items-end gap-4">
                     <div>
@@ -172,18 +174,16 @@ export function DashboardEvidenceOverview({
                         {evidence?.label?.trim() || "Descriptive relationship"}
                       </p>
                     </div>
-                    <MiniChartFrame data={topInsight ? insightChartPoints : []}>
-                      {topInsight ? (
-                        <MiniScatter
-                          points={insightChartPoints}
-                          labels={{
-                            xAxis: topInsight.action,
-                            xMetric: topInsight.action,
-                            yAxis: topInsight.metric,
-                            yMetric: topInsight.metric,
-                          }}
-                        />
-                      ) : null}
+                    <MiniChartFrame data={insightChartPoints}>
+                      <MiniScatter
+                        points={insightChartPoints}
+                        labels={{
+                          xAxis: topInsight.action,
+                          xMetric: topInsight.action,
+                          yAxis: topInsight.metric,
+                          yMetric: topInsight.metric,
+                        }}
+                      />
                     </MiniChartFrame>
                   </div>
                   {evidence && <InsightEvidenceDetails evidence={evidence} className="mt-4" />}
@@ -191,8 +191,8 @@ export function DashboardEvidenceOverview({
               ) : null}
             </div>
           </EvidenceCard>
-        )}
-        {hideTrendCard ? null : (
+        ) : null}
+        {showTrendCard ? (
           <EvidenceCard eyebrow="Recent trend">
             <h3 className="text-base font-medium text-foreground">Resting heart rate</h3>
             <div className="mt-7 grid grid-cols-[0.65fr_1fr] items-end gap-5">
@@ -249,7 +249,7 @@ export function DashboardEvidenceOverview({
               </section>
             ) : null}
           </EvidenceCard>
-        )}
+        ) : null}
       </div>
 
       {hideHealthMonitor ? null : (
