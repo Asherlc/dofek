@@ -823,10 +823,54 @@ jobs:
 
       - name: Drain Fly provider sync before database migrations
         if: steps.fly_runner.outcome == 'success'
+        timeout-minutes: 6
         env:
           FLY_API_TOKEN: ${{ env.FLY_SYNC_DEPLOY_TOKEN }}
           MACHINE_ID: ${{ steps.fly_runner.outputs.machine_id }}
-        run: flyctl machine stop "$MACHINE_ID" --app "$FLY_SYNC_APP_NAME" --signal SIGTERM --timeout 300 --wait-timeout 6m
+        run: |
+          set -euo pipefail
+          # flyctl machine stop --wait-timeout is capped at 60s by fly-go
+          # (flyctl v0.5.16). Issue one graceful stop without waiting, then poll
+          # machines list for the full shutdown window.
+          # https://github.com/superfly/flyctl/blob/fd050512152def8fc78ee1cc01ca9b0d374ee15e/internal/command/machine/stop.go
+          # https://github.com/superfly/fly-go/blob/b985840a0fb614e0145b1df06121ea5547cb280e/flaps/flaps_machines_wait.go
+          fly_machine_state() {
+            flyctl machines list --app "$FLY_SYNC_APP_NAME" --json | jq -er --arg id "$MACHINE_ID" '
+              map(select(.id == $id))
+              | if length == 1 and (.[0].state | type == "string")
+                then .[0].state
+                else error("Fly production runner \($id) is missing, duplicated, or has a malformed state")
+                end
+            '
+          }
+          deadline=$((SECONDS + 360))
+          initial_observation=true
+          while true; do
+            state="$(fly_machine_state)"
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::Fly production runner ${MACHINE_ID} did not stop before timeout (state=${state})"
+              exit 124
+            fi
+            case "$state" in
+              stopped)
+                break
+                ;;
+              started|starting)
+                if [ "$initial_observation" = true ]; then
+                  flyctl machine stop "$MACHINE_ID" --app "$FLY_SYNC_APP_NAME" --signal SIGTERM --timeout 300
+                fi
+                ;;
+              stopping)
+                ;;
+              *)
+                echo "::error::Fly production runner ${MACHINE_ID} entered unexpected state ${state}"
+                exit 1
+                ;;
+            esac
+            initial_observation=false
+            sleep 5
+          done
+          echo "Fly production runner ${MACHINE_ID} stopped"
 
       - name: Enable scheduled maintenance notice before web drains
         env:

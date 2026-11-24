@@ -1,4 +1,8 @@
-import { deployTestDigest, deployTestRepository } from "../../scripts/deploy-image-test-helpers.ts";
+import {
+  deployTestDigest,
+  deployTestOldImage,
+  deployTestRepository,
+} from "../../scripts/deploy-image-test-helpers.ts";
 import { spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -844,4 +848,130 @@ export function runPreMigrationWebConvergence(script: string) {
   } finally {
     rmSync(temporaryDirectory, { force: true, recursive: true });
   }
+}
+
+export function runFlyDrainFixture(
+  script: string,
+  options: {
+    states: readonly string[];
+    listFails?: boolean;
+    missingMachine?: boolean;
+    wrongId?: boolean;
+    stopFails?: boolean;
+    sleepSeconds?: number;
+  },
+) {
+  const directory = mkdtempSync(join(tmpdir(), "deploy-fly-drain-"));
+  const trace = join(directory, "calls.jsonl");
+  const statesPath = join(directory, "states.json");
+  const stateIndex = join(directory, "state-index");
+  const machineId = "machine-fixture";
+  const appName = "fixture-fly-sync";
+  try {
+    writeFileSync(trace, "");
+    writeFileSync(statesPath, JSON.stringify(options.states));
+    writeFileSync(stateIndex, "0");
+    const flyctl = join(directory, "flyctl");
+    writeFileSync(flyctl, `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.FLY_TRACE, JSON.stringify(args) + "\\n");
+if (args[0] === "machines" && args[1] === "list") {
+  if (process.env.FLY_LIST_FAIL === "1") process.exit(2);
+  const states = JSON.parse(fs.readFileSync(process.env.FLY_STATES, "utf8"));
+  const index = Number(fs.readFileSync(process.env.FLY_STATE_INDEX, "utf8"));
+  const state = states[Math.min(index, states.length - 1)];
+  fs.writeFileSync(process.env.FLY_STATE_INDEX, String(index + 1));
+  if (process.env.FLY_MISSING === "1") { console.log("[]"); process.exit(0); }
+  const id = process.env.FLY_WRONG_ID === "1" ? "other-machine" : process.env.MACHINE_ID;
+  console.log(JSON.stringify([{ id, state }])); process.exit(0);
+}
+if (args[0] === "machine" && args[1] === "stop") process.exit(process.env.FLY_STOP_FAIL === "1" ? 3 : 0);
+process.exit(65);
+`);
+    chmodSync(flyctl, 0o755);
+    const sleepSeconds = options.sleepSeconds ?? 5;
+    const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c",
+      `SECONDS=0\nsleep() { SECONDS=$((SECONDS + ${sleepSeconds})); }\n${script}\n`], {
+      encoding: "utf8", timeout: 30_000,
+      env: {
+        ...process.env, PATH: `${directory}:${process.env.PATH ?? ""}`,
+        FLY_TRACE: trace, FLY_STATES: statesPath, FLY_STATE_INDEX: stateIndex,
+        FLY_LIST_FAIL: options.listFails ? "1" : "0",
+        FLY_MISSING: options.missingMachine ? "1" : "0",
+        FLY_WRONG_ID: options.wrongId ? "1" : "0",
+        FLY_STOP_FAIL: options.stopFails ? "1" : "0",
+        FLY_SYNC_APP_NAME: appName, MACHINE_ID: machineId,
+      },
+    });
+    const calls = z.array(z.array(z.string())).parse(
+      readFileSync(trace, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)),
+    );
+    return { ...result, calls, machineId, appName };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+export function runWebEnvSelectionFixture(script: string) {
+  return spawnSync("bash", ["-c", `node() {
+  printf 'selected-web-env=%s image=%s\\n' "$WEB_ENV_FILE" "$APP_IMAGE"
+  return 23
+}
+timeout() { shift; "$@"; }
+${script}
+`], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
+      MIGRATION_DEPLOYMENT_MODE: "rolling",
+      WEB_ENV_FILE: "/synthetic/web.env",
+      WEB_PRE_MIGRATION_ENV_FILE: "/synthetic/web-pre-migration.env",
+      RUNNER_TEMP: "/synthetic",
+      STACK_NAME: "dofek",
+      STACK_FILE_FLAGS: "-c deploy/docker-compose.yml",
+    },
+  });
+}
+
+export function runPreMigrationWebLsFailureFixture(script: string) {
+  const directory = mkdtempSync(join(tmpdir(), "dofek-web-ls-failure-"));
+  try {
+    const bin = join(directory, "bin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "docker"), `#!/usr/bin/env bash
+set -euo pipefail
+if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then printf 'completed\\n'; exit 0; fi
+if [ "$1" = "service" ] && [ "$2" = "ls" ]; then printf 'mock docker service ls failure\\n' >&2; exit 42; fi
+exit 64
+`);
+    chmodSync(join(bin, "docker"), 0o755);
+    return spawnSync("timeout", ["5", "bash", "-e", "-c", script], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ""}`,
+        APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
+        STACK_NAME: "dofek",
+      },
+    });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+export function runMigrationHistorySelectionFixture(script: string) {
+  return spawnSync("bash", ["-e", "-o", "pipefail", "-c", `
+pnpm() { printf '%s\\n' "$@"; }
+${script}
+`], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      APP_IMAGE: `${deployTestRepository}@${deployTestDigest}`,
+      PRE_MIGRATION_APP_IMAGE: deployTestOldImage,
+      STACK_NAME: "dofek",
+    },
+  });
 }
