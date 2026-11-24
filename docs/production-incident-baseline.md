@@ -40087,3 +40087,17 @@ Local qualification and CI are separate from production throughput acceptance. T
   cover a custom-suffix project and a neighboring workspace.
   [Docker container label filters](https://docs.docker.com/reference/cli/docker/container/ls/#label)
   · [Workspace lifecycle runbook](development-environment.md#workspace-setup-and-archive).
+
+## 2026-11-24 — Knip rejected the Paseo CLI in the workspace doctor
+
+- **Impact and cause.** PR #3476 failed the repository checks at `Run pnpm knip`.
+  The first fatal diagnostic was `Unlisted binaries (1)`, which identified
+  `paseo` in `scripts/dev-environment.ts`. The doctor uses the locally installed
+  Paseo CLI in a Paseo worktree, and pnpm does not provide that executable.
+  The repository and CI gates inherited the Knip failure.
+  [Failing job](https://github.com/Asherlc/dofek/actions/runs/45416888076/job/138525495384).
+- **Fix and validation.** Added `paseo` to the root Knip configuration's
+  `ignoreBinaries` list for external commands. The same `pnpm knip` command
+  passed locally with the CI fixture environment. Future checks that invoke
+  externally installed tools should run Knip with that fixture before push.
+  [Knip configuration](https://knip.dev/reference/configuration#ignorebinaries).
