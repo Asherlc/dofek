@@ -88,6 +88,53 @@ const catalogueSeed: CatalogueSeed = {
 };
 
 describe("queues", () => {
+  it("deduplicates Ghost label jobs by owner, recording, source and consent revision", async () => {
+    const { enqueueGhostRouteLabels } = await import("./queues.ts");
+    const data = {
+      userId: "00000000-0000-4000-8000-000000000001",
+      activityId: "00000000-0000-4000-8000-000000000002",
+      sourceVersion: "a".repeat(64),
+      consentRevision: "2026-11-24T12:00:00.123456Z",
+    };
+    mockQueueAdd.mockClear();
+    await enqueueGhostRouteLabels(data);
+    await enqueueGhostRouteLabels(data);
+    await enqueueGhostRouteLabels({ ...data, sourceVersion: "b".repeat(64) });
+    await enqueueGhostRouteLabels({ ...data, consentRevision: "2026-11-24T12:00:00.123457Z" });
+    await enqueueGhostRouteLabels({
+      ...data,
+      activityId: "00000000-0000-4000-8000-000000000003",
+    });
+    await enqueueGhostRouteLabels({
+      ...data,
+      userId: "00000000-0000-4000-8000-000000000004",
+    });
+    expect(mockQueueAdd).toHaveBeenNthCalledWith(
+      1,
+      "ghost-route-labels",
+      { type: "ghost-route-labels", ...data },
+      expect.objectContaining({ removeOnComplete: true, removeOnFail: true }),
+    );
+    const ids = mockQueueAdd.mock.calls.map((call) => call[2]?.jobId);
+    expect(ids[0]).toBe(ids[1]);
+    expect(ids[0]).toContain(data.userId);
+    expect(new Set(ids)).toHaveLength(5);
+  });
+
+  it("rejects raw coordinates at the Ghost label enqueue boundary", async () => {
+    const { enqueueGhostRouteLabels } = await import("./queues.ts");
+    const data = {
+      userId: "00000000-0000-4000-8000-000000000001",
+      activityId: "00000000-0000-4000-8000-000000000002",
+      sourceVersion: "a".repeat(64),
+      consentRevision: "2026-11-24T12:00:00.123456Z",
+      points: [[0, 0]],
+    };
+    mockQueueAdd.mockClear();
+    await expect(enqueueGhostRouteLabels(data)).rejects.toThrow();
+    expect(mockQueueAdd).not.toHaveBeenCalled();
+  });
+
   it("queues one disposable catalogue refresh per user and log", async () => {
     const { enqueueClimbingCatalogueRefresh } = await import("./queues.ts");
     await enqueueClimbingCatalogueRefresh(catalogueSeed);

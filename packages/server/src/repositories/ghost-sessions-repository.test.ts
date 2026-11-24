@@ -214,6 +214,7 @@ function publicationFixture() {
         return schema.array().parse(
           tracks.map((record) => ({
             ...record,
+            markerSignature: "current-marker",
             status: record.activityId === state.staleTrack ? "pending" : "ready",
           })),
         );

@@ -149,6 +149,15 @@ export interface UserRefitPostSyncJobData {
   userId: string;
 }
 
+export const ghostRouteLabelsJobDataSchema = z.strictObject({
+  type: z.literal("ghost-route-labels"),
+  userId: z.uuid(),
+  activityId: z.uuid(),
+  sourceVersion: z.string().regex(/^[a-f0-9]{64}$/),
+  consentRevision: z.iso.datetime({ precision: 6 }),
+});
+export type GhostRouteLabelsJobData = z.infer<typeof ghostRouteLabelsJobDataSchema>;
+
 export const climbingCatalogueJobDataSchema = z
   .strictObject({
     type: z.literal("climbing-catalogue"),
@@ -163,6 +172,7 @@ export type ClimbingCatalogueJobData = z.infer<typeof climbingCatalogueJobDataSc
 export type PostSyncJobData =
   | GlobalMaintenancePostSyncJobData
   | UserRefitPostSyncJobData
+  | GhostRouteLabelsJobData
   | ClimbingCatalogueJobData;
 
 export interface ActivityDeleteAnalyticsJobData {
@@ -769,6 +779,26 @@ export async function enqueueClimbingCatalogueRefresh(
     removeOnComplete: true,
     removeOnFail: true,
     jobId: climbingCatalogueJobId(seed.userId, seed.logEntryId),
+  });
+}
+
+export function ghostRouteLabelsRevisionDigest(
+  data: Pick<GhostRouteLabelsJobData, "sourceVersion" | "consentRevision">,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify([data.sourceVersion, data.consentRevision]))
+    .digest("hex");
+}
+
+export async function enqueueGhostRouteLabels(
+  input: Omit<GhostRouteLabelsJobData, "type">,
+  queue: Pick<Queue<PostSyncJobData>, "add"> = getPostSyncQueue(),
+): Promise<void> {
+  const data = ghostRouteLabelsJobDataSchema.parse({ type: "ghost-route-labels", ...input });
+  await queue.add(data.type, data, {
+    jobId: `ghost-route-labels-${data.userId}-${data.activityId}-${ghostRouteLabelsRevisionDigest(data)}`,
+    removeOnComplete: true,
+    removeOnFail: true,
   });
 }
 

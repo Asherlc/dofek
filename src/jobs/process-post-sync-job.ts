@@ -5,7 +5,11 @@ import { logger } from "../logger.ts";
 import type { RefitSensorStore } from "../personalization/refit.ts";
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import { reportJobProgress } from "./job-progress.ts";
-import type { PostSyncJobData } from "./queues.ts";
+import {
+  type GhostRouteLabelsJobData,
+  ghostRouteLabelsJobDataSchema,
+  type PostSyncJobData,
+} from "./queues.ts";
 
 /** Minimal Job interface — only the subset processPostSyncJob actually uses. */
 export interface PostSyncJob {
@@ -37,7 +41,12 @@ export async function processPostSyncJob(
   db: SyncDatabase,
   getSensorStore: () => RefitSensorStore,
   refreshBodyMeasurements: () => Promise<void>,
+  processGhostLabels?: (data: GhostRouteLabelsJobData) => Promise<void>,
 ) {
+  if (job.data.type === "ghost-route-labels") {
+    if (processGhostLabels) await processGhostLabels(ghostRouteLabelsJobDataSchema.parse(job.data));
+    return;
+  }
   if (job.data.type === "climbing-catalogue") {
     const { processClimbingCatalogueJob } = await import("./climbing-catalogue-job.ts");
     await processClimbingCatalogueJob(job.data, db);

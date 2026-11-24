@@ -12,14 +12,7 @@ import {
   selectGhostSessionDefault,
 } from "@dofek/training/ghost-sessions";
 import { TRPCError } from "@trpc/server";
-import {
-  ghostLocationMemberMarkersSql,
-  readGhostHistoryEvidence,
-} from "dofek/analytics/ghost-history-evidence";
-import {
-  ghostTrackInputVersionsMatchSql,
-  ghostTrackInputVersionsSql,
-} from "dofek/analytics/ghost-track-index";
+import { readGhostHistoryEvidence } from "dofek/analytics/ghost-history-evidence";
 import type { Database } from "dofek/db";
 import {
   ghostScalarProofProviders,
@@ -27,10 +20,16 @@ import {
   ghostScalarProofWindowColumns,
   ghostScalarProofWindowRow,
 } from "dofek/db/activity-ghost-scalar-sample";
-import { sql } from "drizzle-orm";
+import {
+  hasActiveGhostMember as hasActiveMember,
+  readGhostTrackEvidence,
+  resolveActiveGhostMembers,
+  type SelectedGhostMember as SelectedMember,
+  type GhostTrackEvidence as TrackEvidence,
+  ghostTrackStampSchema as trackStampSchema,
+} from "dofek/db/ghost-track-evidence";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
 import { ActivityRepository } from "./activity-repository.ts";
 import { activitySearchCursor } from "./activity-search-pagination.ts";
 import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
@@ -38,13 +37,6 @@ import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-
 type Interval = GhostSessionsCompareResponse["anchor"];
 type Section = GhostSessionsGetResponse["sections"][number];
 type Pass = GhostSessionsPassesResponse["passes"][number];
-
-const selectedMemberSchema = z.object({
-  activityId: z.uuid(),
-  memberActivityId: z.uuid(),
-  providerId: z.string(),
-});
-type SelectedMember = z.infer<typeof selectedMemberSchema>;
 
 interface SavedMatch extends Pass {
   kind: "full-route" | "shared-stretch";
@@ -93,14 +85,6 @@ interface Dependencies {
   activity: Pick<ActivityRepository, "findSensorWindow" | "resolveVisibleActivityIds">;
   resolveActiveMembers(memberIds: readonly string[]): Promise<ReadonlyMap<string, SelectedMember>>;
   reads: GhostSessionReads;
-}
-
-function hasActiveMember(
-  active: ReadonlyMap<string, SelectedMember>,
-  expected: SelectedMember,
-): boolean {
-  const member = active.get(expected.memberActivityId);
-  return member?.activityId === expected.activityId && member.providerId === expected.providerId;
 }
 
 type ReadyAnchor = Extract<SavedAnchor, { status: "ready" }>;
@@ -427,74 +411,15 @@ type SavedPage = z.infer<typeof savedPageSchema>;
 // History evidence checks up to 256 prior groups and the worker admits 25 per page.
 const publishedPageLimit = 11;
 
-const trackStampSchema = selectedMemberSchema.extend({
-  deviceId: z.string().nullable(),
-  sport: z.enum(["running", "cycling"]),
-  modality: z.string().nullable(),
-  startedAt: z.iso.datetime(),
-  endedAt: z.iso.datetime().nullable(),
-  refreshVersion: z.string(),
-  sourceRefreshedAtNs: z.string(),
-  memberSourceSyncedAtNs: z.string().nullable(),
-  gpsRefreshVersion: z.string(),
-  gpsSourceRefreshedAtNs: z.string(),
-  memberSignature: z.string(),
-});
-const trackEvidenceSchema = z.discriminatedUnion("status", [
-  z.object({ activityId: z.uuid(), status: z.enum(["pending", "unavailable"]) }),
-  trackStampSchema.extend({ status: z.literal("ready") }),
-]);
-type TrackEvidence = z.infer<typeof trackEvidenceSchema>;
-
-async function readTrackEvidence(
+function readTrackEvidence(
   store: ActivitySensorQueryStore,
   window: ActivitySensorWindow,
   candidateIds: readonly string[],
 ) {
-  const rows = await store.query(
-    trackEvidenceSchema,
-    `
-    WITH owned_keys AS MATERIALIZED (
-      SELECT {userId:UUID} AS user_id, arrayJoin({activityIds:Array(UUID)}) AS activity_id
-      WHERE ${liveOwner}
-    ), ${ghostTrackInputVersionsSql("owned_keys")}, checked_members AS MATERIALIZED (
-      SELECT assumeNotNull(user_id) AS user_id, assumeNotNull(activity_id) AS activity_id,
-        arrayJoin(eligible_member_ids) AS member_activity_id FROM members
-    ), ${ghostLocationMemberMarkersSql("checked_members")}, checked_index AS (
-      SELECT * FROM analytics.ghost_track FINAL
-      WHERE (user_id, activity_id) IN (SELECT user_id, activity_id FROM owned_keys)
-    )
-    SELECT scope.activity_id AS activityId,
-      multiIf(members.member_signature IS NULL OR (gps.gps_refresh_version IS NULL
-          AND markers.latest_change_ns IS NULL AND indexed.activity_id IS NULL), 'unavailable',
-        NOT coalesce(indexed.activity_id IS NOT NULL
-          AND (${ghostTrackInputVersionsMatchSql("indexed")})
-          AND (markers.latest_change_ns IS NULL OR markers.latest_change_ns <=
-            coalesce(gps.gps_source_refreshed_at_ns, 0)), 0), 'pending',
-        indexed.status = 'ready' AND indexed.started_at IS NOT NULL AND indexed.min_lat IS NOT NULL,
-          'ready', 'unavailable') AS status,
-      indexed.member_activity_id AS memberActivityId,
-      indexed.provider_id AS providerId, indexed.device_id AS deviceId, indexed.sport AS sport,
-      indexed.modality AS modality,
-      formatDateTime(indexed.started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS startedAt,
-      formatDateTime(indexed.ended_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS endedAt,
-      toString(indexed.track_refresh_version) AS refreshVersion,
-      toString(indexed.track_source_refreshed_at_ns) AS sourceRefreshedAtNs,
-      toString(indexed.member_source_synced_at_ns) AS memberSourceSyncedAtNs,
-      toString(indexed.gps_refresh_version) AS gpsRefreshVersion,
-      toString(indexed.gps_source_refreshed_at_ns) AS gpsSourceRefreshedAtNs,
-      indexed.member_signature AS memberSignature
-    FROM owned_keys AS scope LEFT JOIN gps USING (user_id, activity_id)
-    LEFT JOIN members USING (user_id, activity_id)
-    LEFT JOIN group_markers AS markers USING (user_id, activity_id)
-    LEFT JOIN checked_index AS indexed USING (user_id, activity_id)
-    ${analyticsSettings}`,
-    {
-      userId: window.userId,
-      activityIds: [...new Set([window.activityId, ...candidateIds])],
-    },
-  );
-  return new Map(rows.map((row) => [row.activityId, row]));
+  return readGhostTrackEvidence(store.query.bind(store), {
+    userId: window.userId,
+    activityIds: [window.activityId, ...candidateIds],
+  });
 }
 
 function sameStamp(
@@ -559,7 +484,7 @@ async function readSavedAnchor(
           frontier: state.nextCursor ?? "",
         }
       : null;
-  // Fetch the compact tuple subcolumns independently of comparison and scalar proof.
+  // Fetch the compact tuple fields independently of comparison and scalar proof.
   const rows =
     scope && state
       ? await store.query(
@@ -802,22 +727,7 @@ export function createGhostSessionsRepository({
     timezone,
     accessWindow,
     activity: new ActivityRepository(db, userId, timezone, accessWindow),
-    resolveActiveMembers: async (memberIds) => {
-      const ids = sql.join(
-        memberIds.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      );
-      const rows = await executeWithSchema(
-        db,
-        selectedMemberSchema,
-        sql`
-        SELECT group_id::text AS "activityId", id::text AS "memberActivityId", provider_id AS "providerId"
-        FROM fitness.activity
-        WHERE user_id = ${userId}::uuid AND id IN (${ids}) AND group_id IS NOT NULL
-          AND deleted_at IS NULL AND provider_absent_at IS NULL`,
-      );
-      return new Map(rows.map((member) => [member.memberActivityId, member]));
-    },
+    resolveActiveMembers: (memberIds) => resolveActiveGhostMembers(db, userId, memberIds),
     reads: {
       readAnchor: (window, checkHistory) => readSavedAnchor(sensorStore, window, checkHistory),
       readComparison: (window, match) => readSavedComparison(sensorStore, window, match),

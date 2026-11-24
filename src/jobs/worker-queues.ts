@@ -7,6 +7,7 @@ import type { createDatabaseFromEnv } from "../db/index.ts";
 import { runWithProviderUserIngestContext } from "../db/provider-ingest-context.ts";
 import type { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import type { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
+import { queryCache } from "../lib/cache.ts";
 import { jobContext, logger } from "../logger.ts";
 import type { createAccountErasureRuntime } from "./account-erasure-runtime.ts";
 import {
@@ -25,6 +26,10 @@ import { processExportJob } from "./process-export-job.ts";
 import { processFileUploadImportJob } from "./process-file-upload-import-job.ts";
 import { processFitFileImportBatchJob } from "./process-fit-file-import-batch-job.ts";
 import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
+import {
+  type GhostRouteLabelsJobConfig,
+  processGhostRouteLabelsJob,
+} from "./process-ghost-route-labels-job.ts";
 import { processPostSyncJob } from "./process-post-sync-job.ts";
 import { processProviderDataDeletionJob } from "./process-provider-data-deletion-job.ts";
 import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
@@ -71,6 +76,7 @@ export function createWorkerQueues({
   refreshPostSyncBodyMeasurements,
   accountErasureLeaseOwner,
   accountErasureRuntime,
+  ghostRouteLabelsConfig,
 }: {
   db: ReturnType<typeof createDatabaseFromEnv>;
   connection: ReturnType<typeof getRedisConnection>;
@@ -81,6 +87,7 @@ export function createWorkerQueues({
   refreshPostSyncBodyMeasurements: () => Promise<void>;
   accountErasureLeaseOwner: string;
   accountErasureRuntime: Awaited<ReturnType<typeof createAccountErasureRuntime>>;
+  ghostRouteLabelsConfig?: GhostRouteLabelsJobConfig;
 }) {
   // ── Per-provider sync workers ──
 
@@ -222,7 +229,7 @@ export function createWorkerQueues({
   );
   const postSyncWorker = new Worker<PostSyncJobData>(
     POST_SYNC_QUEUE,
-    (job) =>
+    (job, _token, signal) =>
       jobContext.run(job, async () => {
         if (job.data.type === "global-maintenance") {
           return processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements);
@@ -232,8 +239,26 @@ export function createWorkerQueues({
             accountErasureWorkLockPool,
             db,
             job.data.userId,
-            "post-sync refit",
-            () => processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements),
+            job.data.type === "ghost-route-labels" ? "Ghost route labels" : "post-sync refit",
+            () => {
+              const dependencies = [
+                job,
+                db,
+                getRefitSensorStore,
+                refreshPostSyncBodyMeasurements,
+              ] as const;
+              if (job.data.type !== "ghost-route-labels" || !ghostRouteLabelsConfig)
+                return processPostSyncJob(...dependencies);
+              return processPostSyncJob(...dependencies, (data) =>
+                processGhostRouteLabelsJob(data, {
+                  db,
+                  clickhouse: getClickHouseClient(),
+                  cache: queryCache,
+                  config: ghostRouteLabelsConfig,
+                  signal,
+                }),
+              );
+            },
           );
         } catch (error) {
           if (job.data.type !== "climbing-catalogue" || isRetryableCatalogueSearchError(error))

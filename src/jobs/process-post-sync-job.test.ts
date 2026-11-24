@@ -67,6 +67,37 @@ const catalogueSeed = {
 };
 
 describe("processPostSyncJob", () => {
+  const ghostJob: PostSyncJob = {
+    data: {
+      type: "ghost-route-labels",
+      userId: "00000000-0000-4000-8000-000000000001",
+      activityId: "00000000-0000-4000-8000-000000000002",
+      sourceVersion: "a".repeat(64),
+      consentRevision: "2026-11-24T12:00:00.123456Z",
+    },
+    updateProgress: vi.fn().mockResolvedValue(undefined),
+  };
+
+  it("dispatches configured Ghost label work without falling through to refits", async () => {
+    const processGhostLabels = vi.fn().mockResolvedValue(undefined);
+    await processPostSyncJob(
+      ghostJob,
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+      processGhostLabels,
+    );
+    expect(processGhostLabels).toHaveBeenCalledExactlyOnceWith(ghostJob.data);
+    expect(mockRefitAllParams).not.toHaveBeenCalled();
+    expect(refreshBodyMeasurements).not.toHaveBeenCalled();
+  });
+
+  it("discards Ghost label work when the provider handler is disabled", async () => {
+    await processPostSyncJob(ghostJob, fakeDb, getFakeSensorStore, refreshBodyMeasurements);
+    expect(mockRefitAllParams).not.toHaveBeenCalled();
+    expect(refreshBodyMeasurements).not.toHaveBeenCalled();
+  });
+
   it("delegates catalogue refresh without running personalized refits", async () => {
     await processPostSyncJob(
       {
