@@ -81,6 +81,7 @@ export const ghostSessionsGetResponseSchema = z
     gpsCoverage: z.enum(["complete", "partial", "unusable"]).nullable(),
     historyCoverage,
     nameStatus: z.enum(["disabled", "processing", "ready", "unavailable", "error"]),
+    mapCoverage: z.enum(["complete", "partial"]).optional(),
     sections: z.array(sectionResponseSchema).max(64),
   })
   .refine(

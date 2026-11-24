@@ -1,12 +1,20 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createClient } from "@clickhouse/client";
+import { readGhostAltitudeWindowProof } from "dofek/db/activity-ghost-scalar-sample";
 import { readGhostMapLabelConsent } from "dofek/db/ghost-map-label-consent";
 import {
   getGhostTrackEvidence,
   ghostRouteLabelsSourceVersion,
 } from "dofek/db/ghost-track-evidence";
+import { enqueueGhostRouteClimbs } from "dofek/jobs/queues";
 import { queryCache } from "dofek/lib/cache";
+import { ghostRouteClimbsCacheKey } from "dofek/lib/ghost-route-climbs-cache";
 import { ghostRouteLabelsCacheKey } from "dofek/lib/ghost-route-labels-cache";
+import {
+  ghostRecordedSectionId,
+  preparedGhostSectionsSchema,
+  preparedGhostTrackStampSchema,
+} from "dofek/lib/ghost-route-section-results";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AnalyticsQueryOwner } from "../../../../src/analytics/analytics-query-owner.ts";
@@ -30,6 +38,12 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { appRouter } from "../router.ts";
+
+vi.mock("dofek/jobs/queues", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("dofek/jobs/queues")>()),
+  enqueueGhostRouteClimbs: vi.fn(),
+  enqueueGhostRouteLabels: vi.fn(),
+}));
 
 const ownerId = randomUUID();
 const otherOwnerId = randomUUID();
@@ -147,7 +161,13 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
     });
   }
 
-  function writeHeartRate(fixture: Recording, second: number, id = randomUUID(), version = 1) {
+  function writeFixtureScalar(
+    fixture: Recording,
+    second: number,
+    id = randomUUID(),
+    version = 1,
+    channel = "heart_rate",
+  ) {
     return clickhouse.insert({
       table: `${database}.sensor_scalar_sample`,
       format: "JSONEachRow",
@@ -162,7 +182,8 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
           source_type: "api",
           recorded_date: fixture.day,
           recorded_at: time(fixture, second),
-          channel: "heart_rate",
+          channel,
+          measurement_kind: "unknown",
           scalar: version === 1 ? 130 : 150,
           provider_priority: 20,
           _peerdb_version: version,
@@ -227,7 +248,7 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
       VALUES (${aliasId}, ${anchor.activityId}, ${ownerId}, 'merge')`);
     for (const fixture of [anchor, older]) {
       for (let seconds = 0; seconds < fixture.secondsBetweenPositions * 20; seconds += 2) {
-        await writeHeartRate(
+        await writeFixtureScalar(
           fixture,
           seconds,
           fixture === older && seconds === 0 ? changedHeartRateId : undefined,
@@ -250,7 +271,7 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
     await postgres?.cleanup();
   });
 
-  it("serves cached recorded names for an older canonical alias until consent is withdrawn", async () => {
+  it("keeps prepared names and climbs scoped to current consent, member, and altitude", async () => {
     vi.stubEnv("GHOST_MAP_LABELS_REGION", "eu");
     const settings = new SettingsRepository(postgres.db, ownerId);
     await settings.set("ghostMapLabels", true);
@@ -266,49 +287,221 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
     if (!origin || !finish) throw new Error("Expected original timed waypoints");
     const { originalIndex: startIndex, ...start } = origin;
     const { originalIndex: endIndex, ...end } = finish;
-    const cacheKey = ghostRouteLabelsCacheKey({
+    const candidateKey = { ...activity, activityId: older.activityId };
+    const candidateEvidence = await getGhostTrackEvidence(nativeClient, candidateKey);
+    const candidateTrack = await getGhostTrack(nativeClient, candidateKey);
+    if (candidateEvidence?.status !== "ready" || candidateTrack.status !== "ready")
+      throw new Error("Expected a published earlier recording");
+    const [candidateChunk] = recordedGhostRouteChunks(candidateTrack.points).chunks;
+    const candidateOrigin = candidateChunk?.[2];
+    const candidateFinish = candidateChunk?.[12];
+    if (!candidateOrigin || !candidateFinish) throw new Error("Expected prior recorded bounds");
+    const { originalIndex: _candidateStartIndex, ...candidateStart } = candidateOrigin;
+    const { originalIndex: _candidateEndIndex, ...candidateEnd } = candidateFinish;
+    const currentInterval = { start, end, elapsedMs: 20_000 };
+    const candidateInterval = { start: candidateStart, end: candidateEnd, elapsedMs: 30_000 };
+    const comparison = {
+      anchor: currentInterval,
+      candidate: candidateInterval,
+      elapsedDifferenceMs: -10_000,
+      timeBasis: "elapsed-including-recorded-stops",
+      replay: [
+        { anchor: start, candidate: candidateStart },
+        { anchor: end, candidate: candidateEnd },
+      ],
+      replayDownsampled: false,
+      metrics: { paceSecondsPerKm: null, heartRateBpm: null, powerWatts: null },
+    };
+    const label = {
+      kind: "named-road",
+      name: "Fixture Road",
+      attribution: "© OpenStreetMap contributors · Powered by Geoapify",
+    };
+    const rawSectionId = ghostRecordedSectionId(
+      anchor.activityId,
+      "named-road",
+      start.timestampMs,
+      end.timestampMs,
+    );
+    const legacyNamedId = createHash("sha256")
+      .update(
+        JSON.stringify([
+          anchor.activityId,
+          "named-road",
+          start.timestampMs,
+          end.timestampMs,
+          startIndex,
+          endIndex,
+        ]),
+      )
+      .digest("hex");
+    const passId = "a".repeat(64);
+    const sourceIdentity = {
       ...activity,
       sourceVersion: ghostRouteLabelsSourceVersion(evidence),
+    };
+    const cacheKey = ghostRouteLabelsCacheKey({
+      ...sourceIdentity,
       consentRevision: consent.revision,
     });
+    const climbKey = ghostRouteClimbsCacheKey(sourceIdentity);
+    const pass = {
+      passId,
+      activityId: older.activityId,
+      startedAt: candidateEvidence.startedAt,
+      comparison,
+      scalarProof: [],
+    };
+    const preparedSource = {
+      status: "ready",
+      anchorStamp: preparedGhostTrackStampSchema.parse(evidence),
+      candidateStamps: [preparedGhostTrackStampSchema.parse(candidateEvidence)],
+      bounded: false,
+    };
     await queryCache.set(
       cacheKey,
       {
         status: "ready",
         sections: [
           {
-            kind: "named-road",
-            name: "Fixture Road",
+            ...label,
             start: { ...start, originalIndex: startIndex },
             end: { ...end, originalIndex: endIndex },
-            attribution: "© OpenStreetMap contributors · Powered by Geoapify",
           },
         ],
-        coverage: { sampledWaypoints: 21, confirmedWaypoints: 21, bounded: false },
+        coverage: { sampledWaypoints: 21, confirmedWaypoints: 21, bounded: true },
+        prepared: preparedGhostSectionsSchema.parse({
+          ...preparedSource,
+          sections: [
+            {
+              ...label,
+              sectionId: rawSectionId,
+              anchor: currentInterval,
+              historyCoverage: "partial",
+              passes: [pass],
+            },
+          ],
+        }),
       },
       60_000,
     );
     try {
       const owner = caller();
+      const scope = { activityId: aliasId, sectionId: `named:${legacyNamedId}` };
       const detail = await owner.get({ activityId: aliasId });
       expect(detail.nameStatus).toBe("ready");
+      expect(detail.mapCoverage).toBe("partial");
       expect(detail.sections.find(({ kind }) => kind === "named-road")).toEqual({
-        kind: "named-road",
-        sectionId: expect.any(String),
-        name: "Fixture Road",
-        suggestedGhost: null,
-        attribution: "© OpenStreetMap contributors · Powered by Geoapify",
-        anchor: { start, end, elapsedMs: 20_000 },
+        ...label,
+        sectionId: scope.sectionId,
+        suggestedGhost: { passId, reason: "most-recent" },
+        anchor: currentInterval,
       });
+      await expect(owner.passes(scope)).resolves.toEqual({
+        nextCursor: null,
+        passes: [
+          {
+            passId,
+            activityId: older.activityId,
+            startedAt: candidateEvidence.startedAt,
+            elapsedMs: 30_000,
+          },
+        ],
+      });
+      await expect(owner.compare({ ...scope, passId })).resolves.toEqual(comparison);
+      const limited = caller(ownerId, hiddenHistory);
+      await expect(limited.passes(scope)).resolves.toEqual({ nextCursor: null, passes: [] });
+      await expect(limited.compare({ ...scope, passId })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+      await postgres.db.execute(
+        sql`UPDATE fitness.activity SET provider_absent_at = now() WHERE id = ${older.memberId}`,
+      );
+      try {
+        await expect(owner.passes(scope)).resolves.toEqual({ nextCursor: null, passes: [] });
+        await expect(owner.compare({ ...scope, passId })).rejects.toMatchObject({
+          code: "NOT_FOUND",
+        });
+      } finally {
+        await postgres.db.execute(
+          sql`UPDATE fitness.activity SET provider_absent_at = NULL WHERE id = ${older.memberId}`,
+        );
+      }
       await settings.set("ghostMapLabels", false);
       expect(await queryCache.get(cacheKey)).toBeDefined();
+      await expect(owner.passes(scope)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(owner.compare({ ...scope, passId })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+      const { mapCoverage: _mapCoverage, ...base } = detail;
       await expect(owner.get({ activityId: aliasId })).resolves.toEqual({
-        ...detail,
+        ...base,
         nameStatus: "disabled",
         sections: detail.sections.filter(({ kind }) => kind !== "named-road"),
       });
+
+      const altitudeId = randomUUID();
+      await writeFixtureScalar(anchor, 6, altitudeId, 1, "altitude");
+      const gateway = new ClickHouseActivitySensorStore(nativeClient);
+      const altitudeProof = await readGhostAltitudeWindowProof(
+        gateway.query.bind(gateway),
+        ownerId,
+        {
+          activityId: evidence.activityId,
+          memberActivityId: evidence.memberActivityId,
+          providerId: evidence.providerId,
+          deviceId: evidence.deviceId,
+          startedAt: evidence.startedAt,
+          endedAt: evidence.endedAt ?? time(anchor, 40),
+        },
+      );
+      expect(altitudeProof?.count).toBe(1);
+      const rawClimbId = ghostRecordedSectionId(
+        anchor.activityId,
+        "unnamed-climb",
+        start.timestampMs,
+        end.timestampMs,
+      );
+      await queryCache.set(
+        climbKey,
+        {
+          status: "ready",
+          altitudeProof,
+          prepared: preparedGhostSectionsSchema.parse({
+            ...preparedSource,
+            sections: [
+              {
+                kind: "unnamed-climb",
+                sectionId: rawClimbId,
+                anchor: currentInterval,
+                historyCoverage: "partial",
+                passes: [pass],
+              },
+            ],
+          }),
+        },
+        60_000,
+      );
+      const climbScope = { activityId: aliasId, sectionId: `climb:${rawClimbId}` };
+      const optOut = await owner.get({ activityId: aliasId });
+      expect(optOut.nameStatus).toBe("disabled");
+      expect(optOut.sections.find(({ kind }) => kind === "unnamed-climb")).toMatchObject({
+        sectionId: climbScope.sectionId,
+        anchor: currentInterval,
+      });
+      await expect(owner.compare({ ...climbScope, passId })).resolves.toEqual(comparison);
+      const enqueue = vi.mocked(enqueueGhostRouteClimbs).mockClear();
+      await writeFixtureScalar(anchor, 6, altitudeId, 2, "altitude");
+      await expect(owner.compare({ ...climbScope, passId })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+      expect(enqueue).not.toHaveBeenCalled();
+      const corrected = await owner.get({ activityId: aliasId });
+      expect(corrected.sections.some(({ kind }) => kind === "unnamed-climb")).toBe(false);
+      expect(enqueue).toHaveBeenCalledExactlyOnceWith(sourceIdentity);
     } finally {
       await queryCache.invalidate(cacheKey);
+      await queryCache.invalidate(climbKey);
       await settings.set("ghostMapLabels", false);
       vi.unstubAllEnvs();
     }
@@ -436,7 +629,7 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
       code: "NOT_FOUND",
     });
 
-    await writeHeartRate(older, 0, changedHeartRateId, 2);
+    await writeFixtureScalar(older, 0, changedHeartRateId, 2);
     await expect(owner.compare(comparison)).resolves.toEqual({
       ...timed,
       metrics: { ...timed.metrics, heartRateBpm: null, powerWatts: null },

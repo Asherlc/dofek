@@ -13,54 +13,36 @@ import {
 } from "@dofek/training/ghost-sessions";
 import { TRPCError } from "@trpc/server";
 import { readGhostHistoryEvidence } from "dofek/analytics/ghost-history-evidence";
-import { readGhostMapLabelsRegion } from "dofek/analytics/ghost-route-label-config";
-import type { Database } from "dofek/db";
 import {
-  AccountErasureUserFencedError,
-  withAccountErasureUserWriteFence,
-} from "dofek/db/account-erasure";
-import {
-  ghostScalarProofProviders,
-  ghostScalarProofSql,
-  ghostScalarProofWindowColumns,
-  ghostScalarProofWindowRow,
-} from "dofek/db/activity-ghost-scalar-sample";
-import { readGhostMapLabelConsent } from "dofek/db/ghost-map-label-consent";
-import {
-  ghostRouteLabelsSourceVersion,
   hasActiveGhostMember as hasActiveMember,
-  readGhostTrackEvidence,
   resolveActiveGhostMembers,
   type SelectedGhostMember as SelectedMember,
   type GhostTrackEvidence as TrackEvidence,
   ghostTrackStampSchema as trackStampSchema,
 } from "dofek/db/ghost-track-evidence";
-import { enqueueGhostRouteLabels } from "dofek/jobs/queues";
-import { queryCache } from "dofek/lib/cache";
-import { captureException } from "dofek/lib/error-reporting";
-import {
-  type GhostRouteLabelsCacheResult,
-  readGhostRouteLabelsCache,
-} from "dofek/lib/ghost-route-labels-cache";
+import { ghostSectionPreparationLimits } from "dofek/lib/ghost-route-section-results";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { ActivityRepository } from "./activity-repository.ts";
 import { activitySearchCursor } from "./activity-search-pagination.ts";
 import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
+import {
+  analyticsSettings,
+  climbPrefix,
+  createGhostPreparedReads,
+  currentComparisonMetrics,
+  isPreparedSectionId,
+  liveOwner,
+  type PreparedRequest,
+  preparedSectionDetails,
+  type ReadyTrack,
+  readTrackEvidence,
+  type ServingDatabase,
+} from "./ghost-sessions-prepared.ts";
 
 type Interval = GhostSessionsCompareResponse["anchor"];
 type Section = GhostSessionsGetResponse["sections"][number];
 type Pass = GhostSessionsPassesResponse["passes"][number];
-type ReadyTrack = Extract<TrackEvidence, { status: "ready" }>;
-type CachedNamedSections = Extract<
-  GhostRouteLabelsCacheResult,
-  { status: "ready" | "unavailable" }
->["sections"];
-type RouteLabels =
-  | { status: "ready"; sections: CachedNamedSections }
-  | { status: "disabled" | "processing" | "unavailable" | "error" };
-type LabelDatabase = Pick<Database, "execute" | "transaction">;
-
 interface SavedMatch extends Pass {
   kind: "full-route" | "shared-stretch";
   sectionId: string;
@@ -93,9 +75,8 @@ type SavedAnchor =
       matches: readonly SavedMatch[];
     };
 
-interface GhostSessionReads {
+interface GhostSessionReads extends ReturnType<typeof createGhostPreparedReads> {
   readAnchor(window: ActivitySensorWindow, checkCompleteHistory: boolean): Promise<SavedAnchor>;
-  readLabels(window: ActivitySensorWindow, source: ReadyTrack): Promise<RouteLabels>;
   readComparison(
     window: ActivitySensorWindow,
     match: SavedMatch,
@@ -123,7 +104,6 @@ interface SectionMatches {
 
 const pageSize = 20;
 const sectionLimit = 64;
-const namedSectionLimit = 8;
 const cursorPositionSchema = z.strictObject({
   passStartedAtMs: z.number(),
   activityId: z.uuid(),
@@ -209,37 +189,6 @@ function summarizeSection(
   return { kind, sectionId, anchor, ...(geometry && { geometry }), ...recommendation };
 }
 
-const sectionSchema = ghostSessionsGetResponseSchema.shape.sections.element;
-
-function namedSections(activityId: string, sections: CachedNamedSections) {
-  return sections.flatMap(({ kind, name, attribution, start: from, end: through }) => {
-    const { originalIndex: startIndex, ...start } = from;
-    const { originalIndex: endIndex, ...end } = through;
-    if (startIndex >= endIndex) return [];
-    const id = createHash("sha256")
-      .update(
-        JSON.stringify([
-          activityId,
-          kind,
-          start.timestampMs,
-          end.timestampMs,
-          startIndex,
-          endIndex,
-        ]),
-      )
-      .digest("hex");
-    const named = sectionSchema.safeParse({
-      kind,
-      name,
-      attribution,
-      sectionId: `named:${id}`,
-      suggestedGhost: null,
-      anchor: { start, end, elapsedMs: end.timestampMs - start.timestampMs },
-    });
-    return named.success ? [named.data] : [];
-  });
-}
-
 export class GhostSessionsRepository {
   readonly #dependencies: Dependencies;
 
@@ -318,6 +267,21 @@ export class GhostSessionsRepository {
     return { window, saved, section };
   }
 
+  async #findPreparedSection(activityId: string, request: PreparedRequest) {
+    const { window, saved } = await this.#open(activityId, false);
+    if (saved.status !== "ready" || saved.gpsCoverage === "unusable") throw unavailable();
+    const reads = this.#dependencies.reads;
+    if (request.sectionId.startsWith(climbPrefix)) {
+      const [climb] = await reads.readClimbs(window, saved.source, request);
+      if (!climb) throw unavailable();
+      return climb;
+    }
+    const labels = await reads.readLabels(window, saved.source, request);
+    const section = labels.status === "ready" ? labels.prepared?.[0] : undefined;
+    if (!section) throw unavailable();
+    return section;
+  }
+
   async get({
     activityId,
   }: z.infer<typeof ghostSessionsGetInputSchema>): Promise<GhostSessionsGetResponse> {
@@ -336,20 +300,34 @@ export class GhostSessionsRepository {
       };
     }
     const { sections, historyCoverage } = await this.#visibleSections(window, saved);
-    const labels: RouteLabels =
+    const labels =
       saved.gpsCoverage === "unusable"
-        ? { status: "disabled" }
+        ? { status: "disabled" as const }
         : await this.#dependencies.reads.readLabels(window, saved.source);
     const named =
       labels.status === "ready"
-        ? namedSections(window.activityId, labels.sections).slice(0, namedSectionLimit)
+        ? labels.sections.slice(0, ghostSectionPreparationLimits.sections)
         : [];
+    const preparedClimbs =
+      saved.gpsCoverage === "unusable"
+        ? []
+        : await this.#dependencies.reads.readClimbs(window, saved.source);
+    const climbs = preparedClimbs.slice(0, ghostSectionPreparationLimits.sections).map(
+      (climb): Section => ({
+        kind: "unnamed-climb",
+        sectionId: `${climbPrefix}${climb.sectionId}`,
+        anchor: climb.anchor,
+        ...preparedSectionDetails(climb),
+      }),
+    );
     const routeId = routeSectionId(window.activityId);
     const route = sections.get(routeId);
     sections.delete(routeId);
-    const leadingSections = route
-      ? [summarizeSection(routeId, route, historyCoverage), ...named]
-      : named;
+    const leadingSections = [
+      ...(route ? [summarizeSection(routeId, route, historyCoverage)] : []),
+      ...named,
+      ...climbs,
+    ];
     const stretches = [...sections]
       .slice(0, sectionLimit - leadingSections.length)
       .map(([sectionId, section]) => summarizeSection(sectionId, section, historyCoverage));
@@ -359,6 +337,9 @@ export class GhostSessionsRepository {
       gpsCoverage: saved.gpsCoverage,
       historyCoverage,
       nameStatus: labels.status === "ready" && named.length === 0 ? "unavailable" : labels.status,
+      ...(named.length > 0 && labels.status === "ready" && labels.mapCoverage
+        ? { mapCoverage: labels.mapCoverage }
+        : {}),
       sections: [...leadingSections, ...stretches],
     };
   }
@@ -368,6 +349,19 @@ export class GhostSessionsRepository {
     sectionId,
     cursor,
   }: z.infer<typeof ghostSessionsPassesInputSchema>): Promise<GhostSessionsPassesResponse> {
+    if (isPreparedSectionId(sectionId)) {
+      if (cursor) throw unavailable();
+      const section = await this.#findPreparedSection(activityId, { sectionId });
+      return {
+        passes: section.passes.map(({ passId, activityId, startedAt, comparison }) => ({
+          passId,
+          activityId,
+          startedAt,
+          elapsedMs: comparison.candidate.elapsedMs,
+        })),
+        nextCursor: null,
+      };
+    }
     const { window, saved, section } = await this.#findSection(activityId, sectionId);
     const codec = activitySearchCursor(cursorPositionSchema, [
       "ghost-sessions",
@@ -416,6 +410,12 @@ export class GhostSessionsRepository {
     sectionId,
     passId,
   }: z.infer<typeof ghostSessionsCompareInputSchema>): Promise<GhostSessionsCompareResponse> {
+    if (isPreparedSectionId(sectionId)) {
+      const section = await this.#findPreparedSection(activityId, { sectionId, passId });
+      const pass = section.passes.find((candidate) => candidate.passId === passId);
+      if (!pass) throw unavailable();
+      return pass.comparison;
+    }
     const { window, saved, section } = await this.#findSection(activityId, sectionId);
     const match = section.matches.find((candidate) => candidate.passId === passId);
     if (!match) throw unavailable();
@@ -428,11 +428,6 @@ export class GhostSessionsRepository {
   }
 }
 
-const analyticsSettings = `SETTINGS join_use_nulls = 1, max_threads = 1,
-  enable_materialized_cte = 1, log_queries = 0`;
-const liveOwner = `lower(hex(SHA256(toString({userId:UUID})))) NOT IN (
-  SELECT user_hash FROM ingest.account_erasure_fence FINAL
-)`;
 const ownerAndAnchor = `user_id = {userId:UUID} AND activity_id = {activityId:UUID}`;
 const historyTable = "analytics.ghost_session_history";
 const pageTable = "analytics.ghost_session_page";
@@ -481,17 +476,6 @@ const savedPageSchema = z.object({
 type SavedPage = z.infer<typeof savedPageSchema>;
 // History evidence checks up to 256 prior groups and the worker admits 25 per page.
 const publishedPageLimit = 11;
-
-function readTrackEvidence(
-  store: ActivitySensorQueryStore,
-  window: ActivitySensorWindow,
-  candidateIds: readonly string[],
-) {
-  return readGhostTrackEvidence(store.query.bind(store), {
-    userId: window.userId,
-    activityIds: [window.activityId, ...candidateIds],
-  });
-}
 
 function sameStamp(
   current: TrackEvidence | undefined,
@@ -668,60 +652,6 @@ async function readSavedAnchor(
   };
 }
 
-const savedScalarProofSchema = z.object({
-  activityId: z.uuid(),
-  memberActivityId: z.uuid(),
-  startedAt: z.iso.datetime(),
-  endedAt: z.iso.datetime(),
-  count: z.number().int().min(1).max(4_000),
-  digest: z.string(),
-});
-const proofRowSchema = z.object({
-  windowId: z.number(),
-  count: z.coerce.number(),
-  digest: z.string(),
-});
-
-async function verifiesScalars(
-  store: ActivitySensorQueryStore,
-  window: ActivitySensorWindow,
-  match: SavedMatch,
-  proof: string,
-): Promise<boolean> {
-  const parsed = z
-    .tuple([savedScalarProofSchema, savedScalarProofSchema])
-    .safeParse(JSON.parse(proof));
-  if (!parsed.success) return false;
-  const [anchor, candidate] = parsed.data;
-  if (anchor.activityId !== window.activityId || candidate.activityId !== match.activityId)
-    return false;
-  const rows = await store.query(
-    proofRowSchema,
-    `
-    WITH measured_windows AS MATERIALIZED (
-      SELECT * FROM format('JSONEachRow', {windowColumns:String}, {windows:String})
-    ), ${ghostScalarProofSql("measured_windows")}
-    SELECT window_id AS windowId, raw_count AS count, digest FROM ghost_scalar_proofs
-    WHERE ${liveOwner}
-    ${analyticsSettings}, date_time_input_format = 'best_effort'`,
-    {
-      ...ghostScalarProofProviders,
-      userId: window.userId,
-      windowColumns: ghostScalarProofWindowColumns,
-      windows: parsed.data
-        .map((entry, index) => JSON.stringify(ghostScalarProofWindowRow(entry, index)))
-        .join("\n"),
-      ghostScalarFetchLimit: Math.max(anchor.count, candidate.count) + 1,
-    },
-  );
-  return parsed.data.every((expected, index) =>
-    rows.some(
-      (row) =>
-        row.windowId === index && row.count === expected.count && row.digest === expected.digest,
-    ),
-  );
-}
-
 const savedComparisonSchema = z.object({ comparison: z.string(), scalarProof: z.string() });
 
 async function readSavedComparison(
@@ -759,11 +689,13 @@ async function readSavedComparison(
     },
   );
   if (!saved) return null;
-  const comparison = ghostSessionsCompareResponseSchema.parse(JSON.parse(saved.comparison));
-  const metricProof =
-    comparison.metrics.heartRateBpm !== null || comparison.metrics.powerWatts !== null;
-  const scalarsCurrent =
-    !metricProof || (await verifiesScalars(store, window, match, saved.scalarProof));
+  const comparison = await currentComparisonMetrics(
+    store,
+    window,
+    match.activityId,
+    ghostSessionsCompareResponseSchema.parse(JSON.parse(saved.comparison)),
+    saved.scalarProof,
+  );
   const current = await readTrackEvidence(store, window, [match.activityId]);
   const anchor = current.get(window.activityId);
   if (
@@ -772,68 +704,7 @@ async function readSavedComparison(
     !sameStamp(current.get(match.activityId), match.candidateStamp)
   )
     return null;
-  return scalarsCurrent
-    ? comparison
-    : {
-        ...comparison,
-        metrics: { ...comparison.metrics, heartRateBpm: null, powerWatts: null },
-      };
-}
-
-async function readRouteLabels(
-  db: LabelDatabase,
-  store: ActivitySensorQueryStore,
-  window: ActivitySensorWindow,
-  source: ReadyTrack,
-): Promise<RouteLabels> {
-  try {
-    if (!readGhostMapLabelsRegion(process.env.GHOST_MAP_LABELS_REGION))
-      return { status: "disabled" };
-    const consent = await readGhostMapLabelConsent(db, window.userId);
-    if (!consent) return { status: "disabled" };
-    const revision = {
-      userId: window.userId,
-      activityId: window.activityId,
-      sourceVersion: ghostRouteLabelsSourceVersion(source),
-      consentRevision: consent.revision,
-    };
-    const cached = await readGhostRouteLabelsCache(queryCache, revision);
-    if (cached && cached.status !== "ready") return { status: cached.status };
-    return await withAccountErasureUserWriteFence(
-      db,
-      window.userId,
-      async (transaction): Promise<RouteLabels> => {
-        const current = (await readTrackEvidence(store, window, [])).get(window.activityId);
-        if (
-          current?.status !== "ready" ||
-          ghostRouteLabelsSourceVersion(current) !== revision.sourceVersion
-        )
-          return { status: "unavailable" };
-        const active = await resolveActiveGhostMembers(transaction, window.userId, [
-          current.memberActivityId,
-        ]);
-        const member = active.get(current.memberActivityId);
-        if (
-          !hasActiveMember(active, current) ||
-          member?.sport !== current.sport ||
-          member.modality !== current.modality
-        )
-          return { status: "disabled" };
-        if (
-          (await readGhostMapLabelConsent(transaction, window.userId))?.revision !==
-          revision.consentRevision
-        )
-          return { status: "disabled" };
-        if (cached) return { status: "ready", sections: cached.sections };
-        await enqueueGhostRouteLabels(revision);
-        return { status: "processing" };
-      },
-    );
-  } catch (error: unknown) {
-    if (error instanceof AccountErasureUserFencedError) return { status: "disabled" };
-    captureException(error, { tags: { source: "ghost-route-labels-detail" } });
-    return { status: "error" };
-  }
+  return comparison;
 }
 
 export function createGhostSessionsRepository({
@@ -843,21 +714,22 @@ export function createGhostSessionsRepository({
   accessWindow,
   sensorStore,
 }: {
-  db: LabelDatabase;
+  db: ServingDatabase;
   userId: string;
   timezone: string;
   accessWindow: AccessWindow;
   sensorStore: ActivitySensorQueryStore;
 }): GhostSessionsRepository {
+  const activity = new ActivityRepository(db, userId, timezone, accessWindow);
   return new GhostSessionsRepository({
     ownerId: userId,
     timezone,
     accessWindow,
-    activity: new ActivityRepository(db, userId, timezone, accessWindow),
+    activity,
     resolveActiveMembers: (memberIds) => resolveActiveGhostMembers(db, userId, memberIds),
     reads: {
       readAnchor: (window, checkHistory) => readSavedAnchor(sensorStore, window, checkHistory),
-      readLabels: (window, source) => readRouteLabels(db, sensorStore, window, source),
+      ...createGhostPreparedReads(db, sensorStore, { timezone, accessWindow }),
       readComparison: (window, match) => readSavedComparison(sensorStore, window, match),
     },
   });

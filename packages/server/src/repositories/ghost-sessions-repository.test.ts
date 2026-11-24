@@ -3,10 +3,16 @@ import { createDatabase } from "dofek/db";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { readGhostMapLabelConsent } from "dofek/db/ghost-map-label-consent";
 import { ghostRouteLabelsSourceVersion } from "dofek/db/ghost-track-evidence";
-import { enqueueGhostRouteLabels } from "dofek/jobs/queues";
+import { enqueueGhostRouteClimbs, enqueueGhostRouteLabels } from "dofek/jobs/queues";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
+import { ghostRouteClimbsCacheKey } from "dofek/lib/ghost-route-climbs-cache";
 import { ghostRouteLabelsCacheKey } from "dofek/lib/ghost-route-labels-cache";
+import {
+  ghostRecordedSectionId,
+  preparedGhostSectionsSchema,
+} from "dofek/lib/ghost-route-section-results";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { ActivityRepository } from "./activity-repository.ts";
@@ -26,6 +32,7 @@ vi.mock("dofek/db/ghost-map-label-consent", async (importOriginal) => ({
 }));
 vi.mock("dofek/jobs/queues", async (importOriginal) => ({
   ...(await importOriginal<typeof import("dofek/jobs/queues")>()),
+  enqueueGhostRouteClimbs: vi.fn(),
   enqueueGhostRouteLabels: vi.fn(),
 }));
 vi.mock("dofek/lib/error-reporting", async (importOriginal) => ({
@@ -50,7 +57,10 @@ const aliasId = activityId(3);
 const anchorStart = Date.UTC(2026, 10, 24, 12);
 const oldStart = Date.UTC(2026, 10, 23, 12);
 const database = createDatabase("postgresql://unused:unused@localhost:1/unused");
+const fencedDatabase = createDatabase("postgresql://unused:unused@localhost:1/unused");
+const dialect = new PgDialect();
 const consentRevision = "2026-11-25T10:00:00.000001Z";
+const altitudeDigest = "A".repeat(64);
 const limitedWindow: AccessWindow = {
   kind: "limited",
   paid: false,
@@ -162,6 +172,7 @@ function fixture(
     readLabels: vi
       .fn<Dependencies["reads"]["readLabels"]>()
       .mockResolvedValue({ status: "disabled" }),
+    readClimbs: vi.fn<Dependencies["reads"]["readClimbs"]>().mockResolvedValue([]),
   };
   const repository = new GhostSessionsRepository({
     ownerId,
@@ -205,9 +216,12 @@ function publicationFixture() {
     digest: string;
     beforeReplay: () => void;
     scalarCurrent: boolean;
+    scalarDigests?: readonly string[];
     staleTrack?: string;
     activeAnchor: boolean;
+    inactiveCandidate?: string;
     markerSignature: string;
+    altitudeDigest: string;
   } = {
     historyGeneration: "history",
     frontier: null,
@@ -217,6 +231,7 @@ function publicationFixture() {
     scalarCurrent: true,
     activeAnchor: true,
     markerSignature: "current-marker",
+    altitudeDigest,
   };
   const recordedPass = interval(oldStart, 65_000);
   const comparison: GhostSessionsCompareResponse = {
@@ -314,9 +329,13 @@ function publicationFixture() {
           [0, 1].map((windowId) => ({
             windowId,
             count: 1,
-            digest: state.scalarCurrent ? `scalar-${windowId}` : "changed",
+            digest: state.scalarCurrent
+              ? (state.scalarDigests?.[windowId] ?? `scalar-${windowId}`)
+              : "changed",
           })),
         );
+      if (params.ghostScalarFetchLimit === 20_001)
+        return schema.array().parse([{ raw_count: 8, digest: state.altitudeDigest }]);
       return schema.array().parse([
         {
           anchorGeneration: "anchor",
@@ -331,16 +350,29 @@ function publicationFixture() {
       ]);
     },
   };
-  const { activity } = fixture();
+  const hidden = new Set<string>();
+  const { activity } = fixture([], { hidden });
   vi.spyOn(ActivityRepository.prototype, "findSensorWindow").mockImplementation(
     activity.findSensorWindow,
   );
   vi.spyOn(ActivityRepository.prototype, "resolveVisibleActivityIds").mockImplementation(
     activity.resolveVisibleActivityIds,
   );
-  vi.spyOn(database, "execute").mockImplementation(async () =>
-    tracks.filter((record) => state.activeAnchor || record.activityId !== anchorId),
-  );
+  const activeTracks = () =>
+    tracks.filter(
+      (record) =>
+        (state.activeAnchor || record.activityId !== anchorId) &&
+        record.activityId !== state.inactiveCandidate,
+    );
+  vi.spyOn(database, "execute").mockImplementation(async () => activeTracks());
+  const fencedExecute = vi.spyOn(fencedDatabase, "execute").mockImplementation(async (query) => {
+    if (typeof query === "string") throw new Error("Expected a typed prepared read");
+    const statement = dialect.sqlToQuery(query.getSQL());
+    if (!statement.sql.includes("FROM fitness.v_activity_group")) return activeTracks();
+    return tracks
+      .filter(({ activityId }) => statement.params.includes(activityId) && !hidden.has(activityId))
+      .map(({ activityId }) => ({ id: activityId }));
+  });
   const repository = createGhostSessionsRepository({
     db: database,
     userId: owner,
@@ -355,6 +387,9 @@ function publicationFixture() {
     candidateId: candidates[0]?.activityId,
     scope: { activityId: anchorId, sectionId: `route:${anchorId}` },
     anchor,
+    candidates,
+    hidden,
+    fencedExecute,
   };
 }
 
@@ -364,19 +399,23 @@ afterEach(() => {
   vi.mocked(readGhostMapLabelConsent).mockReset();
   vi.mocked(withAccountErasureUserWriteFence).mockReset();
   vi.mocked(enqueueGhostRouteLabels).mockReset();
+  vi.mocked(enqueueGhostRouteClimbs).mockReset();
   vi.mocked(captureException).mockReset();
 });
-afterAll(() => database.$client.end());
+afterAll(async () => {
+  await Promise.all([database.$client.end(), fencedDatabase.$client.end()]);
+});
 
 function labelFixture() {
-  const { repository, state, anchor } = publicationFixture();
+  const publication = publicationFixture();
+  const { state, anchor } = publication;
   const enqueue = vi.mocked(enqueueGhostRouteLabels).mockResolvedValue(undefined);
   const consent = vi
     .mocked(readGhostMapLabelConsent)
     .mockResolvedValue({ revision: consentRevision });
   const fence = vi
     .mocked(withAccountErasureUserWriteFence)
-    .mockImplementation(async (_db, _owner, operation) => operation(database));
+    .mockImplementation(async (_db, _owner, operation) => operation(fencedDatabase));
   const cache = vi.spyOn(queryCache, "get").mockResolvedValue(undefined);
   vi.stubEnv("GHOST_MAP_LABELS_REGION", "eu");
   const readyEvidence = {
@@ -410,10 +449,275 @@ function labelFixture() {
   const coverage = { sampledWaypoints: 20, confirmedWaypoints: 18, bounded: false };
   const result = { status: "ready", sections: [segment], coverage };
   const input = { activityId: aliasId };
-  return { repository, state, enqueue, consent, fence, cache, identity, segment, result, input };
+  return { ...publication, enqueue, consent, fence, cache, identity, segment, result, input };
+}
+
+function preparedClimbFixture() {
+  const label = preparedLabelFixture();
+  const enqueue = vi.mocked(enqueueGhostRouteClimbs).mockResolvedValue(undefined);
+  vi.stubEnv("GHOST_MAP_LABELS_REGION", "disabled");
+  label.consent.mockResolvedValue(null);
+  const { userId, activityId, sourceVersion } = label.identity;
+  const identity = { userId, activityId, sourceVersion };
+  const { prepared } = label.enriched;
+  const [named] = prepared.sections;
+  if (!named || named.kind === "unnamed-climb") throw new Error("Expected named fixture");
+  const { name: _name, attribution: _attribution, ...recorded } = named;
+  const sectionId = ghostRecordedSectionId(
+    activityId,
+    "unnamed-climb",
+    recorded.anchor.start.timestampMs,
+    recorded.anchor.end.timestampMs,
+  );
+  const { memberActivityId, providerId, deviceId } = prepared.anchorStamp;
+  label.cache.mockResolvedValue({
+    status: "ready",
+    prepared: { ...prepared, sections: [{ ...recorded, kind: "unnamed-climb", sectionId }] },
+    altitudeProof: {
+      activityId,
+      memberActivityId,
+      providerId,
+      deviceId,
+      startedAt: "2026-11-24T12:00:00.000000Z",
+      endedAt: "2026-11-24T12:01:00.000000Z",
+      count: 8,
+      digest: altitudeDigest,
+    },
+  });
+  return { ...label, enqueue, identity, climbId: `climb:${sectionId}` };
+}
+
+function preparedLabelFixture() {
+  const label = labelFixture();
+  const { segment, anchor, candidates, state, result } = label;
+  const candidate = candidates[0];
+  if (!candidate) throw new Error("Expected earlier candidate");
+  const rawSectionId = ghostRecordedSectionId(
+    anchorId,
+    "named-trail",
+    segment.start.timestampMs,
+    segment.end.timestampMs,
+  );
+  const comparisonAnchor = interval(anchorStart + 8_000, 30_000);
+  const comparisonCandidate = interval(oldStart + 10_000, 35_000);
+  const comparison = {
+    ...label.comparison,
+    anchor: comparisonAnchor,
+    candidate: comparisonCandidate,
+    replay: [
+      { anchor: comparisonAnchor.start, candidate: comparisonCandidate.start },
+      { anchor: comparisonAnchor.end, candidate: comparisonCandidate.end },
+    ],
+  };
+  const { originalIndex: _startIndex, ...start } = segment.start;
+  const { originalIndex: _endIndex, ...end } = segment.end;
+  const stamp = (record: typeof anchor) => ({ ...record, markerSignature: state.markerSignature });
+  state.scalarDigests = ["0".repeat(64), "1".repeat(64)];
+  const pass = {
+    passId: "a".repeat(64),
+    activityId: candidate.activityId,
+    startedAt: candidate.startedAt,
+    comparison,
+  };
+  const prepared = preparedGhostSectionsSchema.parse({
+    status: "ready",
+    anchorStamp: stamp(anchor),
+    candidateStamps: [stamp(candidate)],
+    bounded: false,
+    sections: [
+      {
+        sectionId: rawSectionId,
+        kind: segment.kind,
+        name: segment.name,
+        attribution: segment.attribution,
+        anchor: { start, end, elapsedMs: end.timestampMs - start.timestampMs },
+        historyCoverage: "partial",
+        passes: [
+          {
+            ...pass,
+            scalarProof: [anchor, candidate].map((record, index) => {
+              const bounds = index === 0 ? comparisonAnchor : comparisonCandidate;
+              const micros = (timestamp: number) =>
+                new Date(timestamp).toISOString().replace("Z", "000Z");
+              return {
+                activityId: record.activityId,
+                memberActivityId: record.memberActivityId,
+                startedAt: micros(bounds.start.timestampMs),
+                endedAt: micros(bounds.end.timestampMs),
+                count: 1,
+                digest: String(index).repeat(64),
+              };
+            }),
+          },
+        ],
+      },
+    ],
+  });
+  const enriched = { ...result, coverage: { ...result.coverage, bounded: true }, prepared };
+  // Public section ID from the original canonical activity, kind, timestamps and indices 1 and 19.
+  const sectionId = "named:e131a2afe22e4dc259ad0e965ac1e71d7691bfc0e7d5db6e3c8a4d5b6f8cef2b";
+  return { ...label, candidate, pass, enriched, comparison, sectionId, rawSectionId };
 }
 
 describe("GhostSessionsRepository", () => {
+  it("keeps a named interval selected when prepared passes and replay arrive", async () => {
+    const {
+      repository,
+      input,
+      cache,
+      result,
+      enriched,
+      sectionId,
+      rawSectionId,
+      pass,
+      comparison,
+      enqueue,
+      identity,
+    } = preparedLabelFixture();
+    cache.mockResolvedValue({ ...result, expiresAt: Date.now() + 60_000 });
+    const labelOnly = (await repository.get(input)).sections.find(
+      ({ kind }) => kind === "named-trail",
+    );
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith({ ...identity, prepareOnly: true });
+    enqueue.mockClear();
+    cache.mockResolvedValue(enriched);
+    const detail = await repository.get(input);
+    expect(detail).toMatchObject({
+      nameStatus: "ready",
+      mapCoverage: "partial",
+      historyCoverage: "partial",
+    });
+    expect(labelOnly?.sectionId).toBe(sectionId);
+    expect(detail.sections.find(({ kind }) => kind === "named-trail")).toEqual({
+      ...labelOnly,
+      suggestedGhost: { passId: pass.passId, reason: "most-recent" },
+    });
+    await expect(repository.passes({ ...input, sectionId })).resolves.toEqual({
+      nextCursor: null,
+      passes: [
+        {
+          passId: pass.passId,
+          activityId: pass.activityId,
+          startedAt: pass.startedAt,
+          elapsedMs: 35_000,
+        },
+      ],
+    });
+    await expect(repository.compare({ ...input, sectionId, passId: pass.passId })).resolves.toEqual(
+      comparison,
+    );
+    await expect(
+      repository.compare({ ...input, sectionId: `named:${rawSectionId}`, passId: pass.passId }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("uses the fenced transaction for prepared candidate visibility", async () => {
+    const { repository, input, cache, enriched, pass, fencedExecute } = preparedLabelFixture();
+    cache.mockResolvedValue(enriched);
+    const detail = await repository.get(input);
+    const section = detail.sections.find(({ kind }) => kind === "named-trail");
+    if (!section) throw new Error("Expected prepared named section");
+
+    const rootVisibility = vi.mocked(ActivityRepository.prototype.resolveVisibleActivityIds);
+    rootVisibility.mockClear().mockRejectedValue(new Error("Root visibility used while fenced"));
+    fencedExecute.mockClear();
+    await expect(
+      repository.passes({ ...input, sectionId: section.sectionId }),
+    ).resolves.toMatchObject({
+      passes: [{ passId: pass.passId }],
+    });
+    expect(rootVisibility).not.toHaveBeenCalled();
+    expect(
+      fencedExecute.mock.calls.some(
+        ([query]) =>
+          typeof query !== "string" &&
+          dialect.sqlToQuery(query.getSQL()).sql.includes("FROM fitness.v_activity_group"),
+      ),
+    ).toBe(true);
+  });
+
+  it("masks stale prepared metrics while preserving exact timing and replay", async () => {
+    const { repository, input, cache, enriched, sectionId, pass, comparison, state } =
+      preparedLabelFixture();
+    cache.mockResolvedValue(enriched);
+    state.scalarCurrent = false;
+    await expect(repository.compare({ ...input, sectionId, passId: pass.passId })).resolves.toEqual(
+      {
+        ...comparison,
+        metrics: { ...comparison.metrics, heartRateBpm: null, powerWatts: null },
+      },
+    );
+  });
+
+  it("serves prepared climbs independently of map config or consent", async () => {
+    const { repository, input, cache, identity, consent, climbId, pass, comparison, enqueue } =
+      preparedClimbFixture();
+    const detail = await repository.get(input);
+    expect(detail).toMatchObject({ nameStatus: "disabled", historyCoverage: "partial" });
+    expect(detail.mapCoverage).toBeUndefined();
+    expect(detail.sections.map(({ kind }) => kind)).toEqual(["route", "unnamed-climb"]);
+    expect(detail.sections[1]).toMatchObject({
+      sectionId: climbId,
+      suggestedGhost: { passId: pass.passId, reason: "most-recent" },
+    });
+    const scope = { ...input, sectionId: climbId };
+    await expect(repository.passes(scope)).resolves.toMatchObject({
+      passes: [{ passId: pass.passId, elapsedMs: 35_000 }],
+      nextCursor: null,
+    });
+    await expect(repository.compare({ ...scope, passId: pass.passId })).resolves.toEqual(
+      comparison,
+    );
+    expect(cache).toHaveBeenCalledWith(ghostRouteClimbsCacheKey(identity));
+    expect(consent).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("withholds an altitude-stale climb and refreshes only on an authorized Get", async () => {
+    const { repository, input, identity, climbId, pass, state, enqueue } = preparedClimbFixture();
+    state.altitudeDigest = "B".repeat(64);
+    const scope = { ...input, sectionId: climbId };
+    await expect(repository.passes(scope)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(repository.compare({ ...scope, passId: pass.passId })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(enqueue).not.toHaveBeenCalled();
+    const detail = await repository.get(input);
+    expect(detail.sections.map(({ kind }) => kind)).toEqual(["route"]);
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith(identity);
+  });
+
+  it.each(["hidden", "stale GPS", "inactive member", "withdrawn", "new consent revision"])(
+    "rejects prepared replay when its candidate or label authorization is %s",
+    async (change) => {
+      const {
+        repository,
+        input,
+        cache,
+        enriched,
+        sectionId,
+        pass,
+        state,
+        hidden,
+        candidate,
+        consent,
+      } = preparedLabelFixture();
+      cache.mockResolvedValue(enriched);
+      if (change === "hidden") hidden.add(candidate.activityId);
+      if (change === "stale GPS") state.staleTrack = candidate.activityId;
+      if (change === "inactive member") state.inactiveCandidate = candidate.activityId;
+      if (change === "withdrawn") consent.mockResolvedValue(null);
+      if (change === "new consent revision")
+        consent
+          .mockResolvedValueOnce({ revision: consentRevision })
+          .mockResolvedValue({ revision: "2026-11-25T10:00:00.000002Z" });
+      await expect(
+        repository.compare({ ...input, sectionId, passId: pass.passId }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    },
+  );
+
   it("keeps base timing and queues an older canonical activity on the exact cache miss", async () => {
     const { repository, input, identity, enqueue, fence, cache } = labelFixture();
     await expect(repository.get(input)).resolves.toMatchObject({
@@ -422,7 +726,7 @@ describe("GhostSessionsRepository", () => {
       historyCoverage: "partial",
       sections: [{ kind: "route", anchor: wholeRoute }],
     });
-    expect(cache).toHaveBeenCalledExactlyOnceWith(ghostRouteLabelsCacheKey(identity));
+    expect(cache).toHaveBeenCalledWith(ghostRouteLabelsCacheKey(identity));
     expect(fence).toHaveBeenCalledWith(database, owner, expect.any(Function));
     expect(enqueue).toHaveBeenCalledExactlyOnceWith(identity);
   });
@@ -478,8 +782,9 @@ describe("GhostSessionsRepository", () => {
         kind: "named-trail" as const,
         name: `Trail ${index}`,
         attribution: "© OpenStreetMap contributors · Powered by Geoapify",
-        start: { ...start, originalIndex: index * 2 },
-        end: { ...end, originalIndex: index * 2 + 1 },
+        sectionId: `named-${index}`,
+        anchor: { start, end, elapsedMs: 1_000 },
+        suggestedGhost: null,
       };
     });
     reads.readLabels.mockResolvedValue({ status: "ready", sections: names });
@@ -519,14 +824,14 @@ describe("GhostSessionsRepository", () => {
   );
 
   it("skips cache and enqueue when disabled or an account has no consent", async () => {
-    const { repository, input, cache, enqueue, consent } = labelFixture();
+    const { repository, input, cache, enqueue, consent, identity } = labelFixture();
     vi.stubEnv("GHOST_MAP_LABELS_REGION", "disabled");
     await expect(repository.get(input)).resolves.toMatchObject({ nameStatus: "disabled" });
     expect(consent).not.toHaveBeenCalled();
     vi.stubEnv("GHOST_MAP_LABELS_REGION", "eu");
     consent.mockResolvedValue(null);
     await expect(repository.get(input)).resolves.toMatchObject({ nameStatus: "disabled" });
-    expect(cache).not.toHaveBeenCalled();
+    expect(cache).not.toHaveBeenCalledWith(ghostRouteLabelsCacheKey(identity));
     expect(enqueue).not.toHaveBeenCalled();
   });
 

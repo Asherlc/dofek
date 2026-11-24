@@ -164,6 +164,22 @@ describe("Ghost Sessions response contracts", () => {
     ).toEqual([]);
   });
 
+  it("accepts partial map coverage independently of complete GPS and history", () => {
+    const response = {
+      availability: "ready",
+      gpsCoverage: "complete",
+      historyCoverage: "complete",
+      sport: "cycling",
+      nameStatus: "ready",
+      mapCoverage: "partial",
+      sections: [{ sectionId, kind: "named-road", anchor, name: "Oak Road", suggestedGhost: null }],
+    };
+    expect(ghostSessionsGetResponseSchema.parse(response)).toEqual(response);
+    expect(
+      ghostSessionsGetResponseSchema.safeParse({ ...response, mapCoverage: "unknown" }).success,
+    ).toBe(false);
+  });
+
   it("requires a recorded anchor interval and usable GPS for a first visit", () => {
     const section = { sectionId, kind: "route", anchor, firstVisit: true, suggestedGhost: null };
     const response = {
