@@ -223,6 +223,15 @@ infrastructure has been retired.
   Swarm config key `traefik_web_unavailable_v1` when the fallback file changes.
   [Traefik fallback routing](https://doc.traefik.io/traefik/getting-started/faq/#xxx-instead-of-404)
   · [Axiom request metrics](../docs/axiom-observability-runbook.md#traefik-request-counts).
+- During a scheduled schema change, the release enables the
+  `web-maintenance@swarm` router and verifies its HTTP 503 response before
+  draining web. It uses the same web host rule with higher priority. The
+  responder serves a self-contained HTML page and JSON errors under `/api/`.
+  It sends `Cache-Control: no-store`, `Retry-After`, and
+  `X-Dofek-Maintenance: 1`. Bump `web_maintenance_v1` when the response config
+  changes. [Traefik router priorities](https://doc.traefik.io/traefik/v3.6/reference/routing-configuration/http/routing/rules-and-priority/)
+  · [Swarm configs](https://docs.docker.com/engine/swarm/configs/)
+  · [Nginx response headers](https://nginx.org/en/docs/http/ngx_http_headers_module.html).
 
 ## Deployment
 
@@ -1346,6 +1355,12 @@ references selected by the [image resolver](../scripts/resolve-deploy-image.ts):
   final stack deploy.
 - For a pending maintenance-marked schema boundary, the pre-migration apply
   additionally stops web and verifies that all quiesced tasks actually exit.
+  When public web is already deployed, the workflow activates the notice
+  before the drain starts. It clears the route after the requested web image
+  converges and checks the public `/healthz` response. If a rollout fails while
+  the notice is active, rerun the canonical release with the requested image
+  and a source revision that supports the notice. The retry preserves the
+  route until the compatible web replicas are healthy.
   Selection uses the deployed image journal, including when the database already
   committed the migration during an earlier failed deployment. The web service's
   maintenance-target label rejects older release requests until a matching image

@@ -89,6 +89,21 @@ services:
       labels:
         - traefik.enable=true
 
+  web-maintenance:
+    image: nginx:1.30.7-alpine-slim@sha256:8c950211a641ec5b23f265450517001f6bcca533666120ebe36cb4cff3d00a55
+    configs:
+      - source: web_maintenance_v1
+        target: /etc/nginx/conf.d/default.conf
+    deploy:
+      replicas: 0
+      labels:
+        traefik.enable: "false"
+        traefik.http.routers.web-maintenance.rule: *web-host-rule
+        traefik.http.routers.web-maintenance.entrypoints: websecure
+        traefik.http.routers.web-maintenance.tls: "true"
+        traefik.http.routers.web-maintenance.priority: "1000000"
+        traefik.http.services.web-maintenance.loadbalancer.server.port: "80"
+
   web:
     image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
     command: ["web"]
@@ -963,6 +978,8 @@ configs:
   # fallback rule or TLS settings change, same as netdata_db_limits_v2.
   traefik_web_unavailable_v1:
     file: ./traefik-web-unavailable.yml
+  web_maintenance_v1:
+    file: ./web-maintenance.conf
   pipedash_config_v1:
     file: ./pipedash/config.toml
   clickhouse_default_query_guardrails_v2:
