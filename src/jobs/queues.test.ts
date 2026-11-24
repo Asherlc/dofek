@@ -99,6 +99,7 @@ describe("queues", () => {
     mockQueueAdd.mockClear();
     await enqueueGhostRouteLabels(data);
     await enqueueGhostRouteLabels(data);
+    await enqueueGhostRouteLabels({ ...data, prepareOnly: true });
     await enqueueGhostRouteLabels({ ...data, sourceVersion: "b".repeat(64) });
     await enqueueGhostRouteLabels({ ...data, consentRevision: "2026-11-24T12:00:00.123457Z" });
     await enqueueGhostRouteLabels({
@@ -117,6 +118,13 @@ describe("queues", () => {
     );
     const ids = mockQueueAdd.mock.calls.map((call) => call[2]?.jobId);
     expect(ids[0]).toBe(ids[1]);
+    expect(ids[0]).toBe(ids[2]);
+    expect(mockQueueAdd).toHaveBeenNthCalledWith(
+      3,
+      "ghost-route-labels",
+      { type: "ghost-route-labels", ...data, prepareOnly: true },
+      expect.any(Object),
+    );
     expect(ids[0]).toContain(data.userId);
     expect(new Set(ids)).toHaveLength(5);
   });
@@ -133,6 +141,35 @@ describe("queues", () => {
     mockQueueAdd.mockClear();
     await expect(enqueueGhostRouteLabels(data)).rejects.toThrow();
     expect(mockQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates local Ghost climb work by owner, activity and source without consent or samples", async () => {
+    const { enqueueGhostRouteClimbs } = await import("./queues.ts");
+    const data = {
+      userId: "00000000-0000-4000-8000-000000000001",
+      activityId: "00000000-0000-4000-8000-000000000002",
+      sourceVersion: "a".repeat(64),
+    };
+    await enqueueGhostRouteClimbs(data);
+    await enqueueGhostRouteClimbs(data);
+    await enqueueGhostRouteClimbs({ ...data, sourceVersion: "b".repeat(64) });
+    const unsafe = { ...data, observations: [{ altitudeMeters: 100 }] };
+    await expect(enqueueGhostRouteClimbs(unsafe)).rejects.toThrow();
+
+    expect(mockQueueAdd).toHaveBeenCalledTimes(3);
+    expect(mockQueueAdd).toHaveBeenNthCalledWith(
+      1,
+      "ghost-route-climbs",
+      { type: "ghost-route-climbs", ...data },
+      expect.objectContaining({
+        jobId: `ghost-route-climbs-${data.userId}-${data.activityId}-${data.sourceVersion}`,
+        removeOnComplete: true,
+        removeOnFail: true,
+      }),
+    );
+    const ids = mockQueueAdd.mock.calls.map((call) => call[2]?.jobId);
+    expect(ids[0]).toBe(ids[1]);
+    expect(ids[2]).not.toBe(ids[0]);
   });
 
   it("queues one disposable catalogue refresh per user and log", async () => {

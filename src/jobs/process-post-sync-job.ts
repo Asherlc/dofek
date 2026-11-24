@@ -6,7 +6,9 @@ import type { RefitSensorStore } from "../personalization/refit.ts";
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import { reportJobProgress } from "./job-progress.ts";
 import {
+  type GhostRouteClimbsJobData,
   type GhostRouteLabelsJobData,
+  ghostRouteClimbsJobDataSchema,
   ghostRouteLabelsJobDataSchema,
   type PostSyncJobData,
 } from "./queues.ts";
@@ -41,10 +43,14 @@ export async function processPostSyncJob(
   db: SyncDatabase,
   getSensorStore: () => RefitSensorStore,
   refreshBodyMeasurements: () => Promise<void>,
-  processGhostLabels?: (data: GhostRouteLabelsJobData) => Promise<void>,
+  prepareGhostRoute?: (data: GhostRouteLabelsJobData | GhostRouteClimbsJobData) => Promise<void>,
 ) {
   if (job.data.type === "ghost-route-labels") {
-    if (processGhostLabels) await processGhostLabels(ghostRouteLabelsJobDataSchema.parse(job.data));
+    if (prepareGhostRoute) await prepareGhostRoute(ghostRouteLabelsJobDataSchema.parse(job.data));
+    return;
+  }
+  if (job.data.type === "ghost-route-climbs") {
+    if (prepareGhostRoute) await prepareGhostRoute(ghostRouteClimbsJobDataSchema.parse(job.data));
     return;
   }
   if (job.data.type === "climbing-catalogue") {

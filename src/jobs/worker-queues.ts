@@ -28,6 +28,7 @@ import { processFitFileImportBatchJob } from "./process-fit-file-import-batch-jo
 import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
 import {
   type GhostRouteLabelsJobConfig,
+  processGhostRouteClimbsJob,
   processGhostRouteLabelsJob,
 } from "./process-ghost-route-labels-job.ts";
 import { processPostSyncJob } from "./process-post-sync-job.ts";
@@ -239,7 +240,9 @@ export function createWorkerQueues({
             accountErasureWorkLockPool,
             db,
             job.data.userId,
-            job.data.type === "ghost-route-labels" ? "Ghost route labels" : "post-sync refit",
+            job.data.type === "ghost-route-labels" || job.data.type === "ghost-route-climbs"
+              ? job.data.type
+              : "post-sync refit",
             () => {
               const dependencies = [
                 job,
@@ -247,17 +250,24 @@ export function createWorkerQueues({
                 getRefitSensorStore,
                 refreshPostSyncBodyMeasurements,
               ] as const;
-              if (job.data.type !== "ghost-route-labels" || !ghostRouteLabelsConfig)
+              if (job.data.type !== "ghost-route-labels" && job.data.type !== "ghost-route-climbs")
                 return processPostSyncJob(...dependencies);
-              return processPostSyncJob(...dependencies, (data) =>
-                processGhostRouteLabelsJob(data, {
+              return processPostSyncJob(...dependencies, async (data) => {
+                if (data.type === "ghost-route-labels" && !ghostRouteLabelsConfig) return;
+                const route = {
                   db,
                   clickhouse: getClickHouseClient(),
                   cache: queryCache,
-                  config: ghostRouteLabelsConfig,
                   signal,
-                }),
-              );
+                };
+                if (data.type === "ghost-route-climbs")
+                  await processGhostRouteClimbsJob(data, route);
+                else if (ghostRouteLabelsConfig)
+                  await processGhostRouteLabelsJob(data, {
+                    ...route,
+                    config: ghostRouteLabelsConfig,
+                  });
+              });
             },
           );
         } catch (error) {

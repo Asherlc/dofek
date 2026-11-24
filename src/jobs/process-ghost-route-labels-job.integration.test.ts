@@ -3,9 +3,10 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { AnalyticsQueryOwner } from "../analytics/analytics-query-owner.ts";
+import * as sectionProjection from "../analytics/ghost-route-section-projection.ts";
 import { projectGhostTrackIndex } from "../analytics/ghost-track-index.ts";
 import {
   createActivityLocationMemberChangeSql,
@@ -13,11 +14,15 @@ import {
   requireClickHouseUrl,
 } from "../db/activity-payload-dbt-microbatch-test-helpers.ts";
 import { createActivitySourceRecordsSql } from "../db/activity-payload-dbt-source-test-helpers.ts";
+import { buildIncrementalDedupedSensorBaseTableStatements } from "../db/clickhouse-deduped-sensor.ts";
 import {
   GHOST_MAP_LABELS_SETTING_KEY,
   ghostRouteLabelsCachePrefix,
 } from "../db/ghost-map-label-consent.ts";
-import { getGhostTrackEvidence } from "../db/ghost-track-evidence.ts";
+import {
+  getGhostTrackEvidence,
+  ghostRouteLabelsSourceVersion,
+} from "../db/ghost-track-evidence.ts";
 import { createGhostTrackIndexSql } from "../db/ghost-track-index-schema.ts";
 import { createTestBarrier, setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { MemoryCacheStore } from "../lib/cache.ts";
@@ -29,10 +34,11 @@ import {
   runQueuedUserWorkUnlessAccountErasing,
 } from "./account-erasure-work-guard.ts";
 import {
+  processGhostRouteClimbsJob,
   processGhostRouteLabelsJob,
   readGhostRouteLabelsInput,
 } from "./process-ghost-route-labels-job.ts";
-import type { GhostRouteLabelsJobData } from "./queues.ts";
+import type { GhostRouteClimbsJobData, GhostRouteLabelsJobData } from "./queues.ts";
 
 const providerId = "ghost_label_fixture";
 const start = "2026-11-24 12:00:00.123456";
@@ -43,7 +49,7 @@ const withdrawnRevision = "2026-11-24T12:00:00.000002Z";
 const newRevision = "2026-11-24T12:00:00.000003Z";
 const config = {
   provider: { apiKey: "fixture-key", region: "global" },
-  resultTtlMs: 120_000,
+  resultTtlMs: 24 * 60 * 60 * 1_000,
 } as const;
 const endpoint = "https://api.geoapify.com/v1/mapmatching";
 const network = createIntegrationMswFixture();
@@ -167,6 +173,40 @@ describe("Ghost route label job lifecycle", () => {
     };
   }
 
+  async function climbJob(key: RecordingKey): Promise<GhostRouteClimbsJobData> {
+    const source = await getGhostTrackEvidence(client, key);
+    if (source?.status !== "ready") throw new Error("Expected current original climb track");
+    return {
+      type: "ghost-route-climbs",
+      userId: key.userId,
+      activityId: key.activityId,
+      sourceVersion: ghostRouteLabelsSourceVersion(source),
+    };
+  }
+
+  function altitudeRows(key: RecordingKey & { memberId: string }) {
+    return Array.from({ length: 9 }, (_, index) => ({
+      id: randomUUID(),
+      user_id: key.userId,
+      activity_id: key.memberId,
+      member_activity_id: key.memberId,
+      provider_id: providerId,
+      device_id: "Direct fixture",
+      recorded_date: "2026-11-24",
+      recorded_at: `2026-11-24 12:00:${String(index * 5).padStart(2, "0")}.123456`,
+      channel: "altitude",
+      measurement_kind: "unknown",
+      scalar: index * 4,
+      _peerdb_version: 1,
+    }));
+  }
+
+  const writeAltitude = (values: ReturnType<typeof altitudeRows>) =>
+    client.insert({ table: "analytics.sensor_scalar_sample", format: "JSONEachRow", values });
+
+  const climbKey = ({ userId, activityId, sourceVersion }: GhostRouteClimbsJobData) =>
+    `${userId}:ghostRouteClimbs.${activityId}:${sourceVersion}`;
+
   function observe(beforeResponse?: () => Promise<void>) {
     const calls: z.infer<typeof bodySchema>[] = [];
     network.use(
@@ -227,6 +267,15 @@ describe("Ghost route label job lifecycle", () => {
         }),
     );
 
+  const runClimbs = (data: GhostRouteClimbsJobData, cache: MemoryCacheStore) =>
+    runQueuedUserWorkUnlessAccountErasing(
+      workLock,
+      postgres.db,
+      data.userId,
+      "Ghost route climbs",
+      () => processGhostRouteClimbsJob(data, { db: postgres.db, clickhouse: client, cache }),
+    );
+
   async function raceResponse(
     data: GhostRouteLabelsJobData,
     cache: MemoryCacheStore,
@@ -274,13 +323,17 @@ describe("Ghost route label job lifecycle", () => {
       ),
       createActivityLocationMemberChangeSql(database),
       createGhostTrackIndexSql,
+      ...buildIncrementalDedupedSensorBaseTableStatements(),
       `CREATE TABLE ${database}.account_erasure_fence (user_hash String)
         ENGINE = ReplacingMergeTree ORDER BY user_hash`,
     ])
       await client.command({ query });
   });
 
-  afterEach(() => network.resetHandlers());
+  afterEach(() => {
+    network.resetHandlers();
+    vi.restoreAllMocks();
+  });
   afterAll(async () => {
     network.deactivate();
     await workLock?.close();
@@ -330,6 +383,138 @@ describe("Ghost route label job lifecycle", () => {
         },
       ],
     });
+  });
+
+  it("retries comparison preparation from saved names without another provider request", async () => {
+    const key = await seed();
+    const data = await job(key);
+    const cache = new MemoryCacheStore();
+    const calls = observe();
+    vi.spyOn(sectionProjection, "prepareGhostSectionComparisons").mockRejectedValueOnce(
+      new Error("Synthetic candidate preparation failure"),
+    );
+
+    await expect(run(data, cache)).rejects.toThrow("Synthetic candidate preparation failure");
+    const raw = await cache.get(ghostRouteLabelsCacheKey(data));
+    expect(raw).toMatchObject({ status: "ready", sections: [{ name: "Fixture Road" }] });
+    expect(raw).not.toHaveProperty("prepared");
+
+    await run(data, cache);
+    expect(calls).toHaveLength(1);
+    expect(await cache.get(ghostRouteLabelsCacheKey(data))).toMatchObject({
+      status: "ready",
+      sections: [{ name: "Fixture Road" }],
+      prepared: { status: "ready", sections: [{ kind: "named-road", name: "Fixture Road" }] },
+    });
+  });
+
+  it("keeps authorized names after a failed prepared write and preserves their original deadline", async () => {
+    const key = await seed();
+    const data = await job(key);
+    const cacheKey = ghostRouteLabelsCacheKey(data);
+    const preparedWriteLifetimes: number[] = [];
+    class FailingPreparedCache extends MemoryCacheStore {
+      override async set<T>(attemptedKey: string, value: T, ttlMs: number) {
+        if (
+          attemptedKey === cacheKey &&
+          typeof value === "object" &&
+          value !== null &&
+          "prepared" in value &&
+          value.prepared !== undefined
+        ) {
+          preparedWriteLifetimes.push(ttlMs);
+          if (preparedWriteLifetimes.length === 1) {
+            throw new Error("Synthetic prepared cache write failure");
+          }
+        }
+        await super.set(attemptedKey, value, ttlMs);
+      }
+    }
+    let now = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const expiresAt = now + config.resultTtlMs;
+    const cache = new FailingPreparedCache();
+    const calls = observe();
+
+    await expect(run(data, cache)).rejects.toThrow("Synthetic prepared cache write failure");
+    const raw = await cache.get(cacheKey);
+    expect(raw).toMatchObject({ status: "ready", expiresAt, sections: [{ name: "Fixture Road" }] });
+    expect(raw).not.toHaveProperty("prepared");
+
+    now = expiresAt - 25;
+    await run({ ...data, prepareOnly: true }, cache);
+    expect(calls).toHaveLength(1);
+    expect(preparedWriteLifetimes).toEqual([config.resultTtlMs, 25]);
+    expect(await cache.get(cacheKey)).toMatchObject({ expiresAt, prepared: { status: "ready" } });
+
+    now = expiresAt;
+    expect(await cache.get(cacheKey)).toBeUndefined();
+    rawLoads.length = 0;
+    await run({ ...data, prepareOnly: true }, cache);
+    expect(rawLoads).toEqual([]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("prepares local climbs without consent and refreshes a corrected altitude proof", async () => {
+    const key = await seed();
+    await consent(key, false, withdrawnRevision);
+    const data = await climbJob(key);
+    const rows = altitudeRows(key);
+    await writeAltitude(rows);
+    const cache = new MemoryCacheStore();
+    const calls = observe();
+
+    await runClimbs(data, cache);
+    const climbed = await cache.get(climbKey(data));
+    expect(climbed).toMatchObject({
+      status: "ready",
+      altitudeProof: {
+        count: 9,
+        startedAt: "2026-11-24T12:00:00.123456Z",
+        endedAt: "2026-11-24T12:00:40.123457Z",
+      },
+      prepared: { status: "ready", sections: [{ kind: "unnamed-climb" }] },
+    });
+    rawLoads.length = 0;
+    await runClimbs(data, cache);
+    expect(rawLoads).toEqual([]);
+
+    await writeAltitude(rows.map((row) => ({ ...row, scalar: 0, _peerdb_version: 2 })));
+    await runClimbs(data, cache);
+    const corrected = await cache.get(climbKey(data));
+    expect(corrected).toMatchObject({
+      status: "ready",
+      altitudeProof: { count: 9 },
+      prepared: { status: "ready", sections: [] },
+    });
+    const snapshot = z.object({ altitudeProof: z.object({ digest: z.string() }) });
+    expect(snapshot.parse(corrected).altitudeProof.digest).not.toBe(
+      snapshot.parse(climbed).altitudeProof.digest,
+    );
+    expect(rawLoads).toEqual([key.activityId]);
+    expect(calls).toEqual([]);
+  });
+
+  it("discards an exact local climb write if altitude changes during cache publication", async () => {
+    const key = await seed();
+    const data = await climbJob(key);
+    const rows = altitudeRows(key);
+    await writeAltitude(rows);
+    class CorrectingCache extends MemoryCacheStore {
+      override async set<T>(cacheKey: string, value: T, ttlMs: number) {
+        await super.set(cacheKey, value, ttlMs);
+        if (cacheKey === climbKey(data)) {
+          const [first] = rows;
+          if (!first) throw new Error("Expected a first observed altitude");
+          await writeAltitude([{ ...first, scalar: 5, _peerdb_version: 2 }]);
+        }
+      }
+    }
+    const cache = new CorrectingCache();
+    const calls = observe();
+    await runClimbs(data, cache);
+    expect(await cache.get(climbKey(data))).toBeUndefined();
+    expect(calls).toEqual([]);
   });
 
   it("blocks a newly reclassified Apple Health copy before crossing the provider boundary", async () => {
