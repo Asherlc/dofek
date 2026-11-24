@@ -171,6 +171,7 @@
     "./activity-images/gallery": "./src/activity-images/gallery.ts",
     "./analytics/cycling-power-policy": "./src/analytics/cycling-power-policy.ts",
     "./analytics/ghost-history-evidence": "./src/analytics/ghost-history-evidence.ts",
+    "./analytics/ghost-route-label-config": "./src/analytics/ghost-route-label-config.ts",
     "./analytics/ghost-track-index": "./src/analytics/ghost-track-index.ts"
   },
   "scripts": {

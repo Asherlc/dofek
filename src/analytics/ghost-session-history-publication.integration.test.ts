@@ -13,7 +13,10 @@ import {
 } from "./ghost-session-history-publication.ts";
 import { runGhostSessionHistory } from "./ghost-session-history-runner.ts";
 
-vi.mock("./ghost-session-history-runner.ts", () => ({ runGhostSessionHistory: vi.fn() }));
+vi.mock("./ghost-session-history-runner.ts", () => ({
+  getGhostSessionHistoryProgress: vi.fn(),
+  runGhostSessionHistory: vi.fn(),
+}));
 vi.mock("../lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 
 const ghostResource = { resourceId: "ghost-session-history", intentId: "ghost-session-history" };
@@ -46,7 +49,7 @@ describe("Ghost history publication isolation", () => {
     vi.mocked(runGhostSessionHistory).mockImplementationOnce(async (owner) => {
       beforeGhost = await state(ANALYTICS_PUBLICATION_RESOURCE);
       await owner.client.command({ query: "SELECT throwIf(1)" });
-      return { pendingTracks: 0, checkedAnchors: 0 };
+      return { pendingTracks: 0, checkedAnchors: 0, checkedAnchorKeys: [] };
     });
     await expect(
       runAnalyticsWithGhostHistory(context.db, client, ordinaryIntent, async (owner) => {
@@ -80,7 +83,7 @@ describe("Ghost history publication isolation", () => {
       .mockRejectedValueOnce(new Error("Ghost transport outcome is unknown"));
     vi.mocked(runGhostSessionHistory).mockImplementationOnce(async (owner) => {
       await owner.client.command({ query: "SELECT 1" });
-      return { pendingTracks: 0, checkedAnchors: 0 };
+      return { pendingTracks: 0, checkedAnchors: 0, checkedAnchorKeys: [] };
     });
     await expect(
       runAnalyticsWithGhostHistory(context.db, client, "analytics-local-build", async () => {}),

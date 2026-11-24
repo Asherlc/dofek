@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
+import { readGhostRouteLabelsWorkerConfig } from "../src/analytics/ghost-route-label-config.ts";
 
 const KAFKA_TIERED_STORAGE_KEYS = [
   "KAFKA_TIERED_STORAGE_BUCKET",
@@ -234,7 +235,12 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
     requiredKeys: ["KAFKA_CLUSTER_ID", ...KAFKA_TIERED_STORAGE_KEYS],
   },
   analyticsWorker: {
-    allowedKeys: ["CLICKHOUSE_PASSWORD", "SENTRY_DSN", "SENTRY_DSN_unencrypted"],
+    allowedKeys: [
+      "CLICKHOUSE_PASSWORD",
+      "GHOST_MAP_LABELS_REGION",
+      "SENTRY_DSN",
+      "SENTRY_DSN_unencrypted",
+    ],
     requiredKeys: ["CLICKHOUSE_PASSWORD"],
     activitySearchKeys: ["ACTIVITY_SEARCH_ENABLED", "ACTIVITY_SEARCH_WRITE_URL"],
   },
@@ -265,7 +271,11 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
   },
   web: {
     ...WEB_ENVIRONMENT_POLICY,
-    allowedKeys: [...WEB_ENVIRONMENT_POLICY.allowedKeys, "GEOAPIFY_API_KEY"],
+    allowedKeys: [
+      ...WEB_ENVIRONMENT_POLICY.allowedKeys,
+      "GEOAPIFY_API_KEY",
+      "GHOST_MAP_LABELS_REGION",
+    ],
     activitySearchKeys: ["ACTIVITY_SEARCH_ENABLED", "ACTIVITY_SEARCH_READ_URL"],
   },
   webPreMigration: {
@@ -284,6 +294,7 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
       "AXIOM_LOG_DATASET",
       "AXIOM_ORG_ID",
       "CLICKHOUSE_PASSWORD",
+      "GHOST_MAP_LABELS_REGION",
       ...METRIC_STREAM_ENVIRONMENT_KEYS,
       "PEERDB_STAGE_S3_ACCESS_KEY_ID",
       "PEERDB_STAGE_S3_BUCKET",
@@ -444,6 +455,7 @@ export function renderDeployServiceEnvironmentFiles(
   const source = readFileSync(sourcePath, "utf8");
   const environment = parseEnv(source);
   const assignments = readRawAssignments(source);
+  const ghostMapLabelsEnabled = readGhostRouteLabelsWorkerConfig(environment) !== undefined;
   const searchEnabled = environment.ACTIVITY_SEARCH_ENABLED;
   if (searchEnabled !== undefined && searchEnabled !== "true" && searchEnabled !== "false") {
     throw new Error("ACTIVITY_SEARCH_ENABLED must be true or false.");
@@ -484,7 +496,9 @@ export function renderDeployServiceEnvironmentFiles(
       activitySearchKeys = [],
       metricStreamRoute: route,
     } = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName];
-    const lines = [...allowedKeys, ...activitySearchKeys].flatMap((key) => {
+    const keys = [...allowedKeys, ...activitySearchKeys];
+    if (serviceName === "worker" && ghostMapLabelsEnabled) keys.push("GEOAPIFY_API_KEY");
+    const lines = keys.flatMap((key) => {
       if (key === "KAFKA_CLUSTER_ID") {
         const targetKey = serviceName === "kafka" ? "CLUSTER_ID" : key;
         return [`${targetKey}=${environment.KAFKA_CLUSTER_ID}`];

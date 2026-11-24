@@ -586,6 +586,75 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(servicesWithTheKey).toEqual([["web", "geoapify-key"]]);
   });
 
+  it.each(["disabled", "eu", "global"])(
+    "scopes the Ghost label region and Geoapify key for %s",
+    (region) => {
+      const directory = makeTemporaryDirectory();
+      const sourcePath = join(directory, "all.env");
+      writeFileSync(
+        sourcePath,
+        dotenv({
+          ...completeDeployEnvironment(),
+          GHOST_MAP_LABELS_REGION: region,
+          GEOAPIFY_API_KEY: "geoapify-key",
+        }),
+      );
+
+      const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+      const environments = Object.entries(paths).map(([service, path]) => ({
+        service,
+        env: parseEnv(readFileSync(path, "utf8")),
+      }));
+      expect(
+        environments.flatMap(({ service, env }) =>
+          env.GHOST_MAP_LABELS_REGION ? [[service, env.GHOST_MAP_LABELS_REGION]] : [],
+        ),
+      ).toEqual([
+        ["analyticsWorker", region],
+        ["web", region],
+        ["worker", region],
+      ]);
+      expect(
+        environments.flatMap(({ service, env }) =>
+          env.GEOAPIFY_API_KEY ? [[service, env.GEOAPIFY_API_KEY]] : [],
+        ),
+      ).toEqual(
+        region === "disabled"
+          ? [["web", "geoapify-key"]]
+          : [
+              ["web", "geoapify-key"],
+              ["worker", "geoapify-key"],
+            ],
+      );
+    },
+  );
+
+  it("requires the Geoapify key when Ghost map labels are enabled", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(
+      sourcePath,
+      dotenv({ ...completeDeployEnvironment(), GHOST_MAP_LABELS_REGION: "eu" }),
+    );
+
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow("GEOAPIFY_API_KEY");
+  });
+
+  it("rejects an invalid Ghost map-label region before rendering service environments", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(
+      sourcePath,
+      dotenv({ ...completeDeployEnvironment(), GHOST_MAP_LABELS_REGION: "us" }),
+    );
+
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow("GHOST_MAP_LABELS_REGION");
+  });
+
   it("fails before worker startup when a worker-only contract is incomplete", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");

@@ -368,5 +368,5 @@ export async function runGhostSessionHistory(owner: HistoryOwner) {
   const result = await projectGhostTrackIndex(owner);
   const anchors = await selectAnchors(owner.client);
   for (const key of anchors) await checkAnchor(owner, key);
-  return { ...result, checkedAnchors: anchors.length };
+  return { ...result, checkedAnchors: anchors.length, checkedAnchorKeys: anchors };
 }

@@ -407,10 +407,26 @@ production Geoapify project:
 Published Free production use remains limited per the Terms. Prefer the
 dashboard balance plus the documented credit formula over probe success alone.
 
-## Next increments
+## Map label operations
 
-Task 2+ remain in the
-[implementation plan](superpowers/plans/2026-11-24-ghost-sessions.md). Pin
-worker batch size using the documented credit formula and the Transverse
-overlap dedupe result above; do not treat Lands End unmatched points as a
-general gap model without further tests.
+`GHOST_MAP_LABELS_REGION` defaults to `disabled`. Keep it disabled until the
+production project meets the release gate above. Set it to `eu` for
+`api-eu.geoapify.com` or `global` for `api.geoapify.com` after confirming the
+corresponding endpoint and project. The deploy renderer requires
+`GEOAPIFY_API_KEY` when map labels are enabled and forwards it to the label
+worker. The web service already uses that key for place search. The analytics
+worker needs the region setting to schedule enrichment.
+
+Each label job sends up to four requests of at most 100 waypoints, including
+shared endpoints between requests. It samples recorded positions about
+every 20 metres, retains sharp turns and splits the request at recorded GPS
+gaps. Geoapify receives coordinates, travel mode and the switch that requests
+OpenStreetMap tags. The saved names use the corresponding recorded GPS
+boundaries and credit OpenStreetMap contributors and Geoapify.
+
+The label cache expires after 24 hours. Each entry belongs to the current
+account, recording version and consent revision. Before dispatch and
+publication, the worker checks current consent, source provenance and
+ownership. Turning labels off expires the account's entries and invalidates
+queued work from that consent revision. Confirm the 24-hour retention limit
+against the production project terms before enabling the worker.
