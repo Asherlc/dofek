@@ -8,7 +8,7 @@ import { parseEnv } from "node:util";
 import { runInNewContext } from "node:vm";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { parse } from "yaml";
+import { parse, parseDocument } from "yaml";
 
 export function runClickHouseReadinessFixture(
   runScript: string,
@@ -373,14 +373,39 @@ if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
 fi
 
 if [ "$1" = "service" ] && [ "$2" = "ls" ]; then
+  service_name=""
+  ls_format="replicas"
   for argument in "$@"; do
     case "$argument" in
       name=*) service_name="\${argument#name=}" ;;
+      '{{.Name}} {{.Replicas}}') ls_format="name_replicas" ;;
+      '{{.Name}}') ls_format="name" ;;
     esac
   done
-  read_observation "$service_name"
-  printf '%s\\n' "$replicas"
+  # Docker's service ls name filter matches a prefix, so dofek_web also
+  # matches dofek_web-maintenance. Mirror that here so exact-name lookups are
+  # exercised against the real collision.
+  matching_services=()
+  for scenario_file in "$SCENARIO_DIR"/*; do
+    [ -f "$scenario_file" ] || continue
+    candidate_service="\${scenario_file##*/}"
+    case "$candidate_service" in
+      "\$service_name"*) matching_services+=("\$candidate_service") ;;
+    esac
+  done
+  if [ \${#matching_services[@]} -eq 0 ]; then
+    matching_services=("\$service_name")
+  fi
+  for candidate_service in "\${matching_services[@]}"; do
+    read_observation "\$candidate_service"
+    case "\$ls_format" in
+      name_replicas) printf '%s %s\\n' "\$candidate_service" "\$replicas" ;;
+      name) printf '%s\\n' "\$candidate_service" ;;
+      *) printf '%s\\n' "\$replicas" ;;
+    esac
+  done
   if [ "\${ADVANCE_ON_SERVICE_LS:-0}" = "1" ]; then
+    read_observation "\$service_name"
     printf '%s\\n' "$((observation_index + 1))" > "$state_file"
   fi
   exit 0
@@ -621,6 +646,201 @@ ${script}`,
       stackDeployArgs: readFileSync(stackDeployCapturePath, "utf8"),
       imageVerificationArgs: readFileSync(imageVerificationCapturePath, "utf8"),
     };
+  } finally {
+    rmSync(temporaryDirectory, { force: true, recursive: true });
+  }
+}
+
+export const workflowText = readFileSync(".github/workflows/deploy-web-stack.yml", "utf8");
+
+export function deployConsumersRunScript(): string {
+  const workflow = z.object({
+    jobs: z.object({
+      "web-stack": z.object({
+        steps: z.array(z.object({ id: z.string().optional(), run: z.string().optional() })),
+      }),
+    }),
+  }).parse(parse(workflowText));
+  const script = workflow.jobs["web-stack"].steps.find((step) => step.id === "deploy_stack_full")?.run;
+  if (!script) throw new Error("Could not find deploy_stack_full run script");
+  return script;
+}
+
+export function workflowRunScript(name: string): string {
+  const workflow = z.object({ jobs: z.object({ "web-stack": z.object({
+    steps: z.array(z.object({ name: z.string().optional(), run: z.string().optional() })),
+  }) }) }).parse(parse(workflowText));
+  const script = workflow.jobs["web-stack"].steps.find((step) => step.name === name)?.run;
+  if (!script) throw new Error(`Could not find the workflow step: ${name}`);
+  return script;
+}
+
+export function webStackSteps() {
+  return z.object({ jobs: z.object({ "web-stack": z.object({
+    steps: z.array(z.object({
+      name: z.string().optional(),
+      id: z.string().optional(),
+      if: z.string().optional(),
+      uses: z.string().optional(),
+      with: z.record(z.unknown()).optional(),
+      run: z.string().optional(),
+    })),
+  }) }) }).parse(parse(workflowText)).jobs["web-stack"].steps;
+}
+
+export function workflowStackServiceFilter(): string {
+  return z.string().min(1).parse(parseDocument(workflowText).getIn(["jobs", "web-stack", "env", "STACK_SERVICE_FILTER"]));
+}
+
+export function deployedStackServices(stdout: string): unknown {
+  const config = z.string().parse(stdout.match(/^STACK_CONFIG=(.+)$/m)?.[1]);
+  return z.object({ services: z.unknown() }).parse(parse(z.string().parse(JSON.parse(config)))).services;
+}
+
+export function deployQuiescedRunScript(): string {
+  const stepStart = workflowText.indexOf("      - name: Deploy stack without ClickHouse consumers");
+  const runStart = workflowText.indexOf("        run: |\n", stepStart);
+  const stepEnd = workflowText.indexOf("\n      - ", runStart);
+
+  if (stepStart === -1 || runStart === -1 || stepEnd === -1) {
+    throw new Error("Could not find the quiesced stack deploy step");
+  }
+
+  return workflowText
+    .slice(runStart + "        run: |\n".length, stepEnd)
+    .split("\n")
+    .map((line) => line.slice(10))
+    .join("\n");
+}
+
+export function runWorkflowDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsumerOptions = {}) {
+  return runDeployConsumers(deployConsumersRunScript(), scenarios, options);
+}
+
+export function runDeployQuiesced(
+  processingReconciliation: readonly ServiceObservation[],
+  options: DeployQuiescedOptions = {},
+) {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "dofek-deploy-quiesced-"));
+  const scenarioDirectory = join(temporaryDirectory, "scenarios");
+  const stateDirectory = join(temporaryDirectory, "state");
+  const dockerPath = join(temporaryDirectory, "docker");
+  const nodePath = join(temporaryDirectory, "node");
+  const stackDeployCapturePath = join(temporaryDirectory, "stack-deploy-args");
+
+  try {
+    mkdirSync(scenarioDirectory);
+    mkdirSync(stateDirectory);
+    writeFileSync(dockerPath, MOCK_DOCKER);
+    writeFileSync(
+      nodePath,
+      "#!/usr/bin/env bash\nif [ \"$2\" = docker ] || [ \"$2\" = env ]; then shift; exec \"$@\"; fi\nexit 0\n",
+    );
+    chmodSync(dockerPath, 0o755);
+    chmodSync(nodePath, 0o755);
+    const pnpmPath = join(temporaryDirectory, "pnpm");
+    writeFileSync(pnpmPath, "#!/usr/bin/env bash\nexit 0\n");
+    chmodSync(pnpmPath, 0o755);
+    const defaultServiceNames = [
+      "dofek_kafka",
+      "dofek_web",
+      "dofek_worker",
+      "dofek_cdc-health",
+      "dofek_analytics-worker",
+      "dofek_metric-stream-clickhouse-sink",
+      "dofek_metric-stream-live-clickhouse-sink",
+      "dofek_metric-stream-history-clickhouse-sink",
+      "dofek_metric-stream-r2-archive",
+      "dofek_metric-stream-live-r2-archive",
+      "dofek_metric-stream-history-r2-archive",
+      "dofek_clickhouse",
+      "dofek_databasus",
+      "dofek_pipedash",
+    ];
+    for (const serviceName of defaultServiceNames) {
+      writeFileSync(
+        join(scenarioDirectory, serviceName),
+        serializeScenario(options.serviceObservations?.[serviceName] ?? [STABLE_OBSERVATION]),
+      );
+    }
+    writeFileSync(
+      join(scenarioDirectory, "dofek_processing-reconciliation"),
+      serializeScenario(processingReconciliation),
+    );
+    for (const [serviceName, observations] of Object.entries(options.serviceObservations ?? {})) {
+      writeFileSync(join(scenarioDirectory, serviceName), serializeScenario(observations));
+    }
+
+    const shellScript = [
+      `docker() (\n${MOCK_DOCKER}\n)`,
+      "SECONDS=0",
+      "simulated_seconds=0",
+      'echo() { builtin echo "[${simulated_seconds}s] $*"; }',
+      "sleep() { SECONDS=$((SECONDS + MOCK_SLEEP_SECONDS)); simulated_seconds=$((simulated_seconds + MOCK_SLEEP_SECONDS)); }",
+      deployQuiescedRunScript(),
+    ].join("\n");
+    const githubOutputPath = join(temporaryDirectory, "github-output");
+    const result = spawnSync("bash", ["-c", shellScript], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
+        APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
+        STACK_DEPLOY_STATUS: (options.stackDeployStatus ?? 0).toString(),
+        MIGRATION_DEPLOYMENT_MODE: options.deploymentMode ?? "rolling",
+        STACK_DEPLOY_CAPTURE: stackDeployCapturePath,
+        ADVANCE_ON_SERVICE_LS: "1",
+        MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
+        PATH: `${temporaryDirectory}:${process.env.PATH ?? ""}`,
+        RUNNER_TEMP: temporaryDirectory,
+        SCENARIO_DIR: scenarioDirectory,
+        STACK_NAME: "dofek",
+        STATE_DIR: stateDirectory,
+        GITHUB_OUTPUT: githubOutputPath,
+      },
+    });
+
+    return {
+      ...result,
+      githubOutput: readFileSync(githubOutputPath, "utf8"),
+      stackDeployArgs: readFileSync(stackDeployCapturePath, "utf8"),
+    };
+  } finally {
+    rmSync(temporaryDirectory, { force: true, recursive: true });
+  }
+}
+
+export function runPreMigrationWebConvergence(script: string) {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "dofek-pre-migration-web-"));
+  const scenarioDirectory = join(temporaryDirectory, "scenarios");
+  const stateDirectory = join(temporaryDirectory, "state");
+  try {
+    mkdirSync(scenarioDirectory);
+    mkdirSync(stateDirectory);
+    writeFileSync(
+      join(scenarioDirectory, "dofek_web"),
+      serializeScenario([{ ...STABLE_OBSERVATION, replicas: "2/2", desiredReplicas: "2" }]),
+    );
+    writeFileSync(
+      join(scenarioDirectory, "dofek_web-maintenance"),
+      serializeScenario([{ ...STABLE_OBSERVATION, replicas: "0/0", desiredReplicas: "0" }]),
+    );
+    const shellScript = [
+      `docker() (\n${MOCK_DOCKER}\n)`,
+      "sleep() { echo 'Unexpected retry' >&2; return 97; }",
+      "pnpm() { printf '%s\\n' \"$*\"; }",
+      script,
+    ].join("\n");
+    return spawnSync("bash", ["-ec", shellScript], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
+        STACK_NAME: "dofek",
+        SCENARIO_DIR: scenarioDirectory,
+        STATE_DIR: stateDirectory,
+      },
+    });
   } finally {
     rmSync(temporaryDirectory, { force: true, recursive: true });
   }

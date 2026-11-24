@@ -249,6 +249,8 @@ jobs:
           function git(args) {
             return spawnSync('git', args, { encoding: 'utf8', stdio: 'ignore' }).status === 0;
           }
+          const sshOptions = ['-o','BatchMode=yes','-o','ServerAliveInterval=30','-o','ServerAliveCountMax=10'];
+          const ssh = (query) => command('ssh', [...sshOptions, `${SSH_USER}@${SERVER_HOST}`, query]);
           function sha(value, label) {
             if (!/^[a-f0-9]{40}$/.test(value ?? '')) throw new Error(`${label} is not a full source SHA`);
           }
@@ -287,7 +289,7 @@ jobs:
           if (RECOVER_FAILED_DEPLOYMENT_ID !== '' && unresolved.length === 0) throw new Error(`selected server deployment ${RECOVER_FAILED_DEPLOYMENT_ID} is not unresolved`);
           const successful = history.find((record) => record.state === 'SUCCESS');
           const readLive = (service) => {
-            const result = command('ssh', ['-o','BatchMode=yes','-o','ServerAliveInterval=30','-o','ServerAliveCountMax=10',`${SSH_USER}@${SERVER_HOST}`,`docker ps -q --filter label=com.docker.swarm.service.name=${service} | xargs -r docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{.Config.Image}} {{.State.Status}}'`]);
+            const result = ssh(`containers=$(docker ps -q --filter label=com.docker.swarm.service.name=${service}) || exit; printf '%s\\n' "$containers" | xargs -r docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{.Config.Image}} {{.State.Status}}'`);
             if (!result) return null;
             const rows = result.split('\n').map((line) => {
               const [sourceSha, image, state] = line.split(' ');
@@ -301,17 +303,27 @@ jobs:
             if (identities.size !== 1) throw new Error(`live ${service} tasks disagree on source or image`);
             return { sourceSha: rows[0].sourceSha, image: rows[0].image };
           };
-          const services = SERVER_HOST ? command('ssh', ['-o','BatchMode=yes',`${SSH_USER}@${SERVER_HOST}`,"docker service ls --format '{{.Name}}'"]) : '';
+          const services = SERVER_HOST ? ssh("docker service ls --format '{{.Name}}'") : '';
           const serviceNames = services.split('\n');
           let live = null;
+          let webLive = null;
+          let stoppedWorkerRecovery = false;
           const hasWeb = serviceNames.includes(`${STACK_NAME}_web`);
           const hasWorker = serviceNames.includes(`${STACK_NAME}_worker`);
           if (hasWeb !== hasWorker) throw new Error('only one of the live web/worker services exists; reconcile the server target before publication');
           if (hasWeb && hasWorker) {
-            const web = readLive(`${STACK_NAME}_web`);
+            webLive = readLive(`${STACK_NAME}_web`);
             const worker = readLive(`${STACK_NAME}_worker`);
-            if (!web || !worker || web.sourceSha !== worker.sourceSha || web.image !== worker.image) throw new Error('live web and worker identities cannot be reconciled');
-            live = { sourceSha: web.sourceSha, imageDigest: web.image.split('@')[1] };
+            if (worker) {
+              if (!webLive || webLive.sourceSha !== worker.sourceSha || webLive.image !== worker.image) throw new Error('live web and worker identities cannot be reconciled');
+              live = { sourceSha: webLive.sourceSha, imageDigest: webLive.image.split('@')[1] };
+            } else if (webLive && RECOVER_FAILED_DEPLOYMENT_ID !== '') {
+              // Admit only after the explicit recovery evidence below is proven.
+              stoppedWorkerRecovery = true;
+              live = { sourceSha: webLive.sourceSha, imageDigest: webLive.image.split('@')[1] };
+            } else {
+              throw new Error('live web and worker identities cannot be reconciled');
+            }
           }
           const getIdentity = (record) => {
             const value = record.payload ?? {};
@@ -319,6 +331,34 @@ jobs:
             if (record.commitOid !== value.source_sha) throw new Error(`deployment ${record.databaseId} ref does not match its source payload`);
             if (!/^sha256:[a-f0-9]{64}$/.test(value.image_digest ?? '')) throw new Error(`deployment ${record.databaseId} has no immutable image digest`);
             return value;
+          };
+          const verifyStoppedWorkerRecovery = (failedJob, baseline) => {
+            const steps = failedJob.steps;
+            if (!Array.isArray(steps)) throw new Error(`originating job ${failedJob.id} has no step evidence for pre-migration recovery`);
+            for (const [name, conclusion] of [
+              ['Wait for migration readers and writers to stop', 'success'],
+              ['Wait for pre-migration web convergence', 'failure'],
+              ['Run migrations', 'skipped'],
+            ]) {
+              const matches = steps.filter((step) => step?.name === name);
+              if (matches.length !== 1) throw new Error(`originating job ${failedJob.id} must show exactly one "${name}" step for pre-migration recovery`);
+              if (matches[0].conclusion !== conclusion) throw new Error(`originating job ${failedJob.id} step "${name}" concluded ${matches[0].conclusion ?? 'unknown'}, expected ${conclusion}`);
+            }
+            if (!live || live.sourceSha !== baseline.source_sha || live.imageDigest !== baseline.image_digest) {
+              throw new Error(`live web identity does not match the last verified successful server receipt ${successful.databaseId}`);
+            }
+            const webImage = webLive.image;
+            const inspectImage = (service) => ssh(`docker service inspect ${STACK_NAME}_${service} --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'`);
+            const webSpecImage = inspectImage('web');
+            if (webSpecImage !== webImage) throw new Error(`web service spec image ${webSpecImage || '(missing)'} does not match the verified live web image ${webImage}`);
+            const workerSpecImage = inspectImage('worker');
+            if (workerSpecImage !== webImage) throw new Error(`worker service spec image ${workerSpecImage || '(missing)'} does not match the verified live web image ${webImage}`);
+            const runningContainers = ssh(`docker ps --filter label=com.docker.swarm.service.name=${STACK_NAME}_worker --filter status=running --format '{{.ID}}'`).split('\n').filter(Boolean);
+            if (runningContainers.length !== 0) throw new Error(`live worker still has ${runningContainers.length} running container(s); pre-migration recovery requires zero`);
+            const desiredReplicas = ssh(`docker service inspect ${STACK_NAME}_worker --format '{{if .Spec.Mode.Replicated}}{{.Spec.Mode.Replicated.Replicas}}{{end}}'`);
+            if (!/^\d+$/.test(desiredReplicas) || Number(desiredReplicas) !== 0) throw new Error(`worker service still desires ${desiredReplicas || '(missing)'} replicas; pre-migration recovery requires zero`);
+            const runningTasks = ssh(`docker service ps ${STACK_NAME}_worker --filter desired-state=running --format '{{.ID}}'`).split('\n').filter(Boolean);
+            if (runningTasks.length !== 0) throw new Error(`worker service still has ${runningTasks.length} desired-running task(s); pre-migration recovery requires none`);
           };
           let recovery = null;
           if (RECOVER_FAILED_DEPLOYMENT_ID !== '') {
@@ -369,7 +409,11 @@ jobs:
             if (!successful) throw new Error('server recovery requires a prior verified success receipt to preserve the forward-only target baseline');
             const baseline = getIdentity(successful);
             if (!git(['merge-base','--is-ancestor',baseline.source_sha,prior.source_sha])) throw new Error(`failed server source ${prior.source_sha} is not a descendant of the latest verified baseline ${baseline.source_sha}`);
-            if (!live || live.sourceSha !== prior.source_sha || live.imageDigest !== prior.image_digest) throw new Error(`live web and worker identity does not match selected failed server deployment ${selected.databaseId}`);
+            if (stoppedWorkerRecovery) {
+              verifyStoppedWorkerRecovery(failedDeployJobs[0], baseline);
+            } else if (!live || live.sourceSha !== prior.source_sha || live.imageDigest !== prior.image_digest) {
+              throw new Error(`live web and worker identity does not match selected failed server deployment ${selected.databaseId}`);
+            }
             recovery = { ...selected, identity: prior };
           } else if (unresolved.length > 0) {
             throw new Error(`unresolved server publication ${unresolved[0].databaseId} (${unresolved[0].state ?? 'no status'}); verify the original deploy job before rerunning its receipt finalizer`);

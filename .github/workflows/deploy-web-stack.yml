@@ -976,6 +976,7 @@ jobs:
         env:
           APP_IMAGE: ${{ steps.pull_images.outputs.pre_migration_image_ref }}
         run: |
+          set -o pipefail
           deadline=$((SECONDS + 300))
           while true; do
             update_state="$(
@@ -983,7 +984,8 @@ jobs:
                 --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}'
             )"
             replicas="$(
-              docker service ls --filter "name=${STACK_NAME}_web" --format '{{.Replicas}}'
+              docker service ls --filter "name=${STACK_NAME}_web" --format '{{.Name}} {{.Replicas}}' \
+                | awk -v name="${STACK_NAME}_web" '$1 == name { print $2 }'
             )"
             echo "${STACK_NAME}_web replicas=${replicas} update_state=${update_state:-none}"
             case "$update_state" in
@@ -1162,6 +1164,7 @@ jobs:
           APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
           MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
         run: |
+          set -o pipefail
           echo "web_convergence_failed=false" >> "$GITHUB_OUTPUT"
           stack_file_flags=()
           read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
@@ -1196,7 +1199,8 @@ jobs:
                   --format '{{if .Spec.Mode.Replicated}}{{.Spec.Mode.Replicated.Replicas}}{{end}}'
               )"
               replicas="$(
-                docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
+                docker service ls --filter "name=${service_name}" --format '{{.Name}} {{.Replicas}}' \
+                  | awk -v name="${service_name}" '$1 == name { print $2 }'
               )"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
               if [ "$service" = "web" ] && { \
