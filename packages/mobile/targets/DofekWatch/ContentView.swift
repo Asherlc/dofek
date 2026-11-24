@@ -34,7 +34,7 @@ struct ContentView: View {
         }
         // Keep session/recording setup on this stable outer view so wrist
         // dimming and privacy redaction do not re-register callbacks or restart the task.
-        .task {
+        .task { [transferManager, recorder, gyroscopeRecorder, altimeterRecorder] in
             // Activate WCSession on first appearance
             sessionDelegate.activate()
 
@@ -44,10 +44,7 @@ struct ContentView: View {
             }
 
             // Handle recording requests from iPhone
-            sessionDelegate.onRecordingRequested = {
-                [weak recorder = recorder,
-                 weak gyroscopeRecorder = gyroscopeRecorder,
-                 weak altimeterRecorder = altimeterRecorder] in
+            sessionDelegate.onRecordingRequested = { [weak recorder, weak gyroscopeRecorder, weak altimeterRecorder] in
                 recorder?.startRecording()
                 gyroscopeRecorder?.startRecording()
                 altimeterRecorder?.startRecording()

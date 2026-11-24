@@ -7,7 +7,6 @@ final class WatchPhoneTransferStatusTests: XCTestCase {
         XCTAssertEqual(
             WatchPhoneTransferStatus.resolve(
                 isSyncEnabled: false,
-                isSessionActivated: true,
                 isCompanionAvailable: true,
                 hasOutstandingFileTransfers: true,
                 isTransferring: false,
@@ -21,7 +20,6 @@ final class WatchPhoneTransferStatusTests: XCTestCase {
         XCTAssertEqual(
             WatchPhoneTransferStatus.resolve(
                 isSyncEnabled: true,
-                isSessionActivated: true,
                 isCompanionAvailable: false,
                 hasOutstandingFileTransfers: true,
                 isTransferring: false,
@@ -35,7 +33,6 @@ final class WatchPhoneTransferStatusTests: XCTestCase {
         XCTAssertEqual(
             WatchPhoneTransferStatus.resolve(
                 isSyncEnabled: true,
-                isSessionActivated: true,
                 isCompanionAvailable: false,
                 hasOutstandingFileTransfers: false,
                 isTransferring: false,
@@ -49,7 +46,6 @@ final class WatchPhoneTransferStatusTests: XCTestCase {
         XCTAssertEqual(
             WatchPhoneTransferStatus.resolve(
                 isSyncEnabled: true,
-                isSessionActivated: true,
                 isCompanionAvailable: true,
                 hasOutstandingFileTransfers: false,
                 isTransferring: true,
@@ -63,7 +59,6 @@ final class WatchPhoneTransferStatusTests: XCTestCase {
         XCTAssertEqual(
             WatchPhoneTransferStatus.resolve(
                 isSyncEnabled: true,
-                isSessionActivated: true,
                 isCompanionAvailable: true,
                 hasOutstandingFileTransfers: false,
                 isTransferring: false,
@@ -77,7 +72,6 @@ final class WatchPhoneTransferStatusTests: XCTestCase {
         XCTAssertEqual(
             WatchPhoneTransferStatus.resolve(
                 isSyncEnabled: true,
-                isSessionActivated: true,
                 isCompanionAvailable: true,
                 hasOutstandingFileTransfers: false,
                 isTransferring: false,
@@ -91,7 +85,6 @@ final class WatchPhoneTransferStatusTests: XCTestCase {
         XCTAssertEqual(
             WatchPhoneTransferStatus.resolve(
                 isSyncEnabled: true,
-                isSessionActivated: true,
                 isCompanionAvailable: true,
                 hasOutstandingFileTransfers: true,
                 isTransferring: false,
@@ -101,15 +94,14 @@ final class WatchPhoneTransferStatusTests: XCTestCase {
         )
     }
 
-    func testNonactivatedSessionSuppliesNoQueueEvidence() {
+    func testUnavailableTakesPrecedenceOverPriorFailure() {
         XCTAssertEqual(
             WatchPhoneTransferStatus.resolve(
                 isSyncEnabled: true,
-                isSessionActivated: false,
                 isCompanionAvailable: false,
-                hasOutstandingFileTransfers: true,
+                hasOutstandingFileTransfers: false,
                 isTransferring: false,
-                hasFailedAttempt: false
+                hasFailedAttempt: true
             ),
             .unavailable
         )

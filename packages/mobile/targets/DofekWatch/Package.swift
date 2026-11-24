@@ -27,6 +27,7 @@ let package = Package(
                 "README.md",
                 "Tests",
                 "TransferManager.swift",
+                "TransferManager+FilePreparation.swift",
                 "WatchSessionDelegate.swift",
                 "expo-target.config.js",
                 "mutantkit.yml",

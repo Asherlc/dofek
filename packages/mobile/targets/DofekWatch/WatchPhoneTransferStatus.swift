@@ -3,8 +3,8 @@ import Foundation
 /// Watch-to-iPhone file-transfer glance state for the first screen.
 ///
 /// Precedence: paused, queued (`waitingForPhone`), unavailable, preparing,
-/// failed, empty. A nonactivated session supplies no queue evidence. Live
-/// reachability never gates a valid existing queue.
+/// failed, empty. Callers gate session-derived queue and companion flags on
+/// activation. Live reachability never gates a valid existing queue.
 enum WatchPhoneTransferStatus: Equatable, Sendable {
     case paused
     case waitingForPhone
@@ -15,18 +15,16 @@ enum WatchPhoneTransferStatus: Equatable, Sendable {
 
     static func resolve(
         isSyncEnabled: Bool,
-        isSessionActivated: Bool,
         isCompanionAvailable: Bool,
         hasOutstandingFileTransfers: Bool,
         isTransferring: Bool,
         hasFailedAttempt: Bool
-    ) -> WatchPhoneTransferStatus {
+    ) -> Self {
         if !isSyncEnabled {
             return .paused
         }
 
-        let hasQueuedTransfers = isSessionActivated && hasOutstandingFileTransfers
-        if hasQueuedTransfers {
+        if hasOutstandingFileTransfers {
             return .waitingForPhone
         }
 
