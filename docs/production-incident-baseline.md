@@ -40056,3 +40056,34 @@ Local qualification and CI are separate from production throughput acceptance. T
   reconciliation for the pending operations.
   [Deployment verification](https://github.com/Asherlc/dofek/actions/runs/45332102234/job/138243564133)
   · [Reconciliation and stalled-operation cutoff](processing-status-runbook.md#runtime-progression).
+
+## 2026-11-24 — Archived Paseo workspaces retained Docker containers
+
+- **Impact and evidence.** Local Docker Desktop had 14 running containers
+  owned by seven archived Dofek workspaces. Docker's Compose working-directory
+  labels matched Paseo's archived workspace records. The containers accounted
+  for about 2.2 GiB in `docker stats`, including 1.1 GiB from the unhealthy
+  ClickHouse instance in `placid-armadillo`.
+  [Docker memory accounting](https://docs.docker.com/reference/cli/docker/container/stats/).
+- **Cause.** The archive script's project list omitted
+  `noxious-goat-deletion-qualification`, a custom project created from the
+  `noxious-goat` worktree. The other six projects used names covered by the
+  hook. Their archive requests predated the retained daemon logs, leaving
+  the reason for the missed cleanup unresolved. Paseo can record the archive
+  even when teardown fails. The containers were created before archive and
+  configured with the `unless-stopped` restart policy.
+  [Archive script](../scripts/workspace-archive.ts)
+  · [Paseo teardown](https://paseo.sh/docs/worktrees#setup-and-teardown).
+- **Recovery and validation.** Stopped and removed the 14 containers by ID.
+  After confirming the volumes had no container references, removed 23 named
+  volumes with matching Compose project labels. Docker listed no containers
+  from the seven workspaces afterward and retained the other 75 volumes.
+  [Docker container removal](https://docs.docker.com/reference/cli/docker/container/rm/)
+  · [Docker volume removal](https://docs.docker.com/reference/cli/docker/volume/rm/).
+- **Follow-up.** Discover additional Compose projects by exact workspace
+  directory during teardown and check for remaining containers after shutdown.
+  A read-only check against Paseo's active workspace list can detect leftovers
+  when teardown fails before that verification runs. A regression test should
+  cover a custom-suffix project and a neighboring workspace.
+  [Docker container label filters](https://docs.docker.com/reference/cli/docker/container/ls/#label)
+  · [Workspace lifecycle runbook](development-environment.md#workspace-setup-and-archive).
