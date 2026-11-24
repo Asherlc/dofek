@@ -1,10 +1,10 @@
 import { mapHrZones } from "@dofek/zones/zones";
-import { z } from "zod";
 import {
-  activityMetricParams,
   activityMetricSamplesSql,
   activityMetricSourceIdSql,
-} from "./activity-metric-sources-repository.ts";
+} from "dofek/db/activity-metric-query";
+import { z } from "zod";
+import { activityMetricParams } from "./activity-metric-sources-repository.ts";
 import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
 import { heartRateZoneCountColumns, heartRateZoneSqlParams } from "./heart-rate-zone-sql.ts";
 

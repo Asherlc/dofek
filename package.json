@@ -38,6 +38,7 @@
     "./billing/stripe-client": "./src/billing/stripe-client.ts",
     "./db": "./src/db/index.ts",
     "./db/account-erasure": "./src/db/account-erasure.ts",
+    "./db/activity-metric-query": "./src/db/activity-metric-query.ts",
     "./db/planned-workout-repository": "./src/db/planned-workout-repository.ts",
     "./db/provider-operation-fence": "./src/db/provider-operation-fence.ts",
     "./db/clickhouse": "./src/db/clickhouse.ts",
