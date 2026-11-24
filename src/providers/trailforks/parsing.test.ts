@@ -171,6 +171,29 @@ describe("parseTrailforksActivityListResult", () => {
     expect(parsed[0]).not.toHaveProperty("endedAt");
   });
 
+  it("preserves explicit null title and end time so refreshes can clear them", () => {
+    const parsed = parseTrailforksActivityListResult(
+      structuredResult({
+        activities: [
+          {
+            id: 8,
+            title: null,
+            started_at: "2026-09-19T16:30:00Z",
+            ended_at: null,
+          },
+        ],
+      }),
+    );
+
+    expect(parsed[0]).toMatchObject({
+      externalId: "8",
+      name: null,
+      endedAt: null,
+    });
+    expect(Object.hasOwn(parsed[0] ?? {}, "name")).toBe(true);
+    expect(Object.hasOwn(parsed[0] ?? {}, "endedAt")).toBe(true);
+  });
+
   it("accepts an empty activities list", () => {
     expect(parseTrailforksActivityListResult(structuredResult({ activities: [] }))).toEqual([]);
   });

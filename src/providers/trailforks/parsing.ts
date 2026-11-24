@@ -47,11 +47,17 @@ export interface ParsedTrailforksActivity {
   externalId: string;
   /** Present only when upstream supplied sport/activitytype; omitted fields stay undefined. */
   activityType?: ProviderActivityType;
-  /** Present only when upstream supplied title/name. */
-  name?: string;
+  /**
+   * Title/name when upstream supplied one. Explicit `null` clears a stored title on
+   * refresh; omission leaves the stored value unchanged.
+   */
+  name?: string | null;
   startedAt: Date;
-  /** Present only when upstream supplied a reliable end timestamp. */
-  endedAt?: Date;
+  /**
+   * End timestamp when upstream supplied a reliable one. Explicit `null` clears a
+   * stored end on refresh; omission leaves the stored value unchanged.
+   */
+  endedAt?: Date | null;
   /** Unmodified upstream activity object for provenance. */
   raw: Record<string, unknown>;
 }
@@ -70,6 +76,22 @@ function readString(row: Record<string, unknown>, ...keys: string[]): string | n
     if (typeof value === "string" && value.trim().length > 0) return value.trim();
   }
   return null;
+}
+
+/**
+ * Prefer a valid alias via readString; otherwise an explicit null across aliases
+ * clears the field, and absence omits it.
+ */
+function optionalClearedString(
+  row: Record<string, unknown>,
+  ...keys: string[]
+): string | null | undefined {
+  const value = readString(row, ...keys);
+  if (value !== null) return value;
+  for (const key of keys) {
+    if (Object.hasOwn(row, key) && row[key] === null) return null;
+  }
+  return undefined;
 }
 
 function readNumber(row: Record<string, unknown>, ...keys: string[]): number | null {
@@ -121,17 +143,24 @@ function startedAtFromRow(row: Record<string, unknown>): Date | null {
   );
 }
 
-function endedAtFromRow(row: Record<string, unknown>): Date | undefined {
-  // Only accept explicitly reliable end timestamps — never fabricate from durations.
-  return (
+const ENDED_AT_OFFSET_KEYS = ["ended_at", "end_time", "endedAt", "endTime"] as const;
+const ENDED_AT_UNIX_KEYS = ["end_timestamp", "endTimestamp"] as const;
+
+function endedAtFromRow(row: Record<string, unknown>): Date | null | undefined {
+  // Prefer a valid alias; never fabricate ends from durations.
+  const parsed =
     parseOffsetDate(row.ended_at) ??
     parseOffsetDate(row.end_time) ??
     parseOffsetDate(row.endedAt) ??
     parseOffsetDate(row.endTime) ??
     parseUnixSeconds(row.end_timestamp) ??
-    parseUnixSeconds(row.endTimestamp) ??
-    undefined
-  );
+    parseUnixSeconds(row.endTimestamp);
+  if (parsed) return parsed;
+
+  for (const key of [...ENDED_AT_OFFSET_KEYS, ...ENDED_AT_UNIX_KEYS]) {
+    if (Object.hasOwn(row, key) && row[key] === null) return null;
+  }
+  return undefined;
 }
 
 function activityTypeFromRow(row: Record<string, unknown>): ProviderActivityType | undefined {
@@ -163,11 +192,11 @@ function parseActivityRow(value: unknown): ParsedTrailforksActivity {
   if (!externalId || !startedAt) throw new TrailforksActivityParseError();
 
   const endedAt = endedAtFromRow(value);
-  if (endedAt && endedAt.getTime() < startedAt.getTime()) {
+  if (endedAt != null && endedAt.getTime() < startedAt.getTime()) {
     throw new TrailforksActivityParseError();
   }
 
-  const name = readString(value, "title", "name") ?? undefined;
+  const name = optionalClearedString(value, "title", "name");
   const activityType = activityTypeFromRow(value);
 
   return {

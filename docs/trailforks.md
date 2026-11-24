@@ -12,7 +12,10 @@ within the requested sync window. Full account history depends on which
 activities Trailforks returns. Each activity retains its source record.
 An activity needs a stable source ID and a start time with a known offset.
 The listing is additive. A missing activity does not retire a previously
-imported record.
+imported record. An omitted title or end time keeps its stored value on refresh.
+An explicit upstream null clears it. Dofek validates the whole listing before
+writing and rejects it if any row is malformed. After validation, Dofek reports
+record-specific PostgreSQL data errors and continues importing later activities.
 
 ## Configure an OAuth client
 

@@ -196,6 +196,49 @@ describe("TrailforksProvider.sync (PostgreSQL + MCP protocol)", { concurrent: fa
     expect(rows[0]?.raw).toEqual(SYNTHETIC_SPARSE_REPLAY);
   });
 
+  it("clears stored title and end time when a refresh sends explicit nulls", async () => {
+    const { userId } = await createConnectedUser("null-clear");
+    const rich = createTrailforksMswHarness(() => ({
+      content: [],
+      structuredContent: { activities: [SYNTHETIC_IN_WINDOW] },
+    }));
+    server.use(rich.handler);
+    const provider = new TrailforksProvider();
+    await sync(userId, provider);
+
+    server.resetHandlers();
+    const cleared = createTrailforksMswHarness(() => ({
+      content: [],
+      structuredContent: {
+        activities: [
+          {
+            id: 42_001,
+            title: null,
+            started_at: "2026-09-19T16:30:00-07:00",
+            ended_at: null,
+            activitytype: 1,
+            link: "https://www.trailforks.com/ridelog/view/42001/",
+          },
+        ],
+      },
+    }));
+    server.use(cleared.handler);
+
+    const result = await sync(userId, provider);
+    const rows = await activitiesFor(userId);
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      externalId: "42001",
+      name: null,
+      endedAt: null,
+      canonicalType: "cycling",
+      modality: "mountain",
+    });
+  });
+
   it("writes nothing when tokens are missing", async () => {
     const userId = randomUUID();
     await context.db.insert(userProfile).values({ id: userId, name: "Disconnected Trailforks" });
@@ -338,5 +381,78 @@ describe("TrailforksProvider.sync (PostgreSQL + MCP protocol)", { concurrent: fa
     expect(result.errors[0]?.message).toBe("Trailforks returned an invalid activity list.");
     expect(rows).toHaveLength(1);
     expect(rows[0]?.externalId).toBe("42001");
+  });
+
+  it("writes nothing from a mixed listing that includes a valid sibling of a malformed row", async () => {
+    const { userId } = await createConnectedUser("mixed-malformed");
+    const harness = createTrailforksMswHarness(() => ({
+      content: [],
+      structuredContent: {
+        activities: [
+          { id: 9, started_at: "2026-09-19" },
+          {
+            id: 42_003,
+            title: "Valid sibling",
+            started_at: "2026-09-20T10:00:00-07:00",
+            activitytype: 6,
+            link: "https://www.trailforks.com/ridelog/view/42003/",
+          },
+        ],
+      },
+    }));
+    server.use(harness.handler);
+
+    const result = await sync(userId, new TrailforksProvider());
+    const rows = await activitiesFor(userId);
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toBe("Trailforks returned an invalid activity list.");
+    expect(rows).toEqual([]);
+  });
+
+  it("continues after a real PostgreSQL row-data failure from NUL in raw JSON", async () => {
+    const { userId } = await createConnectedUser("nul-raw");
+    const nulLeakMarker = "trailforks-nul-marker-9f3a";
+    const harness = createTrailforksMswHarness(() => ({
+      content: [],
+      structuredContent: {
+        activities: [
+          {
+            id: 42_010,
+            title: "NUL in raw",
+            started_at: "2026-09-19T16:30:00-07:00",
+            activitytype: 1,
+            link: "https://www.trailforks.com/ridelog/view/42010/",
+            note: `${nulLeakMarker}\u0000payload`,
+          },
+          {
+            id: 42_011,
+            title: "Valid sibling",
+            started_at: "2026-09-20T10:00:00-07:00",
+            activitytype: 6,
+            link: "https://www.trailforks.com/ridelog/view/42011/",
+          },
+        ],
+      },
+    }));
+    server.use(harness.handler);
+
+    const result = await sync(userId, new TrailforksProvider());
+    const rows = await activitiesFor(userId);
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toEqual([
+      {
+        message: "Failed to save a Trailforks activity.",
+        externalId: "42010",
+      },
+    ]);
+    expect(JSON.stringify(result.errors)).not.toContain(nulLeakMarker);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      externalId: "42011",
+      name: "Valid sibling",
+    });
   });
 });

@@ -4,6 +4,8 @@ import {
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
+import { DrizzleQueryError } from "drizzle-orm";
+import { DatabaseError } from "pg";
 import type { TokenSet } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
@@ -64,6 +66,17 @@ function rethrowRetryableFailure(error: unknown): void {
   if (error instanceof Error && error.name === "AbortError") throw error;
 }
 
+/** Continue only for positively known PostgreSQL data-exception SQLSTATEs (class 22). */
+function isContinuableRowDataFailure(error: unknown): boolean {
+  if (!(error instanceof DrizzleQueryError)) return false;
+  const cause = error.cause;
+  return (
+    cause instanceof DatabaseError &&
+    typeof cause.code === "string" &&
+    /^22[0-9A-Z]{3}$/.test(cause.code)
+  );
+}
+
 function fallbackMessage(phase: SyncPhase): string {
   if (phase === "resolve") return "Trailforks is not connected.";
   if (phase === "persist") return "Failed to save a Trailforks activity.";
@@ -109,7 +122,10 @@ function toSyncError(error: unknown, phase: SyncPhase, externalId?: string): Syn
 
 const FALLBACK_ACTIVITY_TYPE = resolveProviderActivityType("unknown", "other");
 
-/** Insert always materializes defaults; conflict update omits absent title/end/sport so Drizzle skips them. */
+/**
+ * Insert materializes defaults. Conflict update omits absent title/end/sport so
+ * Drizzle skips them; explicit `null` title/end clear the stored source fields.
+ */
 function activityWriteValues(
   userId: string,
   providerId: string,
@@ -179,6 +195,7 @@ export class TrailforksProvider implements SyncProvider {
     signal?.throwIfAborted();
     const startedAtMs = Date.now();
     let recordsSynced = 0;
+    const errors: SyncError[] = [];
     const userId = requireUserId(run);
     const { db, window } = run;
     let client: TrailforksActivityClient | null = null;
@@ -210,14 +227,21 @@ export class TrailforksProvider implements SyncProvider {
         signal?.throwIfAborted();
         persistExternalId = activity.externalId;
         const { insert, update } = activityWriteValues(userId, this.id, this.name, activity);
-        await upsertProviderActivity(db, insert, update);
-        recordsSynced += 1;
+        try {
+          await upsertProviderActivity(db, insert, update);
+          recordsSynced += 1;
+        } catch (error: unknown) {
+          signal?.throwIfAborted();
+          rethrowRetryableFailure(error);
+          if (!isContinuableRowDataFailure(error)) throw error;
+          errors.push(toSyncError(error, "persist", activity.externalId));
+        }
       }
 
       return {
         provider: this.id,
         recordsSynced,
-        errors: [],
+        errors,
         duration: Date.now() - startedAtMs,
       };
     } catch (error: unknown) {
@@ -226,7 +250,10 @@ export class TrailforksProvider implements SyncProvider {
       return {
         provider: this.id,
         recordsSynced,
-        errors: [toSyncError(error, phase, phase === "persist" ? persistExternalId : undefined)],
+        errors: [
+          ...errors,
+          toSyncError(error, phase, phase === "persist" ? persistExternalId : undefined),
+        ],
         duration: Date.now() - startedAtMs,
       };
     } finally {

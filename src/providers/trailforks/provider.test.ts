@@ -3,6 +3,8 @@ import {
   ProviderRequestTimeoutError,
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
+import { DrizzleQueryError } from "drizzle-orm";
+import { DatabaseError } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TokenSet } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
@@ -20,6 +22,12 @@ import { SyncWindow } from "../sync-window.ts";
 import { TrailforksActivityClient, TrailforksMcpToolError } from "./client.ts";
 import { TrailforksActivityParseError } from "./parsing.ts";
 import { TrailforksProvider } from "./provider.ts";
+
+function rowDataPersistFailure(): DrizzleQueryError {
+  const cause = new DatabaseError("unsupported Unicode escape sequence", 0, "error");
+  cause.code = "22021";
+  return new DrizzleQueryError("insert into fitness.activity", [], cause);
+}
 
 const telemetryMocks = vi.hoisted(() => ({
   captureException: vi.fn(),
@@ -308,7 +316,7 @@ describe("TrailforksProvider.sync sanitization", () => {
     expect(result.errors[0]?.cause).not.toHaveProperty("cause");
   });
 
-  it("returns typed MCP and parse failures with sanitized messages", async () => {
+  it("returns typed MCP and envelope parse failures with sanitized messages", async () => {
     vi.spyOn(TrailforksActivityClient, "connect").mockResolvedValue(
       stubClient({
         listMyActivities: vi.fn(async () => {
@@ -327,7 +335,7 @@ describe("TrailforksProvider.sync sanitization", () => {
       stubClient({
         listMyActivities: vi.fn(async () => ({
           content: [],
-          structuredContent: { activities: [{ id: 1, started_at: "2026-09-19" }] },
+          structuredContent: {},
         })),
       }),
     );
@@ -413,7 +421,7 @@ describe("TrailforksProvider.sync sanitization", () => {
     expect(update?.activityType).toBeUndefined();
   });
 
-  it("aborts on the first write failure without attaching raw causes and keeps earlier recordsSynced", async () => {
+  it("continues after a known PostgreSQL row-data persist failure without attaching raw causes", async () => {
     const close = vi.fn(async () => undefined);
     vi.spyOn(TrailforksActivityClient, "connect").mockResolvedValue(
       stubClient({
@@ -423,6 +431,7 @@ describe("TrailforksProvider.sync sanitization", () => {
             activities: [
               activityPayload(1, "2026-09-10T12:00:00Z"),
               activityPayload(2, "2026-09-11T12:00:00Z"),
+              activityPayload(3, "2026-09-12T12:00:00Z"),
             ],
           },
         })),
@@ -431,11 +440,12 @@ describe("TrailforksProvider.sync sanitization", () => {
     );
     upsertProviderActivityMock
       .mockResolvedValueOnce({ id: "row-1" })
-      .mockRejectedValueOnce(new Error('insert failed: {"raw":"private-activity"}'));
+      .mockRejectedValueOnce(rowDataPersistFailure())
+      .mockResolvedValueOnce({ id: "row-3" });
 
     const result = await new TrailforksProvider().sync(syncRun({ userId: "user-1" }));
 
-    expect(result.recordsSynced).toBe(1);
+    expect(result.recordsSynced).toBe(2);
     expect(result.errors).toEqual([
       {
         message: "Failed to save a Trailforks activity.",
@@ -449,9 +459,47 @@ describe("TrailforksProvider.sync sanitization", () => {
         extra: { errorName: "Error", externalId: "2" },
       },
     );
-    expect(JSON.stringify(telemetryMocks.captureException.mock.calls)).not.toContain(
-      "private-activity",
+    expect(JSON.stringify(telemetryMocks.captureException.mock.calls)).not.toContain("22021");
+    expect(upsertProviderActivityMock).toHaveBeenCalledTimes(3);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("keeps collected known row-data errors and stops on an unknown persist failure", async () => {
+    const close = vi.fn(async () => undefined);
+    vi.spyOn(TrailforksActivityClient, "connect").mockResolvedValue(
+      stubClient({
+        listMyActivities: vi.fn(async () => ({
+          content: [],
+          structuredContent: {
+            activities: [
+              activityPayload(1, "2026-09-10T12:00:00Z"),
+              activityPayload(2, "2026-09-11T12:00:00Z"),
+              activityPayload(3, "2026-09-12T12:00:00Z"),
+            ],
+          },
+        })),
+        close,
+      }),
     );
+    upsertProviderActivityMock
+      .mockRejectedValueOnce(rowDataPersistFailure())
+      .mockRejectedValueOnce(new Error('insert failed: {"raw":"private-activity"}'));
+
+    const result = await new TrailforksProvider().sync(syncRun({ userId: "user-1" }));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toEqual([
+      {
+        message: "Failed to save a Trailforks activity.",
+        externalId: "1",
+      },
+      {
+        message: "Failed to save a Trailforks activity.",
+        externalId: "2",
+      },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("private-activity");
+    expect(JSON.stringify(telemetryMocks.captureException.mock.calls)).not.toContain("22021");
     expect(upsertProviderActivityMock).toHaveBeenCalledTimes(2);
     expect(close).toHaveBeenCalledOnce();
   });
