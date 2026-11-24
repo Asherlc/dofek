@@ -39,6 +39,8 @@ function ownedContainers(rows: ComposeContainerRow[]): ComposeContainerRow[] {
 }
 
 function customProjectArguments(owned: ComposeContainerRow[]): string[][] {
+  // Standard projects use fixed Compose files. Their containers can have
+  // different config_files labels when an overlay adds services later.
   const configLabels = new Map<string, string>();
   for (const { project, configFiles } of owned) {
     if (standardProjectNames.has(project)) {

@@ -3,6 +3,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+import { captureException } from "../src/lib/error-reporting.ts";
 import { listComposeContainers } from "./compose-container-inventory.ts";
 
 interface ToolCheck {
@@ -203,6 +204,9 @@ function checkPaseoComposeOrphans(): void {
       `Warning: Stale Compose projects from inactive Paseo workspaces:\n${[...staleProjects].sort().join("\n")}\n`,
     );
   } catch (error) {
+    captureException(new Error("Paseo Compose inventory check failed"), {
+      tags: { source: "dev-environment-doctor" },
+    });
     process.stderr.write(
       `Warning: Could not check for stale Paseo Compose projects: ${
         error instanceof Error ? error.message : String(error)

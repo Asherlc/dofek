@@ -143,6 +143,38 @@ describe("workspace archive", () => {
     ]);
   });
 
+  it("permits mixed config file labels on owned standard stacks using the fixed file list", async () => {
+    mockArchiveInventory({
+      beforeShutdown: [
+        {
+          name: `${workspaceProject}-redis-1`,
+          project: workspaceProject,
+          directory: workspaceDirectory,
+          configFiles: `${workspaceDirectory}/docker-compose.yml`,
+        },
+        {
+          name: `${workspaceProject}-peerdb-catalog-1`,
+          project: workspaceProject,
+          directory: workspaceDirectory,
+          configFiles: `${workspaceDirectory}/docker-compose.yml,${workspaceDirectory}/docker-compose.peerdb.yml`,
+        },
+      ],
+    });
+
+    await import("./workspace-archive.ts");
+
+    const pnpmArgumentLists = vi
+      .mocked(spawnSync)
+      .mock.calls.filter(([command]) => command === "pnpm")
+      .map(([, arguments_]) => spawnArguments(arguments_));
+
+    expect(pnpmArgumentLists).toEqual([
+      ["compose", "--", ...defaultFiles, ...shutdown],
+      ["compose", "--", "--project-suffix", "e2e", "-f", "docker-compose.e2e.yml", ...shutdown],
+      ["compose", "--", "--project-suffix", "peerdb-integration", ...defaultFiles, ...shutdown],
+    ]);
+  });
+
   it("rejects custom projects with conflicting recorded Compose config file lists", async () => {
     mockArchiveInventory({
       beforeShutdown: [

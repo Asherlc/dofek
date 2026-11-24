@@ -65,15 +65,17 @@ Merge configuration changes into the base branch before relying on them in
 new workspaces.
 
 Archive removes containers, orphan services, networks, and declared volumes
-for `<workspace>`, `<workspace>-e2e`, and `<workspace>-peerdb-integration`,
-then any additional Compose projects with a wrapper suffix and a container whose
-`com.docker.compose.project.working_dir` label matches the archived workspace
-directory. Custom projects reuse their recorded
-`com.docker.compose.project.config_files` labels and project-name suffix with
-the existing Compose wrapper. Teardown stops with an error when project ownership
-or the recorded config files are ambiguous. It also reports any owned containers
-that remain after shutdown. Paseo can still mark the workspace archived when
-teardown fails. See the
+for `<workspace>`, `<workspace>-e2e`, and `<workspace>-peerdb-integration`
+using their fixed Compose file lists. Adding an overlay can give containers in
+the same standard project different file labels, and the fixed list still
+covers the full stack. The hook discovers extra projects by matching the
+`com.docker.compose.project.working_dir` label to the workspace directory.
+For those projects, it passes the recorded `com.docker.compose.project.config_files`
+labels and the project-name suffix to the Compose wrapper. Ambiguous ownership
+blocks teardown for any target, and conflicting file labels block teardown for
+discovered projects.
+Teardown also reports any owned containers that remain after shutdown. Paseo
+can still mark the workspace archived when teardown fails. See the
 [cleanup command](../scripts/workspace-archive.ts),
 [Compose labels](https://github.com/docker/compose/blob/v5.3.1/pkg/api/labels.go), and
 [Compose shutdown reference](https://docs.docker.com/reference/cli/docker/compose/down/).
