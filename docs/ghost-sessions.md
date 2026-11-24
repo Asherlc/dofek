@@ -1,8 +1,9 @@
 <!-- cspell:words osmtags traversability -->
 # Ghost Sessions
 
-Working notes for Geoapify map-matching qualification (Task 1) and later
-operator guidance. Design and implementation plan:
+Ghost Sessions compares time on recorded routes, shared stretches, named roads
+and trails, and unnamed climbs. The design and implementation plan describe
+the source selection and comparison rules.
 
 - [Ghost Sessions design](superpowers/specs/2026-11-24-ghost-sessions-design.md)
 - [Ghost Sessions plan](superpowers/plans/2026-11-24-ghost-sessions.md)
@@ -407,6 +408,54 @@ production Geoapify project:
 Published Free production use remains limited per the Terms. Prefer the
 dashboard balance plus the documented credit formula over probe success alone.
 
+## History and replay operations
+
+The analytics build advances Ghost Sessions after activity GPS preparation.
+Each run indexes up to 16 dirty tracks and checks up to two anchors. An anchor
+can advance one page of up to 25 candidates per run and retain up to 32
+comparisons on that page. History checks cover up to 256 eligible earlier
+activity groups. Tracks above 20,000 GPS readings are over the processing
+limit. Each replay contains up to 96 positions and keeps recorded stops.
+[Track index](../src/analytics/ghost-track-index.ts) ·
+[History runner](../src/analytics/ghost-session-history-runner.ts) ·
+[History evidence](../src/analytics/ghost-history-evidence.ts) ·
+[Track loader](../src/db/activity-ghost-track.ts) ·
+[Page projector](../src/analytics/ghost-sessions-projector.ts) ·
+[Route matcher](../src/analytics/ghost-route-matching.ts)
+
+For one account and canonical activity, inspect the latest metadata using
+bound UUID parameters. Keep diagnostic output limited to status and counts.
+
+```sql
+SELECT status, point_count
+FROM analytics.ghost_track FINAL
+WHERE user_id = {userId:UUID} AND activity_id = {activityId:UUID};
+
+SELECT anchor_status, source_history_coverage, history_coverage,
+       isNotNull(next_cursor) AS has_more_pages, comparison_limited
+FROM analytics.ghost_session_history FINAL
+WHERE user_id = {userId:UUID} AND activity_id = {activityId:UUID};
+```
+
+A missing progress row or pending anchor can wait for the next analytics
+build. Run `pnpm analytics:build` to advance one bounded pass in a configured
+local workspace. For stale normalized GPS or group membership, use the
+existing activity integrity repair with a reviewed owner and activity scope,
+then let the regular analytics build process that scope's updated evidence.
+[Activity integrity repair](activity-data-integrity-repair-runbook.md) ·
+[Scoped activity input](../analytics/README.md#scoped-activity-input)
+
+Partial history can contain valid matches. A first visit or previous-best
+suggestion requires complete visible history. Section preparation checks up to
+eight recorded sections against eight earlier tracks and earlier passes in
+the anchor workout. Each section retains up to four passes and reports
+partial history. Unnamed climbs use up to 20,000 selected-recording altitude
+observations in a window of up to 24 hours. Climb processing runs independently
+of map-label consent and uses current altitude evidence before returning a
+saved comparison.
+[Section limits](../src/lib/ghost-route-section-results.ts) ·
+[Altitude evidence](../src/db/activity-ghost-scalar-sample.ts)
+
 ## Map label operations
 
 `GHOST_MAP_LABELS_REGION` defaults to `disabled`. Keep it disabled until the
@@ -424,7 +473,8 @@ gaps. Geoapify receives coordinates, travel mode and the switch that requests
 OpenStreetMap tags. The saved names use the corresponding recorded GPS
 boundaries and credit OpenStreetMap contributors and Geoapify.
 
-The label cache expires after 24 hours. Each entry belongs to the current
+The label cache expires 24 hours after the original result. Preparing timed
+comparisons preserves that deadline. Each entry belongs to the current
 account, recording version and consent revision. Before dispatch and
 publication, the worker checks current consent, source provenance and
 ownership. Turning labels off expires the account's entries and invalidates
