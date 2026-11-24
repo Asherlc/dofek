@@ -7,9 +7,66 @@ struct ContentView: View {
     @ObservedObject var transferManager: TransferManager
     @ObservedObject var sessionDelegate: WatchSessionDelegate
 
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @Environment(\.redactionReasons) private var redactionReasons
+
+    private var showsGenericTransferLabel: Bool {
+        redactionReasons.contains(.privacy)
+            || scenePhase != .active
+            || isLuminanceReduced
+    }
+
     var body: some View {
+        ZStack(alignment: .topLeading) {
+            activeTransferContent
+                .opacity(showsGenericTransferLabel ? 0 : 1)
+                .accessibilityHidden(showsGenericTransferLabel)
+                .allowsHitTesting(!showsGenericTransferLabel)
+
+            if showsGenericTransferLabel {
+                Text("iPhone transfer")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding()
+            }
+        }
+        // Keep session/recording setup on this stable outer view so wrist
+        // dimming and privacy redaction do not re-register callbacks or restart the task.
+        .task {
+            // Activate WCSession on first appearance
+            sessionDelegate.activate()
+
+            // Handle sync requests from iPhone
+            sessionDelegate.onSyncRequested = { [weak transferManager = transferManager] in
+                transferManager?.transferNewSamples()
+            }
+
+            // Handle recording requests from iPhone
+            sessionDelegate.onRecordingRequested = {
+                [weak recorder = recorder,
+                 weak gyroscopeRecorder = gyroscopeRecorder,
+                 weak altimeterRecorder = altimeterRecorder] in
+                recorder?.startRecording()
+                gyroscopeRecorder?.startRecording()
+                altimeterRecorder?.startRecording()
+            }
+
+            // Start recording immediately
+            recorder.startRecording()
+            gyroscopeRecorder.startRecording()
+            altimeterRecorder.startRecording()
+        }
+    }
+
+    private var activeTransferContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                transferSummarySection
+
+                Divider()
+
                 // Accelerometer status
                 Section {
                     HStack {
@@ -136,7 +193,7 @@ struct ContentView: View {
 
                 Divider()
 
-                // Actions
+                // Actions below first-screen content
                 VStack(spacing: 8) {
                     if !recorder.isRecording {
                         Button {
@@ -147,39 +204,53 @@ struct ContentView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.green)
                     }
-
-                    Button {
-                        transferManager.transferNewSamples()
-                    } label: {
-                        Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(transferManager.isTransferring)
                 }
                 .frame(maxWidth: .infinity)
             }
             .padding()
         }
-        .task {
-            // Activate WCSession on first appearance
-            sessionDelegate.activate()
+    }
 
-            // Handle sync requests from iPhone
-            sessionDelegate.onSyncRequested = { [weak transferManager] in
-                transferManager?.transferNewSamples()
+    private var transferSummarySection: some View {
+        let status = transferManager.phoneTransferStatus
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("iPhone transfer")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Text(status.title)
+                .font(.headline)
+                .foregroundStyle(statusColor(for: status))
+                .accessibilityAddTraits(.isHeader)
+
+            Text(status.detail)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Button {
+                transferManager.transferNewSamples()
+            } label: {
+                Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                    .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.bordered)
+            .disabled(!transferManager.canRequestManualSync)
+            .accessibilityLabel("Sync Now")
+            .accessibilityHint("Queues new Watch motion files for the paired iPhone")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
-            // Handle recording requests from iPhone
-            sessionDelegate.onRecordingRequested = { [weak recorder, weak gyroscopeRecorder, weak altimeterRecorder] in
-                recorder?.startRecording()
-                gyroscopeRecorder?.startRecording()
-                altimeterRecorder?.startRecording()
-            }
-
-            // Start recording immediately
-            recorder.startRecording()
-            gyroscopeRecorder.startRecording()
-            altimeterRecorder.startRecording()
+    private func statusColor(for status: WatchPhoneTransferStatus) -> Color {
+        switch status {
+        case .empty:
+            return .green
+        case .waitingForPhone, .preparing:
+            return .orange
+        case .failed:
+            return .red
+        case .paused, .unavailable:
+            return .primary
         }
     }
 }

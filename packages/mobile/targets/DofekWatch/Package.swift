@@ -36,6 +36,7 @@ let package = Package(
                 "AccelerometerTransferCursor.swift",
                 "GyroscopeSampleBuffer.swift",
                 "WatchAccountStateStore.swift",
+                "WatchPhoneTransferStatus.swift",
                 "WatchRecordingCallbackFence.swift",
             ]
         ),
@@ -53,6 +54,7 @@ let package = Package(
                 "AccelerometerTransferCursor.test.swift",
                 "GyroscopeSampleBuffer.test.swift",
                 "WatchAccountStateStore.test.swift",
+                "WatchPhoneTransferStatus.test.swift",
                 "WatchRecordingCallbackFence.test.swift",
             ]
         ),

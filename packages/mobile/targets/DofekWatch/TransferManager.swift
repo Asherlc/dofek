@@ -27,6 +27,29 @@ final class TransferManager: ObservableObject {
 
     @Published var isTransferring: Bool = false
     @Published var lastTransferStatus: String = "Idle"
+    @Published private var hasFailedAttempt = false
+
+    /// Glance status from live account, session, queue, and transfer flags.
+    var phoneTransferStatus: WatchPhoneTransferStatus {
+        WatchPhoneTransferStatus.resolve(
+            isSyncEnabled: accountStateStore.isSyncEnabled,
+            isSessionActivated: isSessionActivated,
+            isCompanionAvailable: isCompanionAvailable,
+            hasOutstandingFileTransfers: hasOutstandingFileTransfers,
+            isTransferring: isTransferring,
+            hasFailedAttempt: hasFailedAttempt
+        )
+    }
+
+    /// Whether Sync Now may start a new request. Uses the concurrent-transfer
+    /// guard plus account/session/companion availability — not the WCSession
+    /// file queue, which can still hold altitude after `isTransferring` clears.
+    var canRequestManualSync: Bool {
+        !isTransferring
+            && accountStateStore.isSyncEnabled
+            && isSessionActivated
+            && isCompanionAvailable
+    }
 
     init(
         accelerometerRecorder: AccelerometerRecorder,
@@ -69,21 +92,36 @@ final class TransferManager: ObservableObject {
             lastTransferStatus = "Account sync disabled"
             return
         }
-        guard session.activationState == .activated else {
+        guard isSessionActivated else {
             lastTransferStatus = "Session not active"
             return
         }
-        guard session.isReachable || session.isCompanionAppInstalled else {
+        guard isCompanionAvailable else {
             lastTransferStatus = "iPhone not available"
             return
         }
 
+        hasFailedAttempt = false
         isTransferring = true
         lastTransferStatus = "Querying samples..."
 
         workQueue.async { [weak self] in
             self?.performTransfer()
         }
+    }
+
+    private var isSessionActivated: Bool {
+        session.activationState == .activated
+    }
+
+    private var isCompanionAvailable: Bool {
+        guard isSessionActivated else { return false }
+        return session.isReachable || session.isCompanionAppInstalled
+    }
+
+    private var hasOutstandingFileTransfers: Bool {
+        guard isSessionActivated else { return false }
+        return !session.outstandingFileTransfers.isEmpty
     }
 
     private func performTransfer() {
@@ -192,6 +230,7 @@ final class TransferManager: ObservableObject {
         }
 
         DispatchQueue.main.async { [weak self] in
+            self?.hasFailedAttempt = true
             self?.lastTransferStatus = "Error: \(error.localizedDescription)"
             self?.isTransferring = false
         }
@@ -337,6 +376,10 @@ final class TransferManager: ObservableObject {
                 }
                 return
             }
+            // Queue changed with no other @Published write on this path.
+            DispatchQueue.main.async { [weak self] in
+                self?.objectWillChange.send()
+            }
         } catch {
             if let jsonURL {
                 try? FileManager.default.removeItem(at: jsonURL)
@@ -345,6 +388,7 @@ final class TransferManager: ObservableObject {
                 try? FileManager.default.removeItem(at: compressedURL)
             }
             DispatchQueue.main.async { [weak self] in
+                self?.hasFailedAttempt = true
                 self?.lastTransferStatus = "Altitude transfer error: \(error.localizedDescription)"
             }
         }
@@ -365,12 +409,19 @@ final class TransferManager: ObservableObject {
 
         if let error = error {
             DispatchQueue.main.async { [weak self] in
+                self?.hasFailedAttempt = true
                 self?.lastTransferStatus = "Altitude transfer error: \(error.localizedDescription)"
             }
             return
         }
 
-        guard let sampleCount else { return }
+        guard let sampleCount else {
+            // Queue drained without an in-memory count or other @Published write.
+            DispatchQueue.main.async { [weak self] in
+                self?.objectWillChange.send()
+            }
+            return
+        }
 
         altimeterRecorder.clearBufferedSamples(count: sampleCount)
 
@@ -398,6 +449,7 @@ final class TransferManager: ObservableObject {
         case let .failed(transferError):
             reportUnexpectedTransferFailure(transferError)
             DispatchQueue.main.async { [weak self] in
+                self?.hasFailedAttempt = true
                 self?.lastTransferStatus =
                     "Transfer error: \(transferError.localizedDescription)"
                 self?.isTransferring = false
@@ -413,6 +465,7 @@ final class TransferManager: ObservableObject {
             )
             reportUnexpectedTransferFailure(metadataError)
             DispatchQueue.main.async { [weak self] in
+                self?.hasFailedAttempt = true
                 self?.lastTransferStatus = "Transfer error: Missing accelerometer cursor"
                 self?.isTransferring = false
             }
@@ -451,6 +504,7 @@ final class TransferManager: ObservableObject {
         pendingAltitudeLock.unlock()
 
         DispatchQueue.main.async { [weak self] in
+            self?.hasFailedAttempt = false
             self?.isTransferring = false
             self?.lastTransferStatus = "Account data cleared"
         }
@@ -465,9 +519,18 @@ final class TransferManager: ObservableObject {
     }
 
     private func enableAccountSync() {
+        let didEnable: Bool
         transferStateLock.lock()
-        accountStateStore.enableSync()
+        didEnable = !accountStateStore.isSyncEnabled
+        if didEnable {
+            accountStateStore.enableSync()
+        }
         transferStateLock.unlock()
+
+        guard didEnable else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.hasFailedAttempt = false
+        }
     }
 
     private func queueAltitudeTransferIfSyncEnabled(
