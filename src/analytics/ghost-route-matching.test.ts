@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { type GhostTrackPoint, matchGhostRoutes } from "./ghost-route-matching.ts";
+import {
+  type GhostTrackPoint,
+  matchGhostRoutes,
+  summarizeGhostTrack,
+} from "./ghost-route-matching.ts";
 
 const degreePerMeter = 180 / (Math.PI * 6_371_000);
 
@@ -62,6 +66,37 @@ const square = [
   [200, 200],
   [0, 200],
 ] as const;
+
+describe("summarizeGhostTrack", () => {
+  it("retains endpoints and exact timing when the recorded route geometry is downsampled", () => {
+    const points = line(0, 4_000);
+    const summary = summarizeGhostTrack(points);
+    expect(summary).toMatchObject({
+      gpsCoverage: "complete",
+      anchor: {
+        start: { timestampMs: 0, distanceMeters: 0 },
+        end: { timestampMs: 200_000 },
+        elapsedMs: 200_000,
+      },
+    });
+    expect(summary.geometry).toHaveLength(1);
+    expect(summary.geometry[0]).toHaveLength(96);
+    expect(summary.geometry[0]?.[0]).toEqual({ lat: 0, lng: 0 });
+    expect(summary.geometry[0]?.at(-1)?.lng).toBeCloseTo(4_000 * degreePerMeter, 12);
+  });
+
+  it("retains separate recorded chunks when a continuous timed route is unavailable", () => {
+    const summary = summarizeGhostTrack([
+      ...line(0, 140),
+      { lat: null, lng: null, timestampMs: 8_000 },
+      ...line(200, 400, 0, 9_000),
+    ]);
+    expect(summary).toMatchObject({ gpsCoverage: "partial", anchor: null });
+    expect(summary.geometry).toHaveLength(2);
+    expect(summary.geometry[0]?.at(-1)?.lng).toBeCloseTo(140 * degreePerMeter, 12);
+    expect(summary.geometry[1]?.[0]?.lng).toBeCloseTo(200 * degreePerMeter, 12);
+  });
+});
 
 describe("matchGhostRoutes", () => {
   it.each([

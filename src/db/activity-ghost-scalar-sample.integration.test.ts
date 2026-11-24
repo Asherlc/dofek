@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { getGhostScalarSamples } from "./activity-ghost-scalar-sample.ts";
+import {
+  getGhostScalarSamples,
+  getMeasuredGhostScalarWindow,
+} from "./activity-ghost-scalar-sample.ts";
 import { createActivitySourceRecordsSql } from "./activity-payload-dbt-source-test-helpers.ts";
 import type { ClickHouseClient } from "./clickhouse.ts";
 import {
@@ -118,6 +121,67 @@ describe("Ghost Sessions scalar evidence", () => {
   afterAll(async () => {
     await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client.close();
+  });
+
+  it("can bound the deduplicated scalar result with a caller-supplied sentinel limit", async () => {
+    await insertSources([sourceRecord(garminMember, "garmin")]);
+    await insertSamples([
+      sample({ scalar: 130 }),
+      sample({ provider_id: "strava", scalar: 190 }),
+      sample({ recorded_at: "2026-09-07 10:05:01.123456", scalar: 140 }),
+      sample({ recorded_at: "2026-09-07 10:05:02.123456", scalar: 150 }),
+    ]);
+    const bounded = await getGhostScalarSamples(queryClient, { ...window, fetchLimit: 2 });
+    expect(bounded.map((row) => row.scalar)).toEqual([130, 140]);
+    expect((await getGhostScalarSamples(queryClient, window)).map((row) => row.scalar)).toEqual([
+      130, 140, 150,
+    ]);
+  });
+
+  it("scopes comparison channels before counting observations against the sentinel", async () => {
+    await insertSources([sourceRecord(garminMember, "garmin")]);
+    await insertSamples([
+      sample({ channel: "speed", scalar: 4 }),
+      sample({ channel: "altitude", scalar: 200 }),
+      sample({ recorded_at: "2026-09-07 10:05:01.123456", scalar: 140 }),
+      sample({ recorded_at: "2026-09-07 10:05:02.123456", channel: "power", scalar: 190 }),
+    ]);
+    const scoped = await getGhostScalarSamples(queryClient, {
+      ...window,
+      channels: ["heart_rate", "power"],
+      fetchLimit: 2,
+    });
+    expect(scoped.map(({ channel, scalar }) => [channel, scalar])).toEqual([
+      ["heart_rate", 140],
+      ["power", 190],
+    ]);
+  });
+
+  it("withholds an over-limit proof and replaces an eligible tombstoned observation in its digest", async () => {
+    const heartRate = sample({ scalar: 130 });
+    const power = sample({ channel: "power", scalar: 200, measurement_kind: "sampled" });
+    await insertSources([sourceRecord(garminMember, "garmin")]);
+    await insertSamples([heartRate, power, sample({ channel: "altitude", scalar: 180 })]);
+    const interval = {
+      activityId,
+      memberActivityId: garminMember,
+      startedAt: window.startedAt,
+      endedAt: window.endedAt,
+    };
+    expect(await getMeasuredGhostScalarWindow(queryClient, userId, interval, 2)).toEqual({
+      rawCount: 2,
+      observationRows: [],
+      proof: null,
+    });
+    const before = await getMeasuredGhostScalarWindow(queryClient, userId, interval, 3);
+    expect(before.proof?.count).toBe(2);
+    expect(before.observationRows).toHaveLength(2);
+    await insertSamples([{ ...heartRate, _peerdb_version: 2, _peerdb_is_deleted: 1 }]);
+    const after = await getMeasuredGhostScalarWindow(queryClient, userId, interval, 3);
+    expect(after.rawCount).toBe(2);
+    expect(after.observationRows).toEqual([[recordedAt, "power", 200, "sampled"]]);
+    expect(after.proof?.digest).toBeDefined();
+    expect(after.proof?.digest).not.toBe(before.proof?.digest);
   });
 
   it("selects Garmin at the original precision when ordinary deduplication picks Strava", async () => {

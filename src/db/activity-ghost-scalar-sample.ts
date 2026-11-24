@@ -17,12 +17,34 @@ const ghostScalarSampleSchema = z.object({
   measurement_kind: z.string(),
 });
 
+const directBleProviders = [BLE_HEART_RATE_PROVIDER_ID, WHOOP_BLE_PROVIDER_ID];
+const independentMemberFilter = `is_deleted = 0
+  AND provider_id != 'strava'
+  AND canonical_type IN ('running', 'cycling')
+  AND (modality IS NULL OR modality NOT IN ('indoor', 'virtual'))
+  AND NOT (
+    provider_id = 'apple_health'
+    AND (
+      lowerUTF8(trim(BOTH ' ' FROM coalesce(source_name, ''))) = 'strava'
+      OR lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(
+        coalesce(raw, '{}'), 'sourceBundle'
+      ))) = 'com.strava.strava'
+    )
+  )`;
+const directBleFilter = `linked_member_id IS NULL
+  AND source_type = 'ble'
+  AND provider_id IN {directBleProviders:Array(String)}
+  AND notEmpty(coalesce(device_id, ''))`;
+const coherentMemberLink = `(member_activity_id IS NULL OR activity_id IS NULL OR member_activity_id = activity_id)`;
+
 interface GhostScalarWindow {
   userId: string;
   activityId: string;
   memberActivityIds: readonly string[];
   startedAt: string;
   endedAt: string;
+  fetchLimit?: number;
+  channels?: readonly z.infer<typeof ghostScalarSampleSchema.shape.channel>[];
 }
 
 /** Reads observations for a verified Ghost activity window. Missing readings stay absent. */
@@ -40,26 +62,14 @@ export async function getGhostScalarSamples(
           )
           AND user_id = {userId:UUID}
           AND group_id = {activityId:UUID}
-          AND is_deleted = 0
-          AND provider_id != 'strava'
-          AND canonical_type IN ('running', 'cycling')
-          AND (modality IS NULL OR modality NOT IN ('indoor', 'virtual'))
-          -- Match the Ghost GPS source-record evidence for Strava imports.
-          AND NOT (
-            provider_id = 'apple_health'
-            AND (
-              lowerUTF8(trim(BOTH ' ' FROM coalesce(source_name, ''))) = 'strava'
-              OR lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(
-                coalesce(raw, '{}'), 'sourceBundle'
-              ))) = 'com.strava.strava'
-            )
-          )
+          AND ${independentMemberFilter}
       ), bounded_samples AS (
         SELECT *, coalesce(member_activity_id, activity_id) AS linked_member_id
         FROM (${activityMetricSamplesSql})
         WHERE channel IN ('heart_rate', 'power', 'speed', 'altitude')
+          ${window.channels === undefined ? "" : "AND channel IN {ghostChannels:Array(String)}"}
           AND provider_id != 'strava'
-          AND (member_activity_id IS NULL OR activity_id IS NULL OR member_activity_id = activity_id)
+          AND ${coherentMemberLink}
       )
       SELECT id, linked_member_id AS member_activity_id, channel,
         formatDateTime(recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at,
@@ -67,17 +77,12 @@ export async function getGhostScalarSamples(
         source_external_id, source_type, measurement_kind
       FROM bounded_samples
       WHERE (linked_member_id, provider_id) IN (SELECT activity_id, provider_id FROM independent_members)
-        OR (
-          linked_member_id IS NULL
-          AND EXISTS (SELECT 1 FROM independent_members)
-          AND source_type = 'ble'
-          AND provider_id IN {directBleProviders:Array(String)}
-          AND notEmpty(coalesce(device_id, ''))
-        )
+        OR (${directBleFilter} AND EXISTS (SELECT 1 FROM independent_members))
       -- Use the ordinary deduped_sensor priority and tie-breaks on eligible candidates.
       ORDER BY bounded_samples.recorded_at, channel, provider_priority, provider_id,
         channel = 'heart_rate' AND measurement_kind = 'estimated', id
-      LIMIT 1 BY channel, bounded_samples.recorded_at`,
+      LIMIT 1 BY channel, bounded_samples.recorded_at
+      ${window.fetchLimit === undefined ? "" : "LIMIT {sampleFetchLimit:UInt32}"}`,
     format: "JSONEachRow",
     query_params: {
       userId: window.userId,
@@ -86,8 +91,143 @@ export async function getGhostScalarSamples(
       windowStartedAt: window.startedAt,
       windowEndedAt: window.endedAt,
       isPointOnly: false,
-      directBleProviders: [BLE_HEART_RATE_PROVIDER_ID, WHOOP_BLE_PROVIDER_ID],
+      directBleProviders,
+      ...(window.channels === undefined ? {} : { ghostChannels: window.channels }),
+      ...(window.fetchLimit === undefined ? {} : { sampleFetchLimit: window.fetchLimit }),
     },
   });
   return ghostScalarSampleSchema.array().parse(await result.json());
+}
+
+export const ghostScalarProofWindowColumns = `window_id UInt16, activity_id UUID,
+  member_activity_id UUID, started_at DateTime64(6, 'UTC'), ended_at DateTime64(6, 'UTC')`;
+export const ghostScalarProofProviders = { directBleProviders };
+
+interface MeasuredWindow {
+  activityId: string;
+  memberActivityId: string;
+  startedAt: string;
+  endedAt: string;
+}
+
+export interface GhostScalarWindowProof extends MeasuredWindow {
+  count: number;
+  digest: string;
+}
+
+export function ghostScalarProofWindowRow(window: MeasuredWindow, index: number) {
+  return {
+    window_id: index,
+    activity_id: window.activityId,
+    member_activity_id: window.memberActivityId,
+    started_at: window.startedAt,
+    ended_at: window.endedAt,
+  };
+}
+
+/** Shared read/write statement proof for bounded internal HR and power windows. */
+export function ghostScalarProofSql(windowKeys: string): string {
+  return `
+    ghost_scalar_members AS MATERIALIZED (
+      SELECT assumeNotNull(group_id) AS group_id, activity_id, provider_id
+      FROM analytics.activity_source_records FINAL
+      WHERE user_id = {userId:UUID}
+        AND (assumeNotNull(group_id), activity_id) IN (
+          SELECT activity_id, member_activity_id FROM ${windowKeys}
+        )
+        AND ${independentMemberFilter}
+    ), ghost_scalar_inputs AS MATERIALIZED (
+      SELECT timed.window_id AS window_id, sample.id AS id, sample.channel AS channel,
+        sample.recorded_at AS recorded_at, sample.scalar AS scalar, sample.provider_id AS provider_id,
+        sample.provider_priority AS provider_priority, sample.linked_member_id AS linked_member_id,
+        sample.device_id AS device_id, sample.source_type AS source_type, sample.measurement_kind AS measurement_kind,
+        sample._peerdb_version AS source_version, sample._peerdb_is_deleted AS deleted
+      FROM (
+        SELECT *, coalesce(member_activity_id, activity_id) AS linked_member_id
+        FROM analytics.sensor_scalar_sample FINAL
+        WHERE user_id = {userId:UUID}
+          AND channel IN ('heart_rate', 'power')
+          AND recorded_date IN (
+            SELECT toDate(arrayJoin(range(toUInt32(toDate(started_at)), toUInt32(toDate(ended_at)) + 1)))
+            FROM ${windowKeys}
+          )
+          AND (activity_id IS NULL OR activity_id IN (SELECT member_activity_id FROM ${windowKeys}))
+          AND provider_id != 'strava'
+          AND ${coherentMemberLink}
+      ) AS sample
+      CROSS JOIN ${windowKeys} AS timed
+      WHERE sample.recorded_at >= timed.started_at AND sample.recorded_at < timed.ended_at
+        AND (
+          (timed.activity_id, sample.linked_member_id, sample.provider_id)
+            IN (SELECT group_id, activity_id, provider_id FROM ghost_scalar_members)
+          AND sample.linked_member_id = timed.member_activity_id
+          OR (${directBleFilter} AND (timed.activity_id, timed.member_activity_id)
+            IN (SELECT group_id, activity_id FROM ghost_scalar_members))
+        )
+      ORDER BY window_id, recorded_at, channel, provider_id, id
+      LIMIT {ghostScalarFetchLimit:UInt32} BY window_id
+    ), ghost_scalar_proofs AS (
+      SELECT window_id, count() AS raw_count, hex(SHA256(toJSONString(arraySort(groupArray(tuple(
+        id, channel, toUnixTimestamp64Micro(recorded_at), scalar, provider_id, provider_priority,
+        linked_member_id, device_id, source_type, measurement_kind, source_version, deleted
+      )))))) AS digest
+      FROM ghost_scalar_inputs
+      GROUP BY window_id
+    )`;
+}
+
+const measuredScalarResultSchema = z.object({
+  raw_count: z.coerce.number(),
+  digest: z.string(),
+  observations: z.array(
+    z.tuple([z.iso.datetime(), z.enum(["heart_rate", "power"]), z.number().nullable(), z.string()]),
+  ),
+});
+
+/** Readers retain no proof when the raw sentinel was reached. */
+export async function getMeasuredGhostScalarWindow(
+  client: Pick<ClickHouseClient, "query">,
+  userId: string,
+  window: MeasuredWindow,
+  fetchLimit: number,
+) {
+  const result = await client.query({
+    query: `
+      WITH measured_windows AS MATERIALIZED (
+        SELECT * FROM format('JSONEachRow', {windowColumns:String}, {window:String})
+      ), ${ghostScalarProofSql("measured_windows")}, selected_samples AS (
+        SELECT recorded_at, channel, scalar, measurement_kind
+        FROM ghost_scalar_inputs
+        WHERE deleted = 0 AND (channel != 'heart_rate' OR scalar > 0)
+        ORDER BY recorded_at, channel, provider_priority, provider_id,
+          channel = 'heart_rate' AND measurement_kind = 'estimated', id
+        LIMIT 1 BY channel, recorded_at
+      )
+      SELECT raw_count, digest, (
+        SELECT groupArray(tuple(
+          formatDateTime(recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC'),
+          channel, if(isFinite(scalar), scalar, NULL), measurement_kind
+        )) FROM selected_samples
+      ) AS observations
+      FROM ghost_scalar_proofs`,
+    format: "JSONEachRow",
+    query_params: {
+      ...ghostScalarProofProviders,
+      userId,
+      windowColumns: ghostScalarProofWindowColumns,
+      window: JSON.stringify(ghostScalarProofWindowRow(window, 0)),
+      ghostScalarFetchLimit: fetchLimit,
+    },
+    clickhouse_settings: {
+      date_time_input_format: "best_effort",
+      enable_materialized_cte: 1,
+      max_threads: 1,
+      log_queries: 0,
+    },
+  });
+  const [evidence] = measuredScalarResultSchema.array().parse(await result.json());
+  const rawCount = evidence?.raw_count ?? 0;
+  if (!evidence || rawCount >= fetchLimit) return { rawCount, observationRows: [], proof: null };
+  const proof: GhostScalarWindowProof = { ...window, count: rawCount, digest: evidence.digest };
+  return { rawCount, observationRows: evidence.observations, proof };
 }

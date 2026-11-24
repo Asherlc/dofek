@@ -335,6 +335,57 @@ function arrivalAtStart(segment: Segment, meters: number, start: GhostPosition):
     : start;
 }
 
+/** Summarize the anchor's recorded route without joining across GPS gaps. */
+export function summarizeGhostTrack(points: readonly GhostTrackPoint[]): {
+  gpsCoverage: TrackCoverage;
+  anchor: GhostInterval | null;
+  geometry: { lat: number; lng: number }[][];
+} {
+  const unavailable = { gpsCoverage: "unusable" as const, anchor: null, geometry: [] };
+  if (points.length > maximumTrackPoints) return unavailable;
+  const observations = collapseTiedPositions(points);
+  const origin = observations.find(position);
+  const track = origin && prepareTrack(observations, origin);
+  const first = track?.segments[0];
+  const last = track?.segments.at(-1);
+  if (!track || !first || !last) return unavailable;
+
+  const geometry: { lat: number; lng: number }[][] = [];
+  // Match the shared response caps for geometry chunks and recorded vertices.
+  for (let index = 0; index < track.segments.length && geometry.length < 8; ) {
+    const startSegment = track.segments[index];
+    if (!startSegment) break;
+    let endIndex = index + 1;
+    while (track.segments[endIndex]?.chunk === startSegment.chunk) endIndex += 1;
+
+    const vertexCount = Math.min(endIndex - index + 1, 96);
+    const start = segmentPosition(startSegment, 0);
+    const vertices = [{ lat: start.lat, lng: start.lng }];
+    for (let vertex = 1; vertex < vertexCount; vertex += 1) {
+      const segmentIndex =
+        index + Math.round((vertex * (endIndex - index)) / (vertexCount - 1)) - 1;
+      const segment = track.segments[segmentIndex];
+      if (segment) {
+        const end = segmentPosition(segment, segment.length);
+        vertices.push({ lat: end.lat, lng: end.lng });
+      }
+    }
+    geometry.push(vertices);
+    index = endIndex;
+  }
+
+  const start = arrivalAtStart(first, 0, segmentPosition(first, 0));
+  const end = segmentPosition(last, last.length);
+  return {
+    gpsCoverage: track.coverage,
+    anchor:
+      track.coverage === "complete"
+        ? { start, end, elapsedMs: end.timestampMs - start.timestampMs }
+        : null,
+    geometry,
+  };
+}
+
 /** Intersect the segments' recorded ranges along the anchor's direction of travel. */
 function alignSegments(anchor: Segment, candidate: Segment): AlignedPiece | undefined {
   const axis = anchor.heading;
