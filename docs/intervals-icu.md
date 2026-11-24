@@ -127,3 +127,29 @@ Dofek stores the calendar day and time reported by Intervals.icu. Relative welln
 sync windows use the Dofek home timezone. Explicit backfills retain the selected date labels.
 Live acceptance needs to verify the window edges when the Dofek and Intervals.icu timezones
 differ. [Calendar date behavior](https://forum.intervals.icu/t/api-access-to-intervals-icu/609/4)
+
+Before enabling the provider in production, record the result of each check.
+
+- [ ] Confirm approval of Dofek’s OAuth client and its registered redirect URI.
+  Intervals.icu acknowledged the application.
+  [Integration rollout record](https://github.com/Asherlc/dofek/pull/3442) ·
+  [Vendor approval and grants](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759).
+- [ ] Run live acceptance in an isolated non-production Dofek deployment using
+  an approved OAuth redirect. Configure both keys only in that deployment for
+  testing. Install both production keys after OAuth approval and the
+  acceptance checks below pass.
+- [ ] Connect with a consenting test athlete and verify the granted
+  `CALENDAR:READ` scope. Compare populated calendar responses with source
+  event IDs, authored fields and units, local dates and times, and events
+  near the date window edges. Save representative fixtures with personal
+  values removed. [Calendar API](https://intervals.icu/api/v1/docs).
+- [ ] Verify an edit, reschedule, explicit removal, and empty authoritative
+  window. Confirm how enabled calendars, coach-hidden events, incomplete
+  reads, and errors affect whether a snapshot can reconcile absence.
+  [Calendar date behavior](https://forum.intervals.icu/t/api-access-to-intervals-icu/609/4) ·
+  [Hidden workouts](https://forum.intervals.icu/t/hide-planned-workouts-from-athletes/5591).
+- [ ] Check the same planned and completed workouts on web and iOS. Verify
+  reconnect and confirm retained workouts show as snapshots after disconnect.
+
+The 2026-11-24 production key-name check found neither OAuth key. Live calendar
+acceptance is pending.

@@ -133,9 +133,15 @@ function authoritativeLocalTimeContext(
   };
 }
 
+export type ActivityListDateOrder = "oldest" | "newest";
+
 export interface WeekListInput {
   weeks: number;
   endDate: string;
+  /** Inclusive lower bound for explicit agenda ranges. Legacy week ranges omit this. */
+  startDate?: string;
+  /** Date sort for explicit agenda pages. Defaults to newest-first history order. */
+  dateOrder?: ActivityListDateOrder;
   activityType?: string;
   includeProviderAbsent?: boolean;
 }
@@ -145,6 +151,8 @@ export interface ActivityListPage {
   totalCount: number;
   page: number;
   pageSize: number;
+  /** Plan ownership for this completed page; only set for explicit startDate ranges. */
+  plannedWindow?: { startDate: string; endDate: string } | null;
 }
 
 interface CalendarEntryContext {

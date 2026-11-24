@@ -199,4 +199,92 @@ describe("PlannedWorkoutRepository (integration)", () => {
     await put(OTHER, []);
     expect(await repo(OTHER).upcoming()).toEqual([]);
   });
+
+  it("reads an explicit inclusive date range and filters by Intervals.icu sport mapping", async () => {
+    await put(USER, [
+      event(10, "2026-03-10", { sportType: "Ride", title: "Ride day" }),
+      event(11, "2026-03-11", { sportType: "Run", title: "Run day" }),
+      event(12, "2026-03-25", { sportType: "Ride", title: "Out of range" }),
+    ]);
+    const days = await repo().upcoming({
+      dateRange: { startDate: "2026-03-10", endDate: "2026-03-20" },
+      activityType: "cycling",
+    });
+    expect(days).toEqual([
+      {
+        date: "2026-03-10",
+        workouts: [expect.objectContaining({ title: "Ride day", sportType: "Ride" })],
+      },
+    ]);
+  });
+
+  it("attaches snapshotImportedAt when Intervals.icu connection or CALENDAR:READ grant is missing", async () => {
+    await put(USER, [event(13, "2026-03-12", { title: "Snapshot candidate" })]);
+    const disconnected = await repo().upcoming({
+      dateRange: { startDate: "2026-03-12", endDate: "2026-03-12" },
+    });
+    expect(disconnected[0]?.workouts[0]).toEqual(
+      expect.objectContaining({
+        title: "Snapshot candidate",
+        snapshotImportedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+    );
+
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.provider_connection (user_id, provider_id)
+          VALUES (${USER}::uuid, ${PROVIDER})
+          ON CONFLICT DO NOTHING`,
+    );
+    const connectionOnly = await repo().upcoming({
+      dateRange: { startDate: "2026-03-12", endDate: "2026-03-12" },
+    });
+    expect(connectionOnly[0]?.workouts[0]).toEqual(
+      expect.objectContaining({
+        title: "Snapshot candidate",
+        snapshotImportedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+    );
+
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.oauth_token (user_id, provider_id, access_token, expires_at, scopes)
+          VALUES (
+            ${USER}::uuid,
+            ${PROVIDER},
+            'test-token',
+            '2099-01-01T00:00:00Z',
+            'ACTIVITY:READ,WELLNESS:READ'
+          )
+          ON CONFLICT (user_id, provider_id) DO UPDATE
+          SET scopes = EXCLUDED.scopes, access_token = EXCLUDED.access_token`,
+    );
+    const partialScopes = await repo().upcoming({
+      dateRange: { startDate: "2026-03-12", endDate: "2026-03-12" },
+    });
+    expect(partialScopes[0]?.workouts[0]).toEqual(
+      expect.objectContaining({
+        title: "Snapshot candidate",
+        snapshotImportedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+    );
+
+    await ctx.db.execute(
+      sql`UPDATE fitness.oauth_token
+          SET scopes = ' ACTIVITY:READ , WELLNESS:READ , CALENDAR:READ '
+          WHERE user_id = ${USER}::uuid AND provider_id = ${PROVIDER}`,
+    );
+    const live = await repo().upcoming({
+      dateRange: { startDate: "2026-03-12", endDate: "2026-03-12" },
+    });
+    expect(live[0]?.workouts[0]).toEqual(expect.objectContaining({ title: "Snapshot candidate" }));
+    expect(live[0]?.workouts[0]).not.toHaveProperty("snapshotImportedAt");
+
+    await ctx.db.execute(
+      sql`DELETE FROM fitness.oauth_token
+          WHERE user_id = ${USER}::uuid AND provider_id = ${PROVIDER}`,
+    );
+    await ctx.db.execute(
+      sql`DELETE FROM fitness.provider_connection
+          WHERE user_id = ${USER}::uuid AND provider_id = ${PROVIDER}`,
+    );
+  });
 });

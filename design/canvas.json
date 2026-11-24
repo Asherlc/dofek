@@ -1,6 +1,7 @@
 {
   "version": 1,
   "agents": {
+    "activities-week-agenda": "18cf715f-73a9-47da-b12e-689a4fb7fc98",
     "whoop-battery-status": "7882f4e8-4c8c-4046-bde8-fe969e33e90a",
     "climbing-demonstrated-grade": "285f158a-16f1-4fd7-aac3-b25cc5ddb77f",
     "climbing-sessions-to-send": "e3952a05-dadc-4063-9ea6-dc4417210009",

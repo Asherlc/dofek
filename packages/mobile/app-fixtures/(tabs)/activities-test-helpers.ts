@@ -4,14 +4,22 @@ export interface MockQuery {
   data: unknown[];
   isLoading: boolean;
   isError: boolean;
+  isSuccess?: boolean;
   error: Error | null;
 }
 
 export interface MockWeekListQuery extends Omit<MockQuery, "data"> {
-  data: Array<{ date: string; activities: ReturnType<typeof activity>[] }>;
+  data: Array<{ date: string; activities: ReturnType<typeof activity>[] }> | undefined;
+  plannedWindow?: { startDate: string; endDate: string } | null;
+  totalCount?: number;
+  page?: number;
+  isPlaceholderData?: boolean;
+  isFetching?: boolean;
+  refetch?: () => void;
 }
 
 export interface WeekListQueryOptions {
+  enabled?: boolean;
   placeholderData?: (previousData: unknown) => unknown;
   refetchInterval?: (query: { state: { data: unknown } }) => number | false;
 }

@@ -6,19 +6,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../lib/units", () => ({ useUnitConverter: () => new UnitConverter("metric") }));
 
-import { plannedWorkoutDays } from "./UpcomingWorkouts.fixtures.ts";
-import { UpcomingWorkouts } from "./UpcomingWorkouts.tsx";
+import { PlannedWorkoutCard } from "./PlannedWorkoutCard";
+import { samplePlannedWorkout } from "./PlannedWorkoutCard.fixtures.ts";
 
 afterEach(cleanup);
 
-describe("UpcomingWorkouts (mobile)", () => {
+describe("PlannedWorkoutCard (mobile)", () => {
   it("shows the authored schedule, Planned label, provider, and structured steps inside a disclosure", () => {
-    render(<UpcomingWorkouts days={plannedWorkoutDays} />);
+    render(<PlannedWorkoutCard workout={samplePlannedWorkout} />);
 
-    expect(screen.getByText("Upcoming workouts")).toBeDefined();
     expect(screen.getByText("Planned")).toBeDefined();
     expect(screen.getByText("Threshold intervals")).toBeDefined();
-    expect(screen.getByText("Mar 18, 2026")).toBeDefined();
     expect(screen.getByText(/07:30 ·/)).toBeDefined();
     expect(screen.getByText(/Intervals\.icu/)).toBeDefined();
     expect(screen.getByText("Hold the target power.")).toBeDefined();
@@ -43,32 +41,25 @@ describe("UpcomingWorkouts (mobile)", () => {
 
   it("shows a notice for unsupported steps after expanding the disclosure", () => {
     render(
-      <UpcomingWorkouts
-        days={[
-          {
-            date: "2026-03-18",
-            workouts: [
-              {
-                id: "partial",
-                providerId: "intervals.icu",
-                title: "Partial plan",
-                description: null,
-                sportType: "cycling",
-                startTime: null,
-                steps: [
-                  {
-                    kind: "step",
-                    text: "Warm up",
-                    durationSeconds: 600,
-                    distanceMeters: null,
-                    targets: [],
-                  },
-                  { kind: "unsupported" },
-                ],
-              },
-            ],
-          },
-        ]}
+      <PlannedWorkoutCard
+        workout={{
+          id: "partial",
+          providerId: "intervals.icu",
+          title: "Partial plan",
+          description: null,
+          sportType: "cycling",
+          startTime: null,
+          steps: [
+            {
+              kind: "step",
+              text: "Warm up",
+              durationSeconds: 600,
+              distanceMeters: null,
+              targets: [],
+            },
+            { kind: "unsupported" },
+          ],
+        }}
       />,
     );
 
@@ -78,30 +69,50 @@ describe("UpcomingWorkouts (mobile)", () => {
   });
 
   it("does not show the notice when every step is supported", () => {
-    render(<UpcomingWorkouts days={plannedWorkoutDays} />);
+    render(<PlannedWorkoutCard workout={samplePlannedWorkout} />);
     fireEvent.click(screen.getByRole("button", { name: "Workout steps" }));
     expect(screen.queryByText("Some steps aren't available.")).toBeNull();
   });
 
+  it("preserves seconds for a 90-second step duration", () => {
+    render(
+      <PlannedWorkoutCard
+        workout={{
+          id: "short-step",
+          providerId: "intervals.icu",
+          title: "Short interval",
+          description: null,
+          sportType: "cycling",
+          startTime: null,
+          steps: [
+            {
+              kind: "step",
+              text: "Spike",
+              durationSeconds: 90,
+              distanceMeters: null,
+              targets: [],
+            },
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Workout steps" }));
+    expect(screen.getByText(/Spike · 1m 30s/)).toBeDefined();
+  });
+
   it("does not repeat the sport in metadata when it is the fallback title", () => {
     render(
-      <UpcomingWorkouts
-        days={[
-          {
-            date: "2026-03-18",
-            workouts: [
-              {
-                id: "sport-only",
-                providerId: "intervals.icu",
-                title: null,
-                description: null,
-                sportType: "cycling",
-                startTime: "07:30",
-                steps: [],
-              },
-            ],
-          },
-        ]}
+      <PlannedWorkoutCard
+        workout={{
+          id: "sport-only",
+          providerId: "intervals.icu",
+          title: null,
+          description: null,
+          sportType: "cycling",
+          startTime: "07:30",
+          steps: [],
+        }}
       />,
     );
 
@@ -109,25 +120,23 @@ describe("UpcomingWorkouts (mobile)", () => {
     expect(screen.getByText(/07:30 · Intervals\.icu/)).toBeDefined();
   });
 
-  it("renders nothing when there are no upcoming workouts", () => {
-    const { container } = render(<UpcomingWorkouts days={[]} />);
-    expect(container.textContent).toBe("");
-  });
-
-  it("shows a retryable section error without discarding the section heading", () => {
-    const onRetry = vi.fn();
+  it("shows Snapshot with the import date for a disconnected plan", () => {
     render(
-      <UpcomingWorkouts
-        days={undefined}
-        isError
-        error={new Error("Schedule is temporarily unavailable.")}
-        onRetry={onRetry}
+      <PlannedWorkoutCard
+        workout={{
+          id: "snap-1",
+          providerId: "intervals.icu",
+          title: "Easy endurance",
+          description: null,
+          sportType: "cycling",
+          startTime: null,
+          steps: [],
+          snapshotImportedAt: "2026-11-20T12:00:00.000Z",
+        }}
       />,
     );
 
-    expect(screen.getByText("Upcoming workouts")).toBeDefined();
-    expect(screen.getByRole("alert")).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(onRetry).toHaveBeenCalledOnce();
+    expect(screen.getByText(/Snapshot/)).toBeDefined();
+    expect(screen.getByText(/Nov 20, 2026/)).toBeDefined();
   });
 });

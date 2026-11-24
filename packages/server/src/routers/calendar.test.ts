@@ -59,7 +59,7 @@ vi.mock("../repositories/activities-calendar-repository.ts", () => ({
       repositoryInputMock(input);
       return repositoryResultMock();
     }
-    async getPage(input: { page: number; pageSize: number }) {
+    async getPage(input: { page: number; pageSize: number; startDate?: string; endDate?: string }) {
       repositoryInputMock(input);
       const days = await repositoryResultMock();
       return {
@@ -67,6 +67,14 @@ vi.mock("../repositories/activities-calendar-repository.ts", () => ({
         totalCount: days.flatMap((day: { activities: unknown[] }) => day.activities).length,
         page: input.page,
         pageSize: input.pageSize,
+        ...(input.startDate
+          ? {
+              plannedWindow: {
+                startDate: input.startDate,
+                endDate: input.endDate ?? "2026-03-20",
+              },
+            }
+          : {}),
       };
     }
   },
@@ -87,8 +95,8 @@ vi.mock("../repositories/planned-workout-repository.ts", async (importOriginal) 
     constructor(...args: unknown[]) {
       plannedRepoMock(...args);
     }
-    upcoming() {
-      return plannedUpcomingMock();
+    upcoming(...args: unknown[]) {
+      return plannedUpcomingMock(...args);
     }
   },
 }));
@@ -152,6 +160,45 @@ describe("calendarRouter", () => {
         undefined,
         context.accessWindow,
       );
+    });
+
+    it("forwards an explicit date range and activity type to the repository", async () => {
+      plannedUpcomingMock.mockResolvedValueOnce([]);
+      await expect(
+        createCaller(context).upcomingWorkouts({
+          dateRange: { startDate: "2026-03-10", endDate: "2026-03-20" },
+          activityType: "cycling",
+        }),
+      ).resolves.toEqual([]);
+      expect(plannedUpcomingMock).toHaveBeenCalledWith({
+        dateRange: { startDate: "2026-03-10", endDate: "2026-03-20" },
+        activityType: "cycling",
+      });
+    });
+
+    it.each([
+      { startDate: "2026-03-20", endDate: "2026-03-10" },
+      { startDate: "2026-01-01", endDate: "2026-04-02" },
+      { startDate: "2026-02-30", endDate: "2026-03-01" },
+      { startDate: "9999-10-01", endDate: "9999-12-30" },
+    ])("rejects an invalid planned date range %j", async (dateRange) => {
+      await expect(createCaller(context).upcomingWorkouts({ dateRange })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+      expect(plannedUpcomingMock).not.toHaveBeenCalled();
+    });
+
+    it("accepts a short year-end range that would overflow a +89 day shift", async () => {
+      plannedUpcomingMock.mockResolvedValueOnce([]);
+      await expect(
+        createCaller(context).upcomingWorkouts({
+          dateRange: { startDate: "9999-12-01", endDate: "9999-12-20" },
+        }),
+      ).resolves.toEqual([]);
+      expect(plannedUpcomingMock).toHaveBeenCalledWith({
+        dateRange: { startDate: "9999-12-01", endDate: "9999-12-20" },
+        activityType: undefined,
+      });
     });
   });
 
@@ -266,6 +313,74 @@ describe("calendarRouter", () => {
     });
   });
 
+  it("forwards startDate and returns plannedWindow only for explicit ranges", async () => {
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+    repositoryResultMock.mockResolvedValueOnce([]);
+    await expect(
+      caller.weekListV2({
+        weeks: 4,
+        startDate: "2026-03-01",
+        endDate: "2026-03-20",
+        page: 0,
+        pageSize: 10,
+      }),
+    ).resolves.toEqual({
+      days: [],
+      totalCount: 0,
+      page: 0,
+      pageSize: 10,
+      plannedWindow: { startDate: "2026-03-01", endDate: "2026-03-20" },
+    });
+    expect(repositoryInputMock).toHaveBeenLastCalledWith({
+      weeks: 4,
+      startDate: "2026-03-01",
+      endDate: "2026-03-20",
+      includeProviderAbsent: false,
+      page: 0,
+      pageSize: 10,
+    });
+  });
+
+  it("forwards dateOrder for explicit agenda ranges", async () => {
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+    repositoryResultMock.mockResolvedValueOnce([]);
+    await expect(
+      caller.weekListV2({
+        weeks: 1,
+        startDate: "2026-03-01",
+        endDate: "2026-03-07",
+        dateOrder: "oldest",
+        page: 0,
+        pageSize: 10,
+      }),
+    ).resolves.toEqual({
+      days: [],
+      totalCount: 0,
+      page: 0,
+      pageSize: 10,
+      plannedWindow: { startDate: "2026-03-01", endDate: "2026-03-07" },
+    });
+    expect(repositoryInputMock).toHaveBeenLastCalledWith({
+      weeks: 1,
+      startDate: "2026-03-01",
+      endDate: "2026-03-07",
+      dateOrder: "oldest",
+      includeProviderAbsent: false,
+      page: 0,
+      pageSize: 10,
+    });
+  });
+
   it.each([{ page: -1 }, { page: 0.5 }, { pageSize: 0 }, { pageSize: 101 }])(
     "rejects invalid pagination %j",
     async (pagination) => {
@@ -282,6 +397,49 @@ describe("calendarRouter", () => {
     },
   );
 
+  it.each([
+    { startDate: "2026-02-30", endDate: "2026-03-01" },
+    { startDate: "9999-10-01", endDate: "9999-12-30" },
+  ])("rejects an invalid explicit weekListV2 range %j", async (range) => {
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+    await expect(
+      caller.weekListV2({
+        weeks: 4,
+        ...range,
+        page: 0,
+        pageSize: 10,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(repositoryInputMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a short year-end weekListV2 range that would overflow a +89 day shift", async () => {
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+    repositoryResultMock.mockResolvedValueOnce([]);
+    await expect(
+      caller.weekListV2({
+        weeks: 4,
+        startDate: "9999-12-01",
+        endDate: "9999-12-20",
+        page: 0,
+        pageSize: 10,
+      }),
+    ).resolves.toMatchObject({
+      plannedWindow: { startDate: "9999-12-01", endDate: "9999-12-20" },
+    });
+    expect(repositoryInputMock).toHaveBeenCalled();
+  });
+
   it("versions the activity state cache contract", () => {
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
@@ -289,11 +447,13 @@ describe("calendarRouter", () => {
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-page-power-stress-v4",
+      keyVersion: "activity-calendar-page-power-stress-v5",
+      scopeByAccessWindow: true,
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
       keyVersion: "activity-calendar-primary-type-v4",
+      scopeByAccessWindow: true,
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 3_600_000,

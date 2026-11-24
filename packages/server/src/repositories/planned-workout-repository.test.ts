@@ -196,6 +196,8 @@ describe("PlannedWorkoutRepository.upcoming", () => {
         description: "notes",
         sport_type: "Ride",
         workout_doc: { steps: [{ duration: 600 }] },
+        updated_at: "2026-03-01T12:00:00.000Z",
+        provider_connected: true,
       },
       {
         id: "w2",
@@ -206,6 +208,8 @@ describe("PlannedWorkoutRepository.upcoming", () => {
         description: null,
         sport_type: null,
         workout_doc: null,
+        updated_at: "2026-03-01T12:00:00.000Z",
+        provider_connected: true,
       },
       {
         id: "w3",
@@ -216,6 +220,8 @@ describe("PlannedWorkoutRepository.upcoming", () => {
         description: null,
         sport_type: null,
         workout_doc: { steps: [{ kind: "unsupported" }] },
+        updated_at: "2026-03-01T12:00:00.000Z",
+        provider_connected: true,
       },
     ]);
 
@@ -268,5 +274,172 @@ describe("PlannedWorkoutRepository.upcoming", () => {
         ],
       },
     ]);
+  });
+
+  it("reads an explicit inclusive date range and filters by canonical sport mapping", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        id: "ride",
+        provider_id: "intervals.icu",
+        start_date: "2026-03-10",
+        start_time: "06:30",
+        title: "Ride",
+        description: null,
+        sport_type: "Ride",
+        workout_doc: null,
+        updated_at: "2026-03-01T12:00:00.000Z",
+        provider_connected: true,
+      },
+      {
+        id: "run",
+        provider_id: "intervals.icu",
+        start_date: "2026-03-11",
+        start_time: null,
+        title: "Run",
+        description: null,
+        sport_type: "Run",
+        workout_doc: null,
+        updated_at: "2026-03-01T12:00:00.000Z",
+        provider_connected: true,
+      },
+    ]);
+    const repo = new PlannedWorkoutRepository({ execute }, "user-1", "2026-03-10");
+    const days = await repo.upcoming({
+      dateRange: { startDate: "2026-03-10", endDate: "2026-03-20" },
+      activityType: "cycling",
+    });
+    expect(days).toEqual([
+      {
+        date: "2026-03-10",
+        workouts: [
+          expect.objectContaining({
+            id: "ride",
+            sportType: "Ride",
+          }),
+        ],
+      },
+    ]);
+    const sql = String(execute.mock.calls[0]?.[0]?.queryChunks ?? execute.mock.calls[0]?.[0]);
+    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("2026-03-10");
+    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("2026-03-20");
+    expect(sql).not.toContain("secret");
+  });
+
+  it("marks Intervals.icu rows as snapshots when the OAuth grant lacks CALENDAR:READ", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        id: "live",
+        provider_id: "intervals.icu",
+        start_date: "2026-03-10",
+        start_time: null,
+        title: "Live",
+        description: null,
+        sport_type: "Ride",
+        workout_doc: null,
+        updated_at: "2026-03-01T12:00:00.000Z",
+        provider_connected: true,
+      },
+      {
+        id: "snap",
+        provider_id: "intervals.icu",
+        start_date: "2026-03-10",
+        start_time: null,
+        title: "Snapshot",
+        description: null,
+        sport_type: "Ride",
+        workout_doc: null,
+        updated_at: "2026-02-15T08:30:00.000Z",
+        provider_connected: false,
+      },
+    ]);
+    const days = await new PlannedWorkoutRepository({ execute }, "user-1", "2026-03-10").upcoming();
+    expect(days[0]?.workouts).toEqual([
+      expect.objectContaining({ id: "live" }),
+      expect.objectContaining({
+        id: "snap",
+        snapshotImportedAt: "2026-02-15T08:30:00.000Z",
+      }),
+    ]);
+    const sql = JSON.stringify(execute.mock.calls[0]?.[0]);
+    expect(sql).toContain("oauth_token");
+    expect(sql).toContain("CALENDAR:READ");
+    expect(sql).not.toContain("access_token");
+  });
+
+  it("skips whitespace-only sport types when filtering instead of throwing", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        id: "blank",
+        provider_id: "intervals.icu",
+        start_date: "2026-03-10",
+        start_time: null,
+        title: "Blank sport",
+        description: null,
+        sport_type: "   ",
+        workout_doc: null,
+        updated_at: "2026-03-01T12:00:00.000Z",
+        provider_connected: true,
+      },
+      {
+        id: "ride",
+        provider_id: "intervals.icu",
+        start_date: "2026-03-10",
+        start_time: null,
+        title: "Ride",
+        description: null,
+        sport_type: "Ride",
+        workout_doc: null,
+        updated_at: "2026-03-01T12:00:00.000Z",
+        provider_connected: true,
+      },
+    ]);
+    await expect(
+      new PlannedWorkoutRepository({ execute }, "user-1", "2026-03-10").upcoming({
+        activityType: "cycling",
+      }),
+    ).resolves.toEqual([
+      {
+        date: "2026-03-10",
+        workouts: [expect.objectContaining({ id: "ride" })],
+      },
+    ]);
+  });
+
+  it("attaches snapshotImportedAt only for disconnected provider rows", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      {
+        id: "live",
+        provider_id: "intervals.icu",
+        start_date: "2026-03-10",
+        start_time: null,
+        title: "Live",
+        description: null,
+        sport_type: "Ride",
+        workout_doc: null,
+        updated_at: "2026-03-01T12:00:00.000Z",
+        provider_connected: true,
+      },
+      {
+        id: "snap",
+        provider_id: "trainerroad",
+        start_date: "2026-03-10",
+        start_time: null,
+        title: "Snapshot",
+        description: null,
+        sport_type: "Ride",
+        workout_doc: null,
+        updated_at: "2026-02-15T08:30:00.000Z",
+        provider_connected: false,
+      },
+    ]);
+    const days = await new PlannedWorkoutRepository({ execute }, "user-1", "2026-03-10").upcoming();
+    expect(days[0]?.workouts).toEqual([
+      expect.objectContaining({ id: "live" }),
+      expect.objectContaining({
+        id: "snap",
+        snapshotImportedAt: "2026-02-15T08:30:00.000Z",
+      }),
+    ]);
+    expect(days[0]?.workouts[0]).not.toHaveProperty("snapshotImportedAt");
   });
 });

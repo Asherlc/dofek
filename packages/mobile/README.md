@@ -130,9 +130,10 @@ The [GPS-route preview](../../docs/screenshots/mobile-activity-route.png) and
 show the [Activities stories](<app-stories/(tabs)/activities.stories.tsx>) at a
 390-pixel browser viewport.
 
-The Activities list keeps date and sport controls above a collapsed training
-time summary. Expand it for period comparisons and the daily training-time
-calendar. Choose **Location** to search recorded gym or crag names, or use
+The Activities date and sport controls filter planned and completed workouts
+under the same date headings. Expand **Training time** for recorded period
+comparisons and the daily training-time calendar. Choose **Location** to search
+recorded gym or crag names, or use
 **Look up a place** and select a result to find nearby GPS activities. Search
 uses the current sport filter and pages through accessible history.
 The [activity detail](<app/activity/[id].tsx>) opens on key stats and

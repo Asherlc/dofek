@@ -532,6 +532,36 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
       }),
     );
   });
+
+  it("passes inclusive windowStart and windowEnd for explicit agenda ranges", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([[]]);
+    const repository = new ProviderAbsentActivitiesCalendarRepository(
+      database,
+      "user-1",
+      "UTC",
+      sensorStore,
+    );
+
+    await repository.getWeekList({
+      weeks: 1,
+      startDate: "2026-03-01",
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    expect(sensorStore.query).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      expect.stringMatching(
+        />= toDate\(\{windowStart:String\}\).*<= toDate\(\{windowEnd:String\}\)/s,
+      ),
+      expect.objectContaining({
+        windowStart: "2026-03-01",
+        windowEnd: "2026-03-20",
+      }),
+    );
+  });
+
   it.each([
     ["processing", { kind: "processing" }],
     ["awaiting_summary", null],

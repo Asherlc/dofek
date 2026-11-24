@@ -1,4 +1,5 @@
-import { formatDateYmd } from "@dofek/format/format";
+import { activityAgendaRange } from "@dofek/format/activity-agenda";
+import { formatDateYmd, shiftDateYmd } from "@dofek/format/format";
 import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
 import { providerLabel } from "@dofek/providers/providers";
 import type { Meta, StoryObj } from "@storybook/react-native";
@@ -63,8 +64,14 @@ function createStoryData(
   unknownDuration = false,
 ) {
   const today = formatDateYmd();
-  const yesterday = formatDateYmd(new Date(Date.now() - 86_400_000));
-  const queryInput = { weeks: 4, endDate: today };
+  const yesterday = shiftDateYmd(today, -1);
+  const agendaRange = activityAgendaRange("this-week", today);
+  const queryInput = {
+    weeks: agendaRange.weeks ?? 1,
+    startDate: agendaRange.startDate,
+    endDate: agendaRange.endDate,
+    dateOrder: "oldest" as const,
+  };
   const hangboarding =
     originProvider === "apple_health" && originSourceName === "Hang Ten Training";
   const primaryActivityType = climbingActivity
@@ -338,6 +345,46 @@ function createStoryData(
     coverage: [],
     acquisition: [],
   };
+  const upcomingWorkouts: AppRouterOutputs["calendar"]["upcomingWorkouts"] = [
+    {
+      date: today,
+      workouts: [
+        {
+          id: "story-plan-today",
+          providerId: "intervals.icu",
+          title: "Tempo intervals",
+          description: null,
+          sportType: "cycling",
+          startTime: "07:00",
+          steps: [
+            {
+              kind: "step",
+              text: "Warm-up",
+              durationSeconds: 600,
+              distanceMeters: null,
+              targets: [],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      date: shiftDateYmd(today, 2),
+      workouts: [
+        {
+          id: "story-plan-snapshot",
+          providerId: "intervals.icu",
+          title: "Easy endurance",
+          description: null,
+          sportType: "cycling",
+          startTime: null,
+          steps: [],
+          snapshotImportedAt: `${shiftDateYmd(today, -4)}T12:00:00.000Z`,
+        },
+      ],
+    },
+  ];
+
   return {
     today,
     queryInput,
@@ -346,11 +393,16 @@ function createStoryData(
       totalCount: weekListV2.reduce((count, day) => count + day.activities.length, 0),
       page: 0,
       pageSize: 20,
+      plannedWindow: {
+        startDate: agendaRange.startDate,
+        endDate: agendaRange.endDate,
+      },
     },
     activityOverview,
     calendarData,
     processingStatus,
     activityImages,
+    upcomingWorkouts,
   };
 }
 
@@ -372,6 +424,8 @@ function createMockObservable(
         observer.next?.({ result: { data: storyData.activityOverview } });
       } else if (path === "calendar.calendarData") {
         observer.next?.({ result: { data: storyData.calendarData } });
+      } else if (path === "calendar.upcomingWorkouts") {
+        observer.next?.({ result: { data: storyData.upcomingWorkouts } });
       } else if (path === "processing.status") {
         observer.next?.({ result: { data: storyData.processingStatus } });
       } else if (path === "activity.images") {
@@ -467,12 +521,39 @@ function MockProviders({
       storyData.weekListV2,
     );
     client.setQueryData(
-      [["calendar", "activityOverview"], { input: storyData.queryInput, type: "query" }],
+      [
+        ["calendar", "activityOverview"],
+        {
+          input: {
+            weeks: storyData.queryInput.weeks,
+            endDate: storyData.queryInput.endDate,
+          },
+          type: "query",
+        },
+      ],
       storyData.activityOverview,
     );
     client.setQueryData(
-      [["calendar", "calendarData"], { input: { days: 28 }, type: "query" }],
+      [
+        ["calendar", "calendarData"],
+        { input: { days: storyData.queryInput.weeks * 7 }, type: "query" },
+      ],
       storyData.calendarData,
+    );
+    client.setQueryData(
+      [
+        ["calendar", "upcomingWorkouts"],
+        {
+          input: {
+            dateRange: {
+              startDate: storyData.queryInput.startDate,
+              endDate: storyData.queryInput.endDate,
+            },
+          },
+          type: "query",
+        },
+      ],
+      storyData.upcomingWorkouts,
     );
     client.setQueryData(
       [["processing", "status"], { input: { datasets: ["activity"] }, type: "query" }],
