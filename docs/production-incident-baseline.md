@@ -39918,6 +39918,29 @@ Local qualification and CI are separate from production throughput acceptance. T
   already imported into a shared worker can still depend on suite order. If the
   failure recurs, reproduce the shard order and check mock and MSW ownership.
 
+## 2026-11-23 — WHOOP upload queue checkpoints caused excessive iOS disk writes
+
+- **Impact.** MetricKit reported three disk-write warnings for one user from
+  November 20 to 23. The two earlier events reported about 4.29 GB written and
+  ran during upload acknowledgment. The latest reported 1.07 GB and ran during
+  upload scheduling. All three stacks show a SQLite automatic checkpoint. No
+  thread crashed. The effect on sample delivery is unverified.
+  [Sentry DOFEK-MOBILE-31](https://east-bay-software.sentry.io/issues/7859388787/).
+- **Cause and fix.** The switch from 4 KiB to 1 KiB pages shrank SQLite's
+  1,000-page checkpoint threshold from roughly 4 MiB to 1 MiB. More frequent
+  checkpoints wrote more versions of the same database pages. The native store
+  now uses a 4,000-page threshold and keeps fully synchronous commits.
+  [Page-size change](https://github.com/Asherlc/dofek/pull/3413)
+  · [SQLite automatic checkpoints](https://www.sqlite.org/wal.html#automatic_checkpoint).
+- **Validation and follow-up.** A native macOS replay acknowledged all 12,240
+  samples in each run. Writes to the main database dropped from 6.09 MB to
+  2.03 MB and total SQLite writes from 23.10 MB to 19.04 MB, including the final
+  checkpoint. The real SQLite regression failed before the fix when a 2 MiB
+  commit checkpointed early, then passed with the restored target. Profile a
+  sustained capture and upload on a rebuilt iPhone app before closing the Sentry
+  issue. The phone was locked during diagnosis.
+  [Apple disk-write profiling](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
+
 ## 2026-11-23 — Climbing schema maintenance interrupted Dofek web access
 
 - **Impact and evidence.** Dofek web displayed `Auth bootstrap failed: 503`

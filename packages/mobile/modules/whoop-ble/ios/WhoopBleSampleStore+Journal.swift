@@ -17,6 +17,8 @@ extension WhoopBleSampleStore {
             }
         }
         try setJournalMode("wal")
+        // Preserve the previous 1,000 × 4 KiB checkpoint target.
+        try execute("PRAGMA wal_autocheckpoint = 4000")
         try execute("PRAGMA synchronous = FULL")
         guard try field("page_size", in: rows("PRAGMA page_size").first ?? [:]) as Int == pageSize else {
             throw StoreError("WHOOP sample storage could not set the SQLite page size to \(pageSize) bytes")
