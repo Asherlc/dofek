@@ -40036,11 +40036,23 @@ Local qualification and CI are separate from production throughput acceptance. T
   `live web and worker identities cannot be reconciled` because no worker
   task was running. Both service definitions still named the last verified
   image from receipt 8013867171. Receipt 8016422783 remained pending for the
-  failed candidate. Recovery is in progress through the production release
-  workflow.
+  failed candidate. The fix matched service names exactly in both web rollout
+  checks and added an explicit recovery path that verifies the pre-migration
+  failure and last verified image. The protected release recovered receipt
+  8016422783 with the validated `e46b8ee8f` image. It verified receipt
+  8019679486 and marked the failed receipt inactive.
   [Admission failure](https://github.com/Asherlc/dofek/actions/runs/45313848197/job/138175857623)
+  · [Recovery fix](https://github.com/Asherlc/dofek/pull/3473)
+  · [Verified release](https://github.com/Asherlc/dofek/actions/runs/45332102234)
   · [Publication recovery runbook](../deploy/README.md#publication-recovery).
-- **Follow-up.** After release verification, confirm the six processing
-  services have running tasks, reconciliation advances, and analytics
-  publishes a successful refresh. Record the verified replacement release and
-  any pending work here after those checks.
+- **Validation and remaining backlog.** Swarm reported both web replicas and
+  all six processing services running. The public health check returned HTTP
+  200. The analytics worker reported its first successful refresh at 06:03:40
+  UTC. The processing ledger recorded successful analytics for 13 operations
+  after restart. The first three reconciliation passes recorded 14 completions
+  and classified three older operations as stalled under the existing cutoff.
+  Pending operations fell from 22 to 15 after the third pass. The outbox
+  included work queued after the sync worker restarted. Continue monitoring
+  reconciliation for the pending operations.
+  [Deployment verification](https://github.com/Asherlc/dofek/actions/runs/45332102234/job/138243564133)
+  · [Reconciliation and stalled-operation cutoff](processing-status-runbook.md#runtime-progression).
