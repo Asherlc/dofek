@@ -230,11 +230,25 @@ RUN ln -sfn /app node_modules/dofek && \
 COPY --from=source --chown=node:node /app/.env .
 COPY --chown=node:node entrypoint.sh .
 
+# ── Userspace WireGuard client for the portable Fly runner ─────────────
+# Pin the post-v1.1.3 Landlock/TCP listener fix. go list -m maps the commit to
+# v1.1.4-0.20261116004624-e00074911d2e (https://github.com/windtf/wireproxy).
+FROM golang:1.27.4-alpine3.24@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS wireproxy-build
+RUN apk add --no-cache ca-certificates git
+ENV CGO_ENABLED=0
+RUN GOBIN=/out go install -trimpath -ldflags="-s -w" \
+    github.com/windtf/wireproxy/cmd/wireproxy@e00074911d2e8b23bac6b74703fa1a2b522cff2b
+
 # ── Portable provider sync worker ──────────────────────────────────────
 FROM runtime AS pipeline-runner
-RUN apk add --no-cache iproute2 wireguard-tools su-exec
+RUN apk add --no-cache bash
+COPY --from=wireproxy-build /out/wireproxy /usr/local/bin/wireproxy
+COPY --from=wireproxy-build \
+  /go/pkg/mod/github.com/windtf/wireproxy@v1.1.4-0.20261116004624-e00074911d2e/LICENSE \
+  /usr/share/licenses/wireproxy/LICENSE
 COPY deploy/fly-runner/wireguard-client.sh ./deploy/fly-runner/
-ENTRYPOINT ["sh", "/app/deploy/fly-runner/wireguard-client.sh"]
+USER 1000:1000
+ENTRYPOINT ["bash", "/app/deploy/fly-runner/wireguard-client.sh"]
 
 # ── Server image (Express API + sync worker) ────────────────────────────
 FROM runtime AS server

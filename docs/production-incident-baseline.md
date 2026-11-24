@@ -40178,3 +40178,24 @@ Local qualification and CI are separate from production throughput acceptance. T
   reconciliation for the pending operations.
   [Deployment verification](https://github.com/Asherlc/dofek/actions/runs/45332102234/job/138243564133)
   · [Reconciliation and stalled-operation cutoff](processing-status-runbook.md#runtime-progression).
+
+## 2026-11-24 — Semgrep flags the Fly runner's privileged entry point
+
+- **Impact and cause.** The [Semgrep OSS check](https://github.com/Asherlc/dofek/runs/138563273681)
+  on PR #3469 reported `dockerfile.security.missing-user-entrypoint` at
+  `Dockerfile:237`. The image started as root to configure kernel WireGuard
+  before dropping privileges for the worker. The Machine was parked.
+- **Fix.** Build Wireproxy from the upstream revision that includes the
+  [listener permission fix](https://github.com/windtf/wireproxy/pull/219).
+  The tunnel and worker now start as UID/GID 1000. Terraform configures
+  loopback Redis and OTLP endpoints on the existing Machine. The release
+  stages the matching PostgreSQL endpoint for the same Oracle peer.
+- **Validation.** The Dockerfile scan went from one finding to zero. The native
+  Linux ARM64 fixture completed both queue jobs, delivered both execution
+  events, and peaked at 267 MiB in a 512 MiB container with swap disabled.
+  SIGTERM exited cleanly, and tunnel termination stopped the container with
+  exit code 1. Terraform applied one in-place update and the follow-up plan
+  found no drift. The Machine remained stopped.
+- **Follow-up.** The amd64 image built successfully. The emulated amd64
+  extraction run reached the memory cap and used swap. Verify memory and
+  metered transfer on native amd64 after the first Fly release.

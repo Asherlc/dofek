@@ -237,9 +237,11 @@ jobs:
             if length == 1 and .[0].name == "pipeline-runner" and .[0].region == "sjc"
               and .[0].config.guest == {"cpu_kind":"shared","cpus":1,"memory_mb":512}
               and (.[0].config.services // [] | length) == 0
+              and .[0].config.env.REDIS_URL == "redis://127.0.0.1:6379"
+              and .[0].config.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT == "http://127.0.0.1:4318/v1/logs"
               and .[0].config.checks["provider-sync-ready"] != null
             then .[0].id
-            else error("Terraform must provision one private 512 MB Fly production runner in sjc")
+            else error("Apply deploy/fly-runner Terraform for the private 512 MB production runner in sjc with loopback Redis and OTLP endpoints")
             end
           ')"
           node --input-type=module <<'NODE' | flyctl secrets import --stage --app "$FLY_SYNC_APP_NAME"
@@ -259,7 +261,7 @@ jobs:
           required("SYNC_WIREGUARD_RUNNER_PUBLIC_KEY");
           const secrets = {
             ...Object.fromEntries(keys.map(key => [key, required(key)])),
-            DATABASE_URL: `postgres://health:${encodeURIComponent(required("POSTGRES_PASSWORD"))}@10.253.0.1:5432/health`,
+            DATABASE_URL: `postgres://health:${encodeURIComponent(required("POSTGRES_PASSWORD"))}@127.0.0.1:5432/health`,
             SENTRY_DSN: env.SENTRY_DSN || required("SENTRY_DSN_unencrypted"),
             SYNC_WIREGUARD_PRIVATE_KEY: required("SYNC_WIREGUARD_RUNNER_PRIVATE_KEY"),
             SYNC_WIREGUARD_PEER_PUBLIC_KEY: required("SYNC_WIREGUARD_GATEWAY_PUBLIC_KEY"),

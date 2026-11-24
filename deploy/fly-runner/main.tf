@@ -57,10 +57,10 @@ resource "fly_machine" "runner" {
     ACCOUNT_ERASURE_LEDGER_R2_BUCKET = "dofek-account-erasure-ledger"
     DEPLOY_ENVIRONMENT               = "production"
     OTEL_EXPORTER_OTLP_ENDPOINT      = ""
-    OTEL_EXPORTER_OTLP_LOGS_ENDPOINT = "http://10.253.0.1:4318/v1/logs"
+    OTEL_EXPORTER_OTLP_LOGS_ENDPOINT = "http://127.0.0.1:4318/v1/logs"
     OTEL_RESOURCE_ATTRIBUTES         = "deployment.environment=production"
     OTEL_SERVICE_NAME                = "dofek-worker"
-    REDIS_URL                        = "redis://10.253.0.1:6379"
+    REDIS_URL                        = "redis://127.0.0.1:6379"
     SYNC_WORKER_SITE                 = "fly"
   } : {}
 

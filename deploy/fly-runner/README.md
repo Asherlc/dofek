@@ -2,8 +2,8 @@
 
 This Terraform root provisions a Fly app and one private 512 MB Machine with
 one shared vCPU in San Jose once an image digest is supplied. The
-`pipeline-runner` Docker target runs the provider-sync entry point on any
-Linux host with kernel WireGuard. The Machine has no public service, attached
+`pipeline-runner` Docker target uses userspace WireGuard to run the provider-sync
+entry point on Linux. The Machine has no public service, attached
 volume, or autoscaler. [Fly Machine restart policy](https://docs.fly.io/machines/guides-examples/machine-restart-policy)
 
 ## Provision
@@ -26,9 +26,12 @@ Set `production_sync = true` in the Fly root inputs. Review and apply the
 Fly plan, then apply the OCI Terraform plan that enables UDP 51820 on the
 existing host. The Oracle stack's WireGuard gateway authenticates one
 configured peer and relays Redis, PostgreSQL, and OTLP only on its tunnel IP.
-The runner entry point configures the WireGuard interface with network
-administration privileges, clears the peer key environment variables, and
-starts the Node worker as UID and GID 1000.
+Wireproxy and the Node worker both run as UID and GID 1000. Wireproxy listens
+on loopback for PostgreSQL (5432), Redis (6379), and OTLP (4318). It forwards
+these connections to the Oracle peer over WireGuard. The worker starts with
+the tunnel key variables removed from its environment. The entry point
+keeps the tunnel up while the worker drains on SIGTERM.
+[Wireproxy TCP client tunnels](https://github.com/windtf/wireproxy/blob/e00074911d2e8b23bac6b74703fa1a2b522cff2b/README.md)
 The Fly production release checks the singleton Machine's configuration and
 waits for its private readiness check. [Fly Machine checks](https://docs.fly.io/reference/health-checks/)
 
@@ -108,7 +111,7 @@ Confirm exit code 0 and the expected output. These commands assume a short smoke
 
 A synthetic Kilter job used BullMQ and SQLite in a standalone container. Local builds passed on Linux ARM64 and emulated amd64. On Fly, the Machine started in 779 ms and ran for 6.3 seconds. The probe checked two records, 1,273 walls, and 1,159 gyms at about 138 MiB peak process RSS. The Machine exited with code 0 and the next Terraform plan found no changes.
 
-The production image completed Kilter and Tension queue fixtures through a
+The original kernel-based image completed Kilter and Tension queue fixtures through a
 local WireGuard gateway with real PostgreSQL and Redis. Its telemetry reached
 the collector over the tunnel. An additional 2,500-record Kilter extraction
 probe ran alongside the worker in the same 512 MiB container, with a combined
@@ -118,3 +121,12 @@ The qualification Machine reported a 434 MiB root filesystem, estimated at
 about $0.07 per 30 days while continuously stopped. Production compute,
 root filesystem, and outbound traffic have separate billing measurements.
 [Fly Machine pricing](https://docs.fly.io/about/pricing#stopped-fly-machines)
+
+## Rootless qualification on 2026-11-24
+
+The userspace runner completed the two queue fixtures and sent both execution
+records to the collector. The simultaneous 2,500-record extraction probe and
+worker peaked at 267 MiB in a native Linux ARM64 container with a 512 MiB cap
+and swap disabled. The image also built for Linux amd64. The amd64 workload
+under desktop emulation reached the cap and used swap. Measure native amd64
+memory and metered transfer after the Fly release.
