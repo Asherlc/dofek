@@ -177,6 +177,15 @@ timeline reload in
 and
 [`WidgetCenter.reloadTimelines(ofKind:)`](https://developer.apple.com/documentation/widgetkit/widgetcenter/reloadtimelines(ofkind:)).
 
+When the Watch transfer screen, transport, or account cleanup changes, extend
+IOS-PHY-07. Queue files while the iPhone is out of range, confirm the Watch
+shows the pending handoff, then reconnect and verify the queue clears when the
+files reach the phone. Verify server upload separately through the phone inbox
+and its upload acknowledgment. With the synthetic audit account, exercise
+device cleanup and confirm the Watch shows **Sync paused** once the cleanup
+message arrives. On hardware with Always On, lower the wrist and confirm the
+Watch shows the generic transfer label. [Apple's Always On guidance](https://developer.apple.com/documentation/watchos-apps/designing-your-app-for-the-always-on-state/).
+
 `BGAppRefreshTask` execution is scheduled by the system; the requested earliest
 date is not a delivery deadline. Do not fail or pass IOS-PHY-09 solely because
 no discretionary launch occurred during a short test window. Registration,

@@ -1,9 +1,12 @@
 # Dofek watch app
 
 The Dofek watchOS companion records motion and relative-altitude samples, then
-queues compressed files for transfer to the paired iPhone. The screen shows
-sensor availability, recording state, pending sample counts, phone reachability,
-and manual recording and sync controls.
+queues compressed files for transfer to the paired iPhone. The first screen
+shows Watch-to-iPhone transfer status (`No files queued`, `Preparing files`,
+`Waiting for iPhone`, `Connection unavailable`, `Transfer failed`, or
+`Sync paused`), a short explanation, and Sync Now. Recording details and
+pending sample counts remain below. On Always On, the inactive display shows
+only the generic `iPhone transfer` label.
 
 ## Runtime behavior
 
@@ -13,6 +16,11 @@ and manual recording and sync controls.
   samples while the app is active.
 - `TransferManager` merges nearby accelerometer and gyroscope samples,
   compresses the payload, and queues it with `WCSession.transferFile`.
+  Glance status is a computed read of the account sync flag, activated-session
+  companion availability and outstanding file transfers, the in-flight request,
+  and the latest failed attempt. Sync Now checks the account, session, companion,
+  and whether a request is already running. A new request can start while
+  altitude files from a finished request are still queued.
 - `WatchSessionDelegate` activates the session and handles requests from the
   iPhone companion.
 
@@ -20,8 +28,9 @@ Apple documents sensor availability and delivery constraints in
 [Core Motion](https://developer.apple.com/documentation/coremotion). File
 transfers between the watch and phone use
 [Watch Connectivity](https://developer.apple.com/documentation/watchconnectivity).
-The UI reports unavailable hardware instead of assuming every watch supports
-every sensor.
+Queued Watch-to-iPhone delivery is separate from the iPhone inbox upload to
+the server. The UI reports unavailable hardware instead of assuming every
+watch supports every sensor.
 
 Authorized accelerometer recording persists its requested deadline, capped at
 the [12-hour Core Motion recording limit](https://developer.apple.com/documentation/coremotion/cmsensorrecorder/recordaccelerometer(forduration:)).

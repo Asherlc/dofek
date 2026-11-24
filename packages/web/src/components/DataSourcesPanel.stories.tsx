@@ -11,6 +11,7 @@ import {
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
+import { within } from "storybook/test";
 import { trpc } from "../lib/trpc.ts";
 import { DataSourcesPanel } from "./DataSourcesPanel.tsx";
 import { PageSection } from "./PageSection.tsx";
@@ -21,7 +22,8 @@ type DataSourcesScenario =
   | "empty"
   | "processingBlocked"
   | "crimpd"
-  | "eight-a";
+  | "eight-a"
+  | "filteredClimbing";
 
 const providers = [
   {
@@ -67,15 +69,15 @@ function createMockObservable(
             data:
               scenario === "empty"
                 ? []
-                : scenario === "crimpd" || scenario === "eight-a"
+                : scenario === "crimpd" || scenario === "eight-a" || scenario === "filteredClimbing"
                   ? [
                       {
-                        id: scenario,
-                        name: scenario === "crimpd" ? "Crimpd" : "8a.nu / Vertical-Life",
+                        id: scenario === "filteredClimbing" ? "crimpd" : scenario,
+                        name: scenario === "eight-a" ? "8a.nu / Vertical-Life" : "Crimpd",
                         description:
-                          scenario === "crimpd"
-                            ? "Workouts and climbing logs. ZIP uploads remain available in Details."
-                            : "Personal climbing logbook. Connected CSV uploads require exact matches.",
+                          scenario === "eight-a"
+                            ? "Personal climbing logbook. Connected CSV uploads require exact matches."
+                            : "Workouts and climbing logs. ZIP uploads remain available in Details.",
                         authType: "credential",
                         authorized: false,
                         lastSyncedAt: null,
@@ -83,6 +85,21 @@ function createMockObservable(
                         pushOnly: false,
                         needsReauth: false,
                       },
+                      ...(scenario === "filteredClimbing"
+                        ? [
+                            {
+                              id: "ziva",
+                              name: "Ziva",
+                              description: "Nutrition meals.",
+                              authType: "oauth",
+                              authorized: true,
+                              lastSyncedAt: null,
+                              importOnly: false,
+                              pushOnly: false,
+                              needsReauth: false,
+                            },
+                          ]
+                        : []),
                     ]
                   : providers,
           },
@@ -211,4 +228,12 @@ export const VerticalLife: Story = {
 
 export const ProcessingBlocked: Story = {
   render: () => <DataSourcesPanelStoryFrame scenario="processingBlocked" />,
+};
+
+/** Representative filtered list: open Activity types → Climbing in the Canvas. */
+export const FilteredClimbing: Story = {
+  render: () => <DataSourcesPanelStoryFrame scenario="filteredClimbing" />,
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("tab", { name: "Climbing" }));
+  },
 };

@@ -1,8 +1,14 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
-import { groupProviderEntries, providerFamily } from "@dofek/providers/provider-catalog";
+import {
+  groupProviderEntries,
+  PROVIDER_DATA_SOURCE_TABS,
+  type ProviderDataSourceCategory,
+  providerFamily,
+  providerGroupMatchesCategory,
+} from "@dofek/providers/provider-catalog";
 import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";
 import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
@@ -47,6 +53,8 @@ export function DataSourcesPanel() {
   const trpcUtils = trpc.useUtils();
 
   const [providerStates, setProviderStates] = useState<Record<string, ProviderState>>({});
+  const [activityCategory, setActivityCategory] = useState<ProviderDataSourceCategory>("all");
+  const activityTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [syncAllMode, setSyncAllMode] = useState<"sync" | "full" | null>(null);
   const [syncAllError, setSyncAllError] = useState<string>();
 
@@ -404,6 +412,30 @@ export function DataSourcesPanel() {
     })),
   );
 
+  const selectActivityCategory = useCallback(
+    (category: ProviderDataSourceCategory, index: number) => {
+      setActivityCategory(category);
+      activityTabRefs.current[index]?.focus();
+    },
+    [],
+  );
+
+  const handleActivityTabKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+      const lastIndex = PROVIDER_DATA_SOURCE_TABS.length - 1;
+      let nextIndex: number | null = null;
+      if (event.key === "ArrowRight") nextIndex = index === lastIndex ? 0 : index + 1;
+      else if (event.key === "ArrowLeft") nextIndex = index === 0 ? lastIndex : index - 1;
+      else if (event.key === "Home") nextIndex = 0;
+      else if (event.key === "End") nextIndex = lastIndex;
+      if (nextIndex === null) return;
+      event.preventDefault();
+      const nextTab = PROVIDER_DATA_SOURCE_TABS[nextIndex];
+      if (nextTab) selectActivityCategory(nextTab.id, nextIndex);
+    },
+    [selectActivityCategory],
+  );
+
   const renderProviderEntry = (entry: (typeof unifiedProviders)[number]) => {
     if (entry.kind === "import") {
       const providerStats = statsByProvider.get(entry.id);
@@ -479,28 +511,70 @@ export function DataSourcesPanel() {
         {stats.error ? <QueryStatePanel error={stats.error} height={72} /> : null}
         {logs.error ? <QueryStatePanel error={logs.error} height={72} /> : null}
 
-        <div className={providerGridClassName}>
-          {providers.isLoading
-            ? ["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
-                <div key={id} className="h-24 rounded-lg bg-skeleton animate-pulse" />
-              ))
-            : providerGroups.map((group) =>
-                group.kind === "provider" ? (
-                  <div key={group.provider.id} className="grid">
-                    {renderProviderEntry(group.provider)}
-                  </div>
-                ) : (
-                  <ProviderFamilyCard
-                    key={group.family.id}
-                    familyLabel={group.family.label}
-                    methods={group.providers.map((provider) => ({
-                      id: provider.id,
-                      label: providerFamily(provider.id)?.methodLabel ?? provider.id,
-                      content: <div key={provider.id}>{renderProviderEntry(provider)}</div>,
-                    }))}
-                  />
-                ),
-              )}
+        <div
+          role="tablist"
+          aria-label="Activity types"
+          className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface/60 p-1 scrollbar-hide"
+        >
+          {PROVIDER_DATA_SOURCE_TABS.map((tab, index) => {
+            const selected = activityCategory === tab.id;
+            return (
+              <button
+                key={tab.id}
+                ref={(element) => {
+                  activityTabRefs.current[index] = element;
+                }}
+                id={`data-sources-tab-${tab.id}`}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-controls="data-sources-panel"
+                tabIndex={selected ? 0 : -1}
+                onClick={() => selectActivityCategory(tab.id, index)}
+                onKeyDown={(event) => handleActivityTabKeyDown(event, index)}
+                className={`min-w-fit flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  selected
+                    ? "bg-accent/15 text-foreground"
+                    : "text-subtle hover:bg-surface-hover hover:text-foreground"
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          id="data-sources-panel"
+          role="tabpanel"
+          aria-labelledby={`data-sources-tab-${activityCategory}`}
+        >
+          <div className={providerGridClassName}>
+            {providers.isLoading
+              ? ["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
+                  <div key={id} className="h-24 rounded-lg bg-skeleton animate-pulse" />
+                ))
+              : providerGroups.map((group) => {
+                  const matches = providerGroupMatchesCategory(group, activityCategory);
+                  const key = group.kind === "provider" ? group.provider.id : group.family.id;
+                  return (
+                    <div key={key} hidden={!matches} className={matches ? "grid" : undefined}>
+                      {group.kind === "provider" ? (
+                        renderProviderEntry(group.provider)
+                      ) : (
+                        <ProviderFamilyCard
+                          familyLabel={group.family.label}
+                          methods={group.providers.map((provider) => ({
+                            id: provider.id,
+                            label: providerFamily(provider.id)?.methodLabel ?? provider.id,
+                            content: <div key={provider.id}>{renderProviderEntry(provider)}</div>,
+                          }))}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+          </div>
         </div>
       </section>
 
