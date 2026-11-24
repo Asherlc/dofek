@@ -32,7 +32,17 @@ type ProcessingStatusStoryCompanionResponses = {
   "strength.volumeOverTime"?: Awaited<
     ReturnType<AppRouterClient["strength"]["volumeOverTime"]["query"]>
   >;
+  "strength.loggedSetComparison"?: Awaited<
+    ReturnType<AppRouterClient["strength"]["loggedSetComparison"]["query"]>
+  >;
+  "strength.exerciseHistory"?: Awaited<
+    ReturnType<AppRouterClient["strength"]["exerciseHistory"]["query"]>
+  >;
   "running.dynamicsV2"?: Awaited<ReturnType<AppRouterClient["running"]["dynamicsV2"]["query"]>>;
+  "cycling.decoupling"?: Awaited<ReturnType<AppRouterClient["cycling"]["decoupling"]["query"]>>;
+  "trainingProgression.strength"?: Awaited<
+    ReturnType<AppRouterClient["trainingProgression"]["strength"]["query"]>
+  >;
 
   "training.hrZones"?: Awaited<ReturnType<AppRouterClient["training"]["hrZones"]["query"]>>;
   "efficiency.polarizationTrend"?: Awaited<
@@ -69,7 +79,11 @@ const PROCESSING_STATUS_STORY_COMPANION_PATHS = [
   "climbing.attemptIncrease",
   "climbing.volumeOverTime",
   "strength.volumeOverTime",
+  "strength.loggedSetComparison",
+  "strength.exerciseHistory",
   "running.dynamicsV2",
+  "cycling.decoupling",
+  "trainingProgression.strength",
 
   "training.hrZones",
   "efficiency.polarizationTrend",

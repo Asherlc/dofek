@@ -1,5 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
+import { screenshotMorningRideHeader } from "../../app-fixtures/(tabs)/screenshot-profile";
+import { colors, spacing } from "../../theme";
+import { ActivityDetailHeader } from "./ActivityDetailHeader";
+import { ActivityDetailStoryProviders } from "./ActivityDetailStoryProviders";
 import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
 
 const heartRateZones = [
@@ -36,7 +40,10 @@ function ZoneChartsStory({
   const emptyPowerZones = powerZones.map((zone) => ({ ...zone, seconds: 0, percent: 0 }));
 
   return (
-    <View style={{ gap: 16 }}>
+    <View style={{ gap: spacing.md }}>
+      {variant === "heart-rate" ? (
+        <ActivityDetailHeader activity={screenshotMorningRideHeader} />
+      ) : null}
       {variant === "heart-rate" && <HrZonesChart zones={heartRateZones} />}
       {variant === "power" && <PowerZonesChart zones={powerZones} />}
       {variant === "heart-rate-empty" && <HrZonesChart zones={emptyHeartRateZones} />}
@@ -57,9 +64,18 @@ const meta = {
   },
   decorators: [
     (Story) => (
-      <View style={{ flex: 1, minHeight: 932, padding: 16, backgroundColor: "#000" }}>
-        <Story />
-      </View>
+      <ActivityDetailStoryProviders>
+        <View
+          style={{
+            flex: 1,
+            minHeight: "100%",
+            padding: 16,
+            backgroundColor: colors.background,
+          }}
+        >
+          <Story />
+        </View>
+      </ActivityDetailStoryProviders>
     ),
   ],
   args: {

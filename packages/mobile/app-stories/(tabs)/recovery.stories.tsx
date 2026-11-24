@@ -301,7 +301,7 @@ const meta = {
   decorators: [
     (Story, context) => (
       <MockProviders recoveryUnavailable={context.parameters.recoveryUnavailable === true}>
-        <View style={{ minHeight: 1400, backgroundColor: colors.background }}>
+        <View style={{ flex: 1, minHeight: "100%", backgroundColor: colors.background }}>
           <Story />
         </View>
       </MockProviders>

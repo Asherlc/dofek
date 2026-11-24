@@ -25,7 +25,9 @@ import { climbingStrengthsFixture } from "../../components/climbing-strengths-fi
 import { createClimbingRecordDetailLink } from "../../components/fixtures/climbing-best-onsight-story-helpers";
 import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
 import { runningData } from "../../components/running-training-test-helpers";
+import { statusRowWithoutBadgeFirst } from "../../components/training-progression-fixture";
 import { trpc } from "../../lib/trpc";
+import { colors } from "../../theme";
 
 const STRAIN_COMPANION_RESPONSES = {
   "cycling.decoupling": { workoutName: null, rides: [] },
@@ -57,6 +59,7 @@ const STRAIN_COMPANION_RESPONSES = {
     exercises: [],
     research: { summary: "", url: "https://pmc.ncbi.nlm.nih.gov/articles/pmid/30153194/" },
   },
+  "strength.exerciseHistory": [],
   "strength.volumeOverTime": [
     {
       week: "2026-09-28",
@@ -68,6 +71,7 @@ const STRAIN_COMPANION_RESPONSES = {
       durationMinutes: 120,
     },
   ],
+  "trainingProgression.strength": statusRowWithoutBadgeFirst,
   "training.hrZones": {
     maxHr: 190,
     weeks: [],
@@ -346,12 +350,15 @@ function MockProviders({
   withActivities = false,
   withUnknownClimbingAttempts = false,
   withRecordedClimbingAttempts = false,
+  appStoreScreenshot = false,
 }: {
   children: React.ReactNode;
   trainingUnavailable?: boolean;
   withActivities?: boolean;
   withUnknownClimbingAttempts?: boolean;
   withRecordedClimbingAttempts?: boolean;
+  /** App Store capture: omit route/climbing alerts that don't match the screenshot profile. */
+  appStoreScreenshot?: boolean;
 }) {
   const { queryClient, trpcClient } = useMemo(() => {
     const seededProviders = createSeededProviders(
@@ -360,6 +367,14 @@ function MockProviders({
       withUnknownClimbingAttempts,
       withRecordedClimbingAttempts,
     );
+    const companionResponses = appStoreScreenshot
+      ? {
+          ...STRAIN_COMPANION_RESPONSES,
+          "hiking.activityComparison": [],
+          "climbing.volumeIncrease": { status: "insufficient_data" },
+          "climbing.attemptIncrease": { status: "insufficient_data" },
+        }
+      : STRAIN_COMPANION_RESPONSES;
     return {
       queryClient: seededProviders.queryClient,
       trpcClient: trpc.createClient({
@@ -367,10 +382,7 @@ function MockProviders({
           createClimbingRecordDetailLink(),
           createSportVolumeStoryLink(),
           ...(trainingUnavailable ? [createTrainingFailureStoryLink()] : []),
-          createProcessingStatusStoryLink(
-            seededProviders.processingStatus,
-            STRAIN_COMPANION_RESPONSES,
-          ),
+          createProcessingStatusStoryLink(seededProviders.processingStatus, companionResponses),
         ],
       }),
     };
@@ -379,6 +391,7 @@ function MockProviders({
     withActivities,
     withUnknownClimbingAttempts,
     withRecordedClimbingAttempts,
+    appStoreScreenshot,
   ]);
 
   return (
@@ -400,7 +413,7 @@ const meta = {
   decorators: [
     (Story) => (
       <MockProviders>
-        <View style={{ flex: 1, backgroundColor: "#000" }}>
+        <View style={{ flex: 1, minHeight: "100%", backgroundColor: colors.background }}>
           <Story />
         </View>
       </MockProviders>
@@ -443,6 +456,18 @@ export const WithActivities: Story = {
     (Story) => (
       <MockProviders withActivities>
         <View style={{ flex: 1, backgroundColor: "#000" }}>
+          <Story />
+        </View>
+      </MockProviders>
+    ),
+  ],
+};
+
+export const AppStoreScreenshot: Story = {
+  decorators: [
+    (Story) => (
+      <MockProviders withActivities appStoreScreenshot>
+        <View style={{ flex: 1, minHeight: "100%", backgroundColor: colors.background }}>
           <Story />
         </View>
       </MockProviders>

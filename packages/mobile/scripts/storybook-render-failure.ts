@@ -1,3 +1,5 @@
+import { CONNECTION_ERROR_MESSAGE } from "@dofek/format/user-facing-error";
+
 interface StorybookLocator {
   count(): Promise<number>;
   textContent(): Promise<string | null>;
@@ -6,6 +8,8 @@ interface StorybookLocator {
 interface StorybookPage {
   locator(selector: string): StorybookLocator;
 }
+
+const CONNECTION_ERROR_SELECTOR = `text=${JSON.stringify(CONNECTION_ERROR_MESSAGE)}`;
 
 export async function assertStoryRendered(page: StorybookPage, storyId: string): Promise<void> {
   const errorMessage = page.locator("#error-message:visible");
@@ -28,5 +32,10 @@ export async function assertStoryRendered(page: StorybookPage, storyId: string):
   const queryError = page.locator('[data-testid="query-state-error"]:visible');
   if ((await queryError.count()) > 0) {
     throw new Error(`Storybook story ${storyId} contains a query error panel`);
+  }
+
+  const connectionError = page.locator(CONNECTION_ERROR_SELECTOR);
+  if ((await connectionError.count()) > 0) {
+    throw new Error(`Storybook story ${storyId} shows a connection failure message`);
   }
 }

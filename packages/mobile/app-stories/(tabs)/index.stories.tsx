@@ -10,7 +10,12 @@ import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
 } from "../../app-fixtures/(tabs)/processing-status-story-fixture";
+import {
+  screenshotConnectedProviders,
+  screenshotOverviewEvidence,
+} from "../../app-fixtures/(tabs)/screenshot-profile";
 import { overviewDays } from "../../components/OverviewEvidence";
+import { statusRowWithoutBadgeFirst } from "../../components/training-progression-fixture";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 
@@ -20,12 +25,19 @@ function localDateString(dayOffset = 0): string {
   return formatDateYmd(date);
 }
 
-function createSeededProviders(sleepDataUnavailable: boolean) {
+function createSeededProviders({
+  sleepDataUnavailable,
+  appStoreScreenshot,
+}: {
+  sleepDataUnavailable: boolean;
+  appStoreScreenshot: boolean;
+}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
 
   const todayDate = localDateString();
+  const evidence = appStoreScreenshot ? screenshotOverviewEvidence : overviewEvidenceFixture;
 
   const processingStatus = seedReadyProcessingStatus(queryClient, [
     "activity",
@@ -53,7 +65,7 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
       },
       anomalies: { anomalies: [], checkedMetrics: [] },
       latestDate: todayDate,
-      summaryDateContext: { effectiveDate: todayDate, timezone: "UTC" },
+      summaryDateContext: { effectiveDate: todayDate, timezone: "America/Los_Angeles" },
     },
   );
 
@@ -99,15 +111,20 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
   const overviewInput = { days: overviewDays, endDate: todayDate };
   queryClient.setQueryData(
     [["dailyMetrics", "trends"], { input: overviewInput, type: "query" }],
-    overviewEvidenceFixture.trends.data,
+    evidence.trends.data,
   );
   queryClient.setQueryData(
     [["dailyMetrics", "hrvBaseline"], { input: overviewInput, type: "query" }],
-    overviewEvidenceFixture.heartRate.data,
+    evidence.heartRate.data,
   );
   queryClient.setQueryData(
     [["insights", "compute"], { input: overviewInput, type: "query" }],
-    overviewEvidenceFixture.insights.data,
+    evidence.insights.data,
+  );
+
+  queryClient.setQueryData(
+    [["trainingProgression", "strength"], { type: "query" }],
+    statusRowWithoutBadgeFirst,
   );
 
   queryClient.setQueryData(
@@ -117,26 +134,28 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
 
   queryClient.setQueryData(
     [["sync", "providers"], { type: "query" }],
-    [
-      {
-        id: "apple_health",
-        name: "Apple Health",
-        authType: "none",
-        authorized: true,
-        lastSyncedAt: new Date().toISOString(),
-        importOnly: false,
-        needsReauth: false,
-      },
-      {
-        id: "whoop",
-        name: "WHOOP",
-        authType: "custom:whoop",
-        authorized: true,
-        lastSyncedAt: new Date(Date.now() - 45 * 60_000).toISOString(),
-        importOnly: false,
-        needsReauth: false,
-      },
-    ],
+    appStoreScreenshot
+      ? screenshotConnectedProviders
+      : [
+          {
+            id: "apple_health",
+            name: "Apple Health",
+            authType: "none",
+            authorized: true,
+            lastSyncedAt: new Date().toISOString(),
+            importOnly: false,
+            needsReauth: false,
+          },
+          {
+            id: "whoop",
+            name: "WHOOP",
+            authType: "custom:whoop",
+            authorized: true,
+            lastSyncedAt: new Date(Date.now() - 45 * 60_000).toISOString(),
+            importOnly: false,
+            needsReauth: false,
+          },
+        ],
   );
 
   queryClient.setQueryData(
@@ -150,19 +169,21 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
 function MockProviders({
   children,
   sleepDataUnavailable,
+  appStoreScreenshot,
 }: {
   children: ReactNode;
   sleepDataUnavailable: boolean;
+  appStoreScreenshot: boolean;
 }) {
   const { queryClient, trpcClient } = useMemo(() => {
-    const seededProviders = createSeededProviders(sleepDataUnavailable);
+    const seededProviders = createSeededProviders({ sleepDataUnavailable, appStoreScreenshot });
     return {
       ...seededProviders,
       trpcClient: trpc.createClient({
         links: [createProcessingStatusStoryLink(seededProviders.processingStatus)],
       }),
     };
-  }, [sleepDataUnavailable]);
+  }, [sleepDataUnavailable, appStoreScreenshot]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -179,8 +200,11 @@ const meta = {
   },
   decorators: [
     (Story, context) => (
-      <MockProviders sleepDataUnavailable={context.parameters.sleepDataUnavailable === true}>
-        <View style={{ minHeight: 1200, backgroundColor: colors.background }}>
+      <MockProviders
+        sleepDataUnavailable={context.parameters.sleepDataUnavailable === true}
+        appStoreScreenshot={context.parameters.appStoreScreenshot === true}
+      >
+        <View style={{ flex: 1, minHeight: "100%", backgroundColor: colors.background }}>
           <Story />
         </View>
       </MockProviders>
@@ -197,5 +221,11 @@ export const Default: Story = {};
 export const SleepDataNeeded: Story = {
   parameters: {
     sleepDataUnavailable: true,
+  },
+};
+
+export const AppStoreScreenshot: Story = {
+  parameters: {
+    appStoreScreenshot: true,
   },
 };

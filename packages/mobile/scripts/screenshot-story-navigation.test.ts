@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { selectScreenshotTab } from "./screenshot-story-navigation";
+import { selectScreenshotTab, waitForScreenshotReadiness } from "./screenshot-story-navigation";
 
 describe("selectScreenshotTab", () => {
   it("clicks the exact requested tab before capture", async () => {
@@ -9,10 +9,11 @@ describe("selectScreenshotTab", () => {
     const getByRole = vi.fn(and);
     const locator = vi.fn(and);
     const waitForFunction = vi.fn(async () => {});
+    const getByText = vi.fn();
 
-    await selectScreenshotTab({ getByRole, locator, waitForFunction }, "Connections");
+    await selectScreenshotTab({ getByRole, locator, waitForFunction, getByText }, "Data Sources");
 
-    expect(getByRole).toHaveBeenCalledWith("button", { name: "Connections", exact: true });
+    expect(getByRole).toHaveBeenCalledWith("button", { name: "Data Sources", exact: true });
     expect(locator).toHaveBeenCalledWith("[aria-selected]");
     expect(click).toHaveBeenCalledOnce();
     expect(getAttribute).toHaveBeenCalledWith("aria-selected");
@@ -31,10 +32,11 @@ describe("selectScreenshotTab", () => {
     const getByRole = vi.fn(and);
     const locator = vi.fn(and);
     const waitForFunction = vi.fn(async () => {});
+    const getByText = vi.fn();
 
     await expect(
-      selectScreenshotTab({ getByRole, locator, waitForFunction }, "Connections"),
-    ).rejects.toThrow('Screenshot tab "Connections" was not selected');
+      selectScreenshotTab({ getByRole, locator, waitForFunction, getByText }, "Data Sources"),
+    ).rejects.toThrow('Screenshot tab "Data Sources" was not selected');
   });
 
   it("does not look up a tab when the screenshot has no tab label", async () => {
@@ -45,10 +47,47 @@ describe("selectScreenshotTab", () => {
     }));
     const locator = vi.fn(getByRole);
     const waitForFunction = vi.fn(async () => {});
+    const getByText = vi.fn();
 
-    await selectScreenshotTab({ getByRole, locator, waitForFunction });
+    await selectScreenshotTab({ getByRole, locator, waitForFunction, getByText });
 
     expect(getByRole).not.toHaveBeenCalled();
     expect(waitForFunction).not.toHaveBeenCalled();
+  });
+});
+
+describe("waitForScreenshotReadiness", () => {
+  it("waits for the configured readiness text to become visible", async () => {
+    const waitFor = vi.fn(async () => {});
+    const getByText = vi.fn(() => ({
+      first: () => ({ waitFor }),
+    }));
+
+    await waitForScreenshotReadiness(
+      {
+        getByRole: vi.fn(),
+        locator: vi.fn(),
+        waitForFunction: vi.fn(),
+        getByText,
+      },
+      "LAST NIGHT",
+    );
+
+    expect(getByText).toHaveBeenCalledWith("LAST NIGHT", { exact: false });
+    expect(waitFor).toHaveBeenCalledWith({ state: "visible", timeout: 15_000 });
+  });
+
+  it("rejects an empty readiness anchor", async () => {
+    await expect(
+      waitForScreenshotReadiness(
+        {
+          getByRole: vi.fn(),
+          locator: vi.fn(),
+          waitForFunction: vi.fn(),
+          getByText: vi.fn(),
+        },
+        "   ",
+      ),
+    ).rejects.toThrow("Screenshot readiness text is required");
   });
 });

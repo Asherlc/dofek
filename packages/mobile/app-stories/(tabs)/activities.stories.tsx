@@ -10,9 +10,11 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import { expect, within } from "storybook/test";
 import ActivitiesScreen from "../../app/(tabs)/activities";
+import { screenshotMorningRideTiming } from "../../app-fixtures/(tabs)/screenshot-profile";
 import { branchingActivitySourceTree } from "../../app-fixtures/activity-source-tree";
 import { activityImageFixture } from "../../components/activity-images-test-helpers";
 import { trpc } from "../../lib/trpc";
+import { colors } from "../../theme";
 
 const mapPreview = {
   width: 1024,
@@ -126,15 +128,14 @@ function createStoryData(
           name: hangboarding ? "Hangboard repeats" : "Morning Ride",
           activityType: hangboarding ? "hangboard" : "road_cycling",
           modality: hangboarding ? null : "road",
-          startedAt: `${today}T07:30:00Z`,
-          endedAt: `${today}T09:00:00Z`,
-          localTimeContext: {
-            timezone: "America/Los_Angeles",
-            startUtcOffsetMinutes: -420,
-            endUtcOffsetMinutes: -420,
-            source: "device_timezone",
-          },
-          durationMin: 90,
+          startedAt: hangboarding
+            ? `${today}T15:30:00.000Z`
+            : `${today}${screenshotMorningRideTiming.startUtcSuffix}`,
+          endedAt: hangboarding
+            ? `${today}T17:00:00.000Z`
+            : `${today}${screenshotMorningRideTiming.endUtcSuffix}`,
+          localTimeContext: screenshotMorningRideTiming.localTimeContext,
+          durationMin: hangboarding ? 90 : screenshotMorningRideTiming.durationMin,
           source: {
             tree: sourceTree,
             origin:
@@ -372,6 +373,8 @@ function createMockObservable(
         observer.next?.({ result: { data: storyData.activityOverview } });
       } else if (path === "calendar.calendarData") {
         observer.next?.({ result: { data: storyData.calendarData } });
+      } else if (path === "calendar.upcomingWorkouts") {
+        observer.next?.({ result: { data: [] } });
       } else if (path === "processing.status") {
         observer.next?.({ result: { data: storyData.processingStatus } });
       } else if (path === "activity.images") {
@@ -478,6 +481,7 @@ function MockProviders({
       [["processing", "status"], { input: { datasets: ["activity"] }, type: "query" }],
       storyData.processingStatus,
     );
+    client.setQueryData([["calendar", "upcomingWorkouts"], { type: "query" }], []);
     return client;
   }, [storyData]);
   const trpcClient = useMemo(
@@ -512,7 +516,7 @@ const meta = {
         }
         originSourceName={context.parameters.originSourceName ?? null}
       >
-        <View style={{ flex: 1, backgroundColor: "#000" }}>
+        <View style={{ flex: 1, minHeight: "100%", backgroundColor: colors.background }}>
           <Story />
         </View>
       </MockProviders>

@@ -4,8 +4,10 @@ import { httpBatchLink } from "@trpc/client";
 import { View } from "react-native";
 import { expect, within } from "storybook/test";
 import SettingsScreen from "../app/settings";
+import { screenshotConnectedProviders } from "../app-fixtures/(tabs)/screenshot-profile";
 import { AuthProvider } from "../lib/auth-context";
 import { trpc } from "../lib/trpc";
+import { colors } from "../theme";
 
 const settingsModelCards = [
   ["exponentialMovingAverage", "Training Load Windows", "Past 365 days"],
@@ -29,48 +31,10 @@ function createSeededProviders() {
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
 
-  // sync.providers — connected providers shown in Data Sources card
+  // sync.providers — Garmin / Apple Health / WHOOP match Activity, Recovery, and Overview
   queryClient.setQueryData(
     [["sync", "providers"], { type: "query" }],
-    [
-      {
-        id: "strava",
-        name: "Strava",
-        authType: "oauth",
-        authorized: true,
-        lastSyncedAt: "2026-04-03T12:00:00Z",
-        importOnly: false,
-        needsReauth: false,
-      },
-      {
-        id: "wahoo",
-        name: "Wahoo",
-        authType: "oauth",
-        authorized: true,
-        lastSyncedAt: "2026-04-03T11:30:00Z",
-        importOnly: false,
-        needsReauth: false,
-      },
-      {
-        id: "whoop",
-        name: "WHOOP",
-        authType: "custom:whoop",
-        authorized: true,
-        lastSyncedAt: "2026-04-03T10:00:00Z",
-        importOnly: false,
-        needsReauth: false,
-      },
-      {
-        id: "garmin",
-        name: "Garmin",
-        authType: "oauth",
-        authorized: false,
-        lastSyncedAt: null,
-        importOnly: false,
-        pushOnly: true,
-        needsReauth: false,
-      },
-    ],
+    screenshotConnectedProviders,
   );
 
   // auth.linkedAccounts
@@ -135,6 +99,8 @@ function createSeededProviders() {
     canManageBilling: false,
   });
 
+  queryClient.setQueryData([["companionToken", "list"], { type: "query" }], []);
+
   return { queryClient };
 }
 
@@ -162,7 +128,7 @@ const meta = {
   decorators: [
     (Story) => (
       <MockProviders>
-        <View style={{ flex: 1, backgroundColor: "#000" }}>
+        <View style={{ flex: 1, minHeight: "100%", backgroundColor: colors.background }}>
           <Story />
         </View>
       </MockProviders>

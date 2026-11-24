@@ -1,3 +1,4 @@
+import { CONNECTION_ERROR_MESSAGE } from "@dofek/format/user-facing-error";
 import { describe, expect, it } from "vitest";
 import { assertStoryRendered } from "./storybook-render-failure";
 
@@ -8,14 +9,18 @@ interface StorybookRenderFailure {
   stack: string | null;
 }
 
+const CONNECTION_ERROR_SELECTOR = `text=${JSON.stringify(CONNECTION_ERROR_MESSAGE)}`;
+
 function storybookPage({
   renderFailure,
   processingError,
   queryError,
+  connectionError,
 }: {
   renderFailure?: StorybookRenderFailure;
   processingError?: string;
   queryError?: string;
+  connectionError?: string;
 } = {}): StorybookPage {
   return {
     locator(selector) {
@@ -26,6 +31,7 @@ function storybookPage({
           processingError !== undefined ? "Processing status is unavailable" : null,
         'text="Failed to fetch"': processingError || null,
         '[data-testid="query-state-error"]:visible': queryError,
+        [CONNECTION_ERROR_SELECTOR]: connectionError,
       }[selector];
       return {
         count: async () => (text == null ? 0 : 1),
@@ -92,6 +98,16 @@ describe("assertStoryRendered", () => {
 
     await expect(assertStoryRendered(page, "pages-strain--with-activities")).rejects.toThrow(
       "Storybook story pages-strain--with-activities contains a query error panel",
+    );
+  });
+
+  it("fails when a screenshot shows a connection failure message", async () => {
+    const page = storybookPage({
+      connectionError: CONNECTION_ERROR_MESSAGE,
+    });
+
+    await expect(assertStoryRendered(page, "pages-settings--default")).rejects.toThrow(
+      "Storybook story pages-settings--default shows a connection failure message",
     );
   });
 });

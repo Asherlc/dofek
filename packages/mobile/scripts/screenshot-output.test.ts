@@ -16,8 +16,8 @@ describe("manifestOutputPath", () => {
     expect(
       manifestOutputPath(
         "/workspace/packages/mobile",
-        "/workspace/packages/mobile/app-store/screenshots/shot.png",
+        "/workspace/packages/mobile/app-store/screenshots/iphone/shot.png",
       ),
-    ).toBe("app-store/screenshots/shot.png");
+    ).toBe("app-store/screenshots/iphone/shot.png");
   });
 });

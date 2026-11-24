@@ -4,9 +4,14 @@ interface ScreenshotTabButton {
   getAttribute(name: string): Promise<string | null>;
 }
 
+interface ScreenshotReadyLocator {
+  first(): { waitFor(options: { state: "visible"; timeout: number }): Promise<void> };
+}
+
 interface ScreenshotNavigationPage {
   locator(selector: string): ScreenshotTabButton;
   getByRole(role: "button", options: { name: string; exact: true }): ScreenshotTabButton;
+  getByText(text: string, options?: { exact?: boolean }): ScreenshotReadyLocator;
   waitForFunction(
     condition: (label: string) => boolean,
     label: string,
@@ -36,4 +41,19 @@ export async function selectScreenshotTab(
   if ((await tab.getAttribute("aria-selected")) !== "true") {
     throw new Error(`Screenshot tab "${tabLabel}" was not selected`);
   }
+}
+
+/** Fail closed when the story canvas never shows the expected populated UI. */
+export async function waitForScreenshotReadiness(
+  page: ScreenshotNavigationPage,
+  readinessText: string,
+  timeoutMs = 15_000,
+): Promise<void> {
+  if (readinessText.trim().length === 0) {
+    throw new Error("Screenshot readiness text is required");
+  }
+  await page.getByText(readinessText, { exact: false }).first().waitFor({
+    state: "visible",
+    timeout: timeoutMs,
+  });
 }
