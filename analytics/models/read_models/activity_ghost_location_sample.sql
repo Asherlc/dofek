@@ -10,7 +10,7 @@
     },
     projections=[{
         'name': 'by_activity_location_source_refresh',
-        'query': 'SELECT activity_id, user_id, max(greatest(source_refreshed_at, refreshed_at)) AS source_refreshed_at GROUP BY activity_id, user_id'
+        'query': 'SELECT activity_id, user_id, max(greatest(source_refreshed_at, refreshed_at)) AS source_refreshed_at, max(refresh_version) AS gps_refresh_version GROUP BY activity_id, user_id'
     }],
     query_settings={
         'max_threads': 1,

@@ -15,7 +15,7 @@ describe("clickHouseMigrations", () => {
     expect(migrations.at(0)?.id).toBe("0001_clickhouse_analytics_schema_cleanup");
     const migrationIds = migrations.map((migration) => migration.id);
     expect(new Set(migrationIds).size).toBe(migrationIds.length);
-    expect(migrationIds.slice(-8)).toEqual([
+    expect(migrationIds.slice(-9)).toEqual([
       "0112_remove_healthspan",
       "0113_activity_fit_recovery_error",
       "0114_normalized_power_projection",
@@ -24,8 +24,18 @@ describe("clickHouseMigrations", () => {
       "0117_cycling_polarization_elapsed_seconds",
       "0118_daily_sleep_wake_date_index",
       "0119_heart_rate_changed_at",
+      "0120_ghost_track_index",
     ]);
     expect(migrations.at(-1)).toMatchObject({
+      id: "0120_ghost_track_index",
+      statements: expect.arrayContaining([
+        expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.ghost_track"),
+        expect.stringContaining("ORDER BY (user_id, activity_id)"),
+      ]),
+    });
+    expect(
+      migrations.find((migration) => migration.id === "0119_heart_rate_changed_at"),
+    ).toMatchObject({
       id: "0119_heart_rate_changed_at",
       statements: expect.arrayContaining([
         expect.stringContaining("ADD COLUMN IF NOT EXISTS heart_rate_changed_at"),
