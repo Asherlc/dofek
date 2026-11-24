@@ -527,6 +527,70 @@ describe("joinByDate()", () => {
 // ── computeInsights tests ───────────────────────────────────────────────
 
 describe("computeInsights()", () => {
+  it("counts weak conditional comparisons in the multiple-testing correction", () => {
+    const days = dateRange("2025-04-01", 41);
+    const metrics = days.map((date, index) =>
+      makeDailyRow(date, {
+        resting_hr: null,
+        hrv: index === 0 ? null : 40 + ((index - 1) % 20) + (index <= 20 ? 4 : 0),
+      }),
+    );
+    const sleep = days.slice(0, -1).map((date, index) =>
+      makeSleepRow(`${date}T00:00:00Z`, {
+        duration_minutes: index < 20 ? 421 : 419,
+        deep_minutes: null,
+        rem_minutes: null,
+      }),
+    );
+    // The HRV comparison has p ≈ 0.039. The resting-heart-rate groups match.
+    const withRestingHeartRate = metrics.map((day, index) => ({
+      ...day,
+      resting_hr: index === 0 ? null : 50 + ((index - 1) % 20),
+    }));
+
+    expect(computeInsights(metrics, sleep, []).map((insight) => insight.id)).toContain(
+      "sleep-7h-hrv",
+    );
+    expect(
+      computeInsights(withRestingHeartRate, sleep, []).map((insight) => insight.id),
+    ).not.toContain("sleep-7h-hrv");
+  });
+
+  it("counts predefined correlations below the effect floor in the correction", () => {
+    const days = dateRange("2025-04-01", 40);
+    const metrics = days.map((date, index) =>
+      makeDailyRow(date, { hrv: index === 0 ? null : 40 + index - 1, steps: null }),
+    );
+    const nutrition = days
+      .slice(0, -1)
+      .map((date, index) => makeNutritionRow(date, { protein_g: 110 + ((index + 5) % 39) }));
+    // Protein has rho ≈ 0.329 and p ≈ 0.041. Steps has rho ≈ 0.116.
+    const withSteps = metrics.map((day, index) => ({
+      ...day,
+      steps: 8000 + ((index + 7) % 39),
+    }));
+    const withConstantSteps = metrics.map((day) => ({ ...day, steps: 8000 }));
+
+    expect(computeInsights(metrics, [], [], nutrition).map((insight) => insight.id)).toContain(
+      "protein-hrv",
+    );
+    const constantStepsInsights = computeInsights(withConstantSteps, [], [], nutrition).map(
+      (insight) => insight.id,
+    );
+    expect(constantStepsInsights).toContain("protein-hrv");
+    expect(constantStepsInsights).not.toContain("steps-hrv");
+    expect(
+      computeInsights(withSteps, [], [], nutrition).map((insight) => insight.id),
+    ).not.toContain("protein-hrv");
+    const stronglyAssociatedNutrition = nutrition.map((entry, index) => ({
+      ...entry,
+      protein_g: 110 + ((index + 3) % 39),
+    }));
+    expect(
+      computeInsights(withSteps, [], [], stronglyAssociatedNutrition).map((insight) => insight.id),
+    ).toContain("protein-hrv");
+  });
+
   it("keeps non-conditional evidence free of a conditional estimate label", () => {
     const dates = dateRange("2025-01-01", 90);
     const metrics = dates.map((date, index) =>
@@ -2658,6 +2722,37 @@ describe("aggregateMonthly()", () => {
 // ── exhaustiveSweep() tests ─────────────────────────────────────────────
 
 describe("exhaustiveSweep()", () => {
+  it("counts exploratory correlations below the effect floor in the correction", () => {
+    const metrics = dateRange("2025-04-01", 117).map((date, index) =>
+      makeDailyRow(date, {
+        resting_hr: index % 3 === 0 ? 60 + index / 3 : null,
+        steps: index % 3 === 0 ? 8000 + ((index / 3 + 5) % 39) : null,
+        hrv: null,
+        spo2_avg: null,
+        skin_temp_c: null,
+      }),
+    );
+    // Space samples three days apart so only same-day comparisons are testable.
+    const joined = joinByDate(metrics, [], [], [], [], DEFAULT_CONFIG);
+    const withExercise = (shift: number) =>
+      joined.map((day, index) => ({
+        ...day,
+        exercise_minutes: index % 3 === 0 ? 1 + ((index / 3 + shift) % 39) : null,
+      }));
+
+    expect(exhaustiveSweep(joined, new Set()).map((insight) => insight.id)).toContain(
+      "disc-steps-resting_hr-lag0",
+    );
+    expect(exhaustiveSweep(withExercise(7), new Set()).map((insight) => insight.id)).not.toContain(
+      "disc-steps-resting_hr-lag0",
+    );
+    expect(
+      exhaustiveSweep(withExercise(6), new Set(["exercise duration::resting HR"])).map(
+        (insight) => insight.id,
+      ),
+    ).not.toContain("disc-steps-resting_hr-lag0");
+  });
+
   it("returns empty array for insufficient data (< 20 days)", () => {
     const days = makeJoinedDays(15);
     const result = exhaustiveSweep(days, new Set());

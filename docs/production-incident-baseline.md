@@ -39869,10 +39869,15 @@ Local qualification and CI are separate from production throughput acceptance. T
   relationships for the newer window.
   [Engine filters](../packages/server/src/insights/engine.ts) ·
   [Correction implementation](../packages/server/src/insights/stats.ts).
-- **Risk and follow-up.** A comparison can disappear when a different comparison
-  crosses the effect-size floor. Use a synthetic replay of both windows when
-  reviewing whether the correction should operate over all eligible tests before
-  the display filter.
+- **Fix and validation.** The conditional, predefined correlation, and
+  exploratory families now correct across all testable comparisons before
+  applying the display filters. The server versions its cache key to refresh
+  results after release. Synthetic regressions failed with the deployed engine
+  and passed with the corrected engine. A read-only calculation with the
+  corrected code returned zero qualifying relationships for both windows.
+  Confirm the new cache version after deployment.
+  [Engine regressions](../packages/server/src/insights/engine.test.ts) ·
+  [Overview evidence contract](../packages/server/README.md#overview-relationship-evidence).
 
 ## 2026-11-23 — Overview PR validation failed in unit and integration checks
 

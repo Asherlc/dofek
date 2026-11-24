@@ -400,6 +400,20 @@ that date so an older daily total does not appear as current progress. See the
 [baseline requirements](./src/services/baseline-progress.ts), and
 [selected-date database regression](./src/routers/daily-metrics.integration.test.ts).
 
+### Overview relationship evidence
+
+[Overview Insights](src/routers/insights.ts) joins data in the selected date
+window and evaluates predefined group comparisons, predefined correlations, and
+exploratory correlations. Each of these test families applies the
+Benjamini–Hochberg correction to every test with enough samples and a defined
+p-value. Effect size, confidence, and duplicate suppression govern which
+corrected results the engine returns. A comparison's observed effect can
+therefore change its own display eligibility without changing how many tests
+enter the correction. The Overview shows an empty card when it has no
+qualifying relationship. [Insight engine](src/insights/engine.ts) ·
+[Exploratory correlations](src/insights/discovery.ts) ·
+[Research on filtering before correction](https://pmc.ncbi.nlm.nih.gov/articles/PMC2906865/).
+
 ### Correlation evidence contract
 
 Current web and mobile clients use the versioned `correlation.computeV2` endpoint. The endpoint
