@@ -208,8 +208,8 @@ importers:
         specifier: 8.0.0
         version: 8.0.0(bare-buffer@3.7.1)
       bullmq:
-        specifier: 6.7.1
-        version: 6.7.1(ioredis@6.0.0)(pg@8.23.1)
+        specifier: 6.7.7
+        version: 6.7.7(ioredis@6.0.0)(pg@8.23.1)
       cheerio:
         specifier: 1.2.0
         version: 1.2.0
@@ -820,10 +820,10 @@ importers:
         version: 3.1.0(encoding@0.1.13)
       '@bull-board/api':
         specifier: 9.10.1
-        version: 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.7.1)(typescript@6.0.3)
+        version: 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.7.7)(typescript@6.0.3)
       '@bull-board/express':
         specifier: 9.10.1
-        version: 9.10.1(bullmq@6.7.1)(supports-color@11.0.0)(typescript@6.0.3)
+        version: 9.10.1(bullmq@6.7.7)(supports-color@11.0.0)(typescript@6.0.3)
       '@dofek/auth':
         specifier: workspace:*
         version: link:../auth
@@ -10052,8 +10052,8 @@ packages:
   builtins@1.0.3:
     resolution: {integrity: sha512-uYBjakWipfaO/bXI7E8rq6kpwHRZK5cNYrUv2OzZSI/FvmdMyXJ2tG9dKcjEC5YHmHpUAwsargWIZNWdxb/bnQ==}
 
-  bullmq@6.7.1:
-    resolution: {integrity: sha512-WIm9+O2ULs4tcEeKBwlH2so7Vzs6/K2Ru+FFb0V/v3FAlBjj5yNk7kC2KOm0/yMpdE93SvgPR+FC0jznX6ce1g==}
+  bullmq@6.7.7:
+    resolution: {integrity: sha512-UYCta40FLxOTEYqFZmwvQhnqqYbUCkYRsjOhCyQ6/fH5vbRsHvQPEljorbE7Jm4w5uyfZV9ri3N1U95mskGgLg==}
     engines: {node: '>=14.18.0'}
     peerDependencies:
       bullmq-otel: '>=2.0.0'
@@ -10623,8 +10623,8 @@ packages:
     resolution: {integrity: sha512-IBWsY8xznyQrcHn8h4bC8/4ErNke5elzgG8GcqF4RFPw6aHkWWRc7Tgw6upjaTX/CT/yQgqYENkxYsTYN+hW2g==}
     engines: {node: '>=18'}
 
-  cron-parser@5.10.3:
-    resolution: {integrity: sha512-Fwlmlgiyoj5e7XDCy5T3ueFd3imgt714k7xjAzhkOBUrUgQxWtsjS7kWSEN3efDX34bebxBJAmPoCSisHvjlpw==}
+  cron-parser@5.10.5:
+    resolution: {integrity: sha512-zxFew0gkBdb9HudAqeNLIZ2Phczw8oQDGDMYc1HUYvAaxZqhML2gZyUwVqaOs23YKDWXRRvd/nNo0ycGdXt80A==}
     engines: {node: '>=18'}
 
   cross-fetch@3.2.0:
@@ -19621,20 +19621,20 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
 
-  '@bull-board/api@9.10.1(@bull-board/ui@9.10.1)(bullmq@6.7.1)(typescript@6.0.3)':
+  '@bull-board/api@9.10.1(@bull-board/ui@9.10.1)(bullmq@6.7.7)(typescript@6.0.3)':
     dependencies:
-      '@bull-board/ui': 9.10.1(bullmq@6.7.1)(typescript@6.0.3)
+      '@bull-board/ui': 9.10.1(bullmq@6.7.7)(typescript@6.0.3)
       redis-info: 3.1.0
       valibot: 1.5.0(typescript@6.0.3)
     optionalDependencies:
-      bullmq: 6.7.1(ioredis@6.0.0)(pg@8.23.1)
+      bullmq: 6.7.7(ioredis@6.0.0)(pg@8.23.1)
     transitivePeerDependencies:
       - typescript
 
-  '@bull-board/express@9.10.1(bullmq@6.7.1)(supports-color@11.0.0)(typescript@6.0.3)':
+  '@bull-board/express@9.10.1(bullmq@6.7.7)(supports-color@11.0.0)(typescript@6.0.3)':
     dependencies:
-      '@bull-board/api': 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.7.1)(typescript@6.0.3)
-      '@bull-board/ui': 9.10.1(bullmq@6.7.1)(typescript@6.0.3)
+      '@bull-board/api': 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.7.7)(typescript@6.0.3)
+      '@bull-board/ui': 9.10.1(bullmq@6.7.7)(typescript@6.0.3)
       ejs: 6.0.1
       express: 5.2.1(supports-color@11.0.0)
     transitivePeerDependencies:
@@ -19643,9 +19643,9 @@ snapshots:
       - supports-color
       - typescript
 
-  '@bull-board/ui@9.10.1(bullmq@6.7.1)(typescript@6.0.3)':
+  '@bull-board/ui@9.10.1(bullmq@6.7.7)(typescript@6.0.3)':
     dependencies:
-      '@bull-board/api': 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.7.1)(typescript@6.0.3)
+      '@bull-board/api': 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.7.7)(typescript@6.0.3)
     transitivePeerDependencies:
       - bull
       - bullmq
@@ -28324,9 +28324,9 @@ snapshots:
 
   builtins@1.0.3: {}
 
-  bullmq@6.7.1(ioredis@6.0.0)(pg@8.23.1):
+  bullmq@6.7.7(ioredis@6.0.0)(pg@8.23.1):
     dependencies:
-      cron-parser: 5.10.3
+      cron-parser: 5.10.5
       msgpackr: 2.1.4
       node-abort-controller: 3.1.1
       semver: 7.8.6
@@ -28930,7 +28930,7 @@ snapshots:
       crc-32: 1.2.2
       readable-stream: 4.7.0
 
-  cron-parser@5.10.3:
+  cron-parser@5.10.5:
     dependencies:
       luxon: 3.7.2
 
