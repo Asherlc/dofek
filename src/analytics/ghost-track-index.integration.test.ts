@@ -468,6 +468,15 @@ describe("Ghost Sessions compact track index", () => {
     expect(secondPage.nextCursor).toBeNull();
     expect(reads).toEqual([]);
 
+    const scopedKey = { ...key, candidateActivityIds: [activityId(1), activityId(27)] };
+    expect(await listGhostTrackCandidates(makeOwner().client, scopedKey)).toEqual(secondPage);
+    const emptyScope = { ...key, candidateActivityIds: [] };
+    expect(await listGhostTrackCandidates(makeOwner().client, emptyScope)).toEqual({
+      candidates: [],
+      nextCursor: null,
+      historyCoverage: "unverified",
+    });
+
     // Invalidate all metadata on the first page without updating the index.
     // The second metadata page must remain reachable through the empty page.
     await insertSources(

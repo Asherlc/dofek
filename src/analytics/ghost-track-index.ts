@@ -257,7 +257,12 @@ export async function projectGhostTrackIndex(
 /** Pages current compact evidence for an already chosen anchor activity. */
 export async function listGhostTrackCandidates(
   client: QueryClient,
-  input: { userId: string; anchorActivityId: string; before?: CandidateCursor },
+  input: {
+    userId: string;
+    anchorActivityId: string;
+    before?: CandidateCursor;
+    candidateActivityIds?: readonly string[];
+  },
 ) {
   const page = await queryRows(
     client,
@@ -277,6 +282,7 @@ export async function listGhostTrackCandidates(
     ), ordered_page AS MATERIALIZED (
       SELECT candidate.* FROM owned_tracks AS candidate CROSS JOIN anchor_context AS anchor
       WHERE candidate.sport = anchor.anchor_sport AND candidate.started_at < anchor.anchor_started_at
+        AND ({hasCandidateActivityIds:Bool} = 0 OR candidate.activity_id IN {candidateActivityIds:Array(UUID)})
         AND ({beforeStartedAt:Nullable(String)} IS NULL OR
           (candidate.started_at, candidate.activity_id) <
             (parseDateTime64BestEffort({beforeStartedAt:Nullable(String)}, 6, 'UTC'), {beforeActivityId:Nullable(UUID)}))
@@ -321,6 +327,8 @@ export async function listGhostTrackCandidates(
       anchorActivityId: input.anchorActivityId,
       beforeStartedAt: input.before?.startedAt ?? null,
       beforeActivityId: input.before?.activityId ?? null,
+      hasCandidateActivityIds: input.candidateActivityIds !== undefined,
+      candidateActivityIds: input.candidateActivityIds ?? [],
     },
   );
   const candidates = page
