@@ -78,6 +78,9 @@ vi.mock("dofek/providers/fatsecret", () => ({
 vi.mock("dofek/providers/ziva", () => ({
   ZivaProvider: mockProviderConstructor("ziva"),
 }));
+vi.mock("dofek/providers/trailforks", () => ({
+  TrailforksProvider: mockProviderConstructor("trailforks"),
+}));
 vi.mock("dofek/providers/whoop", () => ({ WhoopProvider: mockProviderConstructor("whoop") }));
 vi.mock("dofek/providers/ride-with-gps", () => ({
   RideWithGpsProvider: mockProviderConstructor("ride-with-gps"),
@@ -180,7 +183,7 @@ describe("ensureProvidersRegistered failure path", () => {
     await ensureProvidersRegistered();
 
     const registeredIds = mockRegisterProvider.mock.calls.map(([provider]) => provider.id);
-    expect(registeredIds).toHaveLength(44);
+    expect(registeredIds).toHaveLength(45);
     expect(registeredIds).toEqual(
       expect.arrayContaining([
         "bodyspec",
@@ -193,6 +196,7 @@ describe("ensureProvidersRegistered failure path", () => {
         "ultrahuman",
         "wger",
         "ziva",
+        "trailforks",
       ]),
     );
     expect(registeredIds).not.toEqual(

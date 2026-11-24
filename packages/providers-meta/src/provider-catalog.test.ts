@@ -176,6 +176,14 @@ describe("groupProviderEntries", () => {
     ]);
   });
 
+  it("shows Trailforks under its supported activity filters", () => {
+    const providers = [{ id: "trailforks" }];
+    const matchingTabs = PROVIDER_DATA_SOURCE_TABS.filter(
+      ({ id }) => groupProviderEntries(providers, id).length > 0,
+    );
+    expect(matchingTabs.map(({ id }) => id)).toEqual(["all", "cycling", "running", "hiking"]);
+  });
+
   it("covers checked-in multi-tab specialists and legacy aliases via groupProviderEntries", () => {
     expect(
       groupProviderEntries(

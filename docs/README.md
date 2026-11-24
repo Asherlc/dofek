@@ -89,6 +89,7 @@ the exact section.
 | Peloton | [peloton.md](peloton.md) | Auth and workout sync notes. |
 | Ride with GPS | [ride-with-gps.md](ride-with-gps.md) | OAuth flow and activity import notes. |
 | Polar | [polar.md](polar.md) | OAuth, exercise, sleep, and Nightly Recharge mappings. |
+| Trailforks | [trailforks.md](trailforks.md) | OAuth and read-only activity summary sync. |
 | TrainerRoad | [trainerroad.md](trainerroad.md) | Cookie auth, workouts, and parsing details. |
 | Wahoo | [wahoo.md](wahoo.md) | OAuth and workout ingestion notes. |
 | Withings | [withings.md](withings.md) | Sleep/body sync and webhook details. |

@@ -60,7 +60,7 @@ upload need not contain the complete remote logbook; see the
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: Amazfit/Zepp, Aurora Board, BodySpec, BoardSesh, Concept2, Crimpd, Cycling Analytics, Decoy Board, Eight Sleep, 8a.nu/Vertical-Life, FatSecret, Grasshopper Board, Kaya, Kilter Board, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, So iLL Board, Strava, Tension Board, theCrag, Touchstone Board, TrainerRoad, Ultrahuman, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registration list](../jobs/provider-registration.ts).
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, Aurora Board, BodySpec, BoardSesh, Concept2, Crimpd, Cycling Analytics, Decoy Board, Eight Sleep, 8a.nu/Vertical-Life, FatSecret, Grasshopper Board, Kaya, Kilter Board, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, So iLL Board, Strava, Tension Board, theCrag, Touchstone Board, Trailforks, TrainerRoad, Ultrahuman, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registration list](../jobs/provider-registration.ts).
 - **OAuth push providers**: Garmin uses official Health and Activity notifications through its dedicated queue, with no scheduled/manual polling. Connection controls remain available. See the [provider](garmin/provider.ts) and [Garmin guide](../../docs/garmin.md).
 - **Import-only providers**: Historical MoonBoard BoardLib CSV, Cronometer CSV, FIT files, Garmin account exports, Kaya CSV (`kaya-export`), Strong CSV, and Zepp OS App exports. Crimpd and 8a.nu/Vertical-Life retain uploads alongside account sync ([Crimpd](crimpd/provider.ts), [Vertical-Life](eight-a/provider.ts)). FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
 - **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
@@ -123,6 +123,15 @@ operator smoke command are documented in the
 [Ziva provider guide](../../docs/ziva.md). See Ziva's
 [official MCP reference](https://ziva.fit/mcp-docs) for the public endpoint and
 tool catalog.
+
+## Trailforks
+
+Trailforks uses per-user OAuth and the official read-only MCP activity listing.
+The provider retains the returned activity records and imports records with
+verifiable identity and start time within the requested window. See the
+[Trailforks provider guide](../../docs/trailforks.md) for setup and verification
+status and the [official tool documentation](https://www.trailforks.com/about/features/mcp/)
+for account requirements and coverage.
 
 ## Amazfit/Zepp
 

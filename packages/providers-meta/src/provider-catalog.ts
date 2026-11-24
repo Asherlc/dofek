@@ -286,6 +286,7 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   },
   fatsecret: { label: "fatsecret", logo: { type: "png" }, categories: ["nutrition"] },
   ziva: { label: "Ziva", logo: { type: "png" }, categories: ["nutrition"] },
+  trailforks: { label: "Trailforks", categories: ["cycling", "running", "hiking"] },
   mapmyfitness: {
     label: "MapMyFitness",
     logo: { type: "png" },

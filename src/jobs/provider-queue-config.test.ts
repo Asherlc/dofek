@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CyclingAnalyticsProvider } from "../providers/cycling-analytics.ts";
 import {
   DEFAULT_QUEUE_CONFIG,
@@ -67,6 +67,17 @@ describe("getProviderQueueConfig", () => {
     expect(config.syncTier).toBe("daily");
   });
 
+  it("runs Trailforks syncs daily with one worker", async () => {
+    // Initialize the queue map while the test is active so Stryker can mutate it.
+    vi.resetModules();
+    const queueConfig = await import("./provider-queue-config.ts");
+
+    expect(queueConfig.getProviderQueueConfig("trailforks")).toStrictEqual({
+      concurrency: 1,
+      syncTier: "daily",
+    });
+  });
+
   it("returns frequent tier for whoop with step-chain job limiter", () => {
     const config = getProviderQueueConfig("whoop");
     expect(config.syncTier).toBe("frequent");
@@ -125,7 +136,7 @@ describe("config values are reasonable", () => {
 describe("getConfiguredProviderIds", () => {
   it("returns all known provider IDs", () => {
     const ids = getConfiguredProviderIds();
-    expect(ids).toHaveLength(37);
+    expect(ids).toHaveLength(38);
     expect(ids).toContain("intervals.icu");
     expect(ids).toContain("crimpd");
     expect(ids).toContain("eight-a");
@@ -137,6 +148,7 @@ describe("getConfiguredProviderIds", () => {
     expect(ids).toContain("openbeta");
     expect(ids).toContain("thecrag");
     expect(ids).toContain("ziva");
+    expect(ids).toContain("trailforks");
     expect(ids).toContain("boardsesh");
     expect(ids).toContain(new CyclingAnalyticsProvider().id);
   });
