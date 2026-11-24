@@ -611,6 +611,10 @@ vi.mock("expo-haptics", () => ({
 }));
 
 // ── HealthKit native module mock ─────────────────────────────────────
+vi.mock("./modules/sleep-widget", () => ({
+  replaceSnapshot: vi.fn(),
+}));
+
 vi.mock("./modules/health-kit", async () => {
   const { createEmptyAnchoredQueryResult } = await import("./modules/health-kit/test-helpers");
   return {
