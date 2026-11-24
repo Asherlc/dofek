@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type GhostTrackPoint,
   matchGhostRoutes,
+  recordedGhostRouteChunks,
   summarizeGhostTrack,
 } from "./ghost-route-matching.ts";
 
@@ -66,6 +67,68 @@ const square = [
   [200, 200],
   [0, 200],
 ] as const;
+
+describe("recordedGhostRouteChunks", () => {
+  it("keeps exact original endpoints and stationary readings and respects raw and cadence barriers", () => {
+    const first = point(0, 0, 0.125);
+    const arrival = point(20, 0, 1_000.125);
+    const stop = point(20, 0, 11_000.125);
+    const sameTimestamp = { ...stop };
+    const moved = point(40, 0, 12_000.125);
+    const cadenceSplit = point(100, 0, 32_000.125);
+    const following = point(120, 0, 33_000.125);
+    const gap = { lat: null, lng: null, timestampMs: 34_000.125 };
+    const afterGap = point(150, 0, 35_000.125);
+    const last = point(170, 0, 36_000.125);
+    const finalStop = point(170, 0, 37_000.125);
+    expect(
+      recordedGhostRouteChunks([
+        first,
+        arrival,
+        stop,
+        sameTimestamp,
+        moved,
+        cadenceSplit,
+        following,
+        gap,
+        afterGap,
+        last,
+        finalStop,
+      ]),
+    ).toMatchObject({
+      bounded: false,
+      chunks: [
+        [
+          { ...first, originalIndex: 0, distanceMeters: 0 },
+          { ...arrival, originalIndex: 1 },
+          { ...stop, originalIndex: 2 },
+          { ...moved, originalIndex: 4 },
+        ],
+        [
+          { ...cadenceSplit, originalIndex: 5 },
+          { ...following, originalIndex: 6 },
+        ],
+        [
+          { ...afterGap, originalIndex: 8 },
+          { ...last, originalIndex: 9 },
+          { ...finalStop, originalIndex: 10 },
+        ],
+      ],
+    });
+  });
+
+  it("exposes the inherited point limit and leaves out-of-order data without valid chunks", () => {
+    const origin = point(0, 0, 0);
+    expect(recordedGhostRouteChunks(Array.from({ length: 20_001 }, () => origin))).toEqual({
+      chunks: [],
+      bounded: true,
+    });
+    expect(recordedGhostRouteChunks([point(20, 0, 1_000), origin])).toEqual({
+      chunks: [],
+      bounded: false,
+    });
+  });
+});
 
 describe("summarizeGhostTrack", () => {
   it("retains endpoints and exact timing when the recorded route geometry is downsampled", () => {

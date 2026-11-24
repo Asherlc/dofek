@@ -18,6 +18,10 @@ interface GhostPosition {
   distanceMeters: number;
 }
 
+export interface GhostRecordedWaypoint extends GhostPosition {
+  originalIndex: number;
+}
+
 interface GhostInterval {
   start: GhostPosition;
   end: GhostPosition;
@@ -202,6 +206,7 @@ function movingGapLimitMs(points: readonly ProjectedPoint[]): number {
 function prepareTrack(
   points: readonly GhostTrackPoint[],
   origin: { lat: number; lng: number },
+  onRecordedPoint?: (chunk: number, point: GhostPosition) => void,
 ): Track | null {
   const longitudeScale = metersPerDegree * Math.cos((origin.lat * Math.PI) / 180);
   let rawChunk: ProjectedPoint[] = [];
@@ -298,12 +303,54 @@ function prepareTrack(
       } else {
         arrival = current;
       }
+      onRecordedPoint?.(chunk, current);
       previous = current;
     }
   }
   if (segments.length === 0) return unavailableTrack();
   stabilizeHeadings(segments);
   return { coverage, segments, distanceMeters };
+}
+
+/** Project the matcher's continuity decisions onto the original, unsampled recording. */
+export function recordedGhostRouteChunks(points: readonly GhostTrackPoint[]): {
+  chunks: GhostRecordedWaypoint[][];
+  bounded: boolean;
+} {
+  if (points.length > maximumTrackPoints) return { chunks: [], bounded: true };
+  const observations = collapseTiedPositions(points);
+  const origin = observations.find(position);
+  if (!origin) return { chunks: [], bounded: false };
+
+  const chunks = new Map<number, GhostRecordedWaypoint[]>();
+  let originalIndex = 0;
+  const track = prepareTrack(observations, origin, (chunk, prepared) => {
+    // Preparation and the original input have the same timestamp order.
+    while (
+      originalIndex < points.length &&
+      points[originalIndex]?.timestampMs !== prepared.timestampMs
+    )
+      originalIndex += 1;
+    const original = points[originalIndex];
+    if (!original || !position(original)) return;
+    const waypoint = {
+      originalIndex,
+      timestampMs: original.timestampMs,
+      lat: original.lat,
+      lng: original.lng,
+      distanceMeters: prepared.distanceMeters,
+    };
+    const recorded = chunks.get(chunk);
+    if (recorded) recorded.push(waypoint);
+    else chunks.set(chunk, [waypoint]);
+  });
+  if (!track) return { chunks: [], bounded: true };
+  return {
+    chunks: [...chunks.values()].filter(
+      (chunk) => (chunk.at(-1)?.distanceMeters ?? 0) > (chunk[0]?.distanceMeters ?? 0),
+    ),
+    bounded: false,
+  };
 }
 
 function segmentPosition(segment: Segment, meters: number): GhostPosition {
