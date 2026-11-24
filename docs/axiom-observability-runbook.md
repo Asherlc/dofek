@@ -73,6 +73,28 @@ and [loading runbook](performance/loading-performance-runbook.md) for performanc
 investigation. Run monitor queries against the live datasets before creating
 monitors; their configuration is not automatically applied.
 
+## Production latency dashboard
+
+In Axiom, open **Dofek Production Latency** to rank provider sync attempts,
+provider API hosts, tRPC query procedures, and Postgres statement fingerprints.
+The default range is seven days. Read the sample count alongside p95 and use
+total time to identify operations that accumulate latency through repeated
+calls. The tRPC, Postgres, and ClickHouse tables include the trace ID of the
+slowest observation in each group.
+
+The [provider worker](../src/jobs/sync-provider-execution.ts) emits one
+`provider.sync_attempt` log for each executed attempt, with `provider` and
+`duration_ms` in `attributes.custom`. Retries and continuations are measured
+individually. The timer covers worker execution and result handling. Queue
+wait, cooldown before execution, and downstream analytics jobs fall outside
+that interval. The provider API table uses outbound HTTP spans grouped by
+host. ClickHouse panels report client HTTP duration and instrumented queue wait.
+
+After deploying the worker, confirm that a completed sync attempt appears in
+the provider table under its provider ID. Use the [Axiom table](https://axiom.co/docs/dashboard-elements/table)
+and [custom log fields](https://axiom.co/docs/apl/data-types/map-fields)
+documentation when editing the panel.
+
 ## Traefik server-error access logs
 
 Traefik sends only `500`–`599` access-log records as OTLP logs to `dofek-logs`

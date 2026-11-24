@@ -309,6 +309,7 @@ describe("sync-provider-execution", () => {
         recordsSynced: 2,
         errors: [],
         duration: 100,
+        continued: true,
       } satisfies SyncResult),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
@@ -317,6 +318,10 @@ describe("sync-provider-execution", () => {
 
     expect(mockInvalidateAllUserQueries).toHaveBeenCalledOnce();
     expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "provider.sync_attempt",
+      expect.objectContaining({ provider: "whoop", duration_ms: expect.any(Number) }),
+    );
   });
 
   it("does not invalidate queries when a sync writes no records", async () => {
@@ -350,6 +355,10 @@ describe("sync-provider-execution", () => {
       expect.objectContaining({ stage: "ingest", status: "succeeded" }),
     );
     expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "provider.sync_attempt",
+      expect.objectContaining({ provider: "test-provider", duration_ms: expect.any(Number) }),
+    );
   });
 
   it("reports abort during relational canonical commit as a canonical-commit failure", async () => {
@@ -816,8 +825,20 @@ describe("sync-provider-execution", () => {
   });
 
   it("emits sync metrics on successful sync", async () => {
-    const provider = createMockProvider({ id: "garmin", name: "Garmin" });
+    let monotonicMs = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => monotonicMs);
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn(async () => {
+        monotonicMs = 1_250.4;
+        return { provider: "garmin", recordsSynced: 5, errors: [], duration: 100 };
+      }),
+    });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    mockLogSync.mockImplementationOnce(async () => {
+      monotonicMs = 1_400;
+    });
 
     await runSyncJob(createMockJob(), mockDb);
 
@@ -836,6 +857,9 @@ describe("sync-provider-execution", () => {
       data_type: "sync",
     });
     expect(mockSyncErrorsTotal.add).not.toHaveBeenCalled();
+    expect(
+      mockLoggerInfo.mock.calls.filter(([event]) => event === "provider.sync_attempt"),
+    ).toEqual([["provider.sync_attempt", { provider: "garmin", duration_ms: 400 }]]);
   });
 
   it("emits sync error metrics when sync has errors", async () => {
@@ -890,21 +914,16 @@ describe("sync-provider-execution", () => {
 
     await runSyncJob(job, mockDb);
 
-    // sync() should never be called
     expect(provider.sync).not.toHaveBeenCalled();
     expect(mockCaptureException).not.toHaveBeenCalled();
-
-    // Verify logger was called via the mocked logger
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("Skipping Wahoo: not connected"),
     );
-
-    // Should report skipped status
-    const lastSnapshot = progressSnapshots[progressSnapshots.length - 1];
-    expect(lastSnapshot).toEqual({
+    expect(progressSnapshots[progressSnapshots.length - 1]).toEqual({
       providers: { wahoo: { status: "done", message: "Skipped — not connected" } },
       percentage: 100,
     });
+    expect(mockLoggerInfo).not.toHaveBeenCalledWith("provider.sync_attempt", expect.anything());
   });
 
   it("syncs providers that have stored tokens", async () => {
