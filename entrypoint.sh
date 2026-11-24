@@ -17,7 +17,7 @@ if [ -f .env ]; then
 fi
 
 # Node 22+ supports TypeScript with --experimental-strip-types
-NODE="node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts"
+NODE="node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation-preload.ts"
 DBT_ACTIVITY_MODELS="sensor_scalar_sample deduped_sensor activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities activity_pace_curve activity_heart_rate_distribution activity_sensor_processing_coverage deduped_activity_members activity_effort_identity activity_sensor_sample activity_location_sample activity_route_identity activity_step_cadence_rows activity_sensor_summary_rows activity_location_summary_rows activity_stream_points activity_heart_rate_zones activity_summary_rows hiking_activity body_measurement activity_vo2max_estimate activity_aerobic_efficiency activity_polarization_zones activity_power_curve cycling_activity daily_cycling provider_metric_stream_daily provider_change_watermark provider_stats"
 DBT_SLEEP_DASHBOARD_MODELS="sleep_heart_rate_window sleep_heart_rate_sample resting_heart_rate_sleep_window daily_sleep daily_health_sensor daily_recovery_inputs daily_recovery daily_activity_load daily_strain daily_body_measurement"
 DBT_E2E_MICROBATCH_VARS='{"sensor_scalar_sample_begin":"2026-01-01","deduped_sensor_begin":"2026-01-01","activity_sensor_sample_begin":"2026-01-01"}'
@@ -44,6 +44,9 @@ case "${1:-sync}" in
   worker)
     $NODE src/db/run-migrate.ts
     exec $NODE src/jobs/worker.ts
+    ;;
+  portable-sync-worker)
+    exec node --experimental-strip-types --enable-source-maps src/jobs/portable-sync-worker.ts
     ;;
   migrate)
     exec $NODE src/db/run-migrate.ts
@@ -106,7 +109,7 @@ case "${1:-sync}" in
     exec $NODE scripts/seed-review-clickhouse.ts
     ;;
   *)
-    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'peerdb-cdc-contract', 'provider-connection-cutover', 'analytics', 'analytics-e2e', 'analytics-worker', 'cdc-health', 'processing-reconciliation', 'metric-stream-clickhouse-sink', 'seed', or 'review-seed-clickhouse')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'portable-sync-worker', 'migrate', 'peerdb-cdc-contract', 'provider-connection-cutover', 'analytics', 'analytics-e2e', 'analytics-worker', 'cdc-health', 'processing-reconciliation', 'metric-stream-clickhouse-sink', 'seed', or 'review-seed-clickhouse')" >&2
     exit 1
     ;;
 esac

@@ -1,6 +1,10 @@
 # Fly pipeline runner
 
-This independent Terraform root provisions a Fly app and, once an image digest is supplied, one private 512 MB Machine with one shared vCPU in San Jose. It uses the image's entry point, so a portable Linux runner can use the same image on another provider. The Machine has no public service or attached volume. The restart policy lets a one-shot worker exit without restarting. [Fly Machine restart policy](https://docs.fly.io/machines/guides-examples/machine-restart-policy)
+This Terraform root provisions a Fly app and one private 512 MB Machine with
+one shared vCPU in San Jose once an image digest is supplied. The
+`pipeline-runner` Docker target runs the provider-sync entry point on any
+Linux host with kernel WireGuard. The Machine has no public service, attached
+volume, or autoscaler. [Fly Machine restart policy](https://docs.fly.io/machines/guides-examples/machine-restart-policy)
 
 ## Provision
 
@@ -16,7 +20,74 @@ terraform plan -out=runner.tfplan
 
 Review the plan, then run `terraform apply runner.tfplan`. The first apply can create just the app to provide a target for image publication. Publish the worker image, set `runner_image` to its immutable OCI reference, then plan and apply again. Terraform boots the Machine during creation and parks it afterward. [Push an image to the Fly registry](https://docs.fly.io/blueprints/using-the-fly-docker-registry)
 
-## Verify a one-shot runner
+### Production setup
+
+Set `production_sync = true` in the Fly root inputs. Review and apply the
+Fly plan, then apply the OCI Terraform plan that enables UDP 51820 on the
+existing host. The Oracle stack's WireGuard gateway authenticates one
+configured peer and relays Redis, PostgreSQL, and OTLP only on its tunnel IP.
+The Fly production release checks the singleton Machine's configuration and
+waits for its private readiness check. [Fly Machine checks](https://docs.fly.io/reference/health-checks/)
+
+Production Infisical holds `FLY_SYNC_APP_NAME`, the app-scoped
+`FLY_SYNC_DEPLOY_TOKEN`, the two gateways' key pairs under
+`SYNC_WIREGUARD_GATEWAY_{PRIVATE,PUBLIC}_KEY` and
+`SYNC_WIREGUARD_RUNNER_{PRIVATE,PUBLIC}_KEY`, and the comma-separated
+`SYNC_WORKER_PROVIDERS`. The initial list is `kilter,tension`. Both use the
+same climbing-board ingestion implementation. Select additional provider
+queues after exercising their full sync workload inside the Machine budget
+and verifying that their dependencies are reachable. The portable worker
+validates the list against the configured, enabled sync providers at startup.
+Rotate the deployment token in Infisical before its expiry. [Fly API tokens](https://docs.fly.io/security/tokens)
+
+The canonical production release builds the worker from the same source
+revision as the Oracle release, drains the existing Fly Machine before
+database migrations, and updates its image by digest in place after the
+Oracle stack is ready. Terraform owns the singleton Machine and infrastructure
+configuration. The application release owns its current image.
+
+Fly offers one slot across eligible provider queues. Oracle briefly yields an
+eligible first attempt when that slot is available. Oracle resumes after three
+seconds and processes work that remains queued. When Fly is busy, Oracle can
+claim new work within the provider's concurrency limit. BullMQ preserves
+the original job ID, retry budget, and queue-wide concurrency limit. Priority is enabled for
+configured queues without a BullMQ rate limiter. [BullMQ global concurrency](https://docs.bullmq.io/guide/queues/global-concurrency)
+
+Before a database restore, drain Fly with the same command as the release.
+
+```bash
+flyctl machine stop "$machine_id" --app "$app_name" --signal SIGTERM --timeout 300 --wait-timeout 6m
+```
+
+Start Fly after the primary stack completes its restore and passes readiness.
+
+```bash
+flyctl machine start --app "$app_name" --wait "$machine_id"
+```
+
+### See which host ran sync jobs
+
+Both workers send a structured `provider_sync_attempt_finished` event to the
+existing Axiom dataset. Oracle uses the Swarm node hostname. Fly uses the
+Machine ID. The event records the provider, queue, attempt number, processor
+outcome, and elapsed time. A BullMQ retry contributes another attempt. An
+attempt interrupted by a forced stop can be absent from the finished events.
+Elapsed time measures wall-clock execution, including waits.
+
+In the Axiom Query Editor run the following APL over the desired time range.
+Each row's share is its attempt count or duration divided by the column total.
+Filter by `attributes.provider_id` to measure the split among the offload
+providers. [Axiom summarize operator](https://axiom.co/docs/apl/tabular-operators/summarize-operator)
+
+```apl
+['dofek-logs']
+| where ['attributes.event'] == 'provider_sync_attempt_finished'
+| summarize attempts = count(), elapsed_ms = sum(['attributes.duration_ms'])
+    by site = ['attributes.worker_site'], instance = ['attributes.worker_instance']
+| order by attempts desc
+```
+
+## Verify a one-shot qualification image
 
 ```bash
 app_name=$(terraform output -raw app_name)
@@ -33,4 +104,13 @@ Confirm exit code 0 and the expected output. These commands assume a short smoke
 
 A synthetic Kilter job used BullMQ and SQLite in a standalone container. Local builds passed on Linux ARM64 and emulated amd64. On Fly, the Machine started in 779 ms and ran for 6.3 seconds. The probe checked two records, 1,273 walls, and 1,159 gyms at about 138 MiB peak process RSS. The Machine exited with code 0 and the next Terraform plan found no changes.
 
-The Machine reported a 434 MiB root filesystem, estimated at about $0.07 per 30 days while continuously stopped. Billing totals are still unmeasured. Production queue routing and live autoscaling remain outside this root. [Fly Machine pricing](https://docs.fly.io/about/pricing#stopped-fly-machines)
+The production image completed Kilter and Tension queue fixtures through a
+local WireGuard gateway with real PostgreSQL and Redis. Its telemetry reached
+the collector over the tunnel. An additional 2,500-record Kilter extraction
+probe ran alongside the worker in the same 512 MiB container, with a combined
+peak of 411 MiB. These measurements use fixture data.
+
+The qualification Machine reported a 434 MiB root filesystem, estimated at
+about $0.07 per 30 days while continuously stopped. Production compute,
+root filesystem, and outbound traffic have separate billing measurements.
+[Fly Machine pricing](https://docs.fly.io/about/pricing#stopped-fly-machines)

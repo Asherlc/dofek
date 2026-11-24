@@ -23,13 +23,17 @@ function isProductionDeployment(environment: string | undefined): boolean {
   return environment === "prod" || environment === "production";
 }
 
-function createSpanProcessors(env: Record<string, string | undefined>): SpanProcessor[] {
+function createSpanProcessors(
+  env: Record<string, string | undefined>,
+  exportPostHog: boolean,
+): SpanProcessor[] {
   const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
   const tracesEndpoint = env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
   const hasAxiomTraceExport = Boolean(endpoint || tracesEndpoint);
   const hasPostHogTraceExport =
-    isProductionDeployment(env.DEPLOY_ENVIRONMENT) ||
-    (env.NODE_ENV === "production" && hasAxiomTraceExport);
+    exportPostHog &&
+    (isProductionDeployment(env.DEPLOY_ENVIRONMENT) ||
+      (env.NODE_ENV === "production" && hasAxiomTraceExport));
 
   if (!hasAxiomTraceExport && !hasPostHogTraceExport) {
     return [];
@@ -63,11 +67,14 @@ function createSpanProcessors(env: Record<string, string | undefined>): SpanProc
   return processors;
 }
 
-function createLogRecordProcessors(env: Record<string, string | undefined>): LogRecordProcessor[] {
+function createLogRecordProcessors(
+  env: Record<string, string | undefined>,
+  exportPostHog: boolean,
+): LogRecordProcessor[] {
   const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
   const logsEndpoint = env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT;
   const hasAxiomLogExport = Boolean(endpoint || logsEndpoint);
-  const hasPostHogLogExport = isProductionDeployment(env.DEPLOY_ENVIRONMENT);
+  const hasPostHogLogExport = exportPostHog && isProductionDeployment(env.DEPLOY_ENVIRONMENT);
 
   const processors: LogRecordProcessor[] = [];
 
@@ -102,13 +109,17 @@ function createLogRecordProcessors(env: Record<string, string | undefined>): Log
  */
 export function startInstrumentation(
   env: Record<string, string | undefined> = process.env,
+  {
+    shutdownOnSignal = true,
+    exportPostHog = true,
+  }: { shutdownOnSignal?: boolean; exportPostHog?: boolean } = {},
 ): NodeSDK | undefined {
   const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT;
   const metricsEndpoint = env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
 
-  const spanProcessors = createSpanProcessors(env);
+  const spanProcessors = createSpanProcessors(env, exportPostHog);
   const hasTraceExport = spanProcessors.length > 0;
-  const logRecordProcessors = createLogRecordProcessors(env);
+  const logRecordProcessors = createLogRecordProcessors(env, exportPostHog);
   const hasLogExport = logRecordProcessors.length > 0;
   const hasMetricExport = Boolean(endpoint || metricsEndpoint);
   if (!hasTraceExport && !hasLogExport && !hasMetricExport) {
@@ -170,12 +181,11 @@ export function startInstrumentation(
 
   sdk.start();
 
-  const shutdown = () => sdk.shutdown().catch(console.error);
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
+  if (shutdownOnSignal) {
+    const shutdown = () => sdk.shutdown().catch(console.error);
+    process.on("SIGTERM", shutdown);
+    process.on("SIGINT", shutdown);
+  }
 
   return sdk;
 }
-
-// Auto-start when loaded via --import
-startInstrumentation();

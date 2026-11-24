@@ -14,6 +14,12 @@
 # Apply with:
 #   docker stack deploy -c deploy/docker-compose.yml -c deploy/stack.oracle.yml dofek
 services:
+  worker:
+    environment:
+      SYNC_WORKER_SITE: oracle
+      SYNC_WORKER_INSTANCE: "{{.Node.Hostname}}"
+      SYNC_WORKER_PROVIDERS: ${SYNC_WORKER_PROVIDERS:-}
+
   cloudbeaver:
     deploy:
       replicas: 0
