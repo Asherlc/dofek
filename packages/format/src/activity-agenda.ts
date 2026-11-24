@@ -130,7 +130,7 @@ export function mergeActivityAgendaDays<TActivity, TWorkout>(
     }));
 }
 
-/** Calendar order for this week / next 90 days; newest-first for historical lookbacks. */
+/** Calendar order for this week / next 90 days; newest-first for historical ranges. */
 export function activityAgendaDateOrder(preset: ActivityAgendaPreset): ActivityAgendaDateOrder {
   return preset === "this-week" || preset === "next-90-days" ? "oldest" : "newest";
 }

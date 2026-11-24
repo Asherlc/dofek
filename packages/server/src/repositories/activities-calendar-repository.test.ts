@@ -1237,7 +1237,7 @@ describe("ActivitiesCalendarRepository", () => {
     );
   });
 
-  it("returns plannedWindow for explicit ranges and omits it for legacy week lookbacks", async () => {
+  it("returns plannedWindow for explicit ranges and omits it for legacy week ranges", async () => {
     const rows = [
       makeActivityRow({
         id: "newer",

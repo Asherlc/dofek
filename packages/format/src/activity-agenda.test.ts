@@ -52,7 +52,7 @@ describe("activityAgendaRange", () => {
     });
   });
 
-  it("matches inclusive activityOverview lookbacks ending today", () => {
+  it("matches inclusive activityOverview ranges ending today", () => {
     expect(activityAgendaRange("4-weeks", "2026-11-24")).toEqual({
       startDate: "2026-10-28",
       endDate: "2026-11-24",
@@ -363,7 +363,7 @@ describe("activityAgendaDateOrder", () => {
     expect(activityAgendaDateOrder("next-90-days")).toBe("oldest");
   });
 
-  it("keeps historical lookbacks newest first", () => {
+  it("keeps historical ranges newest first", () => {
     expect(activityAgendaDateOrder("4-weeks")).toBe("newest");
     expect(activityAgendaDateOrder("8-weeks")).toBe("newest");
     expect(activityAgendaDateOrder("12-weeks")).toBe("newest");

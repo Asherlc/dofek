@@ -138,7 +138,7 @@ export type ActivityListDateOrder = "oldest" | "newest";
 export interface WeekListInput {
   weeks: number;
   endDate: string;
-  /** Inclusive lower bound for explicit agenda ranges. Legacy lookbacks omit this. */
+  /** Inclusive lower bound for explicit agenda ranges. Legacy week ranges omit this. */
   startDate?: string;
   /** Date sort for explicit agenda pages. Defaults to newest-first history order. */
   dateOrder?: ActivityListDateOrder;

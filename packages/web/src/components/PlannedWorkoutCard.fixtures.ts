@@ -42,11 +42,3 @@ export const samplePlannedWorkout: PlannedWorkout = {
     },
   ],
 };
-
-/** Representative server-projected upcoming workouts shared by tests and stories. */
-export const plannedWorkoutDays = [
-  {
-    date: "2026-03-18",
-    workouts: [samplePlannedWorkout],
-  },
-] satisfies readonly PlannedWorkoutDay[];

@@ -55,6 +55,7 @@
 - [x] Read the actual diff after each implementation task and fix material findings before continuing. Independently review the whole change.
 - [x] Confirm the roadmap scope from [the merged priorities update](https://github.com/Asherlc/dofek/pull/3480) and record the production prerequisites in the [Intervals.icu rollout checklist](../../intervals-icu.md#calendar-dates-and-rollout).
 - [x] Repository lint, recursive typecheck, 303 unit tests, 80 mobile tests, and 55 real Postgres and ClickHouse integration tests passed. The seeded Storybook browser checks exercised same-day mixed cards, snapshot attribution and import dates, workout step disclosure, and the future range in both the web and React Native views.
+- [x] The provider-absent calendar regression checks both explicit date bounds and their query parameters.
 - [x] Commit the reviewed changes and push to `origin/planned-workouts`.
 - [ ] Verify the Activities flow on a native iOS device. No device was available to the workspace during implementation.
 - [ ] Verify live calendar sync with the approved Intervals.icu OAuth app. The production OAuth keys were absent when checked, and calendar access still requires the authorized, populated `CALENDAR:READ` acceptance check.
