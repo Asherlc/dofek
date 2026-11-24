@@ -65,17 +65,30 @@ Merge configuration changes into the base branch before relying on them in
 new workspaces.
 
 Archive removes containers, orphan services, networks, and declared volumes
-for `<workspace>`, `<workspace>-e2e`, and `<workspace>-peerdb-integration`.
-It includes all profiles and the PeerDB overlay, uses each project's own
-environment file when present, and fails if Docker cleanup fails; see the
-[cleanup command](../scripts/workspace-archive.ts) and
+for `<workspace>`, `<workspace>-e2e`, and `<workspace>-peerdb-integration`,
+then any additional Compose projects with a wrapper suffix and a container whose
+`com.docker.compose.project.working_dir` label matches the archived workspace
+directory. Custom projects reuse their recorded
+`com.docker.compose.project.config_files` labels and project-name suffix with
+the existing Compose wrapper. Teardown stops with an error when project ownership
+or the recorded config files are ambiguous. It also reports any owned containers
+that remain after shutdown. Paseo can still mark the workspace archived when
+teardown fails. See the
+[cleanup command](../scripts/workspace-archive.ts),
+[Compose labels](https://github.com/docker/compose/blob/v5.3.1/pkg/api/labels.go), and
 [Compose shutdown reference](https://docs.docker.com/reference/cli/docker/compose/down/).
 Archiving discards those workspaces' local database data. Shared Docker images,
 build cache, and package stores remain available for other workspaces.
 
+From a default Paseo worktree, `mise run doctor` compares Compose container
+working directories for the same repository with the active workspace list,
+including background workspaces. It warns about stale projects or inventory
+errors. The check is read-only and can detect leftovers even when teardown
+never ran. [Paseo workspace commands](https://paseo.sh/docs/cli.md#workspaces).
+
 To verify the lifecycle, start a disposable workspace's backing services and
-archive it. For each of the three project names above, replace `PROJECT_NAME`
-below and verify that no resources remain:
+archive it. For each owned project name, replace `PROJECT_NAME` below and
+verify that no resources remain:
 
 ```bash
 docker container ls --all --filter label=com.docker.compose.project=PROJECT_NAME

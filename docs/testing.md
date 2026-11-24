@@ -874,7 +874,9 @@ Paseo teardown and Conductor archive share the
 [workspace archive command](../scripts/workspace-archive.ts). It shuts down
 the default `<workspace>`, isolated `<workspace>-e2e`, and
 `<workspace>-peerdb-integration` projects from the archived workspace's physical
-directory, including all profiles and PeerDB's declared volumes. See the
+directory, including all profiles and PeerDB's declared volumes, then any
+additional wrapper suffix projects discovered from containers labeled with that
+exact working directory. See the
 [workspace lifecycle and verification procedure](development-environment.md#workspace-setup-and-archive)
 and Docker Compose's documented
 [`down --volumes` behavior](https://docs.docker.com/reference/cli/docker/compose/down/).
