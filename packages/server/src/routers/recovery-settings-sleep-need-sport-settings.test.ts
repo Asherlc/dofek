@@ -423,6 +423,16 @@ describe("settingsRouter", () => {
       const result = await caller.get({ key: "nonexistent" });
       expect(result).toBeNull();
     });
+
+    it("leaves an account without a Ghost map-label setting opted out", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
+      });
+      await expect(caller.get({ key: "ghostMapLabels" })).resolves.toBeNull();
+    });
   });
 
   describe("getAll", () => {
@@ -477,6 +487,42 @@ describe("settingsRouter", () => {
       await caller.set({ key: "unitSystem", value: "imperial" });
       expect(invalidateByPrefix).toHaveBeenCalledOnce();
       expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
+    });
+
+    it.each([true, false])(
+      "saves Ghost map-label consent %s and expires the account's labels",
+      async (value) => {
+        const setting = { key: "ghostMapLabels", value };
+        const execute = vi.fn().mockResolvedValue([setting]);
+        const invalidateByPrefix = vi.mocked(queryCache.invalidateByPrefix);
+        invalidateByPrefix.mockClear();
+        const caller = createCaller({
+          db: { execute },
+          userId: "user-1",
+          timezone: "UTC",
+          sensorStore: makeMockSensorStore([]),
+        });
+        await expect(caller.set(setting)).resolves.toEqual(setting);
+        expect(execute).toHaveBeenCalledOnce();
+        expect(invalidateByPrefix.mock.calls).toEqual([
+          ["user-1:settings."],
+          ["user-1:ghostRouteLabels."],
+        ]);
+      },
+    );
+
+    it("requires a boolean for Ghost map-label consent", async () => {
+      const execute = vi.fn();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
+      });
+      await expect(caller.set({ key: "ghostMapLabels", value: "true" })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+      expect(execute).not.toHaveBeenCalled();
     });
 
     it("invalidates all grade-dependent queries after changing climbing grade systems", async () => {

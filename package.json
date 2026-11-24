@@ -47,6 +47,7 @@
     "./db/clickhouse-sleep-episodes": "./src/db/clickhouse-sleep-episodes.ts",
     "./db/drizzle-schema": "./src/db/drizzle-schema.ts",
     "./db/execute-with-schema": "./src/db/execute-with-schema.ts",
+    "./db/ghost-map-label-consent": "./src/db/ghost-map-label-consent.ts",
     "./db/schema/account": "./src/db/schema/account.ts",
     "./db/schema/activity": "./src/db/schema/activity.ts",
     "./db/schema/clinical": "./src/db/schema/clinical.ts",
