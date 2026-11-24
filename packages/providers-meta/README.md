@@ -34,6 +34,17 @@ Metadata and statistics for data providers.
 - **WHOOP Wear Locations**: Definitions and parsing for WHOOP-specific sensor placement (wrist, bicep, etc.).
 - **Provider Stats**: Utilities for aggregating and labeling record counts across different data types (activities, sleep, nutrition, etc.).
 
+### Data Sources activity filter
+
+Web and mobile Data Sources screens share one client-side activity filter from
+[`provider-catalog.ts`](src/provider-catalog.ts): `PROVIDER_DATA_SOURCE_TABS`,
+per-provider `categories` metadata (only capabilities evidenced by checked-in
+adapters/importers), `groupProviderEntries(providers, category)`, and
+`providerGroupMatchesCategory(group, category)`. Filtering runs after family
+grouping so a matching family keeps every available connection method; unknown
+IDs appear only under All. Clients that keep every card mounted (web) call
+`providerGroupMatchesCategory` for stable hide/show without remounting.
+
 ## Implementation Details
 
 ### Logos and Branding

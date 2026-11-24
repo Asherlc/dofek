@@ -216,6 +216,20 @@ describe("instrumentation", () => {
     await sdk?.shutdown();
   });
 
+  it("lets a draining worker take ownership of SDK shutdown", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+    const before = process.listenerCount("SIGTERM");
+
+    const sdk = startInstrumentation(
+      { OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "http://localhost:4318/v1/logs" },
+      { shutdownOnSignal: false },
+    );
+
+    expect(process.listenerCount("SIGTERM")).toBe(before);
+    await sdk?.shutdown();
+    expect(mockShutdown).toHaveBeenCalledOnce();
+  });
+
   it("returns an SDK instance when OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is set", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");
 

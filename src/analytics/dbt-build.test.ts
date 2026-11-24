@@ -4,10 +4,15 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runOwnedDbtBuild } from "./dbt-build.ts";
 
+const mockLoggerInfo = vi.fn();
+vi.mock("../logger.ts", () => ({
+  logger: { info: (...args: unknown[]) => mockLoggerInfo(...args) },
+}));
 vi.mock("../lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 describe("owned dbt artifacts", () => {
   let directory: string;
   beforeEach(async () => {
+    mockLoggerInfo.mockClear();
     directory = await mkdtemp(join(tmpdir(), "owned-dbt-unit-"));
   });
   afterEach(async () => {
@@ -20,27 +25,43 @@ describe("owned dbt artifacts", () => {
       return code;
     }),
   };
-  async function artifacts(status = "success") {
+  function modelTimingCalls() {
+    return mockLoggerInfo.mock.calls.filter(([event]) => event === "analytics.dbt_model");
+  }
+  async function writeArtifacts(
+    models: ReadonlyArray<{ name: string; status: string; executionTime: number }>,
+  ) {
     await writeFile(
       join(directory, "manifest.json"),
       JSON.stringify({
         metadata: { dbt_schema_version: "https://schemas.getdbt.com/dbt/manifest/v12.json" },
-        nodes: {
-          "model.fixture.rows": {
-            unique_id: "model.fixture.rows",
-            name: "rows",
-            resource_type: "model",
-          },
-        },
+        nodes: Object.fromEntries(
+          models.map((model) => [
+            `model.fixture.${model.name}`,
+            {
+              unique_id: `model.fixture.${model.name}`,
+              name: model.name,
+              resource_type: "model",
+            },
+          ]),
+        ),
       }),
     );
     await writeFile(
       join(directory, "run_results.json"),
       JSON.stringify({
         metadata: { invocation_id: "fixture" },
-        results: [{ unique_id: "model.fixture.rows", status, execution_time: 1, message: null }],
+        results: models.map((model) => ({
+          unique_id: `model.fixture.${model.name}`,
+          status: model.status,
+          execution_time: model.executionTime,
+          message: null,
+        })),
       }),
     );
+  }
+  async function artifacts(status = "success", executionTime = 1) {
+    await writeArtifacts([{ name: "rows", status, executionTime }]);
   }
   it("keeps artifact validation inside registered child work", async () => {
     let registered = false;
@@ -83,9 +104,52 @@ describe("owned dbt artifacts", () => {
         return 0;
       }),
     ).rejects.toThrow("incomplete");
+    expect(modelTimingCalls()).toEqual([]);
   });
   it("preserves a nonzero exit for existing build failure reporting", async () => {
     await expect(runOwnedDbtBuild(owner, directory, ["rows"], async () => 7)).resolves.toBe(7);
+    expect(modelTimingCalls()).toEqual([]);
+  });
+  it("emits one analytics.dbt_model timing per model after a valid fresh artifact", async () => {
+    await expect(
+      runOwnedDbtBuild(owner, directory, ["rows", "sleep"], async () => {
+        await writeArtifacts([
+          { name: "rows", status: "success", executionTime: 1.2506 },
+          { name: "sleep", status: "success", executionTime: 0.5 },
+        ]);
+        return 0;
+      }),
+    ).resolves.toBe(0);
+    expect(modelTimingCalls()).toEqual([
+      ["analytics.dbt_model", { model: "rows", duration_ms: 1251 }],
+      ["analytics.dbt_model", { model: "sleep", duration_ms: 500 }],
+    ]);
+  });
+  it("emits no timings for a partially incomplete two-model artifact", async () => {
+    await expect(
+      runOwnedDbtBuild(owner, directory, ["rows", "sleep"], async () => {
+        await writeArtifacts([
+          { name: "rows", status: "success", executionTime: 1.2504 },
+          { name: "sleep", status: "skipped", executionTime: 0.5 },
+        ]);
+        return 0;
+      }),
+    ).rejects.toThrow("incomplete");
+    expect(modelTimingCalls()).toEqual([]);
+  });
+  it("does not emit timings when the owner rejects after a successful callback", async () => {
+    const rejection = new Error("owner rejected after admission");
+    owner.runSynchronousDbt.mockImplementationOnce(async (operation) => {
+      await operation();
+      throw rejection;
+    });
+    await expect(
+      runOwnedDbtBuild(owner, directory, ["rows"], async () => {
+        await artifacts("success", 1.2504);
+        return 0;
+      }),
+    ).rejects.toBe(rejection);
+    expect(modelTimingCalls()).toEqual([]);
   });
   it("propagates spawn errors and does not call them a terminal success", async () => {
     const error = new Error("spawn failed");
@@ -94,5 +158,6 @@ describe("owned dbt artifacts", () => {
         throw error;
       }),
     ).rejects.toBe(error);
+    expect(modelTimingCalls()).toEqual([]);
   });
 });

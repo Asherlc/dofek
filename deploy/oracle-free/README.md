@@ -10,9 +10,12 @@ allowances and payment-model caveats in
 
 This is the production host topology for the main `deploy/docker-compose.yml` stack.
 
-This root is **isolated** from the primary `deploy/` root: it uses a local
-backend and the `oracle/oci` provider. The primary `deploy/` root manages
-Cloudflare resources.
+This root uses the `oracle/oci` provider and the native OCI backend. Its state
+is stored at `host/terraform.tfstate` in the private, versioned
+`dofek-terraform-state` bucket. The backend locks state during Terraform
+operations. The primary `deploy/` root manages Cloudflare resources in a
+separate backend. See [OCI access and state storage](../oci-bootstrap/README.md)
+and the [Terraform OCI backend reference](https://developer.hashicorp.com/terraform/language/backend/oci).
 
 ## What it provisions
 
@@ -26,27 +29,22 @@ Cloudflare resources.
   (required on OCI — the image ships restrictive iptables), formats/mounts the
   data volume, and initializes a single-node swarm
 
-## One-time manual bootstrap
-
-Terraform needs credentials before it can run, so these steps are unavoidable
-and done once:
-
-1. Create or select the OCI tenancy and confirm its home region, payment model,
-   service limits, quotas, and expected cost.
-2. Generate an API signing key and register it on your user:
-   `oci setup keys`, then add the public key in Console → Profile → API Keys.
-3. Collect the OCIDs: `tenancy_ocid`, `user_ocid`, `compartment_ocid`, your
-   `region`, and the key `fingerprint`.
-
 ## Usage
 
+Start with a plan on `main` and inspect the workflow result. An explicit
+`apply` dispatch runs a fresh plan and applies that saved plan on the runner.
+The workflow retrieves its inputs and signing key from Infisical using its
+GitHub OIDC identity. See [GitHub workflow dispatch](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
+
 ```bash
-cd deploy/oracle-free
-cp terraform.tfvars.example terraform.tfvars   # fill in OCIDs + SSH key
-terraform init
-terraform plan
-terraform apply
+gh workflow run oci-terraform.yml --ref main -f operation=plan
+gh run list --workflow oci-terraform.yml --limit 1
 ```
+
+The workflow identity can read the OCI host resources and update existing
+security lists. Other OCI changes require an authorized administrator. Use the
+[OCI bootstrap runbook](../oci-bootstrap/README.md) for access maintenance and
+state recovery.
 
 The public IP is printed as an output; copy it into the `ORACLE_SERVER_HOST`
 GitHub Actions variable so Cloudflare DNS and production deploys target this
@@ -112,7 +110,7 @@ Kafka stack: bootstrap and deployment require `/mnt/dofek-data` to be a mounted
 data filesystem before creating Kafka's UID/GID 1000 data directory. The
 [checked-in bootstrap](cloud-init.yml) and
 [deployment preflight](../../.github/workflows/deploy-web-stack.yml) enforce this
-boundary. Changing cloud-init affects OCI instance `user_data`; review an OCI
-plan for possible instance replacement before any apply. The normal application
-release applies the separate Cloudflare root, not this OCI root; see the
+boundary. The cloud-init template supplies launch-time `user_data`. Terraform
+preserves the running VM's launch metadata and prevents accidental replacement.
+The normal application release applies the separate Cloudflare root. See the
 [release workflow](../../.github/workflows/deploy-web-environment.yml).

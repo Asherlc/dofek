@@ -6,6 +6,8 @@
         "src/server.ts",
         "src/db/setup-clickhouse-cdc.ts",
         "src/jobs/worker.ts",
+        "src/jobs/portable-sync-worker.ts",
+        "src/instrumentation-preload.ts",
         "src/opentelemetry-hook.mjs",
         "scripts/collect-clickhouse-ci-diagnostics.ts",
         "scripts/export-climbing-forecast-observations.ts",

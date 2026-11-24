@@ -1,0 +1,20 @@
+services:
+  sync-gateway:
+    image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
+    user: "0:0"
+    entrypoint: ["sh", "/app/deploy/fly-runner/wireguard-gateway.sh"]
+    command: []
+    cap_drop: ["ALL"]
+    cap_add: ["NET_ADMIN"]
+    environment:
+      SYNC_WIREGUARD_PRIVATE_KEY: ${SYNC_WIREGUARD_GATEWAY_PRIVATE_KEY:?SYNC_WIREGUARD_GATEWAY_PRIVATE_KEY is required}
+      SYNC_WIREGUARD_PEER_PUBLIC_KEY: ${SYNC_WIREGUARD_RUNNER_PUBLIC_KEY:?SYNC_WIREGUARD_RUNNER_PUBLIC_KEY is required}
+    ports:
+      - target: 51820
+        published: 51820
+        protocol: udp
+        mode: host
+    deploy:
+      replicas: 1
+      update_config:
+        order: stop-first

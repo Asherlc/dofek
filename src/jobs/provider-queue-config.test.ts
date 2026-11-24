@@ -5,7 +5,21 @@ import {
   getConfiguredProviderIds,
   getProviderQueueConfig,
   type ProviderSyncTier,
+  parseSyncWorkerProviders,
 } from "./provider-queue-config.ts";
+
+describe("parseSyncWorkerProviders", () => {
+  it("trims providers, removes empty entries, and preserves the order of distinct IDs", () => {
+    expect([...parseSyncWorkerProviders(" kilter ,, tension, kilter ")]).toEqual([
+      "kilter",
+      "tension",
+    ]);
+  });
+
+  it("defaults to an empty allowlist when unconfigured", () => {
+    expect([...parseSyncWorkerProviders(undefined)]).toEqual([]);
+  });
+});
 
 describe("getProviderQueueConfig", () => {
   it("returns strava-specific config with rate limiter", () => {

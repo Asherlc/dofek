@@ -1,5 +1,7 @@
 .terraform/
 terraform.tfvars
+*.tfvars.json
+*.tfplan
 *.tfstate
 *.tfstate.*
 *.pem

@@ -15,8 +15,8 @@ Read [README.md](./README.md) first, then read
 
 ## Boundaries
 
-- This is a separate Terraform root for the OCI host. Do not mix its local
-  state with the primary `deploy/` Terraform root.
+- This root uses locked OCI Object Storage state. Use the production key
+  documented in its README and keep it separate from the primary `deploy/` root.
 - Review `terraform plan` for host replacement, volume replacement, public-IP
   changes, limits, and cost before applying.
 - Production uses the reserved public IP and the

@@ -1,0 +1,73 @@
+name: OCI Terraform
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Plan changes or apply the saved plan
+        required: false
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+
+concurrency:
+  group: oci-terraform
+  cancel-in-progress: false
+
+jobs:
+  oci-terraform:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: terraform
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Load credentials through Infisical OIDC
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          project_id: 9c33e1eb-fbec-423c-90d8-aa8ec69acc3f
+          machine_identity_id: 61d2d781-457e-4025-a490-31f0df490fab
+          keys: OCI_TERRAFORM_PRIVATE_KEY,OCI_TERRAFORM_INPUTS
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+        with:
+          terraform_version: 1.16.6
+      - name: OCI Terraform ${{ inputs.operation == 'apply' && 'Apply' || 'Plan' }}
+        working-directory: deploy/oracle-free
+        env:
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          tmpdir="$(mktemp -d "$RUNNER_TEMP/oci-terraform.XXXXXX")"
+          trap 'rm -rf "$tmpdir"' EXIT
+
+          pem_path="$tmpdir/oci_deploy_key.pem"
+          printf '%s\n' "$OCI_TERRAFORM_PRIVATE_KEY" > "$pem_path"
+
+          tfvars_path="$tmpdir/oci_terraform.tfvars.json"
+          printf '%s' "$OCI_TERRAFORM_INPUTS" | jq --arg private_key_path "$pem_path" '. + {private_key_path: $private_key_path}' > "$tfvars_path"
+
+          export OCI_auth=APIKey
+          OCI_tenancy_ocid="$(jq -er '.tenancy_ocid // error("OCI_TERRAFORM_INPUTS requires tenancy_ocid")' "$tfvars_path")"
+          export OCI_tenancy_ocid
+          OCI_user_ocid="$(jq -er '.user_ocid // error("OCI_TERRAFORM_INPUTS requires user_ocid")' "$tfvars_path")"
+          export OCI_user_ocid
+          OCI_fingerprint="$(jq -er '.fingerprint // error("OCI_TERRAFORM_INPUTS requires fingerprint")' "$tfvars_path")"
+          export OCI_fingerprint
+          export OCI_private_key_path="$pem_path"
+
+          plan_path="$tmpdir/oci_terraform.tfplan"
+
+          terraform init -input=false -lockfile=readonly
+          terraform plan -input=false -no-color -var-file="$tfvars_path" -out="$plan_path"
+
+          if [ "$OPERATION" = "apply" ]; then
+            terraform apply -input=false -no-color "$plan_path"
+          fi

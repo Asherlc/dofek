@@ -66,6 +66,17 @@ resource "oci_core_security_list" "dofek" {
       max = 443
     }
   }
+
+  # The WireGuard peer authenticates the runner. Data service ports remain
+  # private to the stack and the tunnel.
+  ingress_security_rules {
+    protocol = "17" # UDP
+    source   = "0.0.0.0/0"
+    udp_options {
+      min = 51820
+      max = 51820
+    }
+  }
 }
 
 resource "oci_core_subnet" "dofek" {

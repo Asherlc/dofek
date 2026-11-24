@@ -21,12 +21,30 @@ final class TransferManager: ObservableObject {
     private var pendingAltitudeSampleCounts: [URL: Int] = [:]
     private let accountStateStore = WatchAccountStateStore()
 
-    /// Maximum time difference (in seconds) for merging an accel sample
-    /// with a gyro sample into a single 6-axis IMU sample.
-    private static let mergeToleranceSeconds: TimeInterval = 0.020 // 20ms = one 50Hz tick
-
     @Published var isTransferring: Bool = false
     @Published var lastTransferStatus: String = "Idle"
+    @Published private var hasFailedAttempt = false
+
+    /// Glance status from live account, session, queue, and transfer flags.
+    var phoneTransferStatus: WatchPhoneTransferStatus {
+        WatchPhoneTransferStatus.resolve(
+            isSyncEnabled: accountStateStore.isSyncEnabled,
+            isCompanionAvailable: isCompanionAvailable,
+            hasOutstandingFileTransfers: hasOutstandingFileTransfers,
+            isTransferring: isTransferring,
+            hasFailedAttempt: hasFailedAttempt
+        )
+    }
+
+    /// Whether Sync Now may start a new request. Uses the concurrent-transfer
+    /// guard plus account/session/companion availability — not the WCSession
+    /// file queue, which can still hold altitude after `isTransferring` clears.
+    var canRequestManualSync: Bool {
+        !isTransferring
+            && accountStateStore.isSyncEnabled
+            && isSessionActivated
+            && isCompanionAvailable
+    }
 
     init(
         accelerometerRecorder: AccelerometerRecorder,
@@ -69,21 +87,36 @@ final class TransferManager: ObservableObject {
             lastTransferStatus = "Account sync disabled"
             return
         }
-        guard session.activationState == .activated else {
+        guard isSessionActivated else {
             lastTransferStatus = "Session not active"
             return
         }
-        guard session.isReachable || session.isCompanionAppInstalled else {
+        guard isCompanionAvailable else {
             lastTransferStatus = "iPhone not available"
             return
         }
 
+        hasFailedAttempt = false
         isTransferring = true
         lastTransferStatus = "Querying samples..."
 
         workQueue.async { [weak self] in
             self?.performTransfer()
         }
+    }
+
+    private var isSessionActivated: Bool {
+        session.activationState == .activated
+    }
+
+    private var isCompanionAvailable: Bool {
+        guard isSessionActivated else { return false }
+        return session.isReachable || session.isCompanionAppInstalled
+    }
+
+    private var hasOutstandingFileTransfers: Bool {
+        guard isSessionActivated else { return false }
+        return !session.outstandingFileTransfers.isEmpty
     }
 
     private func performTransfer() {
@@ -192,114 +225,10 @@ final class TransferManager: ObservableObject {
         }
 
         DispatchQueue.main.async { [weak self] in
+            self?.hasFailedAttempt = true
             self?.lastTransferStatus = "Error: \(error.localizedDescription)"
             self?.isTransferring = false
         }
-    }
-
-    /// Merge gyroscope data into an accelerometer JSON file.
-    ///
-    /// Reads the accel JSON, matches gyro samples by timestamp within 20ms,
-    /// and writes the merged 6-axis data to a new file.
-    private func mergeGyroscopeIntoFile(
-        accelFileURL: URL,
-        gyroSamples: [[String: Any]],
-        outputURL: URL
-    ) throws {
-        let accelData = try Data(contentsOf: accelFileURL, options: .mappedIfSafe)
-        guard let accelArray = try JSONSerialization.jsonObject(with: accelData) as? [[String: Any]] else {
-            // If we can't parse, just copy the original file
-            try FileManager.default.copyItem(at: accelFileURL, to: outputURL)
-            return
-        }
-
-        let merged = mergeSamples(accel: accelArray, gyro: gyroSamples)
-        let mergedData = try JSONSerialization.data(withJSONObject: merged)
-        try mergedData.write(to: outputURL)
-    }
-
-    /// Merge accelerometer and gyroscope samples by timestamp.
-    ///
-    /// Accelerometer samples come from CMSensorRecorder (continuous background).
-    /// Gyroscope samples come from CMMotionManager (foreground only).
-    /// When timestamps are within 20ms (one 50Hz tick), they're merged into
-    /// a single 6-axis sample. Accel-only samples keep null gyro fields.
-    private func mergeSamples(
-        accel: [[String: Any]],
-        gyro: [[String: Any]]
-    ) -> [[String: Any]] {
-        // If no gyro data, return accel samples as-is
-        guard !gyro.isEmpty else { return accel }
-
-        // If no accel data, return gyro samples (unusual but safe)
-        guard !accel.isEmpty else { return gyro }
-
-        // Build a lookup from gyro timestamps to gyro samples
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-        // Parse gyro samples into (Date, sample) pairs for efficient lookup
-        var gyroByDate: [(date: Date, sample: [String: Any])] = []
-        for gyroSample in gyro {
-            guard let timestampString = gyroSample["timestamp"] as? String,
-                  let date = formatter.date(from: timestampString) else { continue }
-            gyroByDate.append((date: date, sample: gyroSample))
-        }
-
-        // Sort gyro by date for binary-search-like matching
-        gyroByDate.sort { $0.date < $1.date }
-
-        var matched = Set<Int>() // indices of gyro samples that were matched
-        var result: [[String: Any]] = []
-
-        for accelSample in accel {
-            var merged = accelSample
-
-            if let timestampString = accelSample["timestamp"] as? String,
-               let accelDate = formatter.date(from: timestampString) {
-                // Find closest gyro sample within tolerance
-                if let matchIndex = findClosestGyro(
-                    accelDate: accelDate,
-                    gyroSamples: gyroByDate,
-                    tolerance: Self.mergeToleranceSeconds,
-                    excluded: matched
-                ) {
-                    let gyroSample = gyroByDate[matchIndex].sample
-                    merged["gyroscopeX"] = gyroSample["gyroscopeX"]
-                    merged["gyroscopeY"] = gyroSample["gyroscopeY"]
-                    merged["gyroscopeZ"] = gyroSample["gyroscopeZ"]
-                    matched.insert(matchIndex)
-                }
-            }
-
-            result.append(merged)
-        }
-
-        return result
-    }
-
-    /// Find the closest unmatched gyro sample within the tolerance window.
-    private func findClosestGyro(
-        accelDate: Date,
-        gyroSamples: [(date: Date, sample: [String: Any])],
-        tolerance: TimeInterval,
-        excluded: Set<Int>
-    ) -> Int? {
-        var bestIndex: Int?
-        var bestDistance: TimeInterval = .greatestFiniteMagnitude
-
-        for (index, gyro) in gyroSamples.enumerated() {
-            if excluded.contains(index) { continue }
-
-            let distance = abs(accelDate.timeIntervalSince(gyro.date))
-            if distance > tolerance { continue }
-            if distance < bestDistance {
-                bestDistance = distance
-                bestIndex = index
-            }
-        }
-
-        return bestIndex
     }
 
     private func transferAltimeterSamples() {
@@ -337,6 +266,10 @@ final class TransferManager: ObservableObject {
                 }
                 return
             }
+            // Queue changed with no other @Published write on this path.
+            DispatchQueue.main.async { [weak self] in
+                self?.objectWillChange.send()
+            }
         } catch {
             if let jsonURL {
                 try? FileManager.default.removeItem(at: jsonURL)
@@ -345,6 +278,7 @@ final class TransferManager: ObservableObject {
                 try? FileManager.default.removeItem(at: compressedURL)
             }
             DispatchQueue.main.async { [weak self] in
+                self?.hasFailedAttempt = true
                 self?.lastTransferStatus = "Altitude transfer error: \(error.localizedDescription)"
             }
         }
@@ -365,12 +299,19 @@ final class TransferManager: ObservableObject {
 
         if let error = error {
             DispatchQueue.main.async { [weak self] in
+                self?.hasFailedAttempt = true
                 self?.lastTransferStatus = "Altitude transfer error: \(error.localizedDescription)"
             }
             return
         }
 
-        guard let sampleCount else { return }
+        guard let sampleCount else {
+            // Queue drained without an in-memory count or other @Published write.
+            DispatchQueue.main.async { [weak self] in
+                self?.objectWillChange.send()
+            }
+            return
+        }
 
         altimeterRecorder.clearBufferedSamples(count: sampleCount)
 
@@ -398,6 +339,7 @@ final class TransferManager: ObservableObject {
         case let .failed(transferError):
             reportUnexpectedTransferFailure(transferError)
             DispatchQueue.main.async { [weak self] in
+                self?.hasFailedAttempt = true
                 self?.lastTransferStatus =
                     "Transfer error: \(transferError.localizedDescription)"
                 self?.isTransferring = false
@@ -413,6 +355,7 @@ final class TransferManager: ObservableObject {
             )
             reportUnexpectedTransferFailure(metadataError)
             DispatchQueue.main.async { [weak self] in
+                self?.hasFailedAttempt = true
                 self?.lastTransferStatus = "Transfer error: Missing accelerometer cursor"
                 self?.isTransferring = false
             }
@@ -451,6 +394,7 @@ final class TransferManager: ObservableObject {
         pendingAltitudeLock.unlock()
 
         DispatchQueue.main.async { [weak self] in
+            self?.hasFailedAttempt = false
             self?.isTransferring = false
             self?.lastTransferStatus = "Account data cleared"
         }
@@ -465,9 +409,18 @@ final class TransferManager: ObservableObject {
     }
 
     private func enableAccountSync() {
+        let didEnable: Bool
         transferStateLock.lock()
-        accountStateStore.enableSync()
+        didEnable = !accountStateStore.isSyncEnabled
+        if didEnable {
+            accountStateStore.enableSync()
+        }
         transferStateLock.unlock()
+
+        guard didEnable else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.hasFailedAttempt = false
+        }
     }
 
     private func queueAltitudeTransferIfSyncEnabled(
