@@ -532,7 +532,7 @@ describe("computeInsights()", () => {
     const metrics = days.map((date, index) =>
       makeDailyRow(date, {
         resting_hr: null,
-        hrv: index === 0 ? null : 40 + ((index - 1) % 20) + (index <= 20 ? 4 : 0),
+        hrv: index === 0 ? null : 40 + ((index - 1) % 20) + (index <= 20 ? 4.2 : 0),
       }),
     );
     const sleep = days.slice(0, -1).map((date, index) =>
@@ -542,7 +542,7 @@ describe("computeInsights()", () => {
         rem_minutes: null,
       }),
     );
-    // The HRV comparison has p ≈ 0.039. The resting-heart-rate groups match.
+    // The HRV comparison has p ≈ 0.031. The resting-heart-rate groups match.
     const withRestingHeartRate = metrics.map((day, index) => ({
       ...day,
       resting_hr: index === 0 ? null : 50 + ((index - 1) % 20),
@@ -557,17 +557,20 @@ describe("computeInsights()", () => {
   });
 
   it("counts predefined correlations below the effect floor in the correction", () => {
-    const days = dateRange("2025-04-01", 40);
+    const pairedCount = 40;
+    const days = dateRange("2025-04-01", pairedCount + 1);
     const metrics = days.map((date, index) =>
       makeDailyRow(date, { hrv: index === 0 ? null : 40 + index - 1, steps: null }),
     );
     const nutrition = days
       .slice(0, -1)
-      .map((date, index) => makeNutritionRow(date, { protein_g: 110 + ((index + 5) % 39) }));
-    // Protein has rho ≈ 0.329 and p ≈ 0.041. Steps has rho ≈ 0.116.
+      .map((date, index) =>
+        makeNutritionRow(date, { protein_g: 110 + ((index + 5) % pairedCount) }),
+      );
+    // Protein has rho ≈ 0.343 and p ≈ 0.030. Steps has rho ≈ 0.133.
     const withSteps = metrics.map((day, index) => ({
       ...day,
-      steps: 8000 + ((index + 7) % 39),
+      steps: 8000 + ((index + 7) % pairedCount),
     }));
     const withConstantSteps = metrics.map((day) => ({ ...day, steps: 8000 }));
 
@@ -584,7 +587,7 @@ describe("computeInsights()", () => {
     ).not.toContain("protein-hrv");
     const stronglyAssociatedNutrition = nutrition.map((entry, index) => ({
       ...entry,
-      protein_g: 110 + ((index + 3) % 39),
+      protein_g: 110 + ((index + 3) % pairedCount),
     }));
     expect(
       computeInsights(withSteps, [], [], stronglyAssociatedNutrition).map((insight) => insight.id),
@@ -2723,10 +2726,11 @@ describe("aggregateMonthly()", () => {
 
 describe("exhaustiveSweep()", () => {
   it("counts exploratory correlations below the effect floor in the correction", () => {
-    const metrics = dateRange("2025-04-01", 117).map((date, index) =>
+    const pairedCount = 40;
+    const metrics = dateRange("2025-04-01", pairedCount * 3).map((date, index) =>
       makeDailyRow(date, {
         resting_hr: index % 3 === 0 ? 60 + index / 3 : null,
-        steps: index % 3 === 0 ? 8000 + ((index / 3 + 5) % 39) : null,
+        steps: index % 3 === 0 ? 8000 + ((index / 3 + 5) % pairedCount) : null,
         hrv: null,
         spo2_avg: null,
         skin_temp_c: null,
@@ -2737,12 +2741,19 @@ describe("exhaustiveSweep()", () => {
     const withExercise = (shift: number) =>
       joined.map((day, index) => ({
         ...day,
-        exercise_minutes: index % 3 === 0 ? 1 + ((index / 3 + shift) % 39) : null,
+        exercise_minutes: index % 3 === 0 ? 1 + ((index / 3 + shift) % pairedCount) : null,
       }));
+    const withConstantExercise = joined.map((day) => ({
+      ...day,
+      exercise_minutes: day.steps == null ? null : 10,
+    }));
 
     expect(exhaustiveSweep(joined, new Set()).map((insight) => insight.id)).toContain(
       "disc-steps-resting_hr-lag0",
     );
+    expect(exhaustiveSweep(withConstantExercise, new Set()).map((insight) => insight.id)).toEqual([
+      "disc-steps-resting_hr-lag0",
+    ]);
     expect(exhaustiveSweep(withExercise(7), new Set()).map((insight) => insight.id)).not.toContain(
       "disc-steps-resting_hr-lag0",
     );
@@ -2751,6 +2762,11 @@ describe("exhaustiveSweep()", () => {
         (insight) => insight.id,
       ),
     ).not.toContain("disc-steps-resting_hr-lag0");
+    expect(
+      exhaustiveSweep(withExercise(0), new Set(["resting HR::exercise duration"])).map(
+        (insight) => insight.id,
+      ),
+    ).toEqual(["disc-steps-resting_hr-lag0"]);
   });
 
   it("returns empty array for insufficient data (< 20 days)", () => {
