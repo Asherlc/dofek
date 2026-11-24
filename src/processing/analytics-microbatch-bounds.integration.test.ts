@@ -10,7 +10,8 @@ import { buildPostgresFitnessRawTableStatements } from "../db/clickhouse-raw-tab
 import { buildIngestMetricStreamCreateTableSql } from "../metric-stream/clickhouse-table.ts";
 import { resolveAnalyticsMicrobatchBounds } from "./analytics-microbatch-bounds.ts";
 
-const clickHouseImage = "mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine";
+const clickHouseImage =
+  "clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3";
 const microbatchModels = [
   "sensor_scalar_sample",
   "deduped_sensor",

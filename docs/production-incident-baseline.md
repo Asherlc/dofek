@@ -40185,3 +40185,23 @@ Local qualification and CI are separate from production throughput acceptance. T
   windows where comparisons ran and none qualified. On a repeat report,
   check the date range, time zone, and number of testable comparisons before
   diagnosing the empty card as a refresh or ingestion failure.
+
+## 2026-11-24 — Overview PR server integration fixture could not start ClickHouse
+
+- **Impact and evidence.** PR #3477's server integration shard 3 of 5 failed
+  in `Run pnpm exec vitest run --project integration --coverage --shard=3/5`.
+  The setup hook for `analytics-microbatch-bounds.integration.test.ts` failed
+  with `No such image: mirror.gcr.io/clickhouse/clickhouse-server:26.6.1.1193-alpine`.
+  The other 82 suites in that shard passed. The failure blocked PR validation.
+  [Failing integration job](https://github.com/Asherlc/dofek/actions/runs/45433379669/job/138585872259).
+- **Cause and fix.** The fixture used a separate mirror reference from the
+  digest-pinned ClickHouse image that the job had already pulled for its
+  service. It now uses the same registry, tag, and digest as the CI service
+  and workspace Compose. The test still starts a disposable ClickHouse
+  container for the empty database it exercises.
+  [Integration fixture](../src/processing/analytics-microbatch-bounds.integration.test.ts)
+  · [CI service image](../.github/workflows/check-server.yml).
+- **Validation and follow-up.** The focused integration test passed against
+  the pinned image locally. The next CI run validates the fixture in the
+  complete integration shard. When updating the ClickHouse version, keep
+  the fixture aligned with the CI and workspace image references.
