@@ -29,6 +29,33 @@ import {
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
+const MAX_PLANNED_RANGE_INCLUSIVE_DAYS = 90;
+const MS_PER_DAY = 86_400_000;
+
+/** Shared inverted/too-long check for explicit agenda and planned date ranges. */
+function inclusiveExplicitRangeError(startDate: string, endDate: string): string | null {
+  if (startDate > endDate) {
+    return "startDate must be on or before endDate.";
+  }
+  const startMs = Date.parse(`${startDate}T00:00:00.000Z`);
+  const endMs = Date.parse(`${endDate}T00:00:00.000Z`);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+    return "startDate and endDate must be valid calendar dates.";
+  }
+  const inclusiveDays = Math.round((endMs - startMs) / MS_PER_DAY) + 1;
+  if (inclusiveDays > MAX_PLANNED_RANGE_INCLUSIVE_DAYS) {
+    return `Date range may span at most ${MAX_PLANNED_RANGE_INCLUSIVE_DAYS} inclusive calendar days.`;
+  }
+  return null;
+}
+
+function assertInclusivePlannedDateRange(dateRange: { startDate: string; endDate: string }) {
+  const message = inclusiveExplicitRangeError(dateRange.startDate, dateRange.endDate);
+  if (message) {
+    throw new TRPCError({ code: "BAD_REQUEST", message });
+  }
+}
+
 export interface CalendarDay {
   date: string;
   activityCount: number;
@@ -120,13 +147,27 @@ export const calendarRouter = router({
 
   weekListV2: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-page-power-stress-v4",
+    keyVersion: "activity-calendar-page-power-stress-v5",
+    scopeByAccessWindow: true,
   })
     .input(
-      activityListInputSchema.extend({
-        page: z.number().int().nonnegative().default(0),
-        pageSize: z.number().int().min(1).max(100).default(20),
-      }),
+      activityListInputSchema
+        .extend({
+          startDate: z.iso.date().optional(),
+          dateOrder: z.enum(["oldest", "newest"]).optional(),
+          page: z.number().int().nonnegative().default(0),
+          pageSize: z.number().int().min(1).max(100).default(20),
+        })
+        .superRefine((value, context) => {
+          if (!value.startDate) return;
+          const message = inclusiveExplicitRangeError(value.startDate, value.endDate);
+          if (!message) return;
+          context.addIssue({
+            code: "custom",
+            message,
+            path: message.includes("on or before") ? ["startDate"] : ["endDate"],
+          });
+        }),
     )
     .output(
       z.object({
@@ -134,6 +175,10 @@ export const calendarRouter = router({
         totalCount: z.number().int().nonnegative(),
         page: z.number().int().nonnegative(),
         pageSize: z.number().int().positive(),
+        plannedWindow: z
+          .object({ startDate: dateStringSchema, endDate: dateStringSchema })
+          .nullable()
+          .optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -156,9 +201,25 @@ export const calendarRouter = router({
     }),
 
   upcomingWorkouts: protectedProcedure
-    .input(z.object({ providerId: z.string().min(1).optional() }).optional())
+    .input(
+      z
+        .object({
+          providerId: z.string().min(1).optional(),
+          dateRange: z
+            .object({
+              startDate: z.iso.date(),
+              endDate: z.iso.date(),
+            })
+            .optional(),
+          activityType: z.string().min(1).optional(),
+        })
+        .optional(),
+    )
     .output(z.array(plannedWorkoutDaySchema))
     .query(({ ctx, input }) => {
+      if (input?.dateRange) {
+        assertInclusivePlannedDateRange(input.dateRange);
+      }
       const today = formatDateYmdInTimeZone(new Date(), ctx.timezone);
       return new PlannedWorkoutRepository(
         ctx.db,
@@ -166,7 +227,10 @@ export const calendarRouter = router({
         today,
         input?.providerId,
         ctx.accessWindow,
-      ).upcoming();
+      ).upcoming({
+        dateRange: input?.dateRange,
+        activityType: input?.activityType,
+      });
     }),
 
   searchActivities: protectedProcedure
@@ -224,6 +288,7 @@ export const calendarRouter = router({
   activityOverview: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
     keyVersion: "activity-calendar-primary-type-v4",
+    scopeByAccessWindow: true,
   })
     .input(activityListInputSchema)
     .output(activityOverviewSchema)

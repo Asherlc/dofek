@@ -1206,4 +1206,189 @@ describe("ActivitiesCalendarRepository", () => {
     });
     expect(day?.activities[4]?.location).toMatchObject({ centroidLat: 0, centroidLng: 0 });
   });
+
+  it("applies inclusive startDate and endDate bounds for explicit agenda ranges", async () => {
+    const sensorStore = makeSensorStore([[makeActivityRow({ id: "activity-1" })], []]);
+    const repository = new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "00000000-0000-0000-0000-000000000001",
+      "UTC",
+      sensorStore,
+    );
+
+    await repository.getPage({
+      weeks: 4,
+      startDate: "2026-03-01",
+      endDate: "2026-03-20",
+      page: 0,
+      pageSize: 20,
+    });
+
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.stringMatching(
+        />= toDate\(\{windowStart:String\}\).*<= toDate\(\{windowEnd:String\}\)/s,
+      ),
+      expect.objectContaining({
+        windowStart: "2026-03-01",
+        windowEnd: "2026-03-20",
+      }),
+    );
+  });
+
+  it("returns plannedWindow for explicit ranges and omits it for legacy week lookbacks", async () => {
+    const rows = [
+      makeActivityRow({
+        id: "newer",
+        local_date: "2026-03-31",
+        started_at: "2026-03-31T10:00:00Z",
+      }),
+      makeActivityRow({
+        id: "older",
+        local_date: "2026-03-20",
+        started_at: "2026-03-20T10:00:00Z",
+      }),
+    ];
+    const page0 = await new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "user-1",
+      "UTC",
+      makeSensorStore([rows, []]),
+    ).getPage({
+      weeks: 4,
+      startDate: "2026-03-01",
+      endDate: "2026-03-31",
+      page: 0,
+      pageSize: 1,
+    });
+    expect(page0.plannedWindow).toEqual({ startDate: "2026-03-31", endDate: "2026-03-31" });
+    const page1 = await new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "user-1",
+      "UTC",
+      makeSensorStore([rows, []]),
+    ).getPage({
+      weeks: 4,
+      startDate: "2026-03-01",
+      endDate: "2026-03-31",
+      page: 1,
+      pageSize: 1,
+    });
+    expect(page1.plannedWindow).toEqual({ startDate: "2026-03-01", endDate: "2026-03-30" });
+
+    const legacyPage = await new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "user-1",
+      "UTC",
+      makeSensorStore([rows, []]),
+    ).getPage({
+      weeks: 4,
+      endDate: "2026-03-31",
+      page: 0,
+      pageSize: 1,
+    });
+    expect(legacyPage).not.toHaveProperty("plannedWindow");
+  });
+
+  it("keeps newest-time within-day ordering when paging oldest-first by date", async () => {
+    const rows = [
+      makeActivityRow({
+        id: "earlier",
+        local_date: "2026-03-20",
+        started_at: "2026-03-20T08:00:00Z",
+      }),
+      makeActivityRow({
+        id: "later",
+        local_date: "2026-03-20",
+        started_at: "2026-03-20T16:00:00Z",
+      }),
+      makeActivityRow({
+        id: "next-day",
+        local_date: "2026-03-21",
+        started_at: "2026-03-21T09:00:00Z",
+      }),
+    ];
+    const page0 = await new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "user-1",
+      "UTC",
+      makeSensorStore([rows, []]),
+    ).getPage({
+      weeks: 4,
+      startDate: "2026-03-20",
+      endDate: "2026-03-21",
+      dateOrder: "oldest",
+      page: 0,
+      pageSize: 2,
+    });
+    expect(page0.days.map((day) => day.date)).toEqual(["2026-03-20"]);
+    expect(page0.days[0]?.activities.map((activity) => activity.id)).toEqual(["later", "earlier"]);
+  });
+
+  it("pages oldest-first explicit ranges in calendar order with mirrored planned windows", async () => {
+    const rows = [
+      makeActivityRow({
+        id: "newer",
+        local_date: "2026-03-31",
+        started_at: "2026-03-31T10:00:00Z",
+      }),
+      makeActivityRow({
+        id: "older",
+        local_date: "2026-03-20",
+        started_at: "2026-03-20T10:00:00Z",
+      }),
+    ];
+    const page0 = await new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "user-1",
+      "UTC",
+      makeSensorStore([rows, []]),
+    ).getPage({
+      weeks: 4,
+      startDate: "2026-03-01",
+      endDate: "2026-03-31",
+      dateOrder: "oldest",
+      page: 0,
+      pageSize: 1,
+    });
+    expect(page0.days.map((day) => day.date)).toEqual(["2026-03-20"]);
+    expect(page0.plannedWindow).toEqual({ startDate: "2026-03-01", endDate: "2026-03-20" });
+    const page1 = await new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "user-1",
+      "UTC",
+      makeSensorStore([rows, []]),
+    ).getPage({
+      weeks: 4,
+      startDate: "2026-03-01",
+      endDate: "2026-03-31",
+      dateOrder: "oldest",
+      page: 1,
+      pageSize: 1,
+    });
+    expect(page1.days.map((day) => day.date)).toEqual(["2026-03-31"]);
+    expect(page1.plannedWindow).toEqual({ startDate: "2026-03-21", endDate: "2026-03-31" });
+  });
+
+  it("owns the whole explicit range when the recorded selection is empty", async () => {
+    const repository = new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "user-1",
+      "UTC",
+      makeSensorStore([[], []]),
+    );
+    const page = await repository.getPage({
+      weeks: 4,
+      startDate: "2026-03-01",
+      endDate: "2026-03-31",
+      page: 0,
+      pageSize: 20,
+    });
+    expect(page).toMatchObject({
+      days: [],
+      totalCount: 0,
+      plannedWindow: { startDate: "2026-03-01", endDate: "2026-03-31" },
+    });
+  });
 });

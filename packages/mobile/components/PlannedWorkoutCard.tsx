@@ -10,100 +10,34 @@ import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useUnitConverter } from "../lib/units";
 import { colors, spacing } from "../theme";
-import { getQueryErrorMessage, QueryStatePanel } from "./QueryStatePanel";
 
-type PlannedWorkoutDay = AppRouterOutputs["calendar"]["upcomingWorkouts"][number];
-type PlannedWorkoutStep = PlannedWorkoutDay["workouts"][number]["steps"][number];
-
-interface UpcomingWorkoutsProps {
-  days: readonly PlannedWorkoutDay[] | undefined;
-  isLoading?: boolean;
-  isError?: boolean;
-  error?: unknown;
-  onRetry?: () => void;
-  retrying?: boolean;
-}
-
+type PlannedWorkout = AppRouterOutputs["calendar"]["upcomingWorkouts"][number]["workouts"][number];
+type PlannedWorkoutStep = PlannedWorkout["steps"][number];
 type UnitConverter = ReturnType<typeof useUnitConverter>;
 
-/** Provider-reported schedule only; completed totals stay owned by the activity queries. */
-export function UpcomingWorkouts({
-  days,
-  isLoading = false,
-  isError = false,
-  error,
-  onRetry,
-  retrying = false,
-}: UpcomingWorkoutsProps) {
+/** Read-only planned workout row for the Activities agenda. */
+export function PlannedWorkoutCard({ workout }: { workout: PlannedWorkout }) {
   const units = useUnitConverter();
-  const populatedDays = days?.filter((day) => day.workouts.length > 0) ?? [];
-  const hasWorkouts = populatedDays.length > 0;
-  if (!hasWorkouts && !isLoading && !isError) return null;
-
+  const sportLabel = workout.sportType ? formatActivityTypeLabel(workout.sportType) : null;
+  const sportIsTitle = workout.title == null && sportLabel != null;
   return (
-    <View style={styles.section} accessibilityLabel="Upcoming workouts">
-      <Text accessibilityRole="header" style={styles.heading}>
-        Upcoming workouts
+    <View style={styles.card}>
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>{workout.title ?? sportLabel ?? "Planned workout"}</Text>
+        <Text style={styles.plannedPill}>Planned</Text>
+      </View>
+      <Text style={styles.meta}>
+        {workout.startTime ? `${workout.startTime} · ` : ""}
+        {!sportIsTitle && sportLabel ? `${sportLabel} · ` : ""}
+        {providerSourceLabel(workout.providerId)}
       </Text>
-      {!hasWorkouts && isLoading && !isError ? (
-        <QueryStatePanel variant="loading" minHeight={44} />
-      ) : !hasWorkouts && isError ? (
-        <QueryStatePanel
-          variant="error"
-          title="Upcoming workouts: Could not load this section"
-          message={getQueryErrorMessage(error)}
-          minHeight={60}
-          onRetry={onRetry}
-          retrying={retrying}
-        />
-      ) : (
-        <View style={styles.days}>
-          {populatedDays.map((day) => (
-            <View key={day.date} style={styles.day}>
-              <Text style={styles.dayHeading}>
-                {formatDateMedium(day.date, { timeZone: "UTC" })}
-              </Text>
-              {day.workouts.map((workout) => {
-                const sportLabel = workout.sportType
-                  ? formatActivityTypeLabel(workout.sportType)
-                  : null;
-                const sportIsTitle = workout.title == null && sportLabel != null;
-                return (
-                  <View key={`${workout.providerId}:${workout.id}`} style={styles.card}>
-                    <View style={styles.titleRow}>
-                      <Text style={styles.title}>
-                        {workout.title ?? sportLabel ?? "Planned workout"}
-                      </Text>
-                      <Text style={styles.plannedPill}>Planned</Text>
-                    </View>
-                    <Text style={styles.meta}>
-                      {workout.startTime ? `${workout.startTime} · ` : ""}
-                      {!sportIsTitle && sportLabel ? `${sportLabel} · ` : ""}
-                      {providerSourceLabel(workout.providerId)}
-                    </Text>
-                    {workout.description ? (
-                      <Text style={styles.description}>{workout.description}</Text>
-                    ) : null}
-                    {workout.steps.length > 0 ? (
-                      <WorkoutSteps steps={workout.steps} units={units} />
-                    ) : null}
-                  </View>
-                );
-              })}
-            </View>
-          ))}
-          {isError ? (
-            <QueryStatePanel
-              variant="error"
-              title="Upcoming workouts: Could not load this section"
-              message={getQueryErrorMessage(error)}
-              minHeight={60}
-              onRetry={onRetry}
-              retrying={retrying}
-            />
-          ) : null}
-        </View>
-      )}
+      {workout.snapshotImportedAt ? (
+        <Text style={styles.meta}>
+          Snapshot · {formatDateMedium(workout.snapshotImportedAt, { timeZone: "UTC" })}
+        </Text>
+      ) : null}
+      {workout.description ? <Text style={styles.description}>{workout.description}</Text> : null}
+      {workout.steps.length > 0 ? <WorkoutSteps steps={workout.steps} units={units} /> : null}
     </View>
   );
 }
@@ -186,17 +120,6 @@ function StepList({
 }
 
 const styles = StyleSheet.create({
-  section: { gap: spacing.sm, marginBottom: spacing.md },
-  heading: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  days: { gap: spacing.md },
-  day: { gap: spacing.sm },
-  dayHeading: { color: colors.text, fontSize: 15, fontWeight: "600" },
   card: {
     backgroundColor: colors.surface,
     borderRadius: 12,

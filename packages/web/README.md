@@ -141,6 +141,13 @@ work: a watt is a joule per second ([NIST](https://www.nist.gov/glossary-term/34
 The [server query](../server/src/routers/activity.ts) reuses the
 [cycling workout calculation](../training/src/cycling-workout-metrics.ts).
 
+The [Activities calendar](src/pages/ActivitiesPage.tsx) groups recorded
+activities and imported workout plans by their calendar day. The date range
+control opens the current week by default and also offers historical ranges
+and the next 90 days. Planned cards show their source and any available workout
+steps. A disconnected provider's retained plans display their last import date.
+Training totals use completed activities.
+
 The [Activities cards](src/components/ActivityCardContent.tsx) show an inset map
 panel beside activity details on wider screens and below them on narrow screens.
 The [mobile Activities list](<../mobile/app/(tabs)/activities.tsx>) shows the same

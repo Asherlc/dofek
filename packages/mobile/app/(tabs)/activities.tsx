@@ -1,4 +1,13 @@
 import {
+  type ActivityAgendaPreset,
+  activityAgendaDateOrder,
+  activityAgendaRange,
+  formatActivityAgendaCaption,
+  mergeActivityAgendaDays,
+  resolveActivityAgendaOwnedPlannedWindow,
+  withActivityAgendaEmptyDays,
+} from "@dofek/format/activity-agenda";
+import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
@@ -8,13 +17,11 @@ import {
 } from "@dofek/format/format";
 import { isConnectionFailure, userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
-import { formatActivityTypeLabel } from "@dofek/training/training";
+import type { AppRouterOutputs } from "dofek-server/router";
 import { Link, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AccessibilityInfo,
   Alert,
-  Platform,
   RefreshControl,
   ScrollView,
   Text,
@@ -22,37 +29,26 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { ActivityControls } from "../../components/ActivityControls";
 import { ActivityHeatmap } from "../../components/ActivityHeatmap";
-import { ActivityMapTile } from "../../components/ActivityMapTile";
-import { ActivityMetricStrip } from "../../components/ActivityMetricStrip";
 import { ActivityOverview } from "../../components/ActivityOverview";
-import { ActivityPhotoPreview } from "../../components/ActivityPhotoPreview";
-import { ActivitySourceDisclosure } from "../../components/ActivitySourceDisclosure";
-import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import { styles } from "../../components/activities.styles";
+import { CompletedActivityCard } from "../../components/CompletedActivityCard";
 import { PaginationControls } from "../../components/PaginationControls";
+import { PlannedWorkoutCard } from "../../components/PlannedWorkoutCard";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
-import { UpcomingWorkouts } from "../../components/UpcomingWorkouts";
-import {
-  displayDuration,
-  displayRecordLocalTime,
-  formatActivityAccessibilityLabel,
-} from "../../lib/activity-list-presentation";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
 
-const DEFAULT_WEEKS = 4;
 const ACTIVITY_PAGE_SIZE = 20;
 const ALL_ACTIVITY_TYPES = "all";
-const DATE_RANGE_OPTIONS = [
-  { value: 4, label: "4 weeks" },
-  { value: 8, label: "8 weeks" },
-  { value: 12, label: "12 weeks" },
-] as const;
+const DEFAULT_PRESET: ActivityAgendaPreset = "this-week";
+const EMPTY_PLANNED_WORKOUTS: AppRouterOutputs["calendar"]["upcomingWorkouts"][number]["workouts"] =
+  [];
 
 type ActivitySearchSelection =
   | { kind: "title" | "name"; name: string }
@@ -61,8 +57,8 @@ type ActivitySearchSelection =
 export default function ActivitiesScreen() {
   const router = useRouter();
   const units = useUnitConverter();
-  const endDate = useMemo(() => formatDateYmd(), []);
-  const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
+  const today = useMemo(() => formatDateYmd(), []);
+  const [preset, setPreset] = useState<ActivityAgendaPreset>(DEFAULT_PRESET);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
   const [trainingTimeExpanded, setTrainingTimeExpanded] = useState(false);
   const [searchMode, setSearchMode] = useState<"title" | "location">("title");
@@ -89,13 +85,24 @@ export default function ActivitiesScreen() {
   const selectedActivityIds = new Set(selectedActivities.keys());
   const [activityPage, setActivityPage] = useState(0);
   const selectedActivityType = activityType === ALL_ACTIVITY_TYPES ? undefined : activityType;
+  const agendaRange = useMemo(() => activityAgendaRange(preset, today), [preset, today]);
+  const dateOrder = activityAgendaDateOrder(preset);
+  const futureOnly = preset === "next-90-days";
+  const showOverview = agendaRange.weeks != null && !futureOnly;
+  const selectedSpan = useMemo(
+    () => ({ startDate: agendaRange.startDate, endDate: agendaRange.endDate }),
+    [agendaRange.startDate, agendaRange.endDate],
+  );
+  const lastSportTypes = useRef<string[]>([]);
   const queryInput = useMemo(
     () => ({
-      weeks,
-      endDate,
+      weeks: agendaRange.weeks ?? 4,
+      startDate: agendaRange.startDate,
+      endDate: agendaRange.endDate,
+      dateOrder,
       ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
     }),
-    [weeks, endDate, selectedActivityType],
+    [agendaRange, dateOrder, selectedActivityType],
   );
   const trpcUtils = trpc.useUtils();
   const titleSearchQuery = trpc.calendar.searchActivities.useInfiniteQuery(
@@ -146,7 +153,7 @@ export default function ActivitiesScreen() {
     undefined,
   );
   const query = trpc.calendar.weekListV2.useQuery(pageInput, {
-    enabled: !searching,
+    enabled: !searching && !futureOnly,
     placeholderData: (previousData) => previousData,
     refetchInterval: (query) =>
       query.state.data?.days.some((day) =>
@@ -155,13 +162,23 @@ export default function ActivitiesScreen() {
         ? processingPollInterval("active")
         : false,
   });
-  const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
-    placeholderData: (previousData) => previousData,
-  });
-  const upcomingQuery = trpc.calendar.upcomingWorkouts.useQuery(undefined, {
-    placeholderData: (previousData) => previousData,
-  });
+  const overviewQuery = trpc.calendar.activityOverview.useQuery(
+    {
+      weeks: agendaRange.weeks ?? 4,
+      endDate: agendaRange.endDate,
+      ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
+    },
+    {
+      enabled: showOverview && !searching,
+      placeholderData: (previousData) => previousData,
+    },
+  );
   const trainingTotals = overviewQuery.isPlaceholderData ? undefined : overviewQuery.data;
+  useEffect(() => {
+    if (overviewQuery.data?.activityTypes) {
+      lastSportTypes.current = overviewQuery.data.activityTypes;
+    }
+  }, [overviewQuery.data?.activityTypes]);
   useEffect(() => {
     if (query.data && !query.isPlaceholderData && !query.isError) {
       lastSuccessfulInput.current = { rangeKey, input: pageInput };
@@ -169,13 +186,31 @@ export default function ActivitiesScreen() {
   }, [query.data, query.isPlaceholderData, query.isError, rangeKey, pageInput]);
   const previousInput = lastSuccessfulInput.current;
   const pageData =
-    query.data ??
-    (previousInput?.rangeKey === rangeKey
-      ? trpcUtils.calendar.weekListV2.getData(previousInput.input)
-      : undefined);
+    query.data && (!query.isPlaceholderData || previousInput?.rangeKey === rangeKey)
+      ? query.data
+      : previousInput?.rangeKey === rangeKey
+        ? trpcUtils.calendar.weekListV2.getData(previousInput.input)
+        : undefined;
+  const upcomingInput = useMemo(
+    () => ({
+      dateRange: selectedSpan,
+      ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
+    }),
+    [selectedSpan, selectedActivityType],
+  );
+  const upcomingQuery = trpc.calendar.upcomingWorkouts.useQuery(upcomingInput, {
+    enabled: !searching,
+  });
+  const ownedPlannedWindow = resolveActivityAgendaOwnedPlannedWindow({
+    futureOnly,
+    selectedSpan,
+    pageData,
+    activityPage,
+  });
   const calendarQuery = trpc.calendar.calendarData.useQuery(
-    { days: weeks * 7 },
+    { days: (agendaRange.weeks ?? 1) * 7 },
     {
+      enabled: showOverview && !searching,
       placeholderData: (previousData) =>
         previousData && previousData.length > 0 ? previousData : undefined,
     },
@@ -235,20 +270,69 @@ export default function ActivitiesScreen() {
       ]).then(() => undefined),
   });
 
-  const dayGroups = searching
+  const completedDays = searching
     ? searchQuery.data?.pages.flatMap(({ activities }) =>
         activities.map(({ date, ...activity }) => ({ date, activities: [activity] })),
       )
     : pageData?.days;
   const listQuery = searching ? searchQuery : query;
   const hasListData = searching ? !!searchQuery.data : !!pageData;
-  const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
+  const completedSucceeded = futureOnly || query.isSuccess === true;
+  const plannedSucceeded = upcomingQuery.isSuccess === true;
+  const agendaDays = useMemo(() => {
+    if (searching) {
+      return (completedDays ?? []).map((day) => ({
+        date: day.date,
+        activities: day.activities,
+        workouts: EMPTY_PLANNED_WORKOUTS,
+      }));
+    }
+    let merged = mergeActivityAgendaDays(
+      futureOnly ? undefined : completedDays,
+      upcomingQuery.data,
+      ownedPlannedWindow,
+      dateOrder,
+    );
+    if (preset === "this-week" && completedSucceeded && plannedSucceeded && ownedPlannedWindow) {
+      merged = withActivityAgendaEmptyDays(merged, ownedPlannedWindow, dateOrder);
+    }
+    return merged;
+  }, [
+    searching,
+    completedDays,
+    upcomingQuery.data,
+    ownedPlannedWindow,
+    dateOrder,
+    preset,
+    futureOnly,
+    completedSucceeded,
+    plannedSucceeded,
+  ]);
+  const hasActivities = agendaDays.some((day) => day.activities.length > 0);
+  const hasAgendaRows = agendaDays.some(
+    (day) => day.activities.length > 0 || day.workouts.length > 0,
+  );
+  const sportTypes = overviewQuery.data?.activityTypes ?? lastSportTypes.current;
+  const rangeCaption = formatActivityAgendaCaption(agendaRange.startDate, agendaRange.endDate);
+  const agendaFeedsSettled =
+    (futureOnly || (!query.isLoading && !query.isFetching)) &&
+    !upcomingQuery.isLoading &&
+    !upcomingQuery.isFetching;
+  const showAgendaLoading =
+    !hasAgendaRows &&
+    !searching &&
+    ((futureOnly ? false : query.isLoading && !pageData) ||
+      (upcomingQuery.isLoading && upcomingQuery.data == null));
+  const showRangeEmpty =
+    !hasAgendaRows && agendaFeedsSettled && completedSucceeded && plannedSucceeded;
   // Only count failures the person can actually see: overview and calendar are
-  // hidden while searching, and the calendar is hidden while collapsed.
+  // hidden while searching or on the future-only range, and the calendar is
+  // hidden while collapsed.
   const visibleQueries = [
-    ...(!searching ? [overviewQuery] : []),
-    ...(!searching && trainingTimeExpanded ? [calendarQuery] : []),
-    listQuery,
+    ...(!searching && showOverview ? [overviewQuery] : []),
+    ...(!searching && showOverview && trainingTimeExpanded ? [calendarQuery] : []),
+    // Keep recorded search visible even when Next 90 days disables completed browse.
+    ...(searching || !futureOnly ? [listQuery] : []),
     processingStatus,
     ...(placeLookup ? [places] : []),
   ];
@@ -264,7 +348,6 @@ export default function ActivitiesScreen() {
   const retryingConnectionFailures = connectionFailures.some((query) => query.isFetching === true);
   const activityCount = pageData?.totalCount ?? 0;
   const currentActivityPage = pageData?.page ?? activityPage;
-  const visibleDayGroups = dayGroups;
   useEffect(() => {
     if (query.data && !query.isPlaceholderData) setActivityPage(query.data.page);
   }, [query.data, query.isPlaceholderData]);
@@ -307,8 +390,8 @@ export default function ActivitiesScreen() {
     setActivityPage(0);
     cancelSelection();
   };
-  const updateWeeks = (nextWeeks: number) => {
-    setWeeks(nextWeeks);
+  const updatePreset = (nextPreset: ActivityAgendaPreset) => {
+    setPreset(nextPreset);
     setActivityPage(0);
     cancelSelection();
   };
@@ -487,9 +570,9 @@ export default function ActivitiesScreen() {
       ) : null}
 
       <ActivityControls
-        activityTypes={overviewQuery.data?.activityTypes ?? []}
+        activityTypes={sportTypes}
         activityType={activityType}
-        weeks={weeks}
+        preset={preset}
         searching={searching}
         canSelect={hasActivities}
         selectMode={selectMode}
@@ -499,7 +582,7 @@ export default function ActivitiesScreen() {
         mergeEligible={mergeEligible}
         mixedTypes={selectedTypes.size > 1}
         onActivityTypeChange={updateActivityType}
-        onWeeksChange={updateWeeks}
+        onPresetChange={updatePreset}
         onSelect={() => setSelectMode(true)}
         onCancelSelection={cancelSelection}
         onDeleteSelected={confirmBulkDelete}
@@ -510,16 +593,7 @@ export default function ActivitiesScreen() {
         <QueryStatePanel variant="error" message={userFacingErrorMessage(bulkDelete.error)} />
       ) : null}
 
-      <UpcomingWorkouts
-        days={upcomingQuery.data}
-        isLoading={upcomingQuery.isLoading}
-        isError={upcomingQuery.isError}
-        error={upcomingQuery.error}
-        onRetry={() => void upcomingQuery.refetch()}
-        retrying={upcomingQuery.isFetching}
-      />
-
-      {!searching ? (
+      {!searching && showOverview ? (
         <>
           <View style={styles.trainingSummary}>
             <TouchableOpacity
@@ -571,61 +645,58 @@ export default function ActivitiesScreen() {
                 />
               ) : null}
               {calendarQuery.data || (!calendarQuery.isLoading && !calendarQuery.isError) ? (
-                <ActivityHeatmap data={calendarQuery.data ?? []} />
+                <ActivityHeatmap
+                  data={(calendarQuery.data ?? []).filter(
+                    (day) => day.date >= agendaRange.startDate && day.date <= agendaRange.endDate,
+                  )}
+                />
               ) : null}
             </>
           ) : null}
         </>
       ) : null}
 
-      {listQuery.isLoading && !hasListData ? (
-        <QueryStatePanel variant="loading" minHeight={200} />
-      ) : listQuery.isError &&
-        !isSharedConnectionFailure(listQuery.error) &&
-        (!hasListData || (searching && !hasActivities)) ? (
-        <QueryStatePanel
-          variant="error"
-          message={userFacingErrorMessage(listQuery.error)}
-          onRetry={() => void listQuery.refetch()}
-          retrying={listQuery.isFetching}
-        />
-      ) : !hasActivities &&
-        !(searching && searchQuery.hasNextPage) &&
-        !isSharedConnectionFailure(listQuery.error) ? (
-        <QueryStatePanel
-          variant="empty"
-          message={
-            searching ? "No matching activities." : `No activities in the last ${weeks} weeks.`
-          }
-        />
-      ) : (
-        <>
-          {listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
-            <QueryStatePanel
-              variant="error"
-              message={userFacingErrorMessage(listQuery.error)}
-              minHeight={72}
-              style={styles.backgroundErrorPanel}
-              onRetry={() => void listQuery.refetch()}
-              retrying={listQuery.isFetching}
-            />
-          ) : null}
-          {visibleDayGroups?.map((day) => (
-            <View key={searching ? day.activities[0]?.id : day.date} style={styles.daySection}>
-              <View style={styles.dayHeaderRow}>
-                <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
-                <View style={styles.dayHeaderRule} />
-              </View>
-              {day.activities.map((activity) => (
-                <View
-                  key={activity.id}
-                  style={[
-                    styles.card,
-                    selectedActivityIds.has(activity.id) ? styles.cardSelected : null,
-                  ]}
-                >
-                  <TouchableOpacity
-                    activeOpacity={0.7}
+      {searching ? (
+        listQuery.isLoading && !hasListData ? (
+          <QueryStatePanel variant="loading" minHeight={200} />
+        ) : listQuery.isError &&
+          !isSharedConnectionFailure(listQuery.error) &&
+          (!hasListData || !hasActivities) ? (
+          <QueryStatePanel
+            variant="error"
+            message={userFacingErrorMessage(listQuery.error)}
+            onRetry={() => void listQuery.refetch()}
+            retrying={listQuery.isFetching}
+          />
+        ) : !hasActivities &&
+          !searchQuery.hasNextPage &&
+          !isSharedConnectionFailure(listQuery.error) ? (
+          <QueryStatePanel variant="empty" message="No matching activities." minHeight={120} />
+        ) : (
+          <>
+            {listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
+              <QueryStatePanel
+                variant="error"
+                message={userFacingErrorMessage(listQuery.error)}
+                minHeight={72}
+                style={styles.backgroundErrorPanel}
+                onRetry={() => void listQuery.refetch()}
+                retrying={listQuery.isFetching}
+              />
+            ) : null}
+            {agendaDays.map((day) => (
+              <View key={day.activities[0]?.id ?? day.date} style={styles.daySection}>
+                <View style={styles.dayHeaderRow}>
+                  <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
+                  <View style={styles.dayHeaderRule} />
+                </View>
+                {day.activities.map((activity) => (
+                  <CompletedActivityCard
+                    key={activity.id}
+                    activity={activity}
+                    units={units}
+                    selectMode={selectMode}
+                    selected={selectedActivityIds.has(activity.id)}
                     onPress={() => {
                       if (selectMode) {
                         toggleSelectedActivity(activity.id, activity.activityType);
@@ -633,111 +704,11 @@ export default function ActivitiesScreen() {
                       }
                       router.push(`/activity/${activity.id}`);
                     }}
-                    style={styles.cardAction}
-                    accessibilityRole="button"
-                    accessibilityLabel={formatActivityAccessibilityLabel(
-                      selectMode
-                        ? selectedActivityIds.has(activity.id)
-                          ? "Deselect"
-                          : "Select"
-                        : "Open",
-                      activity,
-                      units,
-                    )}
-                    accessibilityState={{
-                      selected: selectMode ? selectedActivityIds.has(activity.id) : undefined,
-                    }}
                   />
-                  <View style={styles.cardContent} pointerEvents="box-none">
-                    <View
-                      pointerEvents="none"
-                      accessibilityElementsHidden
-                      importantForAccessibility="no-hide-descendants"
-                    >
-                      <ActivityTypeIcon
-                        activityType={activity.primaryActivityType ?? activity.activityType}
-                        size={40}
-                      />
-                    </View>
-                    <View style={styles.cardMain} pointerEvents="box-none">
-                      <View
-                        style={styles.titleRow}
-                        pointerEvents="none"
-                        accessibilityElementsHidden
-                        importantForAccessibility="no-hide-descendants"
-                      >
-                        <Text style={styles.activityName} numberOfLines={1}>
-                          {activity.name ??
-                            formatActivityTypeLabel(
-                              activity.primaryActivityType ?? activity.activityType,
-                            )}
-                        </Text>
-                        {selectMode ? (
-                          <Text
-                            style={[
-                              styles.selectionPill,
-                              selectedActivityIds.has(activity.id)
-                                ? styles.selectionPillSelected
-                                : null,
-                            ]}
-                          >
-                            {selectedActivityIds.has(activity.id) ? "Selected" : "Select"}
-                          </Text>
-                        ) : null}
-                        {activity.name !== null &&
-                        activity.name !==
-                          formatActivityTypeLabel(
-                            activity.primaryActivityType ?? activity.activityType,
-                          ) ? (
-                          <Text style={styles.typePill}>
-                            {formatActivityTypeLabel(
-                              activity.primaryActivityType ?? activity.activityType,
-                            )}
-                          </Text>
-                        ) : null}
-                      </View>
-                      <View style={styles.metaRow} pointerEvents="box-none">
-                        <View
-                          pointerEvents="none"
-                          accessibilityElementsHidden
-                          importantForAccessibility="no-hide-descendants"
-                        >
-                          <Text style={styles.activityMeta}>
-                            {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)}{" "}
-                            · {displayDuration(activity.durationMin)}
-                          </Text>
-                        </View>
-                      </View>
-                      <View
-                        pointerEvents="none"
-                        accessibilityElementsHidden
-                        importantForAccessibility="no-hide-descendants"
-                      >
-                        <ActivityMetricStrip activity={activity} units={units} />
-                      </View>
-                    </View>
-                  </View>
-                  {activity.location ? (
-                    <View
-                      style={styles.mapPanel}
-                      pointerEvents="none"
-                      accessibilityElementsHidden
-                      importantForAccessibility="no-hide-descendants"
-                    >
-                      <ActivityMapTile location={activity.location} />
-                    </View>
-                  ) : !activity.isProviderAbsent ? (
-                    <View pointerEvents="none">
-                      <ActivityPhotoPreview activityId={activity.id} />
-                    </View>
-                  ) : null}
-                  <ActivitySourceDisclosure tree={activity.source.tree} />
-                </View>
-              ))}
-            </View>
-          ))}
-          {searching ? (
-            searchQuery.hasNextPage ? (
+                ))}
+              </View>
+            ))}
+            {searchQuery.hasNextPage ? (
               <TouchableOpacity
                 style={styles.selectButton}
                 accessibilityRole="button"
@@ -748,219 +719,101 @@ export default function ActivitiesScreen() {
                   {searchQuery.isFetchingNextPage ? "Loading…" : "Load more"}
                 </Text>
               </TouchableOpacity>
-            ) : null
+            ) : null}
+          </>
+        )
+      ) : (
+        <View style={styles.daySection}>
+          <Text accessibilityRole="header" style={styles.dayHeader}>
+            Workout calendar
+          </Text>
+          <Text style={styles.activityMeta}>{rangeCaption}</Text>
+          {showAgendaLoading ? (
+            <QueryStatePanel variant="loading" minHeight={200} />
           ) : (
-            <PaginationControls
-              page={currentActivityPage}
-              pageSize={ACTIVITY_PAGE_SIZE}
-              totalItems={activityCount}
-              itemLabel="activities"
-              onPageChange={setActivityPage}
-            />
+            <>
+              {!futureOnly && listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
+                <QueryStatePanel
+                  variant="error"
+                  message={userFacingErrorMessage(listQuery.error)}
+                  minHeight={72}
+                  style={styles.backgroundErrorPanel}
+                  onRetry={() => void listQuery.refetch()}
+                  retrying={listQuery.isFetching}
+                />
+              ) : null}
+              {upcomingQuery.isError ? (
+                <QueryStatePanel
+                  variant="error"
+                  title="Planned workouts: Could not load this section"
+                  message={userFacingErrorMessage(upcomingQuery.error)}
+                  minHeight={72}
+                  onRetry={() => void upcomingQuery.refetch()}
+                  retrying={upcomingQuery.isFetching}
+                />
+              ) : null}
+              {showRangeEmpty ? (
+                <QueryStatePanel
+                  variant="empty"
+                  message="No workouts in this date range."
+                  minHeight={120}
+                />
+              ) : (
+                agendaDays.map((day) => {
+                  const emptyDay = day.activities.length === 0 && day.workouts.length === 0;
+                  return (
+                    <View key={day.date} style={styles.daySection}>
+                      <View style={styles.dayHeaderRow}>
+                        <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
+                        <View style={styles.dayHeaderRule} />
+                      </View>
+                      {emptyDay && completedSucceeded && plannedSucceeded ? (
+                        <Text style={styles.activityMeta}>No workouts</Text>
+                      ) : emptyDay ? null : (
+                        <>
+                          {day.workouts.map((workout) => (
+                            <PlannedWorkoutCard
+                              key={`${workout.providerId}:${workout.id}`}
+                              workout={workout}
+                            />
+                          ))}
+                          {day.activities.map((activity) => (
+                            <CompletedActivityCard
+                              key={activity.id}
+                              activity={activity}
+                              units={units}
+                              selectMode={selectMode}
+                              selected={selectedActivityIds.has(activity.id)}
+                              showCompleted
+                              onPress={() => {
+                                if (selectMode) {
+                                  toggleSelectedActivity(activity.id, activity.activityType);
+                                  return;
+                                }
+                                router.push(`/activity/${activity.id}`);
+                              }}
+                            />
+                          ))}
+                        </>
+                      )}
+                    </View>
+                  );
+                })
+              )}
+              {!futureOnly ? (
+                <PaginationControls
+                  page={currentActivityPage}
+                  pageSize={ACTIVITY_PAGE_SIZE}
+                  totalItems={activityCount}
+                  itemLabel="activities"
+                  onPageChange={setActivityPage}
+                />
+              ) : null}
+            </>
           )}
-        </>
+        </View>
       )}
     </ScrollView>
-  );
-}
-
-interface ActivityControlsProps {
-  activityTypes: string[];
-  activityType: string;
-  weeks: number;
-  searching: boolean;
-  canSelect: boolean;
-  selectMode: boolean;
-  selectedCount: number;
-  deletePending: boolean;
-  mergePending: boolean;
-  mergeEligible: boolean;
-  mixedTypes: boolean;
-  onActivityTypeChange: (activityType: string) => void;
-  onWeeksChange: (weeks: number) => void;
-  onSelect: () => void;
-  onCancelSelection: () => void;
-  onDeleteSelected: () => void;
-  onMergeSelected: () => void;
-}
-
-function ActivityControls({
-  activityTypes,
-  activityType,
-  weeks,
-  searching,
-  canSelect,
-  selectMode,
-  selectedCount,
-  deletePending,
-  mergePending,
-  mergeEligible,
-  mixedTypes,
-  onActivityTypeChange,
-  onWeeksChange,
-  onSelect,
-  onCancelSelection,
-  onDeleteSelected,
-  onMergeSelected,
-}: ActivityControlsProps) {
-  const selectedCountLabel = `${selectedCount} ${
-    selectedCount === 1 ? "activity" : "activities"
-  } selected`;
-
-  const [openFilter, setOpenFilter] = useState<"range" | "sport">();
-  const selectedRange = DATE_RANGE_OPTIONS.find((option) => option.value === weeks);
-  const selectedSport =
-    activityType === ALL_ACTIVITY_TYPES ? "All activities" : formatActivityTypeLabel(activityType);
-  const toggleFilter = (filter: "range" | "sport") =>
-    setOpenFilter((current) => (current === filter ? undefined : filter));
-
-  useEffect(() => {
-    if (selectMode && Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(selectedCountLabel);
-    }
-  }, [selectMode, selectedCountLabel]);
-
-  return (
-    <View style={styles.controlsPanel}>
-      {canSelect && !selectMode ? (
-        <View style={styles.controlsHeader}>
-          <TouchableOpacity
-            style={styles.selectButton}
-            onPress={onSelect}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Select activities"
-            accessibilityHint="Choose activities to merge or delete"
-          >
-            <Text style={styles.selectButtonText}>Select activities</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-      {canSelect && selectMode ? (
-        <Text style={styles.selectionGuidance}>Choose activities to merge or delete.</Text>
-      ) : null}
-      {selectMode ? (
-        <View style={styles.bulkActionRow}>
-          <Text style={styles.selectedCount} accessibilityLiveRegion="polite">
-            {selectedCountLabel}
-          </Text>
-          <TouchableOpacity
-            style={[
-              styles.deleteSelectionButton,
-              !mergeEligible || mergePending ? styles.disabledAction : null,
-            ]}
-            onPress={onMergeSelected}
-            disabled={!mergeEligible || mergePending}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Merge selected activities"
-            accessibilityState={{ busy: mergePending, disabled: !mergeEligible || mergePending }}
-          >
-            <Text style={styles.deleteSelectionButtonText}>
-              {mergePending ? "Merging..." : "Merge"}
-            </Text>
-          </TouchableOpacity>
-          {mixedTypes ? (
-            <Text style={styles.selectionGuidance}>Select activities of one type to merge.</Text>
-          ) : null}
-          <TouchableOpacity
-            style={[
-              styles.deleteSelectionButton,
-              selectedCount === 0 ? styles.disabledAction : null,
-            ]}
-            onPress={onDeleteSelected}
-            disabled={selectedCount === 0 || deletePending}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Delete selected activities"
-            accessibilityState={{
-              busy: deletePending,
-              disabled: selectedCount === 0 || deletePending,
-            }}
-          >
-            <Text style={styles.deleteSelectionButtonText}>
-              {deletePending ? "Deleting..." : "Delete"}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.cancelSelectionButton}
-            onPress={onCancelSelection}
-            disabled={deletePending || mergePending}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Cancel activity selection"
-            accessibilityState={{
-              busy: deletePending || mergePending,
-              disabled: deletePending || mergePending,
-            }}
-          >
-            <Text style={styles.cancelSelectionButtonText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-      <View style={styles.filterRow}>
-        {!searching ? (
-          <TouchableOpacity
-            style={[styles.filterChip, styles.filterButton]}
-            onPress={() => toggleFilter("range")}
-            accessibilityRole="button"
-            accessibilityLabel={`Date range, ${selectedRange?.label ?? weeks}`}
-            accessibilityState={{ expanded: openFilter === "range" }}
-          >
-            <Text style={styles.filterChipText}>{selectedRange?.label} ⌄</Text>
-          </TouchableOpacity>
-        ) : null}
-        <TouchableOpacity
-          style={[styles.filterChip, styles.filterButton]}
-          onPress={() => toggleFilter("sport")}
-          accessibilityRole="button"
-          accessibilityLabel={`Sport, ${selectedSport}`}
-          accessibilityState={{ expanded: openFilter === "sport" }}
-        >
-          <Text style={styles.filterChipText}>{selectedSport} ⌄</Text>
-        </TouchableOpacity>
-      </View>
-      {!searching && openFilter === "range" ? (
-        <View style={styles.chipRow}>
-          {DATE_RANGE_OPTIONS.map(({ value, label }) => (
-            <TouchableOpacity
-              key={value}
-              style={styles.filterChip}
-              accessibilityRole="button"
-              accessibilityState={{ selected: weeks === value }}
-              onPress={() => {
-                onWeeksChange(value);
-                setOpenFilter(undefined);
-              }}
-            >
-              <Text style={[styles.filterChipText, weeks === value && styles.filterCurrent]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      ) : null}
-      {openFilter === "sport" ? (
-        <View style={styles.chipRow}>
-          {[ALL_ACTIVITY_TYPES, ...activityTypes].map((type) => (
-            <TouchableOpacity
-              key={type}
-              style={styles.filterChip}
-              accessibilityRole="button"
-              accessibilityState={{ selected: activityType === type }}
-              onPress={() => {
-                onActivityTypeChange(type);
-                setOpenFilter(undefined);
-              }}
-            >
-              <Text style={[styles.filterChipText, activityType === type && styles.filterCurrent]}>
-                {type === ALL_ACTIVITY_TYPES ? "All activities" : formatActivityTypeLabel(type)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      ) : null}
-    </View>
   );
 }
 

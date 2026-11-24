@@ -313,6 +313,33 @@ describe("Activities list source tree hydration", () => {
       activityCount: 2,
       totalMinutes: 60,
     });
+
+    const explicit = await repository.getPage({
+      weeks: 1,
+      startDate: "2026-10-02",
+      endDate: "2026-10-02",
+      dateOrder: "oldest",
+      page: 0,
+      pageSize: 20,
+      includeProviderAbsent: false,
+    });
+    expect(explicit).toMatchObject({
+      totalCount: 2,
+      plannedWindow: { startDate: "2026-10-02", endDate: "2026-10-02" },
+    });
+    expect(explicit.days.map((day) => day.date)).toEqual(["2026-10-02"]);
+    const outside = await repository.getPage({
+      weeks: 1,
+      startDate: "2026-09-01",
+      endDate: "2026-09-07",
+      page: 0,
+      pageSize: 20,
+    });
+    expect(outside).toMatchObject({
+      days: [],
+      totalCount: 0,
+      plannedWindow: { startDate: "2026-09-01", endDate: "2026-09-07" },
+    });
   });
   it("filters cards and overview by primary type with representative fallback", async () => {
     const input = { weeks: 1, endDate: "2026-10-02", activityType: "climbing" };

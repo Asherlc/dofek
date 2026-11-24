@@ -105,10 +105,20 @@ describe("Activities browsing and search", () => {
   });
 
   it("loads a server-owned, labeled activity heatmap for the selected weeks", () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-11-24T15:00:00.000Z"));
     activityMocks.mockCalendarQuery = {
       data: [
         {
-          date: "2026-03-18",
+          date: "2026-11-22",
+          activityCount: 1,
+          totalMinutes: 40,
+          activityTypes: ["running"],
+          trainingTimeBand: "moderate",
+          trainingTimeMeaning: "Moderate training volume.",
+        },
+        {
+          date: "2026-11-24",
           activityCount: 1,
           totalMinutes: 72,
           activityTypes: ["running"],
@@ -123,7 +133,7 @@ describe("Activities browsing and search", () => {
 
     render(<ActivitiesScreen />);
 
-    expect(activityMocks.calendarDataInput).toEqual({ days: 28 });
+    expect(activityMocks.calendarDataInput).toEqual({ days: 7 });
     expect(activityMocks.calendarDataOptions?.placeholderData?.([])).toBeUndefined();
     const previousCalendarData = [{ date: "2026-03-10" }];
     expect(activityMocks.calendarDataOptions?.placeholderData?.(previousCalendarData)).toBe(
@@ -133,6 +143,9 @@ describe("Activities browsing and search", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Training time/ }));
     expect(screen.getByText("Training time (minutes per day)")).toBeTruthy();
     expect(screen.getByRole("button", { name: /72 min/ })).toBeTruthy();
+    // Display-bound to this week's Mon–Sun span; rolling rows before the week stay hidden.
+    expect(screen.queryByRole("button", { name: /40 min/ })).toBeNull();
+    vi.useRealTimers();
   });
 
   it("uses QueryStatePanel for overview loading state", () => {
@@ -382,14 +395,16 @@ describe("Activities browsing and search", () => {
     fireEvent.click(screen.getByText("Running"));
 
     expect(activityMocks.weekListInput).toEqual({
-      weeks: 4,
+      weeks: 1,
+      startDate: expect.any(String),
       endDate: expect.any(String),
+      dateOrder: "oldest",
       activityType: "running",
       page: 0,
       pageSize: 20,
     });
     expect(activityMocks.overviewInput).toEqual({
-      weeks: 4,
+      weeks: 1,
       endDate: expect.any(String),
       activityType: "running",
     });
