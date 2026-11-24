@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { ghostSessionsCompareResponseSchema } from "@dofek/training/ghost-sessions";
 import { z } from "zod";
 import {
   type GhostScalarWindowProof,
@@ -20,6 +21,7 @@ import {
 import {
   type GhostSessionScalarObservation,
   measureGhostSession,
+  measureGhostSessionScalars,
 } from "./ghost-session-measurement.ts";
 import {
   ghostTrackInputVersionsMatchSql,
@@ -41,6 +43,10 @@ interface PageRequest {
   candidateActivityIds?: readonly string[];
   before?: PageCursor;
 }
+
+type SavedPageKey = Pick<PageRequest, "userId" | "activityId" | "historyGeneration" | "before"> & {
+  anchorGeneration: string;
+};
 
 const matchLimit = 32;
 const scalarFetchLimitPerInterval = 4_001;
@@ -114,7 +120,7 @@ function exactUtc(timestampMs: number): string {
 }
 
 async function queryRows<Schema extends z.ZodType>(
-  client: ProjectionClient,
+  client: Pick<ProjectionClient, "query">,
   schema: Schema,
   query: string,
   queryParams: Record<string, unknown>,
@@ -235,8 +241,8 @@ async function makeSavedMatch(
   });
   const measured =
     comparison.metrics.heartRateBpm !== null || comparison.metrics.powerWatts !== null;
-  const scalarProof = measured ? [anchorObservations.proof, candidateObservations.proof] : [];
-  if (scalarProof.some((proof) => proof === null))
+  const scalarProof = [anchorObservations.proof, candidateObservations.proof];
+  if (measured && scalarProof.some((proof) => proof === null))
     throw new Error("Measured Ghost Sessions metrics require a scalar proof for each interval");
   return {
     section_id: sectionId,
@@ -271,14 +277,240 @@ const pageKeySql = `user_id = {userId:UUID} AND activity_id = {activityId:UUID}
   AND anchor_generation = {anchorGeneration:String} AND history_generation = {historyGeneration:String}
   AND request_cursor = {requestCursor:String}`;
 
-const currentScalarEvidenceSql = `measured_windows AS MATERIALIZED (
+function evidenceParams(userId: string, observed: readonly TrackStamp[]) {
+  const evidence = observed
+    .map((stamp) =>
+      JSON.stringify({
+        user_id: userId,
+        activity_id: stamp.activityId,
+        gps_source_refreshed_at_ns: stamp.gpsSourceRefreshedAtNs,
+        gps_refresh_version: stamp.gpsRefreshVersion,
+        member_signature: stamp.memberSignature,
+      }),
+    )
+    .join("\n");
+  return { evidenceColumns, evidence, evidenceCount: observed.length };
+}
+
+const scalarWindowMatches =
+  "current.raw_count = recorded.expected_count AND current.digest = recorded.expected_digest";
+const scalarEvidenceSql = `measured_windows AS MATERIALIZED (
   SELECT * FROM format('JSONEachRow', {scalarWindowColumns:String}, {scalarProofs:String})
-), ${ghostScalarProofSql("measured_windows")}, matched_scalar_windows AS (
+), ${ghostScalarProofSql("measured_windows")}`;
+const currentScalarEvidenceSql = `${scalarEvidenceSql}, matched_scalar_windows AS (
   SELECT count() AS count
   FROM measured_windows AS recorded
   INNER JOIN ghost_scalar_proofs AS current USING (window_id)
-  WHERE current.raw_count = recorded.expected_count AND current.digest = recorded.expected_digest
+  WHERE ${scalarWindowMatches}
 )`;
+
+function scalarProofParams(proofs: readonly GhostScalarWindowProof[]) {
+  return {
+    ...ghostScalarProofProviders,
+    ghostScalarFetchLimit: scalarFetchLimitPerInterval,
+    scalarWindowColumns: `${ghostScalarProofWindowColumns}, expected_count UInt32, expected_digest String`,
+    scalarProofs: proofs
+      .map((proof, index) =>
+        JSON.stringify({
+          ...ghostScalarProofWindowRow(proof, index),
+          expected_count: proof.count,
+          expected_digest: proof.digest,
+        }),
+      )
+      .join("\n"),
+    scalarWindowCount: proofs.length,
+  };
+}
+
+const scalarWindowProofSchema = z.object({
+  activityId: z.uuid(),
+  memberActivityId: z.uuid(),
+  startedAt: z.iso.datetime(),
+  endedAt: z.iso.datetime(),
+  count: z.number().int().nonnegative().lt(scalarFetchLimitPerInterval),
+  digest: z.string().regex(/^[A-F0-9]{64}$/),
+});
+const scalarPairProofSchema = scalarWindowProofSchema.array().max(2);
+
+interface ScalarMismatch {
+  proofKey: string;
+  overLimit: boolean;
+}
+
+function canRefreshScalarPair(
+  proofs: readonly GhostScalarWindowProof[],
+  mismatches: ReadonlyMap<string, boolean>,
+): boolean {
+  const keys = proofs.map((proof) => JSON.stringify(proof));
+  return keys.some((key) => mismatches.has(key)) && !keys.some((key) => mismatches.get(key));
+}
+
+/** Checks saved scalar windows and reports which changes are eligible for remeasurement. */
+export async function auditGhostSessionPage(
+  client: Pick<ProjectionClient, "query">,
+  input: SavedPageKey,
+) {
+  const [page] = await queryRows(
+    client,
+    pageReceiptSchema.extend({
+      nextCursor: z.string().nullable(),
+      proofs: z
+        .array(z.string())
+        .max(matchLimit)
+        .transform((rows) => rows.map((row) => scalarPairProofSchema.parse(JSON.parse(row)))),
+    }),
+    `SELECT payload_digest AS payloadDigest, toString(refresh_version) AS refreshVersion, bounded,
+      next_cursor AS nextCursor, arrayDistinct(matches.scalar_proof) AS proofs
+    FROM analytics.ghost_session_page FINAL WHERE ${pageKeySql} AND ${ownerCanPublish}`,
+    { ...input, requestCursor: input.before ? cursorKey(input.before) : "" },
+  );
+  if (!page) return null;
+  const { proofs: pairs, ...receipt } = page;
+  const uniqueProofs = [
+    ...new Map(pairs.flat().map((proof) => [JSON.stringify(proof), proof])).values(),
+  ];
+  if (uniqueProofs.length === 0) return { ...receipt, changed: false, mismatches: [] };
+  const stale = await queryRows(
+    client,
+    z.object({
+      windowId: z.coerce.number().int().nonnegative(),
+      count: z.coerce.number().nullable(),
+    }),
+    `WITH ${scalarEvidenceSql}
+      SELECT recorded.window_id AS windowId, current.raw_count AS count
+      FROM measured_windows AS recorded
+      LEFT JOIN ghost_scalar_proofs AS current USING (window_id)
+      WHERE NOT coalesce(${scalarWindowMatches}, 0)`,
+    { userId: input.userId, ...scalarProofParams(uniqueProofs) },
+  );
+  const mismatches = stale.map(({ windowId, count }) => {
+    const proof = uniqueProofs[windowId];
+    if (!proof) throw new Error("Ghost scalar audit returned an unknown window");
+    return {
+      proofKey: JSON.stringify(proof),
+      overLimit: count !== null && count >= scalarFetchLimitPerInterval,
+    };
+  });
+  const byKey = new Map(mismatches.map(({ proofKey, overLimit }) => [proofKey, overLimit]));
+  return {
+    ...receipt,
+    changed: pairs.some((proofs) => canRefreshScalarPair(proofs, byKey)),
+    mismatches,
+  };
+}
+
+/** Replace only scalar fields on one saved timing page through its exact current receipt. */
+export async function refreshGhostSessionPageScalars(
+  owner: ProjectionOwner,
+  input: SavedPageKey & { pointerVersion: string },
+  previous: Pick<z.infer<typeof pageReceiptSchema>, "payloadDigest" | "refreshVersion"> & {
+    mismatches: readonly ScalarMismatch[];
+  },
+) {
+  const version = BigInt(previous.refreshVersion) + 1n;
+  if (version > BigInt(input.pointerVersion)) return null;
+  const key = {
+    ...input,
+    requestCursor: input.before ? cursorKey(input.before) : "",
+    previousDigest: previous.payloadDigest,
+    previousVersion: previous.refreshVersion,
+    attemptedVersion: version.toString(),
+  };
+  const previousPageSql = `SELECT * FROM analytics.ghost_session_page FINAL
+    WHERE ${pageKeySql} AND payload_digest = {previousDigest:String}
+      AND refresh_version = {previousVersion:UInt64}`;
+  const [page] = await queryRows(
+    owner.client,
+    z.object({
+      anchorStamp: z.string(),
+      matches: z.array(z.tuple([z.string(), z.string(), z.string()])).max(matchLimit),
+    }),
+    `SELECT anchor_stamp AS anchorStamp,
+      arrayZip(matches.candidate_stamp, matches.comparison, matches.scalar_proof) AS matches
+    FROM (${previousPageSql}) WHERE ${ownerCanPublish}`,
+    key,
+  );
+  if (!page || page.matches.length === 0) return null;
+
+  const anchor = trackStampSchema.parse(JSON.parse(page.anchorStamp));
+  const observed = new Map([[anchor.activityId, anchor]]);
+  const readScalars = scalarReader(owner.client, input.userId);
+  const comparisons = page.matches.map(([, comparison]) => comparison);
+  const savedProofs = page.matches.map(([, , proof]) => proof);
+  const proofs = new Map<string, GhostScalarWindowProof>();
+  const mismatches = new Map(
+    previous.mismatches.map(({ proofKey, overLimit }) => [proofKey, overLimit]),
+  );
+  for (const [index, [candidateJson, comparisonJson, proofJson]] of page.matches.entries()) {
+    const candidate = trackStampSchema.parse(JSON.parse(candidateJson));
+    observed.set(candidate.activityId, candidate);
+    const pairProofs = scalarPairProofSchema.parse(JSON.parse(proofJson));
+    if (!canRefreshScalarPair(pairProofs, mismatches)) continue;
+    const comparison = ghostSessionsCompareResponseSchema.parse(JSON.parse(comparisonJson));
+    const anchorScalars = await readScalars(anchor, comparison.anchor);
+    if (!anchorScalars.proof) continue;
+    const candidateScalars = await readScalars(candidate, comparison.candidate);
+    if (!candidateScalars.proof) continue;
+    const scalars = measureGhostSessionScalars(comparison, anchorScalars, candidateScalars);
+    const windowProofs = [anchorScalars.proof, candidateScalars.proof];
+    const updatedProof = JSON.stringify(windowProofs);
+    const updatedComparison = JSON.stringify({
+      ...comparison,
+      metrics: { ...comparison.metrics, ...scalars },
+    });
+    if (updatedProof === proofJson && updatedComparison === comparisonJson) continue;
+    for (const proof of windowProofs) proofs.set(JSON.stringify(proof), proof);
+    savedProofs[index] = updatedProof;
+    comparisons[index] = updatedComparison;
+  }
+  if (proofs.size === 0) return null;
+
+  const payloadDigest = fingerprint([previous.payloadDigest, savedProofs, comparisons]);
+  const params = { ...key, ...evidenceParams(input.userId, [...observed.values()]), payloadDigest };
+  await owner.assertActive();
+  await owner.client.command({
+    query: `INSERT INTO analytics.ghost_session_page
+      WITH scalar_patch AS MATERIALIZED (
+        SELECT * FROM input('saved_proofs Array(String), comparisons Array(String)')
+      ), ${currentEvidenceSql}, ${currentScalarEvidenceSql}, previous_page AS (${previousPageSql})
+      SELECT previous_page.* REPLACE(
+        arrayMap((saved, proof, comparison) -> tuple(
+          saved.1, saved.2, saved.3, saved.4, saved.5, saved.6, saved.7, saved.8, saved.9,
+          saved.10, proof, comparison
+        ), previous_page.matches, scalar_patch.saved_proofs, scalar_patch.comparisons) AS matches,
+        {payloadDigest:String} AS payload_digest, {attemptedVersion:UInt64} AS refresh_version
+      ) FROM previous_page CROSS JOIN scalar_patch
+      WHERE ${publicationFence} AND {attemptedVersion:UInt64} <= {pointerVersion:UInt64}
+        AND (SELECT count FROM matched_scalar_windows) = {scalarWindowCount:UInt16}
+        AND EXISTS (
+          SELECT 1 FROM analytics.ghost_session_history FINAL
+          WHERE user_id = {userId:UUID} AND activity_id = {activityId:UUID}
+            AND anchor_generation = {anchorGeneration:String}
+            AND history_generation = {historyGeneration:String} AND anchor_status = 'ready'
+            AND next_cursor IS NULL AND coalesce(audit_cursor, '') = {requestCursor:String}
+            AND refresh_version = {pointerVersion:UInt64}
+        )
+      FORMAT JSONEachRow
+      ${JSON.stringify({ saved_proofs: savedProofs, comparisons })}`,
+    query_params: {
+      ...params,
+      ...scalarProofParams([...proofs.values()]),
+    },
+    clickhouse_settings: settings,
+  });
+  // The conditional insert attests scalar evidence. Later ingestion is checked at serving.
+  const [receipt] = await queryRows(
+    owner.client,
+    pageReceiptSchema,
+    `WITH ${currentEvidenceSql}
+      SELECT payload_digest AS payloadDigest, toString(refresh_version) AS refreshVersion, bounded
+      FROM analytics.ghost_session_page FINAL
+      WHERE ${pageKeySql} AND payload_digest = {payloadDigest:String}
+        AND refresh_version = {attemptedVersion:UInt64} AND ${publicationFence}`,
+    params,
+  );
+  return receipt ?? null;
+}
 
 async function publishPage(
   owner: ProjectionOwner,
@@ -312,18 +544,8 @@ async function publishPage(
       scalar_proof: JSON.stringify(match.scalar_proof),
     })),
   };
-  const evidence = observed
-    .map((stamp) =>
-      JSON.stringify({
-        user_id: input.userId,
-        activity_id: stamp.activityId,
-        gps_source_refreshed_at_ns: stamp.gpsSourceRefreshedAtNs,
-        gps_refresh_version: stamp.gpsRefreshVersion,
-        member_signature: stamp.memberSignature,
-      }),
-    )
-    .join("\n");
-  const payloadDigest = fingerprint([page, evidence]);
+  const evidence = evidenceParams(input.userId, observed);
+  const payloadDigest = fingerprint([page, evidence.evidence]);
   const uniqueProofs = new Map<string, GhostScalarWindowProof>();
   for (const match of matches) {
     for (const proof of match.scalar_proof) uniqueProofs.set(JSON.stringify(proof), proof);
@@ -341,27 +563,9 @@ async function publishPage(
     historyGeneration: input.historyGeneration,
     anchorGeneration,
     requestCursor,
-    evidenceColumns,
-    evidence,
-    evidenceCount: observed.length,
+    ...evidence,
     payloadDigest,
-    ...(proofs.length
-      ? {
-          ...ghostScalarProofProviders,
-          ghostScalarFetchLimit: scalarFetchLimitPerInterval,
-          scalarWindowColumns: `${ghostScalarProofWindowColumns}, expected_count UInt32, expected_digest String`,
-          scalarProofs: proofs
-            .map((proof, index) =>
-              JSON.stringify({
-                ...ghostScalarProofWindowRow(proof, index),
-                expected_count: proof.count,
-                expected_digest: proof.digest,
-              }),
-            )
-            .join("\n"),
-          scalarWindowCount: proofs.length,
-        }
-      : {}),
+    ...(proofs.length ? scalarProofParams(proofs) : {}),
   };
   await owner.assertActive();
   await owner.client.command({

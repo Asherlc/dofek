@@ -11,8 +11,14 @@ import { createActivitySourceRecordsSql } from "../db/activity-payload-dbt-sourc
 import { buildIncrementalDedupedSensorBaseTableStatements } from "../db/clickhouse-deduped-sensor.ts";
 import { createMigration as createIndexMigration } from "../db/clickhouse-migrations/0120_ghost_track_index.ts";
 import { createMigration as createResultMigration } from "../db/clickhouse-migrations/0121_ghost_session_results.ts";
+import { createMigration as createHistoryMigration } from "../db/clickhouse-migrations/0122_ghost_session_history.ts";
+import { createMigration as createScalarAuditMigration } from "../db/clickhouse-migrations/0123_ghost_session_scalar_audit.ts";
 import type { AnalyticsQueryOwner } from "./analytics-query-owner.ts";
-import { projectGhostSessionsPage } from "./ghost-sessions-projector.ts";
+import {
+  auditGhostSessionPage,
+  projectGhostSessionsPage,
+  refreshGhostSessionPageScalars,
+} from "./ghost-sessions-projector.ts";
 import { projectGhostTrackIndex } from "./ghost-track-index.ts";
 
 type ProjectionOwner = Pick<AnalyticsQueryOwner, "client" | "assertActive">;
@@ -185,6 +191,7 @@ describe("Ghost Sessions timed comparison projection", () => {
     count: number,
     value: number,
     standalone = false,
+    stepMs = 1_000,
   ) {
     const values = Array.from({ length: count }, (_, index) => ({
       id: randomUUID(),
@@ -195,7 +202,7 @@ describe("Ghost Sessions timed comparison projection", () => {
       provider_id: standalone ? BLE_HEART_RATE_PROVIDER_ID : "garmin",
       source_type: standalone ? "ble" : "api",
       recorded_date: fixture.startedAt.slice(0, 10),
-      recorded_at: dbTime(offsetTime(fixture.startedAt, index * 1_000)),
+      recorded_at: dbTime(offsetTime(fixture.startedAt, index * stepMs)),
       channel,
       scalar: value,
       provider_priority: 20,
@@ -219,6 +226,30 @@ describe("Ghost Sessions timed comparison projection", () => {
       clickhouse_settings: { output_format_json_named_tuples_as_objects: 1 },
     });
     return result.json<SavedPage>();
+  }
+
+  async function finishForAudit(anchorGeneration: string, version: string) {
+    const pointerVersion = (BigInt(version) + 1n).toString();
+    await owner().client.insert({
+      table: "analytics.ghost_session_history",
+      format: "JSONEachRow",
+      values: [
+        {
+          user_id: userId,
+          activity_id: anchor.activityId,
+          anchor_status: "ready",
+          anchor_generation: anchorGeneration,
+          history_generation: input.historyGeneration,
+          next_cursor: null,
+          audit_cursor: null,
+          source_history_coverage: "complete",
+          history_coverage: "complete",
+          comparison_limited: 0,
+          refresh_version: pointerVersion,
+        },
+      ],
+    });
+    return pointerVersion;
   }
 
   beforeAll(async () => {
@@ -249,6 +280,8 @@ describe("Ghost Sessions timed comparison projection", () => {
       ...buildIncrementalDedupedSensorBaseTableStatements(),
       ...(createIndexMigration().statements ?? []),
       ...(createResultMigration().statements ?? []),
+      ...(createHistoryMigration().statements ?? []),
+      ...(createScalarAuditMigration().statements ?? []),
     ])
       await client.command({ query: scope(query) });
   });
@@ -261,6 +294,7 @@ describe("Ghost Sessions timed comparison projection", () => {
       "account_erasure_fence",
       "sensor_scalar_sample",
       "ghost_session_page",
+      "ghost_session_history",
     ])
       await client.command({ query: `TRUNCATE TABLE ${database}.${table}` });
   });
@@ -350,7 +384,10 @@ describe("Ghost Sessions timed comparison projection", () => {
         digest: expect.stringMatching(/^[A-F0-9]{64}$/),
       },
     ]);
-    expect(JSON.parse(page?.matches[1]?.scalar_proof ?? "null")).toEqual([]);
+    expect(JSON.parse(page?.matches[1]?.scalar_proof ?? "null")).toMatchObject([
+      { activityId: anchor.activityId, count: expect.any(Number) },
+      { activityId: older.activityId, count: 0, digest: expect.stringMatching(/^[A-F0-9]{64}$/) },
+    ]);
     expect(prior).toMatchObject({
       anchor: { start: { timestampMs: timestampMs(anchorStartedAt) + 5_000 }, elapsedMs: 15_000 },
       candidate: { elapsedMs: 45_000 },
@@ -408,6 +445,104 @@ describe("Ghost Sessions timed comparison projection", () => {
     const pages = await readPages();
     expect(pages).toHaveLength(2);
     expect(pages[1]?.matches.map((pair) => pair.candidate_activity_id)).toEqual([id(27)]);
+
+    const [savedPage, finalPage] = pages;
+    const firstCandidate = candidates[0];
+    if (first.status !== "published" || !savedPage || !finalPage || !firstCandidate)
+      throw new Error("Expected a completed page chain");
+    const pointerVersion = await finishForAudit(first.anchorGeneration, finalPage.refresh_version);
+    await scalar(anchor, "heart_rate", 20, 138);
+    await scalar(firstCandidate, "heart_rate", 20, 144);
+    const auditKey = { ...input, anchorGeneration: first.anchorGeneration };
+    const audit = await auditGhostSessionPage(owner().client, auditKey);
+    if (!audit?.changed) throw new Error("Expected a dirty 25-match audit page");
+    expect(
+      await refreshGhostSessionPageScalars(owner(), { ...auditKey, pointerVersion }, audit),
+    ).toMatchObject({ refreshVersion: (BigInt(savedPage.refresh_version) + 1n).toString() });
+    const [refreshed, unchanged] = await readPages();
+    expect(unchanged).toEqual(finalPage);
+    expect(refreshed?.matches.map(({ pass_id }) => pass_id)).toEqual(
+      savedPage.matches.map(({ pass_id }) => pass_id),
+    );
+    const before = ghostSessionsCompareResponseSchema.parse(
+      JSON.parse(savedPage.matches[0]?.comparison ?? "null"),
+    );
+    expect(JSON.parse(refreshed?.matches[0]?.comparison ?? "null")).toEqual({
+      ...before,
+      metrics: { ...before.metrics, heartRateBpm: { anchor: 138, candidate: 144 } },
+    });
+  });
+
+  it("keeps clean and unsupported pairs byte-for-byte when early scalar windows are busy", async () => {
+    const candidates = Array.from({ length: 7 }, (_, index) => ({
+      activityId: id(index + 2),
+      startedAt: offsetTime(newerStartedAt, -60_000 * index),
+    }));
+    const firstCandidate = candidates[0];
+    const laterDirty = candidates[5];
+    const laterClean = candidates[6];
+    if (!firstCandidate || !laterDirty || !laterClean)
+      throw new Error("Expected busy and later fixture candidates");
+    await seed(anchor, ...candidates);
+    await scalar(anchor, "heart_rate", 20, 138);
+    for (const candidate of candidates.slice(0, 5))
+      await scalar(candidate, "heart_rate", 3_960, 139, false, 5);
+    const laterSamples = await scalar(laterDirty, "heart_rate", 20, 144);
+    await scalar(laterClean, "heart_rate", 20, 153);
+    await projectGhostTrackIndex(owner());
+    const first = await projectGhostSessionsPage(owner(), input);
+    const [savedPage] = await readPages();
+    if (first.status !== "published" || first.nextCursor || !savedPage)
+      throw new Error("Expected a single accepted timing page");
+    expect(savedPage.matches.map((match) => match.candidate_activity_id)).toEqual(
+      candidates.map(({ activityId }) => activityId),
+    );
+    expect(JSON.parse(savedPage.matches[6]?.comparison ?? "null")).toMatchObject({
+      metrics: { heartRateBpm: { anchor: 138, candidate: 153 } },
+    });
+    expect(JSON.parse(savedPage.matches[6]?.scalar_proof ?? "null")).toHaveLength(2);
+
+    const pointerVersion = await finishForAudit(first.anchorGeneration, savedPage.refresh_version);
+    await scalar(firstCandidate, "heart_rate", 60, 145, false, 5);
+    await owner().client.insert({
+      table: "analytics.sensor_scalar_sample",
+      format: "JSONEachRow",
+      values: laterSamples.map((sample) => ({ ...sample, scalar: 151, _peerdb_version: 2 })),
+    });
+    const auditKey = { ...input, anchorGeneration: first.anchorGeneration };
+    const audit = await auditGhostSessionPage(owner().client, auditKey);
+    if (!audit?.changed) throw new Error("Expected the early and later proof changes");
+    const scalarReads: string[] = [];
+    const refreshOwner = owner();
+    const query = refreshOwner.client.query;
+    refreshOwner.client.query = (options) => {
+      const window = options.query_params?.window;
+      if (typeof window === "string") scalarReads.push(String(JSON.parse(window).activity_id));
+      return query(options);
+    };
+    expect(
+      await refreshGhostSessionPageScalars(refreshOwner, { ...auditKey, pointerVersion }, audit),
+    ).toMatchObject({ refreshVersion: pointerVersion });
+    expect(scalarReads).toEqual([anchor.activityId, laterDirty.activityId]);
+    const [refreshed] = await readPages();
+    expect(refreshed?.matches[6]).toEqual(savedPage.matches[6]);
+    expect(refreshed?.matches.slice(0, 5)).toEqual(savedPage.matches.slice(0, 5));
+    expect(JSON.parse(refreshed?.matches[5]?.comparison ?? "null")).toMatchObject({
+      metrics: { heartRateBpm: { anchor: 138, candidate: 151 } },
+    });
+    if (!refreshed) throw new Error("Expected a refreshed page");
+    const unsupported = await auditGhostSessionPage(owner().client, auditKey);
+    expect(unsupported).toMatchObject({ changed: false, mismatches: [{ overLimit: true }] });
+    if (!unsupported) throw new Error("Expected the persisted over-limit proof");
+    const nextPointer = await finishForAudit(first.anchorGeneration, refreshed.refresh_version);
+    expect(
+      await refreshGhostSessionPageScalars(
+        owner(),
+        { ...auditKey, pointerVersion: nextPointer },
+        unsupported,
+      ),
+    ).toBeNull();
+    expect(await readPages()).toEqual([refreshed]);
   });
 
   it("keeps changed source generations separate and records the replacement evidence", async () => {

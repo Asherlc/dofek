@@ -60,13 +60,43 @@ function groupNeedsPreparation(row: EvidenceRow): boolean {
   return row.indexStatus !== "ready" || !row.hasMatchableBounds;
 }
 
+/** Current GPS changes for the eligible member keys of each scoped group. */
+export function ghostLocationMemberMarkersSql(eligibleMemberKeys: string): string {
+  return `member_markers AS (
+        SELECT user_id, member_activity_id, toUnixTimestamp64Nano(max(changed_at)) AS changed_ns,
+          max(has_live_sample) AS ever_live
+        FROM analytics.activity_location_member_change
+        WHERE user_id = {userId:UUID} AND member_activity_id IN (
+          SELECT member_activity_id FROM ${eligibleMemberKeys}
+        )
+        GROUP BY user_id, member_activity_id
+      ), group_markers AS (
+        SELECT member.user_id AS user_id, member.activity_id AS activity_id,
+          max(marker.changed_ns) AS latest_change_ns, max(marker.ever_live) AS ever_live,
+          hex(SHA256(toJSONString(arraySort(groupArray(tuple(
+            member.member_activity_id, marker.changed_ns, marker.ever_live
+          )))))) AS marker_signature
+        FROM ${eligibleMemberKeys} AS member
+        LEFT JOIN member_markers AS marker USING (user_id, member_activity_id)
+        GROUP BY member.user_id, member.activity_id
+      )`;
+}
+
+type EvidenceKey = { userId: string; activityId: string };
+type EvidenceQuery = (
+  schema: typeof evidenceSchema,
+  statement: string,
+  input: EvidenceKey,
+) => Promise<EvidenceRow[]>;
+
 /** Bounded normalized source evidence for one anchor. Match traversal and visibility are separate. */
-export async function getGhostHistoryEvidence(
-  client: Pick<ClickHouseClient, "query">,
-  input: { userId: string; activityId: string },
+export async function readGhostHistoryEvidence(
+  query: EvidenceQuery,
+  input: EvidenceKey,
 ): Promise<GhostHistoryEvidence> {
-  const result = await client.query({
-    query: `
+  const [anchor, ...history] = await query(
+    evidenceSchema,
+    `
       WITH anchor_key AS (
         SELECT {userId:UUID} AS user_id, {activityId:UUID} AS activity_id
         WHERE lower(hex(SHA256(toString({userId:UUID})))) NOT IN (
@@ -120,24 +150,7 @@ export async function getGhostHistoryEvidence(
       ), checked_members AS MATERIALIZED (
         SELECT user_id, activity_id, member_activity_id FROM eligible_members
         WHERE (user_id, activity_id) IN (SELECT user_id, activity_id FROM checked_keys)
-      ), member_markers AS (
-        SELECT user_id, member_activity_id, toUnixTimestamp64Nano(max(changed_at)) AS changed_ns,
-          max(has_live_sample) AS ever_live
-        FROM analytics.activity_location_member_change
-        WHERE user_id = {userId:UUID} AND member_activity_id IN (
-          SELECT member_activity_id FROM checked_members
-        )
-        GROUP BY user_id, member_activity_id
-      ), group_markers AS (
-        SELECT member.user_id AS user_id, member.activity_id AS activity_id,
-          max(marker.changed_ns) AS latest_change_ns, max(marker.ever_live) AS ever_live,
-          hex(SHA256(toJSONString(arraySort(groupArray(tuple(
-            member.member_activity_id, marker.changed_ns, marker.ever_live
-          )))))) AS marker_signature
-        FROM checked_members AS member
-        LEFT JOIN member_markers AS marker USING (user_id, member_activity_id)
-        GROUP BY member.user_id, member.activity_id
-      ), ${ghostTrackInputVersionsSql("checked_keys")}, checked_index AS (
+      ), ${ghostLocationMemberMarkersSql("checked_members")}, ${ghostTrackInputVersionsSql("checked_keys")}, checked_index AS (
         SELECT *
         FROM analytics.ghost_track FINAL
         WHERE (user_id, activity_id) IN (SELECT user_id, activity_id FROM checked_keys)
@@ -174,12 +187,10 @@ export async function getGhostHistoryEvidence(
       LEFT JOIN members USING (user_id, activity_id)
       LEFT JOIN group_markers AS markers USING (user_id, activity_id)
       LEFT JOIN checked_index AS indexed USING (user_id, activity_id)
-      ORDER BY history.is_anchor DESC, history.activity_id`,
-    query_params: input,
-    format: "JSONEachRow",
-    clickhouse_settings: { join_use_nulls: 1, max_threads: 1, enable_materialized_cte: 1 },
-  });
-  const [anchor, ...history] = evidenceSchema.array().parse(await result.json());
+      ORDER BY history.is_anchor DESC, history.activity_id
+      SETTINGS join_use_nulls = 1, max_threads = 1, enable_materialized_cte = 1, log_queries = 0`,
+    input,
+  );
   const anchorStatus = readAnchorStatus(anchor);
   if (!anchor || anchorStatus !== "ready") return { ...unavailableHistory, anchorStatus };
 
@@ -204,4 +215,14 @@ export async function getGhostHistoryEvidence(
     incompleteGroups,
     cutoffReached,
   };
+}
+
+export function getGhostHistoryEvidence(
+  client: Pick<ClickHouseClient, "query">,
+  input: EvidenceKey,
+): Promise<GhostHistoryEvidence> {
+  return readGhostHistoryEvidence(async (schema, query, queryParams) => {
+    const result = await client.query({ query, query_params: queryParams, format: "JSONEachRow" });
+    return schema.array().parse(await result.json());
+  }, input);
 }

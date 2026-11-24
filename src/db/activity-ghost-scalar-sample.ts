@@ -166,13 +166,19 @@ export function ghostScalarProofSql(windowKeys: string): string {
         )
       ORDER BY window_id, recorded_at, channel, provider_id, id
       LIMIT {ghostScalarFetchLimit:UInt32} BY window_id
-    ), ghost_scalar_proofs AS (
+    ), ghost_scalar_input_proofs AS (
       SELECT window_id, count() AS raw_count, hex(SHA256(toJSONString(arraySort(groupArray(tuple(
         id, channel, toUnixTimestamp64Micro(recorded_at), scalar, provider_id, provider_priority,
         linked_member_id, device_id, source_type, measurement_kind, source_version, deleted
       )))))) AS digest
       FROM ghost_scalar_inputs
       GROUP BY window_id
+    ), ghost_scalar_proofs AS (
+      SELECT timed.window_id AS window_id, coalesce(proofs.raw_count, 0) AS raw_count,
+        if(raw_count = 0, hex(SHA256('[]')), proofs.digest) AS digest
+      FROM ${windowKeys} AS timed LEFT JOIN ghost_scalar_input_proofs AS proofs USING (window_id)
+      WHERE (timed.activity_id, timed.member_activity_id)
+        IN (SELECT group_id, activity_id FROM ghost_scalar_members)
     )`;
 }
 

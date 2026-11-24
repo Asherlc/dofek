@@ -38,6 +38,7 @@
     "./billing/stripe-client": "./src/billing/stripe-client.ts",
     "./db": "./src/db/index.ts",
     "./db/account-erasure": "./src/db/account-erasure.ts",
+    "./db/activity-ghost-scalar-sample": "./src/db/activity-ghost-scalar-sample.ts",
     "./db/activity-metric-query": "./src/db/activity-metric-query.ts",
     "./db/planned-workout-repository": "./src/db/planned-workout-repository.ts",
     "./db/provider-operation-fence": "./src/db/provider-operation-fence.ts",
@@ -165,7 +166,9 @@
     "./db/activity-images": "./src/db/activity-images.ts",
     "./activity-images/storage": "./src/activity-images/storage.ts",
     "./activity-images/gallery": "./src/activity-images/gallery.ts",
-    "./analytics/cycling-power-policy": "./src/analytics/cycling-power-policy.ts"
+    "./analytics/cycling-power-policy": "./src/analytics/cycling-power-policy.ts",
+    "./analytics/ghost-history-evidence": "./src/analytics/ghost-history-evidence.ts",
+    "./analytics/ghost-track-index": "./src/analytics/ghost-track-index.ts"
   },
   "scripts": {
     "dev": "tsx scripts/with-env.ts -- tsx src/index.ts",

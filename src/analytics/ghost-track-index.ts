@@ -67,6 +67,7 @@ export function ghostTrackInputVersionsSql(keys?: string): string {
       GROUP BY user_id, activity_id
     ), members AS (
       SELECT user_id, group_id AS activity_id,
+        groupUniqArray(source.activity_id) AS eligible_member_ids,
         hex(SHA256(toJSONString(arraySort(groupArray(tuple(
           source.activity_id, provider_id, canonical_type, modality, started_at, ended_at, source_synced_at,
           source_name, if(provider_id = 'apple_health', JSONExtractString(coalesce(raw, '{}'), 'sourceBundle'), '')

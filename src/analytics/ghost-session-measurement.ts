@@ -91,7 +91,7 @@ function coveredMean(
 }
 
 function measureChannel(
-  match: RouteMatch,
+  match: Pick<RouteMatch, "anchor" | "candidate">,
   anchorObservations: readonly GhostSessionScalarObservation[] | undefined,
   candidateObservations: readonly GhostSessionScalarObservation[] | undefined,
   allowZero: boolean,
@@ -117,6 +117,28 @@ function runningPace(match: RouteMatch): { anchor: number; candidate: number } {
   };
 }
 
+/** Measure only mutable scalar fields for an already recorded interval pair. */
+export function measureGhostSessionScalars(
+  match: Pick<RouteMatch, "anchor" | "candidate">,
+  anchorObservations: GhostSessionObservations,
+  candidateObservations: GhostSessionObservations,
+) {
+  return {
+    heartRateBpm: measureChannel(
+      match,
+      anchorObservations.heartRateBpm,
+      candidateObservations.heartRateBpm,
+      false,
+    ),
+    powerWatts: measureChannel(
+      match,
+      anchorObservations.powerWatts,
+      candidateObservations.powerWatts,
+      true,
+    ),
+  };
+}
+
 /** Measure a verified match using independently selected, bounded source observations. */
 export function measureGhostSession({
   match,
@@ -138,18 +160,7 @@ export function measureGhostSession({
     replayDownsampled: match.replayDownsampled,
     metrics: {
       paceSecondsPerKm: sport === "running" ? runningPace(match) : null,
-      heartRateBpm: measureChannel(
-        match,
-        anchorObservations.heartRateBpm,
-        candidateObservations.heartRateBpm,
-        false,
-      ),
-      powerWatts: measureChannel(
-        match,
-        anchorObservations.powerWatts,
-        candidateObservations.powerWatts,
-        true,
-      ),
+      ...measureGhostSessionScalars(match, anchorObservations, candidateObservations),
     },
   });
 }
