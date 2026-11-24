@@ -66,6 +66,27 @@ infrastructure has been retired.
     through the active collector/Axiom path or direct diagnostics.
 - **Secrets**: Managed via **Infisical**. CI logs in with OIDC machine identity, renders `.github/templates/infisical-dotenv.tmpl` via `infisical export --template`, and writes a temporary environment-specific `.env.<env>` file on the runner for `docker stack deploy`. The server never stores secrets on disk.
 
+## AWS capacity options
+
+Pricing and limits checked November 23, 2026.
+
+- **EC2 Graviton** can run the existing [ARM64 production image](../.github/workflows/build-docker.yml).
+  The `t4g.small` has 2 vCPUs, 2 GiB RAM, and credit-based CPU bursts. AWS includes up to
+  750 instance hours per month through December 31, 2026, across eligible
+  regions including Frankfurt. Budget separately for EBS, public IPv4, and
+  surplus CPU credits. A pilot with one Kafka-to-R2 archive consumer can
+  measure consumer lag, CPU credits, and transfer before committing to a host
+  at its post-trial price. [T4g specs](https://aws.amazon.com/ec2/instance-types/t4/),
+  [trial terms](https://aws.amazon.com/ec2/faqs/), [EBS pricing](https://aws.amazon.com/ebs/pricing/),
+  [IPv4 pricing](https://aws.amazon.com/vpc/pricing/#Public_IP_Address).
+- **Lambda Event Functions with EventBridge Scheduler** fit external checks
+  and bounded jobs that can finish within the 30-minute on-demand invocation
+  limit. Lambda's recurring free tier includes 1 million requests and 400,000
+  GB-seconds per month. EventBridge Scheduler includes 14 million invocations
+  per month. [Lambda pricing](https://aws.amazon.com/lambda/pricing/),
+  [invocation timeout](https://docs.aws.amazon.com/lambda/latest/dg/configuration-timeout.html),
+  [Scheduler pricing](https://aws.amazon.com/eventbridge/pricing/).
+
 ## Implementation Details
 
 ### Terraform (`*.tf`)
