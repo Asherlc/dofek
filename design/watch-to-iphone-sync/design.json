@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "title": "Apple Watch · iPhone transfer",
+  "kind": "prototype",
+  "description": "Proposed Dofek Watch first screen at 40 mm. The artboards show Watch-to-iPhone delivery states and the Always On display.",
+  "artboards": [
+    {
+      "id": "screenshots",
+      "title": "All states · screenshots",
+      "file": "screenshots.html",
+      "width": 1424,
+      "height": 945,
+      "group": "overview"
+    },
+    {
+      "id": "clear",
+      "title": "Empty queue",
+      "file": "clear.html",
+      "width": 324,
+      "height": 394,
+      "group": "transfer"
+    },
+    {
+      "id": "preparing",
+      "title": "Preparing",
+      "file": "preparing.html",
+      "width": 324,
+      "height": 394,
+      "group": "transfer"
+    },
+    {
+      "id": "waiting",
+      "title": "Queued",
+      "file": "waiting.html",
+      "width": 324,
+      "height": 394,
+      "group": "transfer"
+    },
+    {
+      "id": "unavailable",
+      "title": "Connection unavailable",
+      "file": "unavailable.html",
+      "width": 324,
+      "height": 394,
+      "group": "other"
+    },
+    {
+      "id": "failed",
+      "title": "Transfer error",
+      "file": "failed.html",
+      "width": 324,
+      "height": 394,
+      "group": "other"
+    },
+    {
+      "id": "paused",
+      "title": "Account sync paused",
+      "file": "paused.html",
+      "width": 324,
+      "height": 394,
+      "group": "other"
+    },
+    {
+      "id": "always-on",
+      "title": "Always On",
+      "file": "always-on.html",
+      "width": 324,
+      "height": 394,
+      "group": "privacy"
+    }
+  ]
+}
