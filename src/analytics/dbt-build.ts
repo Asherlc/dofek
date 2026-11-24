@@ -1,7 +1,8 @@
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { captureException } from "../lib/error-reporting.ts";
-import { parseDbtRunArtifacts } from "../processing/dbt-run-results.ts";
+import { logger } from "../logger.ts";
+import { type DbtModelResult, parseDbtRunArtifacts } from "../processing/dbt-run-results.ts";
 import type { AnalyticsQueryOwner } from "./analytics-query-owner.ts";
 
 /** Keep the registered child non-terminal until its fresh build artifacts agree. */
@@ -12,8 +13,10 @@ export async function runOwnedDbtBuild(
   run: () => Promise<number>,
 ): Promise<number> {
   let exitCode: number | undefined;
+  let validatedModels: DbtModelResult[] = [];
+  let code: number;
   try {
-    return await owner.runSynchronousDbt(async () => {
+    code = await owner.runSynchronousDbt(async () => {
       await Promise.all(
         ["manifest.json", "run_results.json"].map((name) =>
           rm(join(artifactDirectory, name), { force: true }),
@@ -37,6 +40,7 @@ export async function runOwnedDbtBuild(
         },
       });
       if (!result.succeeded) throw new Error("dbt child produced incomplete build artifacts");
+      validatedModels = result.models;
       return exitCode;
     });
   } catch (error) {
@@ -46,4 +50,11 @@ export async function runOwnedDbtBuild(
     if (exitCode !== undefined && exitCode !== 0) return exitCode;
     throw error;
   }
+  for (const model of validatedModels) {
+    logger.info("analytics.dbt_model", {
+      model: model.name,
+      duration_ms: Math.round(model.executionTimeSeconds * 1000),
+    });
+  }
+  return code;
 }

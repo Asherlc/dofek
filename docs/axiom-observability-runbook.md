@@ -88,10 +88,22 @@ The [provider worker](../src/jobs/sync-provider-execution.ts) emits one
 individually. The timer covers worker execution and result handling. Queue
 wait, cooldown before execution, and downstream analytics jobs fall outside
 that interval. The provider API table uses outbound HTTP spans grouped by
-host. ClickHouse panels report client HTTP duration and instrumented queue wait.
+host. The ClickHouse HTTP and queue panels report client request duration and
+instrumented queue wait.
+
+The **ClickHouse model runtimes (dbt)** table ranks completed model runs such
+as `daily_sleep` and `resting_heart_rate_sleep_window`. After an owned dbt
+invocation validates its artifacts and completes, the runner logs
+`analytics.dbt_model` with the model name and dbt's `execution_time` converted
+to milliseconds.
+Repeated bounded passes each contribute a sample.
+[Dofek dbt runner](../src/analytics/dbt-build.ts) ·
+[dbt run results](https://docs.getdbt.com/reference/artifacts/run-results-json).
 
 After deploying the worker, confirm that a completed sync attempt appears in
-the provider table under its provider ID. Use the [Axiom table](https://axiom.co/docs/dashboard-elements/table)
+the provider table under its provider ID. After the analytics worker completes
+a successful build, confirm that the dbt table lists its model runtimes. Use the
+[Axiom table](https://axiom.co/docs/dashboard-elements/table)
 and [custom log fields](https://axiom.co/docs/apl/data-types/map-fields)
 documentation when editing the panel.
 
