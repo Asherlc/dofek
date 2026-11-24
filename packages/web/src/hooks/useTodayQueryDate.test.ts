@@ -8,17 +8,17 @@ describe("useTodayQueryDate", () => {
     vi.useRealTimers();
   });
 
-  it("returns today's date initially", () => {
+  it("returns today's date in UTC initially", () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
+    vi.setSystemTime(new Date("2026-03-21T10:00:00.000Z"));
 
     const { result } = renderHook(() => useTodayQueryDate());
     expect(result.current).toBe("2026-03-21");
   });
 
-  it("rolls over after local midnight", async () => {
+  it("rolls over after UTC midnight", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-21T23:59:58"));
+    vi.setSystemTime(new Date("2026-03-21T23:59:58.000Z"));
 
     const { result } = renderHook(() => useTodayQueryDate());
     expect(result.current).toBe("2026-03-21");
