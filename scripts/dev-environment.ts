@@ -1,7 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { z } from "zod";
+import { captureException } from "../src/lib/error-reporting.ts";
+import { listComposeContainers } from "./compose-container-inventory.ts";
 
 interface ToolCheck {
   arguments_: string[];
@@ -11,6 +14,7 @@ interface ToolCheck {
 
 const usage = "Usage: dev-environment.ts <prebuild|start|doctor>";
 const environmentModeSchema = z.enum(["doctor", "prebuild", "start"]);
+const paseoWorkspacesSchema = z.array(z.object({ cwd: z.string().min(1) }));
 const packageManifestSchema = z.object({
   engines: z.object({
     node: z.string().min(1),
@@ -155,7 +159,60 @@ function doctor(): void {
     label: "vcpkg",
   });
 
+  checkPaseoComposeOrphans();
+
   process.stdout.write("Development environment is ready.\n");
+}
+
+function checkPaseoComposeOrphans(): void {
+  const repositoryWorktrees = dirname(realpathSync(process.cwd()));
+  const paseoWorktrees = join(process.env.PASEO_HOME ?? join(homedir(), ".paseo"), "worktrees");
+  if (
+    !existsSync(paseoWorktrees) ||
+    dirname(repositoryWorktrees) !== realpathSync(paseoWorktrees)
+  ) {
+    return;
+  }
+
+  try {
+    const result = spawnSync("paseo", ["workspace", "ls", "--background", "--json"], {
+      encoding: "utf8",
+    });
+    if (result.error) {
+      throw result.error;
+    }
+    if (result.status !== 0) {
+      throw new Error(
+        `paseo workspace ls failed: ${result.stderr.trim() || result.signal || result.status}`,
+      );
+    }
+    const workspaces = paseoWorkspacesSchema.parse(JSON.parse(result.stdout));
+    const activeDirectories = new Set(
+      workspaces.map(({ cwd }) => (existsSync(cwd) ? realpathSync(cwd) : cwd)),
+    );
+    const staleProjects = new Set<string>();
+    for (const { project, directory } of listComposeContainers()) {
+      if (dirname(directory) === repositoryWorktrees && !activeDirectories.has(directory)) {
+        staleProjects.add(`${project} (${directory})`);
+      }
+    }
+    if (staleProjects.size === 0) {
+      process.stdout.write("✓ Paseo Compose orphan check: no stale workspace containers.\n");
+      return;
+    }
+    process.stderr.write(
+      `Warning: Stale Compose projects from inactive Paseo workspaces:\n${[...staleProjects].sort().join("\n")}\n`,
+    );
+  } catch (error) {
+    captureException(new Error("Paseo Compose inventory check failed"), {
+      tags: { source: "dev-environment-doctor" },
+    });
+    process.stderr.write(
+      `Warning: Could not check for stale Paseo Compose projects: ${
+        error instanceof Error ? error.message : String(error)
+      }\n`,
+    );
+  }
 }
 
 function start(): void {
