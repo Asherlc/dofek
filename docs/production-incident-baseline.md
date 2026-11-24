@@ -40200,6 +40200,31 @@ Local qualification and CI are separate from production throughput acceptance. T
   extraction run reached the memory cap and used swap. Verify memory and
   metered transfer on native amd64 after the first Fly release.
 
+## 2026-11-24 — Large Redis requests stalled in the Fly tunnel
+
+- **Impact.** Fly passed its HTTP readiness check after the first
+  [production release](https://github.com/Asherlc/dofek/actions/runs/45466663320).
+  Its Redis capacity lease was missing when checked, and Oracle handled the
+  one-day Kilter verification sync. Axiom recorded 35 Oracle completions and
+  zero Fly completions in the observed window after startup.
+- **Evidence and cause.** A read-only 1,450-byte Redis request from Fly got
+  no reply in one write and succeeded when split into smaller writes. A
+  1,450-byte response from Oracle reached Fly. Both peers used a 1,420-byte
+  tunnel MTU, and Fly's outer interface reported 1,420 bytes. A local relay
+  that drops datagrams above the 1,280-byte outer IP limit reproduced the
+  stall with `4 KiB Redis round trip stalled`. The matching size-dependent
+  failures point to insufficient room for WireGuard encapsulation.
+  [WireGuard MTU handling](https://git.zx2c4.com/wireguard-tools/tree/src/wg-quick/linux.bash)
+- **Fix and validation.** Set both tunnel peers to an inner MTU of 1,200
+  bytes. The constrained fixture passed 4 KiB Redis and PostgreSQL round
+  trips. The Kilter and Tension queue fixtures completed and exported their
+  host-attributed events. The native ARM64 runner stayed within its 512 MiB
+  cap with swap disabled and drained on SIGTERM.
+- **Follow-up.** Verify the same large Redis request and a completed
+  Fly-attributed sync after the production release. The readiness check
+  reports that the worker started. Its HTTP response alone cannot establish
+  that the Redis lease is renewing.
+
 ## 2026-11-24 — Archived Paseo workspaces retained Docker containers
 
 - **Impact and evidence.** Local Docker Desktop had 14 running containers

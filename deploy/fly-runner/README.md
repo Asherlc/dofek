@@ -32,6 +32,11 @@ these connections to the Oracle peer over WireGuard. The worker starts with
 the tunnel key variables removed from its environment. The entry point
 keeps the tunnel up while the worker drains on SIGTERM.
 [Wireproxy TCP client tunnels](https://github.com/windtf/wireproxy/blob/e00074911d2e8b23bac6b74703fa1a2b522cff2b/README.md)
+
+Both peers use a 1,200-byte tunnel MTU. This leaves room for WireGuard
+encapsulation on an outer path as small as 1,280 bytes. The release updates
+the gateway and worker from the same revision. After rollout, confirm a
+completed sync with the Fly Machine ID in Axiom. [WireGuard MTU handling](https://git.zx2c4.com/wireguard-tools/tree/src/wg-quick/linux.bash)
 The Fly production release checks the singleton Machine's configuration and
 waits for its private readiness check. [Fly Machine checks](https://docs.fly.io/reference/health-checks/)
 
