@@ -3,7 +3,6 @@ import { ghostSessionsCompareResponseSchema } from "@dofek/training/ghost-sessio
 import { z } from "zod";
 import {
   type GhostScalarWindowProof,
-  getMeasuredGhostScalarWindow,
   ghostScalarProofProviders,
   ghostScalarProofSql,
   ghostScalarProofWindowColumns,
@@ -18,11 +17,14 @@ import {
   matchGhostRoutes,
   summarizeGhostTrack,
 } from "./ghost-route-matching.ts";
+import { measureGhostSessionScalars } from "./ghost-session-measurement.ts";
 import {
-  type GhostSessionScalarObservation,
-  measureGhostSession,
-  measureGhostSessionScalars,
-} from "./ghost-session-measurement.ts";
+  createGhostScalarReader,
+  ghostScalarPairProofSchema,
+  matchesSelectedGhostTrack,
+  prepareGhostSessionPair,
+  scalarFetchLimitPerInterval,
+} from "./ghost-session-pair-preparation.ts";
 import {
   ghostTrackInputVersionsMatchSql,
   ghostTrackInputVersionsSql,
@@ -49,9 +51,6 @@ type SavedPageKey = Pick<PageRequest, "userId" | "activityId" | "historyGenerati
 };
 
 const matchLimit = 32;
-const scalarFetchLimitPerInterval = 4_001;
-const scalarRowsPerPage = 20_000;
-const scalarWindowMilliseconds = 24 * 60 * 60 * 1_000;
 const unavailablePage = { nextCursor: null, historyCoverage: "unverified" } as const;
 const pageReceiptSchema = z.object({
   payloadDigest: z.string(),
@@ -111,14 +110,6 @@ function cursorKey(cursor: PageCursor): string {
   return JSON.stringify([cursor.startedAt, cursor.activityId]);
 }
 
-function exactUtc(timestampMs: number): string {
-  const wholeMs = Math.floor(timestampMs);
-  const fractionalMicros = Math.round((timestampMs - wholeMs) * 1_000);
-  return new Date(wholeMs + Math.floor(fractionalMicros / 1_000))
-    .toISOString()
-    .replace("Z", `${String(fractionalMicros % 1_000).padStart(3, "0")}Z`);
-}
-
 async function queryRows<Schema extends z.ZodType>(
   client: Pick<ProjectionClient, "query">,
   schema: Schema,
@@ -163,59 +154,8 @@ async function currentAnchorStamp(client: ProjectionClient, input: PageRequest) 
   return stamp;
 }
 
-function matchesSelectedTrack(
-  track: Awaited<ReturnType<typeof getGhostTrack>>,
-  stamp: TrackStamp,
-): track is ReadyTrack {
-  return (
-    track.status === "ready" &&
-    track.memberActivityId === stamp.memberActivityId &&
-    track.providerId === stamp.providerId &&
-    track.deviceId === stamp.deviceId &&
-    track.sport === stamp.sport &&
-    track.modality === stamp.modality &&
-    track.refreshVersion === stamp.refreshVersion &&
-    track.sourceRefreshedAtNs === stamp.sourceRefreshedAtNs &&
-    track.memberSourceSyncedAtNs === stamp.memberSourceSyncedAtNs &&
-    (track.startedAt === null || track.startedAt === stamp.startedAt) &&
-    (track.endedAt === null || track.endedAt === stamp.endedAt)
-  );
-}
-
-function scalarReader(client: ProjectionClient, userId: string) {
-  let remaining = scalarRowsPerPage;
-  return async (activity: TrackStamp, interval: Match["anchor"]) => {
-    const fetchLimit = Math.min(scalarFetchLimitPerInterval, remaining);
-    if (fetchLimit < 2 || interval.elapsedMs > scalarWindowMilliseconds) return { proof: null };
-    const { observationRows, proof, rawCount } = await getMeasuredGhostScalarWindow(
-      client,
-      userId,
-      {
-        activityId: activity.activityId,
-        memberActivityId: activity.memberActivityId,
-        startedAt: exactUtc(interval.start.timestampMs),
-        endedAt: exactUtc(interval.end.timestampMs),
-      },
-      fetchLimit,
-    );
-    remaining -= rawCount;
-    const heartRateBpm: GhostSessionScalarObservation[] = [];
-    const powerWatts: GhostSessionScalarObservation[] = [];
-    for (const [recordedAt, channel, value, measurementKind] of observationRows) {
-      const observation = {
-        recordedAt,
-        value,
-        isEstimated: measurementKind === "estimated",
-      };
-      if (channel === "heart_rate") heartRateBpm.push(observation);
-      if (channel === "power") powerWatts.push(observation);
-    }
-    return { heartRateBpm, powerWatts, proof };
-  };
-}
-
 async function makeSavedMatch(
-  readScalars: ReturnType<typeof scalarReader>,
+  readScalars: ReturnType<typeof createGhostScalarReader>,
   anchor: TrackStamp,
   candidate: TrackStamp,
   match: Match,
@@ -231,19 +171,12 @@ async function makeSavedMatch(
     match.candidate.start.timestampMs,
     match.candidate.end.timestampMs,
   ]);
-  const anchorObservations = await readScalars(anchor, match.anchor);
-  const candidateObservations = await readScalars(candidate, match.candidate);
-  const comparison = measureGhostSession({
+  const { comparison, scalarProof } = await prepareGhostSessionPair(
+    readScalars,
+    anchor,
+    candidate,
     match,
-    sport: anchor.sport,
-    anchorObservations,
-    candidateObservations,
-  });
-  const measured =
-    comparison.metrics.heartRateBpm !== null || comparison.metrics.powerWatts !== null;
-  const scalarProof = [anchorObservations.proof, candidateObservations.proof];
-  if (measured && scalarProof.some((proof) => proof === null))
-    throw new Error("Measured Ghost Sessions metrics require a scalar proof for each interval");
+  );
   return {
     section_id: sectionId,
     pass_id: passId,
@@ -255,7 +188,7 @@ async function makeSavedMatch(
     candidate_pass_ended_at_ms: comparison.candidate.end.timestampMs,
     candidate_elapsed_ms: comparison.candidate.elapsedMs,
     candidate_stamp: JSON.stringify(candidate),
-    scalar_proof: scalarProof.filter((proof) => proof !== null),
+    scalar_proof: scalarProof,
     comparison: JSON.stringify(comparison),
   };
 }
@@ -322,16 +255,6 @@ function scalarProofParams(proofs: readonly GhostScalarWindowProof[]) {
   };
 }
 
-const scalarWindowProofSchema = z.object({
-  activityId: z.uuid(),
-  memberActivityId: z.uuid(),
-  startedAt: z.iso.datetime(),
-  endedAt: z.iso.datetime(),
-  count: z.number().int().nonnegative().lt(scalarFetchLimitPerInterval),
-  digest: z.string().regex(/^[A-F0-9]{64}$/),
-});
-const scalarPairProofSchema = scalarWindowProofSchema.array().max(2);
-
 interface ScalarMismatch {
   proofKey: string;
   overLimit: boolean;
@@ -357,7 +280,7 @@ export async function auditGhostSessionPage(
       proofs: z
         .array(z.string())
         .max(matchLimit)
-        .transform((rows) => rows.map((row) => scalarPairProofSchema.parse(JSON.parse(row)))),
+        .transform((rows) => rows.map((row) => ghostScalarPairProofSchema.parse(JSON.parse(row)))),
     }),
     `SELECT payload_digest AS payloadDigest, toString(refresh_version) AS refreshVersion, bounded,
       next_cursor AS nextCursor, arrayDistinct(matches.scalar_proof) AS proofs
@@ -434,7 +357,7 @@ export async function refreshGhostSessionPageScalars(
 
   const anchor = trackStampSchema.parse(JSON.parse(page.anchorStamp));
   const observed = new Map([[anchor.activityId, anchor]]);
-  const readScalars = scalarReader(owner.client, input.userId);
+  const readScalars = createGhostScalarReader(owner.client, input.userId);
   const comparisons = page.matches.map(([, comparison]) => comparison);
   const savedProofs = page.matches.map(([, , proof]) => proof);
   const proofs = new Map<string, GhostScalarWindowProof>();
@@ -444,7 +367,7 @@ export async function refreshGhostSessionPageScalars(
   for (const [index, [candidateJson, comparisonJson, proofJson]] of page.matches.entries()) {
     const candidate = trackStampSchema.parse(JSON.parse(candidateJson));
     observed.set(candidate.activityId, candidate);
-    const pairProofs = scalarPairProofSchema.parse(JSON.parse(proofJson));
+    const pairProofs = ghostScalarPairProofSchema.parse(JSON.parse(proofJson));
     if (!canRefreshScalarPair(pairProofs, mismatches)) continue;
     const comparison = ghostSessionsCompareResponseSchema.parse(JSON.parse(comparisonJson));
     const anchorScalars = await readScalars(anchor, comparison.anchor);
@@ -612,7 +535,7 @@ export async function projectGhostSessionsPage(owner: ProjectionOwner, input: Pa
   const anchor = await currentAnchorStamp(owner.client, input);
   if (!anchor) return { status: "unavailable", ...unavailablePage } as const;
   const anchorTrack = await getGhostTrack(owner.client, input);
-  if (!matchesSelectedTrack(anchorTrack, anchor))
+  if (!matchesSelectedGhostTrack(anchorTrack, anchor))
     return { status: "stale", ...unavailablePage } as const;
   const page = await listGhostTrackCandidates(owner.client, {
     userId: input.userId,
@@ -621,7 +544,7 @@ export async function projectGhostSessionsPage(owner: ProjectionOwner, input: Pa
     before: input.before,
   });
 
-  const readScalars = scalarReader(owner.client, input.userId);
+  const readScalars = createGhostScalarReader(owner.client, input.userId);
   const observed = [anchor];
   const matches: SavedMatch[] = [];
   let bounded = false;
@@ -652,7 +575,7 @@ export async function projectGhostSessionsPage(owner: ProjectionOwner, input: Pa
       userId: input.userId,
       activityId: candidate.activityId,
     });
-    if (!matchesSelectedTrack(track, candidate))
+    if (!matchesSelectedGhostTrack(track, candidate))
       return { status: "stale", ...unavailablePage } as const;
     observed.push(candidate);
     await measureMatches(candidate, track);

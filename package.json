@@ -165,6 +165,7 @@
     "./exercise-metadata": "./src/exercise-metadata.ts",
     "./lib/cache": "./src/lib/cache.ts",
     "./lib/ghost-route-labels-cache": "./src/lib/ghost-route-labels-cache.ts",
+    "./lib/ghost-route-section-results": "./src/lib/ghost-route-section-results.ts",
     "./admin/provider-rate-limit-status": "./src/admin/provider-rate-limit-status.ts",
     "./db/activity-images": "./src/db/activity-images.ts",
     "./activity-images/storage": "./src/activity-images/storage.ts",
