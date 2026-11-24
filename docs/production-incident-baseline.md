@@ -39940,3 +39940,45 @@ Local qualification and CI are separate from production throughput acceptance. T
   sustained capture and upload on a rebuilt iPhone app before closing the Sentry
   issue. The phone was locked during diagnosis.
   [Apple disk-write profiling](https://developer.apple.com/documentation/xcode/reducing-disk-writes).
+
+## 2026-11-23 — Climbing schema maintenance interrupted Dofek web access
+
+- **Impact and evidence.** Dofek web displayed `Auth bootstrap failed: 503`
+  when `/api/auth/me` was unavailable. Direct requests to `/` and
+  `/api/auth/me` reproduced HTTP 503 with `no available server`. Axiom logged
+  85 web-router 503 responses with origin status `0` from 23:33:01 through
+  23:40:14 UTC. The count is requests, and the number of affected users is
+  unknown. [Release job](https://github.com/Asherlc/dofek/actions/runs/45288590785/job/138092541142)
+  · [Traefik log query](axiom-observability-runbook.md#traefik-server-error-access-logs).
+- **Cause.** The release drained both web replicas before migration
+  `0197_remove_climbing_area_groups`, which drops the old grouping column and
+  table. Swarm reported `0/0` web replicas and the maintenance target matched
+  the migration. Traefik returned 503 while no web replica was available.
+  [Migration](../drizzle/0197_remove_climbing_area_groups.sql)
+  · [Maintenance overlay](../deploy/stack.maintenance.yml)
+  · [Traefik fallback](../deploy/traefik-web-unavailable.yml).
+- **Recovery and validation.** The migration step succeeded at 23:40:03 UTC.
+  By 23:40:59 UTC, the rollout had restored both web replicas and the worker.
+  `/`, `/healthz`, and `/api/auth/providers` returned HTTP 200. An unauthenticated
+  `/api/auth/me` request returned the expected HTTP 401. The release workflow
+  was still running its remaining checks at the recovery verification.
+  [Production release](https://github.com/Asherlc/dofek/actions/runs/45288590785).
+- **Remaining risk and follow-up.** Future maintenance-mode releases can
+  present the same session error. Consider showing a maintenance message at
+  the proxy and in the web session screen when the fallback route handles
+  the request.
+
+## 2026-11-23 — Maintenance notice PR failed two deploy workflow tests
+
+- **Impact and evidence.** PR #3470's `Check Server / Unit Tests` job failed
+  during `pnpm exec vitest run --project unit --coverage`. The first failing
+  test reported `STACK_SERVICE_FILTER: unbound variable`. The failure was
+  confined to PR validation. The focused deploy workflow suite reproduced
+  both failures locally. [CI job](https://github.com/Asherlc/dofek/actions/runs/45298874681/job/138126527690).
+- **Cause and fix.** The workflow renamed the stack filter to select the
+  maintenance service as well as web. Two fixtures still injected the old
+  variable. The fixtures now use the renamed variable and require the filter
+  to be present in the workflow. All 88 deploy workflow tests passed locally
+  after the fix. Run that suite before pushing changes to a workflow
+  environment variable it consumes.
+  [Workflow tests](../.github/workflows/deploy-web-stack.test.ts).

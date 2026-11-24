@@ -1,0 +1,6 @@
+services:
+  web-maintenance:
+    deploy:
+      replicas: 1
+      labels:
+        traefik.enable: "true"
