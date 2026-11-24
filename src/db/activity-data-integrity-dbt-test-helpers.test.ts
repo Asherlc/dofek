@@ -38,7 +38,7 @@ describe("activity integrity fixture diagnostics", () => {
     const client = createClient({ url: "http://fixture.invalid" });
     const commands: string[] = [];
     let finish: (() => void) | undefined;
-    vi.spyOn(client, "command").mockImplementation(async ({ query }) => {
+    const command = vi.spyOn(client, "command").mockImplementation(async ({ query }) => {
       commands.push(query);
       await new Promise<void>((resolve) => {
         finish = resolve;
@@ -79,12 +79,15 @@ describe("activity integrity fixture diagnostics", () => {
       stage: "seed",
       statementIndex: 2,
     });
-    vi.mocked(client.command).mockResolvedValue({ query_id: "", response_headers: {} });
+    command.mockResolvedValue({ query_id: "", response_headers: {} });
     finish?.();
     await pending;
-    expect(events.filter((event) => event.event === "fixture.statement.start")).toHaveLength(19);
-    expect(events.filter((event) => event.event === "fixture.statement.end")).toHaveLength(19);
-    expect(events.at(-1)).toMatchObject({ event: "fixture.statement.end", statementIndex: 18 });
+    expect(events.map(({ event, statementIndex }) => ({ event, statementIndex }))).toEqual(
+      command.mock.calls.flatMap((_, statementIndex) => [
+        { event: "fixture.statement.start", statementIndex },
+        { event: "fixture.statement.end", statementIndex },
+      ]),
+    );
     for (const event of events) {
       expect(event).toMatchObject({
         operationId,
