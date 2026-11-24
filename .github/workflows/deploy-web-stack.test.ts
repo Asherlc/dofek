@@ -1,32 +1,30 @@
 import {
   STABLE_OBSERVATION,
-  serializeScenario,
-  runDeployConsumers as runDeployConsumersFixture,
-  type ConsumerScenarios,
-  type DeployConsumerOptions,
-  type DeployQuiescedOptions,
-  type ServiceObservation,
   currentKafkaImage,
+  deployedStackServices,
   requestedKafkaImage,
+  runClickHouseReadinessFixture,
+  runDeployQuiesced,
+  runKafkaBackendFixture,
   runKafkaImageFixture,
   runKafkaInstallerFixture,
-  MOCK_DOCKER,
-  runKafkaBackendFixture,
-  runTopicPolicyFixture,
   runPeerdbMigrationFixture,
   runPipedashVerificationFixture,
-  runClickHouseReadinessFixture,
+  runPreMigrationWebConvergence,
+  runTopicPolicyFixture,
+  runWorkflowDeployConsumers,
+  webStackSteps,
+  workflowRunScript,
+  workflowStackServiceFilter,
+  workflowText,
 } from "./deploy-web-stack-test-helpers.ts";
 import { deployTestDigest, deployTestOldImage, deployTestRepository, runDeployImageFixture } from "../../scripts/deploy-image-test-helpers.ts";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse, parseDocument } from "yaml";
-import { z } from "zod";
 
-const workflowText = readFileSync(".github/workflows/deploy-web-stack.yml", "utf8");
 const otaImage = `${deployTestRepository}-ota@${deployTestDigest}`;
 const CHECKOUT_ACTION = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
 const CONTROL_CHECKOUT_PATH = "control-checkout";
@@ -248,161 +246,6 @@ describe("deploy-owned Kafka topic policy", () => {
   });
 });
 
-function deployConsumersRunScript(): string {
-  const workflow = z.object({
-    jobs: z.object({
-      "web-stack": z.object({
-        steps: z.array(z.object({ id: z.string().optional(), run: z.string().optional() })),
-      }),
-    }),
-  }).parse(parse(workflowText));
-  const script = workflow.jobs["web-stack"].steps.find((step) => step.id === "deploy_stack_full")?.run;
-  if (!script) throw new Error("Could not find deploy_stack_full run script");
-  return script;
-}
-
-function workflowRunScript(name: string): string {
-  const workflow = z.object({ jobs: z.object({ "web-stack": z.object({
-    steps: z.array(z.object({ name: z.string().optional(), run: z.string().optional() })),
-  }) }) }).parse(parse(workflowText));
-  const script = workflow.jobs["web-stack"].steps.find((step) => step.name === name)?.run;
-  if (!script) throw new Error(`Could not find the workflow step: ${name}`);
-  return script;
-}
-
-function webStackSteps() {
-  return z.object({ jobs: z.object({ "web-stack": z.object({
-    steps: z.array(z.object({
-      name: z.string().optional(),
-      id: z.string().optional(),
-      if: z.string().optional(),
-      uses: z.string().optional(),
-      with: z.record(z.unknown()).optional(),
-      run: z.string().optional(),
-    })),
-  }) }) }).parse(parse(workflowText)).jobs["web-stack"].steps;
-}
-
-function workflowStackServiceFilter(): string {
-  return z.string().min(1).parse(parseDocument(workflowText).getIn(["jobs", "web-stack", "env", "STACK_SERVICE_FILTER"]));
-}
-
-function deployedStackServices(stdout: string): unknown {
-  const config = z.string().parse(stdout.match(/^STACK_CONFIG=(.+)$/m)?.[1]);
-  return z.object({ services: z.unknown() }).parse(parse(z.string().parse(JSON.parse(config)))).services;
-}
-
-function deployQuiescedRunScript(): string {
-  const stepStart = workflowText.indexOf("      - name: Deploy stack without ClickHouse consumers");
-  const runStart = workflowText.indexOf("        run: |\n", stepStart);
-  const stepEnd = workflowText.indexOf("\n      - ", runStart);
-
-  if (stepStart === -1 || runStart === -1 || stepEnd === -1) {
-    throw new Error("Could not find the quiesced stack deploy step");
-  }
-
-  return workflowText
-    .slice(runStart + "        run: |\n".length, stepEnd)
-    .split("\n")
-    .map((line) => line.slice(10))
-    .join("\n");
-}
-
-function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsumerOptions = {}) {
-  return runDeployConsumersFixture(deployConsumersRunScript(), scenarios, options);
-}
-
-function runDeployQuiesced(
-  processingReconciliation: readonly ServiceObservation[],
-  options: DeployQuiescedOptions = {},
-) {
-  const temporaryDirectory = mkdtempSync(join(tmpdir(), "dofek-deploy-quiesced-"));
-  const scenarioDirectory = join(temporaryDirectory, "scenarios");
-  const stateDirectory = join(temporaryDirectory, "state");
-  const dockerPath = join(temporaryDirectory, "docker");
-  const nodePath = join(temporaryDirectory, "node");
-  const stackDeployCapturePath = join(temporaryDirectory, "stack-deploy-args");
-
-  try {
-    mkdirSync(scenarioDirectory);
-    mkdirSync(stateDirectory);
-    writeFileSync(dockerPath, MOCK_DOCKER);
-    writeFileSync(
-      nodePath,
-      "#!/usr/bin/env bash\nif [ \"$2\" = docker ] || [ \"$2\" = env ]; then shift; exec \"$@\"; fi\nexit 0\n",
-    );
-    chmodSync(dockerPath, 0o755);
-    chmodSync(nodePath, 0o755);
-    const pnpmPath = join(temporaryDirectory, "pnpm");
-    writeFileSync(pnpmPath, "#!/usr/bin/env bash\n[ \"$1\" = tsx ] && [ \"$2\" = scripts/verify-deploy-image.ts ]\n");
-    chmodSync(pnpmPath, 0o755);
-    const defaultServiceNames = [
-      "dofek_kafka",
-      "dofek_web",
-      "dofek_worker",
-      "dofek_cdc-health",
-      "dofek_analytics-worker",
-      "dofek_metric-stream-clickhouse-sink",
-      "dofek_metric-stream-live-clickhouse-sink",
-      "dofek_metric-stream-history-clickhouse-sink",
-      "dofek_metric-stream-r2-archive",
-      "dofek_metric-stream-live-r2-archive",
-      "dofek_metric-stream-history-r2-archive",
-      "dofek_clickhouse",
-      "dofek_databasus",
-      "dofek_pipedash",
-    ];
-    for (const serviceName of defaultServiceNames) {
-      writeFileSync(
-        join(scenarioDirectory, serviceName),
-        serializeScenario(options.serviceObservations?.[serviceName] ?? [STABLE_OBSERVATION]),
-      );
-    }
-    writeFileSync(
-      join(scenarioDirectory, "dofek_processing-reconciliation"),
-      serializeScenario(processingReconciliation),
-    );
-
-    const shellScript = [
-      `docker() (\n${MOCK_DOCKER}\n)`,
-      "SECONDS=0",
-      "simulated_seconds=0",
-      'echo() { builtin echo "[${simulated_seconds}s] $*"; }',
-      "sleep() { SECONDS=$((SECONDS + MOCK_SLEEP_SECONDS)); simulated_seconds=$((simulated_seconds + MOCK_SLEEP_SECONDS)); }",
-      deployQuiescedRunScript(),
-    ].join("\n");
-    const githubOutputPath = join(temporaryDirectory, "github-output");
-    const result = spawnSync("bash", ["-c", shellScript], {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
-        APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
-        STACK_DEPLOY_STATUS: (options.stackDeployStatus ?? 0).toString(),
-        MIGRATION_DEPLOYMENT_MODE: options.deploymentMode ?? "rolling",
-        STACK_DEPLOY_CAPTURE: stackDeployCapturePath,
-        ADVANCE_ON_SERVICE_LS: "1",
-        MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
-        PATH: `${temporaryDirectory}:${process.env.PATH ?? ""}`,
-        RUNNER_TEMP: temporaryDirectory,
-        SCENARIO_DIR: scenarioDirectory,
-        STACK_NAME: "dofek",
-        STATE_DIR: stateDirectory,
-        GITHUB_OUTPUT: githubOutputPath,
-      },
-    });
-
-    return {
-      ...result,
-      githubOutput: readFileSync(githubOutputPath, "utf8"),
-      stackDeployArgs: readFileSync(stackDeployCapturePath, "utf8"),
-    };
-  } finally {
-    rmSync(temporaryDirectory, { force: true, recursive: true });
-  }
-}
-
-
 describe("deploy-web-stack workflow contract", () => {
   it("converges dependencies and pre-migration web before migrating and restoring consumers", () => {
     const orderedSteps = [
@@ -427,6 +270,18 @@ describe("deploy-web-stack workflow contract", () => {
       "steps.verify_peerdb_cdc_contract.conclusion == 'success'",
     );
     expect(workflowRunScript("Wait for pre-migration web convergence")).toContain("UpdateStatus.State");
+  });
+
+  it("matches pre-migration web replicas by exact name despite web-maintenance", () => {
+    const result = runPreMigrationWebConvergence(
+      workflowRunScript("Wait for pre-migration web convergence"),
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("dofek_web replicas=2/2 update_state=completed");
+    expect(result.stdout).toContain(
+      `tsx scripts/verify-deploy-image.ts ${deployTestRepository}@${deployTestDigest} dofek_web`,
+    );
   });
 
   it("drains deployed publishers before the dependency apply and rechecks quiescence afterward", () => {
@@ -676,6 +531,74 @@ ${workflowRunScript(step)}
     expect(result.githubOutput).toContain("web_convergence_failed=true");
   });
 
+  it("matches quiesced web replicas by exact name despite web-maintenance", () => {
+    const result = runDeployQuiesced([STABLE_OBSERVATION], {
+      serviceObservations: {
+        dofek_web: [{ ...STABLE_OBSERVATION, replicas: "2/2", desiredReplicas: "2" }],
+        "dofek_web-maintenance": [{ ...STABLE_OBSERVATION, replicas: "1/1" }],
+      },
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(
+      `dofek_web image=${deployTestRepository}@${deployTestDigest} replicas=2/2 update_state=completed`,
+    );
+    expect(result.githubOutput).toContain("web_convergence_failed=false");
+  });
+
+  it.each(["Wait for pre-migration web convergence", "Deploy stack without ClickHouse consumers"])(
+    "preserves Docker failures in the exact-name replica pipeline of %s",
+    (stepName) => {
+      const script = workflowRunScript(stepName);
+      const pipelineIndex = script.indexOf("| awk -v name=");
+      expect(pipelineIndex).toBeGreaterThan(-1);
+      expect(script.indexOf("set -o pipefail")).toBeGreaterThan(-1);
+      expect(script.indexOf("set -o pipefail")).toBeLessThan(pipelineIndex);
+    },
+  );
+
+  it("fails immediately when the pre-migration web replica lookup loses its Docker CLI", () => {
+    const directory = mkdtempSync(join(tmpdir(), "dofek-web-ls-failure-"));
+    try {
+      const bin = join(directory, "bin");
+      mkdirSync(bin);
+      const dockerPath = join(bin, "docker");
+      writeFileSync(
+        dockerPath,
+        `#!/usr/bin/env bash
+set -euo pipefail
+if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
+  printf 'completed\\n'
+  exit 0
+fi
+if [ "$1" = "service" ] && [ "$2" = "ls" ]; then
+  printf 'mock docker service ls failure\\n' >&2
+  exit 42
+fi
+exit 64
+`,
+      );
+      chmodSync(dockerPath, 0o755);
+      const result = spawnSync(
+        "timeout",
+        ["5", "bash", "-e", "-c", workflowRunScript("Wait for pre-migration web convergence")],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${bin}:${process.env.PATH ?? ""}`,
+            APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
+            STACK_NAME: "dofek",
+          },
+        },
+      );
+      expect(result.status).toBe(42);
+      expect(result.stderr).toContain("mock docker service ls failure");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("waits for an in-progress web rollback to settle before deferring it", () => {
     const result = runDeployQuiesced([STABLE_OBSERVATION], {
       serviceObservations: {
@@ -795,7 +718,7 @@ ${workflowRunScript(step)}
   });
 
   it("verifies the canonical OTA image before declaring rollout complete", () => {
-    const result = runDeployConsumers({
+    const result = runWorkflowDeployConsumers({
       analyticsWorker: [STABLE_OBSERVATION],
       metricStreamClickhouseSink: [STABLE_OBSERVATION],
     });
@@ -805,7 +728,7 @@ ${workflowRunScript(step)}
   });
 
   it("fails rollout when the OTA running-image verifier rejects a converged task", () => {
-    const result = runDeployConsumers(
+    const result = runWorkflowDeployConsumers(
       { analyticsWorker: [STABLE_OBSERVATION], metricStreamClickhouseSink: [STABLE_OBSERVATION] },
       { failOtaImageVerification: true },
     );
@@ -815,7 +738,7 @@ ${workflowRunScript(step)}
   });
 
   it("requires the same running task to remain converged for 60 seconds", () => {
-    const result = runDeployConsumers({
+    const result = runWorkflowDeployConsumers({
       analyticsWorker: [STABLE_OBSERVATION],
       metricStreamClickhouseSink: [STABLE_OBSERVATION],
     });
@@ -830,7 +753,7 @@ ${workflowRunScript(step)}
   });
 
   it("restores processing services without changing the rolled-back web service", () => {
-    const result = runDeployConsumers(
+    const result = runWorkflowDeployConsumers(
       {
         analyticsWorker: [STABLE_OBSERVATION],
         metricStreamClickhouseSink: [STABLE_OBSERVATION],
@@ -847,7 +770,7 @@ ${workflowRunScript(step)}
   });
 
   it("does not add the web rollback override to a normal full-stack deploy", () => {
-    const result = runDeployConsumers({
+    const result = runWorkflowDeployConsumers({
       analyticsWorker: [STABLE_OBSERVATION],
       metricStreamClickhouseSink: [STABLE_OBSERVATION],
     });
@@ -857,7 +780,7 @@ ${workflowRunScript(step)}
   });
 
   it("restarts the stability window when Swarm replaces the task", () => {
-    const result = runDeployConsumers({
+    const result = runWorkflowDeployConsumers({
       analyticsWorker: [
         { ...STABLE_OBSERVATION, taskId: "replaced-task" },
         { ...STABLE_OBSERVATION, taskId: "replacement-task" },
@@ -875,7 +798,7 @@ ${workflowRunScript(step)}
   });
 
   it("restarts the stability window after a transient zero-replica state", () => {
-    const result = runDeployConsumers({
+    const result = runWorkflowDeployConsumers({
       analyticsWorker: [
         STABLE_OBSERVATION,
         { ...STABLE_OBSERVATION, replicas: "0/1" },
@@ -896,7 +819,7 @@ ${workflowRunScript(step)}
   it.each(["rollback_started", "paused"])(
     "fails when the service update state is %s",
     (updateState) => {
-      const result = runDeployConsumers({
+      const result = runWorkflowDeployConsumers({
         analyticsWorker: [{ ...STABLE_OBSERVATION, updateState }],
         metricStreamClickhouseSink: [STABLE_OBSERVATION],
       });
@@ -911,7 +834,7 @@ ${workflowRunScript(step)}
   );
 
   it("fails when the service does not converge before the 20-minute deadline", () => {
-    const result = runDeployConsumers(
+    const result = runWorkflowDeployConsumers(
       {
         analyticsWorker: [{ replicas: "0/1", taskId: "starting-task", updateState: "updating" }],
         metricStreamClickhouseSink: [STABLE_OBSERVATION],
@@ -924,7 +847,7 @@ ${workflowRunScript(step)}
   });
 
   it("fails immediately when Swarm task inspection fails", () => {
-    const result = runDeployConsumers(
+    const result = runWorkflowDeployConsumers(
       {
         analyticsWorker: [STABLE_OBSERVATION],
         metricStreamClickhouseSink: [STABLE_OBSERVATION],

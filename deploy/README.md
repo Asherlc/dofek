@@ -732,10 +732,32 @@ and image digest. The run's control SHA may differ from the selected image
 source when `image_tag` is used; admission checks that control SHA consistently
 across the run, attempt, and job, while the deployment payload binds the selected
 image source and digest. The replacement candidate must be a strict descendant
-of both the failed source and the latest verified success. The workflow then
-runs its ordinary Terraform, migration, CDC, API, health, and stack verification
-gates without skipping phases. It records the new receipt as pending and links
-the old deployment ID in its payload.
+of both the failed source and the latest verified success. The `web-stack`
+target runs the migration, CDC, API, health, and stack verification gates. It
+records the new receipt as pending and links the old deployment ID in its
+payload. [Manual deploy workflow](../.github/workflows/deploy.yml).
+
+When a release stops migration readers and writers but its pre-migration web
+convergence check fails, GitHub skips migrations and the final stack apply. The
+processing services stay at zero replicas while web still serves the last
+verified image. Use the same `web-stack` dispatch with
+`recover_failed_deployment_id` set to that failed release's sole pending receipt.
+The stopped-worker path requires all of the following evidence before it writes
+a new deployment status.
+
+- The original job shows success for `Wait for migration readers and writers
+  to stop`, failure for `Wait for pre-migration web convergence`, and a skip
+  for `Run migrations`. [GitHub workflow job steps](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt).
+- All running web tasks report the last successful receipt's source and digest.
+  Both the web and worker service specs name that exact image. The worker has
+  zero desired replicas, zero running containers, and zero tasks with a
+  desired state of running. Admission collects this evidence over read-only
+  SSH. [Docker service inspection](https://docs.docker.com/reference/cli/docker/service/inspect/)
+  · [Docker service tasks](https://docs.docker.com/reference/cli/docker/service/ps/)
+  · [Docker containers](https://docs.docker.com/reference/cli/docker/container/ls/).
+
+The replacement release's final stack apply restores the processing services
+after the required deployment checks pass.
 
 Only after all stack gates pass and both live web and worker images match the
 new immutable candidate does the finalizer mark the new receipt successful and

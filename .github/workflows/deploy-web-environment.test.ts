@@ -13,6 +13,8 @@ import { describe, expect, it } from "vitest";
 import {
   baseSha,
   candidateDigest,
+  failedRecoveryEnvironment,
+  failedServerReceipt,
   fixtureBin,
   graphqlStringPayload,
   headSha,
@@ -20,77 +22,11 @@ import {
   liveDigest,
   parentSha,
   record,
+  runStoppedWorkerRecovery,
   runWorkflowStep,
+  stoppedWorkerRejections,
   workflowStep,
 } from "./deploy-publication.test-helpers.ts";
-
-function failedServerReceipt(): ReturnType<typeof record> {
-  const pending = record(
-    parentSha,
-    "PENDING",
-    {
-      source_sha: parentSha,
-      image_digest: liveDigest,
-      run_id: "124",
-      run_attempt: "1",
-      run_url: "https://github.com/owner/dofek/actions/runs/124/attempts/1",
-    },
-    "Server source awaiting stack verification",
-  );
-  pending.databaseId = 99;
-  return pending;
-}
-
-function failedRecoveryEnvironment(
-  directory: string,
-  logPath: string,
-  overrides: Record<string, string> = {},
-  jobName = "Deploy Server Production / Deploy Web Stack / Deploy Web Stack",
-): Record<string, string> {
-  const priorRun = {
-    id: 124,
-    run_attempt: 1,
-    head_sha: baseSha,
-    status: "completed",
-    conclusion: "failure",
-  };
-  const failedJob = {
-    id: 125,
-    run_id: 124,
-    run_attempt: 1,
-    head_sha: baseSha,
-    name: jobName,
-    status: "completed",
-    conclusion: "failure",
-  };
-  return {
-    GH_TOKEN: "fixture",
-    GH_LOG: logPath,
-    GH_HISTORY: history([
-      failedServerReceipt(),
-      record(baseSha, "SUCCESS", { source_sha: baseSha, image_digest: candidateDigest }),
-    ]),
-    GH_ACTION_RUN: JSON.stringify(priorRun),
-    GH_ACTION_ATTEMPT: JSON.stringify(priorRun),
-    GH_ACTION_JOBS: JSON.stringify([{ total_count: 1, jobs: [failedJob] }]),
-    RUNNER_TEMP: directory,
-    SOURCE_SHA: headSha,
-    IMAGE_TAG: "sha-test",
-    STACK_NAME: "dofek",
-    SERVER_HOST: "fixture-host",
-    SSH_USER: "ubuntu",
-    REPOSITORY: "owner/dofek",
-    RUN_ID: "400",
-    RUN_ATTEMPT: "1",
-    RUN_URL: "https://github.com/owner/dofek/actions/runs/400/attempts/1",
-    ENVIRONMENT_URL: "https://dofek.fit",
-    CANDIDATE_DIGEST: candidateDigest,
-    LIVE_SHA: parentSha,
-    LIVE_DIGEST: liveDigest,
-    RECOVER_FAILED_DEPLOYMENT_ID: "99",
-    ...overrides,
-  };
-}
 
 describe("server publication workflow step", () => {
   const script = workflowStep(".github/workflows/deploy-web-environment.yml", "check", "publication");
@@ -638,6 +574,46 @@ describe("server publication workflow step", () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+
+  it("admits a pre-migration-quiesced failed receipt for a strict descendant only on explicit recovery", () => {
+    const { result, output, calls, sshCommands } = runStoppedWorkerRecovery(script);
+    expect(result.status, result.stderr).toBe(0);
+    expect(output).toContain("decision=publish");
+    expect(output).toContain("recovery_deployment_id=99");
+    expect(output).toContain(`recovery_source_sha=${parentSha}`);
+    expect(output).toContain("recovery_run_url=https://github.com/owner/dofek/actions/runs/124/attempts/1");
+    const creation = calls.find((call) => call.args.includes("repos/owner/dofek/deployments"));
+    expect(JSON.parse(creation.input).payload).toEqual(
+      expect.objectContaining({
+        source_sha: headSha,
+        image_digest: candidateDigest,
+        recovery_from_deployment_id: 99,
+      }),
+    );
+    expect(calls.filter((call) => call.args.includes("--method") && call.args.some((arg) => arg.endsWith("/statuses")))).toHaveLength(1);
+    expect(sshCommands.some((command) => /service (scale|update|rm)|stack deploy/.test(command))).toBe(false);
+    expect(sshCommands.some((command) => command.includes("--format"))).toBe(true);
+  });
+
+  it.each(stoppedWorkerRejections)("rejects pre-migration recovery with $label before writing a deployment", ({ overrides, steps, error }) => {
+    const { result, calls } = runStoppedWorkerRecovery(script, overrides, steps);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(error);
+    expect(calls.some((call) => call.args.includes("--method"))).toBe(false);
+  });
+
+  it("fails closed when the live worker probe loses its Docker CLI", () => {
+    // The SSH fixture executes the real remote pipeline here: a failing
+    // `docker ps` must not be masked as an empty (stopped) result.
+    const { result, calls } = runStoppedWorkerRecovery(script, {
+      SSH_WORKER_PS_EXIT: "42",
+      DOCKER_PS_EXIT: "42",
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("mock docker ps failure");
+    expect(calls.some((call) => call.args.some((arg: string) => arg.endsWith("/deployments")))).toBe(false);
+    expect(calls.some((call) => call.args.some((arg: string) => arg.endsWith("/statuses")))).toBe(false);
   });
 
   it("rejects a server candidate with no ancestry path to the live target", () => {
