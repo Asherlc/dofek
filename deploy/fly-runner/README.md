@@ -79,14 +79,15 @@ Elapsed time measures wall-clock execution, including waits.
 
 In the Axiom Query Editor run the following APL over the desired time range.
 Each row's share is its attempt count or duration divided by the column total.
-Filter by `attributes.provider_id` to measure the split among the offload
-providers. [Axiom summarize operator](https://axiom.co/docs/apl/tabular-operators/summarize-operator)
+Filter by `tostring(fields['provider_id'])` after the `extend` to measure the
+split among selected providers. [Axiom map fields](https://axiom.co/docs/apl/data-types/map-fields)
 
 ```apl
 ['dofek-logs']
-| where ['attributes.event'] == 'provider_sync_attempt_finished'
-| summarize attempts = count(), elapsed_ms = sum(['attributes.duration_ms'])
-    by site = ['attributes.worker_site'], instance = ['attributes.worker_instance']
+| extend fields = ['attributes.custom']
+| where tostring(fields['event']) == 'provider_sync_attempt_finished'
+| summarize attempts = count(), elapsed_ms = sum(tolong(fields['duration_ms']))
+    by site = tostring(fields['worker_site']), instance = tostring(fields['worker_instance'])
 | order by attempts desc
 ```
 
@@ -111,7 +112,7 @@ The production image completed Kilter and Tension queue fixtures through a
 local WireGuard gateway with real PostgreSQL and Redis. Its telemetry reached
 the collector over the tunnel. An additional 2,500-record Kilter extraction
 probe ran alongside the worker in the same 512 MiB container, with a combined
-peak of 411 MiB. These measurements use fixture data.
+peak of 401 MiB. These measurements use fixture data.
 
 The qualification Machine reported a 434 MiB root filesystem, estimated at
 about $0.07 per 30 days while continuously stopped. Production compute,
