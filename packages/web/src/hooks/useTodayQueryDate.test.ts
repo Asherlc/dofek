@@ -27,4 +27,35 @@ describe("useTodayQueryDate", () => {
 
     expect(result.current).toBe("2026-03-22");
   });
+
+  it("refreshes on window focus and keeps the same date stable", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
+
+    const { result } = renderHook(() => useTodayQueryDate());
+    expect(result.current).toBe("2026-03-21");
+
+    await act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(result.current).toBe("2026-03-21");
+
+    vi.setSystemTime(new Date("2026-03-22T08:00:00"));
+    await act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(result.current).toBe("2026-03-22");
+  });
+
+  it("clears the midnight timer on unmount", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-21T23:59:58"));
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+
+    const { unmount } = renderHook(() => useTodayQueryDate());
+    unmount();
+
+    expect(clearSpy).toHaveBeenCalled();
+    clearSpy.mockRestore();
+  });
 });

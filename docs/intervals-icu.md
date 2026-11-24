@@ -134,8 +134,10 @@ Before enabling the provider in production, record the result of each check.
   Intervals.icu acknowledged the application.
   [Integration rollout record](https://github.com/Asherlc/dofek/pull/3442) ·
   [Vendor approval and grants](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759).
-- [ ] Configure both OAuth keys in the environments where the integration will
-  be offered. Keep the connection unavailable until its release checks pass.
+- [ ] Run live acceptance in an isolated non-production Dofek deployment using
+  an approved OAuth redirect. Configure both keys only in that deployment for
+  testing. Install both production keys after OAuth approval and the
+  acceptance checks below pass.
 - [ ] Connect with a consenting test athlete and verify the granted
   `CALENDAR:READ` scope. Compare populated calendar responses with source
   event IDs, authored fields and units, local dates and times, and events

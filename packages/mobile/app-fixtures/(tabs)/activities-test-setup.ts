@@ -146,7 +146,10 @@ vi.mock("../../lib/trpc", () => ({
             activityMocks.liveQueryClient ?? queryFixtureClient,
           );
           if (activityMocks.livePageFetch) return liveQuery;
-          const page = input.page ?? 0;
+          // Same-range placeholders keep the prior page payload while input.page advances.
+          const page = activityMocks.mockQuery.isPlaceholderData
+            ? (activityMocks.mockQuery.page ?? 0)
+            : (activityMocks.mockQuery.page ?? input.page ?? 0);
           const pageSize = input.pageSize ?? 20;
           let offset = 0;
           const days = activityMocks.mockQuery.data

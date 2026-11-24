@@ -9,7 +9,6 @@ import {
 } from "@dofek/format/activity-agenda";
 import {
   formatDateForDisplay,
-  formatDateYmd,
   formatDurationMinutes,
   isToday,
   isYesterday,
@@ -42,6 +41,7 @@ import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
+import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 
 const ACTIVITY_PAGE_SIZE = 20;
@@ -57,7 +57,7 @@ type ActivitySearchSelection =
 export default function ActivitiesScreen() {
   const router = useRouter();
   const units = useUnitConverter();
-  const today = useMemo(() => formatDateYmd(), []);
+  const today = useTodayQueryDate();
   const [preset, setPreset] = useState<ActivityAgendaPreset>(DEFAULT_PRESET);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
   const [trainingTimeExpanded, setTrainingTimeExpanded] = useState(false);
@@ -93,6 +93,20 @@ export default function ActivitiesScreen() {
     () => ({ startDate: agendaRange.startDate, endDate: agendaRange.endDate }),
     [agendaRange.startDate, agendaRange.endDate],
   );
+  const agendaSpanKey = `${agendaRange.startDate}:${agendaRange.endDate}`;
+  const [observedAgendaSpanKey, setObservedAgendaSpanKey] = useState(agendaSpanKey);
+  const cancelSelection = () => {
+    setSelectedActivities(new Map());
+    setSelectMode(false);
+  };
+  // When start/end change (day rollover or preset), query page 0 and clear selection before paint.
+  const agendaSpanChanged = observedAgendaSpanKey !== agendaSpanKey;
+  if (agendaSpanChanged) {
+    setObservedAgendaSpanKey(agendaSpanKey);
+    setActivityPage(0);
+    cancelSelection();
+  }
+  const resolvedActivityPage = agendaSpanChanged ? 0 : activityPage;
   const lastSportTypes = useRef<string[]>([]);
   const queryInput = useMemo(
     () => ({
@@ -145,8 +159,8 @@ export default function ActivitiesScreen() {
     },
   );
   const pageInput = useMemo(
-    () => ({ ...queryInput, page: activityPage, pageSize: ACTIVITY_PAGE_SIZE }),
-    [queryInput, activityPage],
+    () => ({ ...queryInput, page: resolvedActivityPage, pageSize: ACTIVITY_PAGE_SIZE }),
+    [queryInput, resolvedActivityPage],
   );
   const rangeKey = JSON.stringify(queryInput);
   const lastSuccessfulInput = useRef<{ rangeKey: string; input: typeof pageInput } | undefined>(
@@ -205,7 +219,7 @@ export default function ActivitiesScreen() {
     futureOnly,
     selectedSpan,
     pageData,
-    activityPage,
+    activityPage: resolvedActivityPage,
   });
   const calendarQuery = trpc.calendar.calendarData.useQuery(
     { days: (agendaRange.weeks ?? 1) * 7 },
@@ -277,7 +291,9 @@ export default function ActivitiesScreen() {
     : pageData?.days;
   const listQuery = searching ? searchQuery : query;
   const hasListData = searching ? !!searchQuery.data : !!pageData;
-  const completedSucceeded = futureOnly || query.isSuccess === true;
+  // pageData already drops cross-range placeholders; also require current success so an
+  // errored completed request cannot treat a retained empty payload as settled.
+  const completedSucceeded = futureOnly || (pageData != null && query.isSuccess === true);
   const plannedSucceeded = upcomingQuery.isSuccess === true;
   const agendaDays = useMemo(() => {
     if (searching) {
@@ -324,7 +340,11 @@ export default function ActivitiesScreen() {
     ((futureOnly ? false : query.isLoading && !pageData) ||
       (upcomingQuery.isLoading && upcomingQuery.data == null));
   const showRangeEmpty =
-    !hasAgendaRows && agendaFeedsSettled && completedSucceeded && plannedSucceeded;
+    !hasAgendaRows &&
+    agendaFeedsSettled &&
+    completedSucceeded &&
+    plannedSucceeded &&
+    (futureOnly || pageData?.totalCount === 0);
   // Only count failures the person can actually see: overview and calendar are
   // hidden while searching or on the future-only range, and the calendar is
   // hidden while collapsed.
@@ -347,7 +367,7 @@ export default function ActivitiesScreen() {
   };
   const retryingConnectionFailures = connectionFailures.some((query) => query.isFetching === true);
   const activityCount = pageData?.totalCount ?? 0;
-  const currentActivityPage = pageData?.page ?? activityPage;
+  const currentActivityPage = pageData?.page ?? resolvedActivityPage;
   useEffect(() => {
     if (query.data && !query.isPlaceholderData) setActivityPage(query.data.page);
   }, [query.data, query.isPlaceholderData]);
@@ -364,10 +384,6 @@ export default function ActivitiesScreen() {
       }
       return next;
     });
-  };
-  const cancelSelection = () => {
-    setSelectedActivities(new Map());
-    setSelectMode(false);
   };
   const submitSearch = () => {
     setPlaceLookup(undefined);
@@ -728,89 +744,85 @@ export default function ActivitiesScreen() {
             Workout calendar
           </Text>
           <Text style={styles.activityMeta}>{rangeCaption}</Text>
+          {!futureOnly && listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
+            <QueryStatePanel
+              variant="error"
+              message={userFacingErrorMessage(listQuery.error)}
+              minHeight={72}
+              style={styles.backgroundErrorPanel}
+              onRetry={() => void listQuery.refetch()}
+              retrying={listQuery.isFetching}
+            />
+          ) : null}
+          {upcomingQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              title="Planned workouts: Could not load this section"
+              message={userFacingErrorMessage(upcomingQuery.error)}
+              minHeight={72}
+              onRetry={() => void upcomingQuery.refetch()}
+              retrying={upcomingQuery.isFetching}
+            />
+          ) : null}
           {showAgendaLoading ? (
             <QueryStatePanel variant="loading" minHeight={200} />
+          ) : showRangeEmpty ? (
+            <QueryStatePanel
+              variant="empty"
+              message="No workouts in this date range."
+              minHeight={120}
+            />
           ) : (
-            <>
-              {!futureOnly && listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
-                <QueryStatePanel
-                  variant="error"
-                  message={userFacingErrorMessage(listQuery.error)}
-                  minHeight={72}
-                  style={styles.backgroundErrorPanel}
-                  onRetry={() => void listQuery.refetch()}
-                  retrying={listQuery.isFetching}
-                />
-              ) : null}
-              {upcomingQuery.isError ? (
-                <QueryStatePanel
-                  variant="error"
-                  title="Planned workouts: Could not load this section"
-                  message={userFacingErrorMessage(upcomingQuery.error)}
-                  minHeight={72}
-                  onRetry={() => void upcomingQuery.refetch()}
-                  retrying={upcomingQuery.isFetching}
-                />
-              ) : null}
-              {showRangeEmpty ? (
-                <QueryStatePanel
-                  variant="empty"
-                  message="No workouts in this date range."
-                  minHeight={120}
-                />
-              ) : (
-                agendaDays.map((day) => {
-                  const emptyDay = day.activities.length === 0 && day.workouts.length === 0;
-                  return (
-                    <View key={day.date} style={styles.daySection}>
-                      <View style={styles.dayHeaderRow}>
-                        <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
-                        <View style={styles.dayHeaderRule} />
-                      </View>
-                      {emptyDay && completedSucceeded && plannedSucceeded ? (
-                        <Text style={styles.activityMeta}>No workouts</Text>
-                      ) : emptyDay ? null : (
-                        <>
-                          {day.workouts.map((workout) => (
-                            <PlannedWorkoutCard
-                              key={`${workout.providerId}:${workout.id}`}
-                              workout={workout}
-                            />
-                          ))}
-                          {day.activities.map((activity) => (
-                            <CompletedActivityCard
-                              key={activity.id}
-                              activity={activity}
-                              units={units}
-                              selectMode={selectMode}
-                              selected={selectedActivityIds.has(activity.id)}
-                              showCompleted
-                              onPress={() => {
-                                if (selectMode) {
-                                  toggleSelectedActivity(activity.id, activity.activityType);
-                                  return;
-                                }
-                                router.push(`/activity/${activity.id}`);
-                              }}
-                            />
-                          ))}
-                        </>
-                      )}
-                    </View>
-                  );
-                })
-              )}
-              {!futureOnly ? (
-                <PaginationControls
-                  page={currentActivityPage}
-                  pageSize={ACTIVITY_PAGE_SIZE}
-                  totalItems={activityCount}
-                  itemLabel="activities"
-                  onPageChange={setActivityPage}
-                />
-              ) : null}
-            </>
+            agendaDays.map((day) => {
+              const emptyDay = day.activities.length === 0 && day.workouts.length === 0;
+              return (
+                <View key={day.date} style={styles.daySection}>
+                  <View style={styles.dayHeaderRow}>
+                    <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
+                    <View style={styles.dayHeaderRule} />
+                  </View>
+                  {emptyDay && completedSucceeded && plannedSucceeded ? (
+                    <Text style={styles.activityMeta}>No workouts</Text>
+                  ) : emptyDay ? null : (
+                    <>
+                      {day.workouts.map((workout) => (
+                        <PlannedWorkoutCard
+                          key={`${workout.providerId}:${workout.id}`}
+                          workout={workout}
+                        />
+                      ))}
+                      {day.activities.map((activity) => (
+                        <CompletedActivityCard
+                          key={activity.id}
+                          activity={activity}
+                          units={units}
+                          selectMode={selectMode}
+                          selected={selectedActivityIds.has(activity.id)}
+                          showCompleted
+                          onPress={() => {
+                            if (selectMode) {
+                              toggleSelectedActivity(activity.id, activity.activityType);
+                              return;
+                            }
+                            router.push(`/activity/${activity.id}`);
+                          }}
+                        />
+                      ))}
+                    </>
+                  )}
+                </View>
+              );
+            })
           )}
+          {!futureOnly ? (
+            <PaginationControls
+              page={currentActivityPage}
+              pageSize={ACTIVITY_PAGE_SIZE}
+              totalItems={activityCount}
+              itemLabel="activities"
+              onPageChange={setActivityPage}
+            />
+          ) : null}
         </View>
       )}
     </ScrollView>

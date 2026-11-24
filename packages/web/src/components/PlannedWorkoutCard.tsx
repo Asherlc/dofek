@@ -108,7 +108,9 @@ function StepList({
         if (step.kind === "step") {
           const details = [
             step.text,
-            step.durationSeconds != null ? formatDurationSeconds(step.durationSeconds) : null,
+            step.durationSeconds != null
+              ? formatDurationSeconds(step.durationSeconds, { precision: "second" })
+              : null,
             step.distanceMeters != null
               ? units.formatDistance(step.distanceMeters / 1000).text
               : null,

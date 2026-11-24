@@ -74,6 +74,33 @@ describe("PlannedWorkoutCard", () => {
     expect(screen.queryByText("Some steps aren't available.")).toBeNull();
   });
 
+  it("preserves seconds for a 90-second step duration", () => {
+    render(
+      <PlannedWorkoutCard
+        workout={{
+          id: "short-step",
+          providerId: "intervals.icu",
+          title: "Short interval",
+          description: null,
+          sportType: "cycling",
+          startTime: null,
+          steps: [
+            {
+              kind: "step",
+              text: "Spike",
+              durationSeconds: 90,
+              distanceMeters: null,
+              targets: [],
+            },
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Workout steps" }));
+    expect(screen.getByText(/Spike · 1m 30s/)).toBeDefined();
+  });
+
   it("does not repeat the sport in metadata when it is the fallback title", () => {
     render(
       <PlannedWorkoutCard

@@ -15,6 +15,7 @@ interface MockQuery {
   isPlaceholderData?: boolean;
   plannedWindow?: { startDate: string; endDate: string } | null;
   totalCount?: number;
+  page?: number;
   error: Error | null;
   refetch?: () => void;
 }
@@ -167,7 +168,10 @@ vi.mock("../lib/trpc.ts", () => ({
             liveQueryClient ?? queryFixtureClient,
           );
           if (livePageFetch) return liveQuery;
-          const page = input.page ?? 0;
+          // Same-range placeholders keep the prior page payload while input.page advances.
+          const page = mockQuery.isPlaceholderData
+            ? (mockQuery.page ?? 0)
+            : (mockQuery.page ?? input.page ?? 0);
           const pageSize = input.pageSize ?? 20;
           let offset = 0;
           const days = mockQuery.data
@@ -414,27 +418,30 @@ describe("ActivitiesPage", () => {
 
   it("renders planned rows in the workout calendar without changing completed totals", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date("2026-11-24T15:00:00.000Z"));
-    mockUpcomingQuery = {
-      ...mockUpcomingQuery,
-      data: [
-        {
-          date: "2026-11-26",
-          workouts: [samplePlannedWorkout],
-        },
-      ],
-    };
+    try {
+      vi.setSystemTime(new Date(2026, 10, 24, 12));
+      mockUpcomingQuery = {
+        ...mockUpcomingQuery,
+        data: [
+          {
+            date: "2026-11-26",
+            workouts: [samplePlannedWorkout],
+          },
+        ],
+      };
 
-    render(<ActivitiesPage />);
+      render(<ActivitiesPage />);
 
-    expect(screen.getByRole("heading", { name: "Workout calendar" })).toBeDefined();
-    expect(screen.getByText("Threshold intervals")).toBeDefined();
-    expect(screen.getByText("Planned")).toBeDefined();
-    expect(upcomingQueryInput).toMatchObject({
-      dateRange: { startDate: "2026-11-23", endDate: "2026-11-29" },
-    });
-    expect(screen.getByText("0")).toBeDefined();
-    vi.useRealTimers();
+      expect(screen.getByRole("heading", { name: "Workout calendar" })).toBeDefined();
+      expect(screen.getByText("Threshold intervals")).toBeDefined();
+      expect(screen.getByText("Planned")).toBeDefined();
+      expect(upcomingQueryInput).toMatchObject({
+        dateRange: { startDate: "2026-11-23", endDate: "2026-11-29" },
+      });
+      expect(screen.getByText("0")).toBeDefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   beforeEach(() => {
@@ -1708,7 +1715,7 @@ describe("ActivitiesPage", () => {
   describe("workout calendar agenda", () => {
     beforeEach(() => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
-      vi.setSystemTime(new Date("2026-11-24T15:00:00.000Z"));
+      vi.setSystemTime(new Date(2026, 10, 24, 12));
     });
 
     afterEach(() => {
@@ -1844,8 +1851,10 @@ describe("ActivitiesPage", () => {
           activityTypes: ["cycling", "running"],
         },
       };
-      render(<ActivitiesPage />);
+      const { rerender } = render(<ActivitiesPage />);
       fireEvent.change(screen.getByLabelText("Date range"), { target: { value: "next-90-days" } });
+      mockOverviewQuery = { ...mockOverviewQuery, data: undefined };
+      rerender(<ActivitiesPage />);
 
       expect(weekListOptions?.enabled).toBe(false);
       expect(overviewOptions?.enabled).toBe(false);
@@ -1988,6 +1997,7 @@ describe("ActivitiesPage", () => {
         isError: false,
         isSuccess: true,
         isPlaceholderData: false,
+        page: 0,
         plannedWindow: { startDate: "2026-11-20", endDate: "2026-11-24" },
         totalCount: 40,
         error: null,
@@ -2027,14 +2037,277 @@ describe("ActivitiesPage", () => {
         ],
       };
 
-      render(<ActivitiesPage />);
+      const { rerender } = render(<ActivitiesPage />);
+      fireEvent.change(screen.getByLabelText("Date range"), { target: { value: "4-weeks" } });
+      expect(weekListInput).toMatchObject({
+        startDate: "2026-10-28",
+        endDate: "2026-11-24",
+        page: 0,
+      });
+      expect(screen.getByText("Older ride")).toBeDefined();
+      expect(screen.getByText("Owned page plan")).toBeDefined();
+
       // Same-range soft page: keep prior page payload as placeholder while requesting page 1.
-      mockQuery = { ...mockQuery, isPlaceholderData: true };
+      mockQuery = { ...mockQuery, isPlaceholderData: true, page: 0 };
       fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
 
       expect(weekListInput).toMatchObject({ page: 1 });
+      expect(screen.getByText("Older ride")).toBeDefined();
       expect(screen.getByText("Owned page plan")).toBeDefined();
       expect(screen.queryByText("Outside page plan")).toBeNull();
+
+      mockQuery = {
+        data: [
+          {
+            date: "2026-11-18",
+            activities: [
+              ...Array.from({ length: 20 }, (_, index) =>
+                activity({
+                  id: `pad-${index}`,
+                  name: `Pad ride ${index}`,
+                  startedAt: "2026-11-19T15:00:00.000Z",
+                }),
+              ),
+              activity({
+                id: "newer-page",
+                name: "Next page ride",
+                startedAt: "2026-11-18T15:00:00.000Z",
+              }),
+            ],
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        isSuccess: true,
+        isPlaceholderData: false,
+        page: 1,
+        plannedWindow: { startDate: "2026-11-18", endDate: "2026-11-19" },
+        totalCount: 40,
+        error: null,
+      };
+      mockUpcomingQuery = {
+        ...mockUpcomingQuery,
+        isSuccess: true,
+        data: [
+          {
+            date: "2026-11-18",
+            workouts: [
+              {
+                id: "next-page-plan",
+                providerId: "intervals.icu",
+                title: "Next page plan",
+                description: null,
+                sportType: "cycling",
+                startTime: null,
+                steps: [],
+              },
+            ],
+          },
+          {
+            date: "2026-11-22",
+            workouts: [
+              {
+                id: "owned-plan",
+                providerId: "intervals.icu",
+                title: "Owned page plan",
+                description: null,
+                sportType: "cycling",
+                startTime: null,
+                steps: [],
+              },
+            ],
+          },
+        ],
+      };
+      rerender(<ActivitiesPage />);
+
+      expect(screen.getByText("Next page ride")).toBeDefined();
+      expect(screen.getByText("Next page plan")).toBeDefined();
+      expect(screen.queryByText("Older ride")).toBeNull();
+      expect(screen.queryByText("Owned page plan")).toBeNull();
+    });
+
+    it("resets page and selection when the agenda span rolls into a new week", async () => {
+      vi.setSystemTime(new Date(2026, 10, 29, 23, 59, 58));
+      mockQuery = {
+        data: [
+          {
+            date: "2026-11-29",
+            activities: [
+              activity({
+                id: "sunday-ride",
+                name: "Sunday ride",
+                startedAt: "2026-11-29T18:00:00.000Z",
+              }),
+            ],
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        isSuccess: true,
+        totalCount: 40,
+        error: null,
+      };
+      mockUpcomingQuery = { ...mockUpcomingQuery, data: [], isSuccess: true };
+
+      render(<ActivitiesPage />);
+      expect(weekListInput).toMatchObject({
+        startDate: "2026-11-23",
+        endDate: "2026-11-29",
+        page: 0,
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select Sunday ride" }));
+      expect(screen.getByRole("checkbox", { name: "Select Sunday ride" })).toBeChecked();
+      fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
+      expect(weekListInput).toMatchObject({ page: 1 });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_100);
+      });
+
+      expect(weekListInput).toMatchObject({
+        startDate: "2026-11-30",
+        endDate: "2026-12-06",
+        page: 0,
+      });
+      expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
+      expect(screen.queryByRole("checkbox", { name: "Select Sunday ride" })).toBeNull();
+    });
+
+    it("keeps cached plans when a previous-range completed placeholder is ignored", () => {
+      mockQuery = {
+        data: [
+          {
+            date: "2026-11-10",
+            activities: [activity({ name: "Historical ride" })],
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        isSuccess: true,
+        error: null,
+      };
+      mockUpcomingQuery = { ...mockUpcomingQuery, data: [], isSuccess: true };
+
+      const { rerender } = render(<ActivitiesPage />);
+      fireEvent.change(screen.getByLabelText("Date range"), { target: { value: "4-weeks" } });
+      expect(screen.getByText("Historical ride")).toBeDefined();
+
+      mockQuery = { ...mockQuery, isPlaceholderData: true, isSuccess: true };
+      mockUpcomingQuery = {
+        ...mockUpcomingQuery,
+        isSuccess: true,
+        data: [
+          {
+            date: "2026-11-26",
+            workouts: [
+              {
+                id: "this-week-plan",
+                providerId: "intervals.icu",
+                title: "This week plan",
+                description: null,
+                sportType: "cycling",
+                startTime: null,
+                steps: [],
+              },
+            ],
+          },
+        ],
+      };
+      fireEvent.change(screen.getByLabelText("Date range"), { target: { value: "this-week" } });
+      rerender(<ActivitiesPage />);
+
+      expect(screen.queryByText("Historical ride")).toBeNull();
+      expect(screen.getByText("This week plan")).toBeDefined();
+      expect(screen.queryAllByText("No workouts")).toHaveLength(0);
+      expect(screen.queryByText("No workouts in this date range.")).toBeNull();
+    });
+
+    it.each([
+      {
+        label: "completed",
+        errorText: "Activity history is unavailable.",
+        setup: () => {
+          const completedRefetch = vi.fn();
+          mockQuery = {
+            data: undefined,
+            isLoading: false,
+            isError: true,
+            isSuccess: false,
+            error: new Error("Activity history is unavailable."),
+            refetch: completedRefetch,
+          };
+          mockUpcomingQuery = {
+            ...mockUpcomingQuery,
+            data: undefined,
+            isLoading: true,
+            isFetching: true,
+            isSuccess: false,
+            isError: false,
+            error: null,
+            refetch: vi.fn(),
+          };
+          return completedRefetch;
+        },
+      },
+      {
+        label: "planned",
+        errorText: "Schedule is temporarily unavailable.",
+        setup: () => {
+          const plannedRefetch = vi.fn();
+          mockQuery = {
+            data: undefined,
+            isLoading: true,
+            isError: false,
+            isSuccess: false,
+            error: null,
+            refetch: vi.fn(),
+          };
+          mockUpcomingQuery = {
+            ...mockUpcomingQuery,
+            data: undefined,
+            isLoading: false,
+            isFetching: false,
+            isSuccess: false,
+            isError: true,
+            error: new Error("Schedule is temporarily unavailable."),
+            refetch: plannedRefetch,
+          };
+          return plannedRefetch;
+        },
+      },
+    ] as const)(
+      "keeps a $label feed error visible while the other feed is still loading",
+      ({ errorText, setup }) => {
+        const retry = setup();
+        render(<ActivitiesPage />);
+
+        expect(screen.getByText(errorText)).toBeDefined();
+        expect(screen.getByTestId("query-state-loading")).toBeDefined();
+        expect(screen.queryByText("No workouts in this date range.")).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+        expect(retry).toHaveBeenCalledOnce();
+      },
+    );
+
+    it("hides range-level empty when the visible page is empty but the range still has activities", () => {
+      mockQuery = {
+        data: [],
+        isLoading: false,
+        isError: false,
+        isSuccess: true,
+        totalCount: 40,
+        page: 1,
+        error: null,
+      };
+      mockUpcomingQuery = { ...mockUpcomingQuery, data: [], isSuccess: true };
+
+      render(<ActivitiesPage />);
+
+      expect(screen.queryByText("No workouts in this date range.")).toBeNull();
+      expect(screen.getByRole("navigation", { name: "activities pagination" })).toBeDefined();
+      expect(screen.getByRole("button", { name: "Previous activities page" })).toBeDefined();
     });
 
     it("keeps completed totals when the planned feed fails", () => {
