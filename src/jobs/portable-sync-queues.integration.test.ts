@@ -1,6 +1,7 @@
 import type { ConnectionOptions, Processor } from "bullmq";
 import { type Queue, RedisConnection, Worker } from "bullmq";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { captureException } from "../lib/error-reporting.ts";
 import { runPortableSyncQueues } from "./portable-sync-queues.ts";
 import { createPortableSyncSlot } from "./portable-sync-slot.ts";
 import { getProviderQueueConfig } from "./provider-queue-config.ts";
@@ -10,6 +11,11 @@ import {
   providerSyncQueueName,
   type SyncJobData,
 } from "./queues.ts";
+
+vi.mock("../lib/error-reporting.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/error-reporting.ts")>()),
+  captureException: vi.fn(),
+}));
 
 /**
  * Real-Redis coverage for the portable one-job-at-a-time queue selector.
@@ -83,7 +89,11 @@ describe("portable sync queues (integration)", () => {
     return queue;
   }
 
-  function start(providerIds: string[], processor: Processor<SyncJobData>): AbortController {
+  function start(
+    providerIds: string[],
+    processor: Processor<SyncJobData>,
+    slotOverride?: ReturnType<typeof createPortableSyncSlot>,
+  ): AbortController {
     const controller = new AbortController();
     const done = slotConnection.client.then((redis) => {
       return runPortableSyncQueues({
@@ -91,7 +101,7 @@ describe("portable sync queues (integration)", () => {
         connection,
         processor,
         signal: controller.signal,
-        slot: createPortableSyncSlot(redis),
+        slot: slotOverride ?? createPortableSyncSlot(redis),
         onReady: () => {},
       });
     });
@@ -154,6 +164,32 @@ describe("portable sync queues (integration)", () => {
     controller.abort();
   }, 30_000);
 
+  it("keeps the slot advertised across idle sweeps when the only job is delayed", async () => {
+    const queue = await freshQueue("wahoo");
+    await queue.add("sync", { userId: "future-user" }, { delay: 60_000 });
+    const slot = createPortableSyncSlot(await slotConnection.client, `${queue.qualifiedName}:slot`);
+    const claims: Array<string | null> = [];
+    let sweeps = 0;
+    const controller = start(["wahoo"], async () => expect.unreachable("Job is still delayed"), {
+      ...slot,
+      async renew() {
+        const offer = await slot.renew();
+        sweeps += 1;
+        return offer;
+      },
+      async take(offer) {
+        claims.push(offer);
+        return slot.take(offer);
+      },
+    });
+
+    await waitFor(() => sweeps >= 2, 5_000);
+    expect(claims).toEqual([]);
+    expect(await slot.offer("wahoo")).toBe(true);
+    controller.abort();
+    await slot.take("wahoo");
+  }, 15_000);
+
   it("skips a rate-limited provider without delaying other queues", async () => {
     const providerIds = ["whoop", "wahoo"];
     const [limited, ready] = await Promise.all([freshQueue("whoop"), freshQueue("wahoo")]);
@@ -204,8 +240,8 @@ describe("portable sync queues (integration)", () => {
     });
     cleanups.push(async () => native.close());
     try {
-      for (let i = 0; i < 4; i += 1) {
-        await queue.add("sync", { userId: `shared-${i}` });
+      for (let jobNumber = 0; jobNumber < 4; jobNumber += 1) {
+        await queue.add("sync", { userId: `shared-${jobNumber}` });
       }
       await waitFor(() => active === 1, 5_000);
       expect(await queue.getGlobalConcurrency()).toBe(cap);
@@ -257,11 +293,12 @@ describe("portable sync queues (integration)", () => {
       { attempts: 2, backoff: { type: "fixed", delay: 50 } },
     );
 
+    const failure = new Error("first attempt fails");
     const attempts: number[] = [];
     const controller = start(providerIds, async (job) => {
       attempts.push(job.attemptsMade);
       if (job.attemptsMade === 0) {
-        throw new Error("first attempt fails");
+        throw failure;
       }
     });
 
@@ -272,6 +309,9 @@ describe("portable sync queues (integration)", () => {
     // to delayed, and the next sweep's delayed-count check opens a fresh worker
     // that promotes and runs the retry. No selector-level retry is involved.
     expect(attempts).toEqual([0, 1]);
+    expect(captureException).toHaveBeenCalledWith(failure, {
+      tags: { source: "portable-sync-worker", queue: queue.name },
+    });
   }, 30_000);
 
   it("promotes a due delayed job through a short-lived worker", async () => {
@@ -282,8 +322,8 @@ describe("portable sync queues (integration)", () => {
     expect(await job.getState()).toBe("delayed");
 
     const processed: string[] = [];
-    const controller = start(providerIds, async (j) => {
-      processed.push(j.data.userId);
+    const controller = start(providerIds, async (job) => {
+      processed.push(job.data.userId);
     });
 
     await waitFor(() => processed.includes("delayed-user"), 6_000);

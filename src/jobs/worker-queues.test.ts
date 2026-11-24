@@ -144,6 +144,7 @@ describe("worker queues", () => {
 
   it.each([
     { configured: "kilter", limited: false, yielded: true },
+    { configured: "tension, kilter, ", limited: false, yielded: true },
     { configured: "tension", limited: false, yielded: false },
     { configured: "kilter", limited: true, yielded: false },
   ])(
@@ -162,7 +163,12 @@ describe("worker queues", () => {
         limiter: limited ? { max: 1, duration: 1000 } : undefined,
       });
       const handoff = new Error("job returned to the queue");
-      if (yielded) vi.mocked(yieldSyncToPortableWorker).mockRejectedValueOnce(handoff);
+      if (yielded) {
+        vi.mocked(yieldSyncToPortableWorker).mockImplementationOnce(async (getSlot) => {
+          await getSlot();
+          throw handoff;
+        });
+      }
 
       try {
         createWorkerQueues(dependencies);
@@ -175,7 +181,7 @@ describe("worker queues", () => {
           await expect(job).rejects.toBe(handoff);
           expect(createPortableSyncSlot).toHaveBeenCalledOnce();
           expect(yieldSyncToPortableWorker).toHaveBeenCalledWith(
-            undefined,
+            expect.any(Function),
             expect.objectContaining({ name: "sync-kilter" }),
             "kilter",
             expect.objectContaining({ data: { providerId: "kilter", userId: "fixture" } }),

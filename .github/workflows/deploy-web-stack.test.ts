@@ -533,6 +533,26 @@ describe("deploy-web-stack workflow contract", () => {
     },
   );
 
+  it("polls the staged Fly Machine version for started state and provider-sync-ready after start --wait", () => {
+    const step = "Start the verified production worker image on Fly";
+    const script = workflowRunScript(step);
+    const startAt = script.indexOf('flyctl machine start --app "$FLY_SYNC_APP_NAME" --wait "$MACHINE_ID"');
+    expect(script).toContain('flyctl machine update "$MACHINE_ID" --app "$FLY_SYNC_APP_NAME"');
+    expect(script).toContain("--skip-start --yes");
+    expect(startAt).toBeGreaterThan(script.indexOf("flyctl machine update"));
+    const afterStart = script.slice(startAt);
+    expect(afterStart).toContain('flyctl machines list --app "$FLY_SYNC_APP_NAME" --json');
+    expect(afterStart).toContain('.[0].state == "started"');
+    expect(afterStart).toContain('.name == "provider-sync-ready" and .status == "passing"');
+    expect(afterStart).toMatch(/\.version == \$version|\.version == \$staged_version/);
+    expect(afterStart).toContain("deadline=$((SECONDS +");
+    expect(afterStart).toContain('echo "Fly production runner ${MACHINE_ID} version ${staged_version} started"');
+    expect(afterStart).toContain('"provider-sync-ready": ([.checks[]? | select(.name == "provider-sync-ready") | .status] | first // null)');
+    expect(afterStart).toMatch(/map\(\{\s*id,\s*version,\s*state,/);
+    expect(afterStart).not.toContain(".config");
+    expect(afterStart).not.toContain(".output");
+  });
+
   it.each([
     ["Deploy stack without ClickHouse consumers", "web.env", deployTestRepository + "@" + deployTestDigest],
     ["Deploy and verify remaining services", "web.env", deployTestRepository + "@" + deployTestDigest],

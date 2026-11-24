@@ -13,7 +13,11 @@ afterEach(async () => {
 });
 afterAll(() => redisConnection.close());
 
-async function fixture() {
+async function fixture(
+  getSlot?: (
+    slot: ReturnType<typeof createPortableSyncSlot>,
+  ) => Promise<ReturnType<typeof createPortableSyncSlot>>,
+) {
   const queue = new Queue<SyncJobData>(`portable-slot-test-${randomUUID()}`, { connection });
   const redis = await redisConnection.client;
   const slot = createPortableSyncSlot(redis, `${queue.qualifiedName}:slot`);
@@ -30,7 +34,13 @@ async function fixture() {
   const oracle: Worker<SyncJobData> = new Worker<SyncJobData>(
     queue.name,
     async (job, token) => {
-      await yieldSyncToPortableWorker(slot, oracle, "test-provider", job, token);
+      await yieldSyncToPortableWorker(
+        async () => getSlot?.(slot) ?? slot,
+        oracle,
+        "test-provider",
+        job,
+        token,
+      );
       processed.push("oracle");
     },
     { connection, autorun: false },
@@ -80,4 +90,26 @@ describe("portable sync preference with Redis", () => {
     await finished;
     expect(processed).toEqual(["oracle"]);
   }, 10_000);
+
+  it.each(["connection", "offer"])(
+    "runs locally on the first attempt after a reservation %s fails",
+    async (stage) => {
+      const { queue, slot, oracle, processed, finished } = await fixture(async (availableSlot) => {
+        if (stage === "connection") throw new Error("Reservation connection failed");
+        return {
+          ...availableSlot,
+          async offer() {
+            throw new Error("Reservation command timed out");
+          },
+        };
+      });
+      await slot.renew();
+      const job = await queue.add("sync", { userId: "fixture-user" }, { attempts: 2 });
+      void oracle.run();
+      await finished;
+      expect(processed).toEqual(["oracle"]);
+      expect((await queue.getJob(job.id ?? ""))?.attemptsMade).toBe(1);
+    },
+    10_000,
+  );
 });

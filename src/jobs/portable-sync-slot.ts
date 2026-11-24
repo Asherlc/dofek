@@ -53,13 +53,22 @@ export function createPortableSyncSlot(
 }
 
 export async function yieldSyncToPortableWorker(
-  slot: ReturnType<typeof createPortableSyncSlot>,
+  getSlot: () => Promise<ReturnType<typeof createPortableSyncSlot>>,
   worker: Pick<Worker<SyncJobData>, "pause" | "resume" | "closing">,
   providerId: string,
   job: Job<SyncJobData>,
   token?: string,
 ): Promise<void> {
-  if (!token || job.attemptsStarted !== 1 || !(await slot.offer(providerId))) return;
+  if (!token || job.attemptsStarted !== 1) return;
+  try {
+    const slot = await getSlot();
+    if (!(await slot.offer(providerId))) return;
+  } catch (error) {
+    captureException(error, {
+      tags: { source: "portable-sync-reservation", provider: providerId },
+    });
+    return;
+  }
 
   // BullMQ keeps the same job and retry budget. The local pause gives the
   // portable worker time to claim it before Oracle resumes the queue.

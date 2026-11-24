@@ -34,20 +34,23 @@ export interface RunPortableSyncQueuesInput {
 
 /**
  * Decide whether a candidate justifies opening a short-lived worker. The
- * persistent Queue instances already hold their Redis connections, so this is
- * a single pipelined count rather than two new clients per candidate per sweep.
+ * persistent Queue instances already hold their Redis connections, so counts
+ * avoid opening two new clients per candidate per sweep.
  *
- * `wait`/`prioritized` are immediately claimable. `delayed` is included because BullMQ's Worker is
- * what promotes a due delayed job into `wait` on its first ticks — without a
- * worker, a due delayed job would never leave the delayed set on this host.
+ * BullMQ workers claim waiting and prioritized jobs immediately and promote
+ * due delayed jobs on their first ticks.
  *
  * Stalled jobs are deliberately not a trigger: the Oracle worker that stays on
  * each eligible queue owns stalled recovery via `moveStalledJobsToWait()`. Our
  * short-lived workers pause and close cleanly, so they do not create stalls.
  */
 async function hasRunnableWork(queue: Queue<SyncJobData>): Promise<boolean> {
-  const counts = await queue.getJobCounts("wait", "prioritized", "delayed");
-  return (counts.wait ?? 0) + (counts.prioritized ?? 0) + (counts.delayed ?? 0) > 0;
+  const [counts, due] = await Promise.all([
+    queue.getJobCounts("wait", "prioritized"),
+    // BullMQ counts delayed jobs strictly before the supplied millisecond.
+    queue.getDelayedCount(Date.now() + 1),
+  ]);
+  return (counts.wait ?? 0) + (counts.prioritized ?? 0) + due > 0;
 }
 
 /**
@@ -85,12 +88,15 @@ async function claimOne(
       ...(config.limiter ? { limiter: config.limiter } : {}),
     },
   );
-  // Keep transient connection/Redis errors observable without letting them
-  // become unhandled EventEmitter 'error' events. Job failures are reported by
-  // the caller's processor and by BullMQ's own `failed` event.
+  // BullMQ emits worker errors separately from failed job attempts.
   worker.on("error", (error) => {
     captureException(error, {
       tags: { source: "portable-sync-selector", queue: queue.name },
+    });
+  });
+  worker.on("failed", (_job, error) => {
+    captureException(error, {
+      tags: { source: "portable-sync-worker", queue: queue.name },
     });
   });
 
@@ -190,6 +196,7 @@ export async function runPortableSyncQueues({
           },
           signal,
         );
+        if (!claimed && !offered && !signal.aborted) await slot.renew();
         break;
       }
       if (!claimed && !signal.aborted) {

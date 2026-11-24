@@ -1846,7 +1846,44 @@ jobs:
           [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
           flyctl machine update "$MACHINE_ID" --app "$FLY_SYNC_APP_NAME" \
             --image "registry.fly.io/$FLY_SYNC_APP_NAME@$IMAGE_DIGEST" --skip-start --yes
+          staged_version="$(flyctl machines list --app "$FLY_SYNC_APP_NAME" --json | jq -er --arg id "$MACHINE_ID" '
+            map(select(.id == $id))
+            | if length == 1 and .[0].config.checks["provider-sync-ready"] != null
+              then .[0].version
+              else error("updated Fly production runner is missing or lacks provider-sync-ready")
+              end
+          ')"
           flyctl machine start --app "$FLY_SYNC_APP_NAME" --wait "$MACHINE_ID"
+          # machine start --wait skips health checks when the start payload has no
+          # runtime check entries (pinned flyctl 0.5.16). Poll list --json for the
+          # staged Machine version after start.
+          # https://github.com/superfly/flyctl/blob/fd050512152def8fc78ee1cc01ca9b0d374ee15e/internal/command/machine/start.go#L105
+          deadline=$((SECONDS + 180))
+          while true; do
+            if flyctl machines list --app "$FLY_SYNC_APP_NAME" --json | jq -e --arg id "$MACHINE_ID" --arg version "$staged_version" '
+              map(select(.id == $id and .version == $version))
+              | length == 1
+                and .[0].state == "started"
+                and ([.[0].checks[]? | select(.name == "provider-sync-ready" and .status == "passing")] | length) == 1
+            ' >/dev/null; then
+              echo "Fly production runner ${MACHINE_ID} version ${staged_version} started"
+              break
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              flyctl machines list --app "$FLY_SYNC_APP_NAME" --json | jq --arg id "$MACHINE_ID" '
+                map(select(.id == $id))
+                | map({
+                    id,
+                    version,
+                    state,
+                    "provider-sync-ready": ([.checks[]? | select(.name == "provider-sync-ready") | .status] | first // null)
+                  })
+              '
+              echo "::error::Fly production runner did not report provider-sync-ready passing before timeout"
+              exit 124
+            fi
+            sleep 5
+          done
 
       - name: Remove unused Apple private key Swarm secrets
         if: steps.deploy_stack_full.outcome == 'success'

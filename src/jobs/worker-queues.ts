@@ -32,7 +32,11 @@ import { processScheduledSyncJob } from "./process-scheduled-sync-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
 import { processZipEntryExtractJob } from "./process-zip-entry-extract-job.ts";
 import { createProviderDataDeletionDependencies } from "./provider-data-deletion-dependencies.ts";
-import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
+import {
+  getConfiguredProviderIds,
+  getProviderQueueConfig,
+  parseSyncWorkerProviders,
+} from "./provider-queue-config.ts";
 import { createProviderSyncProcessor } from "./provider-sync-processor.ts";
 import {
   ACTIVITY_DELETE_ANALYTICS_QUEUE,
@@ -89,7 +93,7 @@ export function createWorkerQueues({
 
   const providerWorkers = new Map<string, Worker<SyncJobData>>();
   const providerSyncProcessor = createProviderSyncProcessor(db, accountErasureWorkLockPool);
-  const portableProviders = new Set(process.env.SYNC_WORKER_PROVIDERS?.split(","));
+  const portableProviders = parseSyncWorkerProviders(process.env.SYNC_WORKER_PROVIDERS);
 
   for (const providerId of getConfiguredProviderIds()) {
     const config = getProviderQueueConfig(providerId);
@@ -97,8 +101,13 @@ export function createWorkerQueues({
       providerSyncQueueName(providerId),
       async (job, token, signal) => {
         if (portableProviders.has(providerId) && !config.limiter) {
-          const slot = createPortableSyncSlot(await getSharedRedisConnection().client);
-          await yieldSyncToPortableWorker(slot, worker, providerId, job, token);
+          await yieldSyncToPortableWorker(
+            async () => createPortableSyncSlot(await getSharedRedisConnection().client),
+            worker,
+            providerId,
+            job,
+            token,
+          );
         }
         return providerSyncProcessor(job, token, signal);
       },

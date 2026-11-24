@@ -8,7 +8,11 @@ import { prepareProviderWorker } from "./account-erasure-startup.ts";
 import { createAccountErasureWorkLockPoolFromEnv } from "./account-erasure-work-guard.ts";
 import { runPortableSyncQueues } from "./portable-sync-queues.ts";
 import { createPortableSyncSlot } from "./portable-sync-slot.ts";
-import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
+import {
+  getConfiguredProviderIds,
+  getProviderQueueConfig,
+  parseSyncWorkerProviders,
+} from "./provider-queue-config.ts";
 import { createProviderSyncProcessor } from "./provider-sync-processor.ts";
 import { closeAllQueueResources, getRedisConnection, getSharedRedisConnection } from "./queues.ts";
 
@@ -26,13 +30,7 @@ function eligibleProviderIds(allowed: string[]): string[] {
   return allowed;
 }
 
-const allowed = Array.from(
-  new Set(
-    process.env.SYNC_WORKER_PROVIDERS?.split(",")
-      .map((id) => id.trim())
-      .filter(Boolean),
-  ),
-);
+const allowed = [...parseSyncWorkerProviders(process.env.SYNC_WORKER_PROVIDERS)];
 if (allowed.length === 0) throw new Error("SYNC_WORKER_PROVIDERS is required");
 if (!process.env.REDIS_URL) throw new Error("REDIS_URL is required");
 
