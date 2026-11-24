@@ -372,6 +372,7 @@ vi.mock("../queues.ts", () => ({
     }),
   },
   getRedisConnection: vi.fn(() => ({})),
+  getSharedRedisConnection: vi.fn(() => ({ client: Promise.resolve({}) })),
   getImportQueue: vi.fn(() => ({})),
   getActivityImageQueue: vi.fn(() => ({ add: vi.fn(async () => ({})) })),
   getDataExportQueue: vi.fn(() => ({})),

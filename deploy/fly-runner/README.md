@@ -26,6 +26,9 @@ Set `production_sync = true` in the Fly root inputs. Review and apply the
 Fly plan, then apply the OCI Terraform plan that enables UDP 51820 on the
 existing host. The Oracle stack's WireGuard gateway authenticates one
 configured peer and relays Redis, PostgreSQL, and OTLP only on its tunnel IP.
+The runner entry point configures the WireGuard interface with network
+administration privileges, clears the peer key environment variables, and
+starts the Node worker as UID and GID 1000.
 The Fly production release checks the singleton Machine's configuration and
 waits for its private readiness check. [Fly Machine checks](https://docs.fly.io/reference/health-checks/)
 

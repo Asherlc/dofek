@@ -20,7 +20,9 @@ export async function runAccountErasureRestoreStartupGate<T>(
   }
 }
 
-export async function prepareProviderWorker(database: Database): Promise<void> {
+export async function prepareProviderWorker(
+  database: Pick<Database, "execute" | "transaction">,
+): Promise<void> {
   validateAccountErasureLedgerKeyring();
   const ledger = createAccountErasureRestoreLedgerFromEnv();
   await ensureProvidersRegistered();

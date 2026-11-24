@@ -3,6 +3,9 @@ import { CatalogueSearchError } from "@dofek/climbing-catalogue";
 import { KayaCatalogueUnavailableError } from "@dofek/climbing-catalogue/kaya";
 import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
+import { createPortableSyncSlot, yieldSyncToPortableWorker } from "./portable-sync-slot.ts";
+import { processSyncJob } from "./process-sync-job.ts";
+import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
 import { createWorkerQueues } from "./worker-queues.ts";
 import {
   EXPECTED_WORKER_COUNT,
@@ -18,6 +21,12 @@ import {
 
 const dependencies = await workerQueueDependencies();
 createWorkerQueues(dependencies);
+
+vi.mock("./portable-sync-slot.ts", () => ({
+  createPortableSyncSlot: vi.fn(),
+  yieldSyncToPortableWorker: vi.fn(),
+}));
+
 describe("worker queues", () => {
   it("creates per-provider workers plus standard workers", async () => {
     const { Worker } = await import("bullmq");
@@ -132,6 +141,59 @@ describe("worker queues", () => {
 
     expect(processSyncJob).toHaveBeenCalledWith(expect.any(Object), mockDatabase, signal);
   });
+
+  it.each([
+    { configured: "kilter", limited: false, yielded: true },
+    { configured: "tension", limited: false, yielded: false },
+    { configured: "kilter", limited: true, yielded: false },
+  ])(
+    "offers only configured queues without a limiter ($configured, limited=$limited)",
+    async ({ configured, limited, yielded }) => {
+      const { Worker } = await import("bullmq");
+      vi.mocked(Worker).mockClear();
+      vi.mocked(processSyncJob).mockClear();
+      vi.mocked(createPortableSyncSlot).mockClear();
+      vi.mocked(yieldSyncToPortableWorker).mockClear();
+      vi.stubEnv("SYNC_WORKER_PROVIDERS", configured);
+      vi.mocked(getConfiguredProviderIds).mockReturnValueOnce(["kilter"]);
+      vi.mocked(getProviderQueueConfig).mockReturnValueOnce({
+        concurrency: 1,
+        syncTier: "daily",
+        limiter: limited ? { max: 1, duration: 1000 } : undefined,
+      });
+      const handoff = new Error("job returned to the queue");
+      if (yielded) vi.mocked(yieldSyncToPortableWorker).mockRejectedValueOnce(handoff);
+
+      try {
+        createWorkerQueues(dependencies);
+        const job = invokeProcessor(
+          "sync-kilter",
+          { providerId: "kilter", userId: "fixture" },
+          "claim",
+        );
+        if (yielded) {
+          await expect(job).rejects.toBe(handoff);
+          expect(createPortableSyncSlot).toHaveBeenCalledOnce();
+          expect(yieldSyncToPortableWorker).toHaveBeenCalledWith(
+            undefined,
+            expect.objectContaining({ name: "sync-kilter" }),
+            "kilter",
+            expect.objectContaining({ data: { providerId: "kilter", userId: "fixture" } }),
+            "claim",
+          );
+          expect(processSyncJob).not.toHaveBeenCalled();
+        } else {
+          await job;
+          expect(yieldSyncToPortableWorker).not.toHaveBeenCalled();
+          expect(processSyncJob).toHaveBeenCalledOnce();
+        }
+      } finally {
+        vi.unstubAllEnvs();
+        vi.mocked(Worker).mockClear();
+        createWorkerQueues(dependencies);
+      }
+    },
+  );
 
   it("shared sync processor delegates to processSyncJob with cancellation", async () => {
     const { processSyncJob } = await import("./process-sync-job.ts");
