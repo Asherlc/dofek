@@ -11,12 +11,17 @@
   workspace now pins Vitest and its V8 coverage provider to 5.1.1, which
   clears the expired timer before checking whether to flush.
   [Upstream fix](https://github.com/vitest-dev/vitest/commit/8e837b87a219791afa554df659f6cd9b62829b63)
-- **Validation and follow-up.** The reporter test failed locally on 5.0.5.
+- **Validation.** The reporter test failed locally on 5.0.5.
   A deterministic timer fixture reproduced the dropped update on 5.0.5 and
   observed it flush on 5.1.1. The real reporter test passed on 5.1.1 with V8
   coverage enabled. The integration timing reporter also validates the selected
   files because Vitest 5.1.1 now applies sharding before reporting the run start.
   [Vitest 5.1.1 release notes](https://github.com/vitest-dev/vitest/releases/tag/v5.1.1)
+- **Remaining risk and follow-up.** The required server unit job passed on
+  GitHub. The first Fly release still needs to show `provider-sync-ready`
+  passing on the deployed Machine version and Axiom events from both hosts.
+  [Passing CI job](https://github.com/Asherlc/dofek/actions/runs/45409126832/job/138499652967)
+  · [Host attribution query](../deploy/fly-runner/README.md#see-which-host-ran-sync-jobs)
 
 ## 2026-11-23 — Sleep heart-rate refresh consumes ClickHouse CPU
 
