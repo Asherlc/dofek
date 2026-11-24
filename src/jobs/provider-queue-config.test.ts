@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CyclingAnalyticsProvider } from "../providers/cycling-analytics.ts";
 import {
   DEFAULT_QUEUE_CONFIG,
@@ -53,8 +53,12 @@ describe("getProviderQueueConfig", () => {
     expect(config.syncTier).toBe("daily");
   });
 
-  it("runs Trailforks syncs daily with one worker", () => {
-    expect(getProviderQueueConfig("trailforks")).toStrictEqual({
+  it("runs Trailforks syncs daily with one worker", async () => {
+    // Initialize the queue map while the test is active so Stryker can mutate it.
+    vi.resetModules();
+    const queueConfig = await import("./provider-queue-config.ts");
+
+    expect(queueConfig.getProviderQueueConfig("trailforks")).toStrictEqual({
       concurrency: 1,
       syncTier: "daily",
     });

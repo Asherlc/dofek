@@ -174,4 +174,198 @@ describe("parseTrailforksActivityListResult", () => {
   it("accepts an empty activities list", () => {
     expect(parseTrailforksActivityListResult(structuredResult({ activities: [] }))).toEqual([]);
   });
+
+  it("maps string sport labels and ignores blank titles", () => {
+    const parsed = parseTrailforksActivityListResult(
+      structuredResult({
+        activities: [
+          {
+            id: 3,
+            title: "   ",
+            name: "  Named ride  ",
+            started_at: "2026-09-19T16:30:00Z",
+            sport: "hiking",
+          },
+        ],
+      }),
+    );
+
+    expect(parsed[0]).toMatchObject({
+      externalId: "3",
+      name: "Named ride",
+      // String sports keep the upstream label as providerType; canonical falls back to other.
+      activityType: { canonicalType: "other", modality: null, providerType: "hiking" },
+    });
+  });
+
+  it("rejects non-record rows, inverted ends, and non-object list envelopes", () => {
+    expect(() =>
+      parseTrailforksActivityListResult(structuredResult({ activities: [null] })),
+    ).toThrow(TrailforksActivityParseError);
+    expect(() =>
+      parseTrailforksActivityListResult(
+        structuredResult({
+          activities: [
+            {
+              id: 1,
+              started_at: "2026-09-19T18:00:00Z",
+              ended_at: "2026-09-19T17:00:00Z",
+            },
+          ],
+        }),
+      ),
+    ).toThrow(TrailforksActivityParseError);
+    expect(() =>
+      parseTrailforksActivityListResult(structuredResult({ activities: "nope" })),
+    ).toThrow(TrailforksActivityParseError);
+    expect(() => parseTrailforksActivityListResult(structuredResult({}))).toThrow(
+      TrailforksActivityParseError,
+    );
+  });
+
+  it("rejects invalid text payloads and non-text content blocks", () => {
+    expect(() =>
+      parseTrailforksActivityListResult({
+        content: [{ type: "text", text: "not-json" }],
+      }),
+    ).toThrow(TrailforksActivityParseError);
+    expect(() =>
+      parseTrailforksActivityListResult({
+        content: [
+          { type: "text", text: "[]" },
+          { type: "text", text: "[]" },
+        ],
+      }),
+    ).toThrow(TrailforksActivityParseError);
+    expect(() =>
+      parseTrailforksActivityListResult({
+        content: [{ type: "image", data: "abc", mimeType: "image/png" }],
+      }),
+    ).toThrow(TrailforksActivityParseError);
+  });
+
+  it("accepts non-www ridelog URLs with optional slash and query/hash", () => {
+    const parsed = parseTrailforksActivityListResult(
+      structuredResult({
+        activities: [
+          {
+            link: "https://trailforks.com/ridelog/view/77881?x=1#y",
+            started_at: "2026-01-02T10:00:00+00:00",
+          },
+        ],
+      }),
+    );
+    expect(parsed[0]?.externalId).toBe("77881");
+  });
+
+  it("rejects prefixed or non-https ridelog URLs and non-digit ids in the path", () => {
+    for (const link of [
+      "prefixhttps://www.trailforks.com/ridelog/view/1/",
+      "http://www.trailforks.com/ridelog/view/1/",
+      "https://www.trailforks.com/ridelog/view/12abc/",
+      "https://www.trailforks.com/ridelog/view/",
+      "https://evil.example/https://www.trailforks.com/ridelog/view/1/",
+    ]) {
+      expect(() =>
+        parseTrailforksActivityListResult(
+          structuredResult({
+            activities: [{ link, started_at: "2026-01-02T10:00:00+00:00" }],
+          }),
+        ),
+      ).toThrow(TrailforksActivityParseError);
+    }
+  });
+
+  it("ignores non-finite numeric fields when reading activity types", () => {
+    const parsed = parseTrailforksActivityListResult(
+      structuredResult({
+        activities: [
+          {
+            id: 8,
+            started_at: "2026-09-19T16:30:00Z",
+            activitytype: Number.NaN,
+            sport: "running",
+          },
+        ],
+      }),
+    );
+    expect(parsed[0]?.activityType).toMatchObject({
+      canonicalType: "other",
+      providerType: "running",
+    });
+  });
+
+  it("accepts equal start and end timestamps", () => {
+    const parsed = parseTrailforksActivityListResult(
+      structuredResult({
+        activities: [
+          {
+            id: 4,
+            started_at: "2026-09-19T16:30:00Z",
+            ended_at: "2026-09-19T16:30:00Z",
+          },
+        ],
+      }),
+    );
+    expect(parsed[0]?.endedAt).toEqual(new Date("2026-09-19T16:30:00Z"));
+  });
+
+  it("does not treat non-integer numeric activity types as mapped sports", () => {
+    const parsed = parseTrailforksActivityListResult(
+      structuredResult({
+        activities: [
+          {
+            id: 5,
+            started_at: "2026-09-19T16:30:00Z",
+            activitytype: 1.5,
+          },
+        ],
+      }),
+    );
+    expect(parsed[0]).not.toHaveProperty("activityType");
+  });
+
+  it("rejects array and null structured payloads that are not activity lists", () => {
+    expect(() =>
+      parseTrailforksActivityListResult({
+        content: [],
+        structuredContent: null,
+      }),
+    ).toThrow(TrailforksActivityParseError);
+    expect(() =>
+      parseTrailforksActivityListResult({
+        content: [{ type: "text", text: '{"activities":null}' }],
+      }),
+    ).toThrow(TrailforksActivityParseError);
+  });
+
+  it("prefers structuredContent over text and ignores non-text content blocks", () => {
+    const parsedFromStructured = parseTrailforksActivityListResult({
+      content: [{ type: "text", text: "not-used" }],
+      structuredContent: { activities: [SYNTHETIC_ACTIVITY] },
+    });
+    expect(parsedFromStructured[0]?.externalId).toBe("42001");
+
+    const parsedFromText = parseTrailforksActivityListResult({
+      content: [
+        { type: "image", data: "abc", mimeType: "image/png" },
+        { type: "text", text: JSON.stringify([SYNTHETIC_ACTIVITY]) },
+      ],
+    });
+    expect(parsedFromText[0]?.externalId).toBe("42001");
+  });
+
+  it("maps every documented numeric activitytype used by the provider", () => {
+    for (const id of [1, 2, 5, 6, 10, 11, 12, 13, 17, 18, 19] as const) {
+      expect(mapTrailforksActivityType(id).canonicalType).not.toBe("other");
+      expect(mapTrailforksActivityType(id).providerType).toBe(String(id));
+    }
+    expect(mapTrailforksActivityType(12)).toEqual({
+      canonicalType: "skiing",
+      modality: null,
+      providerType: "12",
+    });
+    expect(mapTrailforksActivityType(17).canonicalType).toBe("cycling");
+    expect(mapTrailforksActivityType(18).canonicalType).toBe("cycling");
+  });
 });

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { Client } from "@modelcontextprotocol/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProviderAccessDeniedError, ProviderAuthorizationFailedError } from "../auth-errors.ts";
 import { TRAILFORKS_MCP_RESOURCE } from "./auth.ts";
 import {
@@ -6,6 +7,12 @@ import {
   TrailforksActivityClient,
   TrailforksMcpToolError,
 } from "./client.ts";
+
+const telemetryMocks = vi.hoisted(() => ({ captureException: vi.fn() }));
+
+vi.mock("../../lib/error-reporting.ts", () => ({
+  captureException: (...args: unknown[]) => telemetryMocks.captureException(...args),
+}));
 
 type JsonRpcMethod =
   | "initialize"
@@ -18,6 +25,7 @@ interface FakeHarness {
   urls: string[];
   jsonRpcMethods: JsonRpcMethod[];
   bearerHeaders: Array<string | null>;
+  initializeParams: unknown[];
   toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>;
   initializedNotifications: number;
   transportClosed: boolean;
@@ -40,11 +48,17 @@ function isJsonRpcMethod(value: unknown): value is JsonRpcMethod {
 }
 
 function createFakeTrailforksMcpHarness(
-  options: { callResult?: unknown; httpStatus?: number; httpBody?: string } = {},
+  options: {
+    callResult?: unknown;
+    httpStatus?: number;
+    httpBody?: string;
+    bodyCancel?: () => void;
+  } = {},
 ): FakeHarness {
   const urls: string[] = [];
   const jsonRpcMethods: JsonRpcMethod[] = [];
   const bearerHeaders: Array<string | null> = [];
+  const initializeParams: unknown[] = [];
   const toolCalls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
   let initializedNotifications = 0;
   let transportClosed = false;
@@ -71,7 +85,19 @@ function createFakeTrailforksMcpHarness(
     }
 
     if (options.httpStatus !== undefined) {
-      return new Response(options.httpBody ?? "upstream body", { status: options.httpStatus });
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(options.httpBody ?? "upstream body"));
+        },
+      });
+      if (options.bodyCancel) {
+        const originalCancel = stream.cancel.bind(stream);
+        stream.cancel = async (reason) => {
+          options.bodyCancel?.();
+          return originalCancel(reason);
+        };
+      }
+      return new Response(stream, { status: options.httpStatus });
     }
 
     const body: unknown = await request.json();
@@ -84,6 +110,7 @@ function createFakeTrailforksMcpHarness(
     switch (method) {
       case "initialize":
         if (body.id === undefined) throw new Error("initialize must have a JSON-RPC ID");
+        initializeParams.push(body.params);
         return Response.json({
           jsonrpc: "2.0",
           id: body.id,
@@ -121,6 +148,7 @@ function createFakeTrailforksMcpHarness(
     urls,
     jsonRpcMethods,
     bearerHeaders,
+    initializeParams,
     toolCalls,
     get initializedNotifications() {
       return initializedNotifications;
@@ -148,6 +176,10 @@ async function withClient<T>(
 }
 
 describe("TrailforksActivityClient", () => {
+  afterEach(() => {
+    telemetryMocks.captureException.mockReset();
+  });
+
   it("initializes against the fixed MCP account endpoint with OAuth bearer auth", async () => {
     const harness = createFakeTrailforksMcpHarness();
 
@@ -156,6 +188,15 @@ describe("TrailforksActivityClient", () => {
     expect(harness.urls.every((url) => url === TRAILFORKS_MCP_RESOURCE)).toBe(true);
     expect(harness.jsonRpcMethods.slice(0, 2)).toEqual(["initialize", "notifications/initialized"]);
     expect(harness.initializedNotifications).toBe(1);
+    expect(harness.initializeParams).toEqual([
+      expect.objectContaining({
+        clientInfo: expect.objectContaining({
+          name: "dofek-trailforks",
+          version: expect.any(String),
+        }),
+        capabilities: {},
+      }),
+    ]);
     expect(harness.bearerHeaders.every((header) => header === `Bearer ${ACCESS_TOKEN}`)).toBe(true);
   });
 
@@ -193,9 +234,11 @@ describe("TrailforksActivityClient", () => {
 
   it("maps MCP HTTP 401 to a provider auth error without the remote body", async () => {
     const remoteBodyMarker = "REMOTE_401_private_activity_body";
+    const bodyCancel = vi.fn();
     const harness = createFakeTrailforksMcpHarness({
       httpStatus: 401,
       httpBody: remoteBodyMarker,
+      bodyCancel,
     });
 
     let caught: unknown;
@@ -214,13 +257,16 @@ describe("TrailforksActivityClient", () => {
       message: "Trailforks authorization failed.",
     });
     expect(String(caught)).not.toContain(remoteBodyMarker);
+    expect(bodyCancel).toHaveBeenCalled();
   });
 
   it("maps MCP HTTP 403 to safe Pro/Outside+ access denial guidance", async () => {
     const remoteBodyMarker = "REMOTE_403_scope_or_subscription_body";
+    const bodyCancel = vi.fn();
     const harness = createFakeTrailforksMcpHarness({
       httpStatus: 403,
       httpBody: remoteBodyMarker,
+      bodyCancel,
     });
 
     let caught: unknown;
@@ -236,5 +282,76 @@ describe("TrailforksActivityClient", () => {
     expect(caught).toBeInstanceOf(ProviderAccessDeniedError);
     expect(caught).toMatchObject({ message: TRAILFORKS_MCP_ACCESS_DENIED_MESSAGE });
     expect(String(caught)).not.toContain(remoteBodyMarker);
+    expect(bodyCancel).toHaveBeenCalled();
+  });
+
+  it("classifies an empty HTTP 401 response as an authorization failure", async () => {
+    await expect(
+      TrailforksActivityClient.connect({
+        accessToken: ACCESS_TOKEN,
+        fetchFn: async () => new Response(null, { status: 401 }),
+      }),
+    ).rejects.toBeInstanceOf(ProviderAuthorizationFailedError);
+  });
+
+  it("honors an already-aborted run signal during connect", async () => {
+    const harness = createFakeTrailforksMcpHarness();
+    const signal = AbortSignal.abort();
+
+    await expect(
+      TrailforksActivityClient.connect({
+        accessToken: ACCESS_TOKEN,
+        fetchFn: harness.fetch,
+        signal,
+      }),
+    ).rejects.toThrow(/AbortError|aborted/i);
+  });
+
+  it("propagates a run cancellation to the requests opened by the SDK", async () => {
+    const harness = createFakeTrailforksMcpHarness();
+    const controller = new AbortController();
+    const observedSignals: AbortSignal[] = [];
+    const fetchFn: typeof globalThis.fetch = (input, init) => {
+      if (init?.signal) observedSignals.push(init.signal);
+      return harness.fetch(input, init);
+    };
+    const client = await TrailforksActivityClient.connect({
+      accessToken: ACCESS_TOKEN,
+      fetchFn,
+      signal: controller.signal,
+    });
+    try {
+      await client.listMyActivities({});
+      expect(observedSignals.length).toBeGreaterThan(1);
+      expect(observedSignals.every((signal) => !signal.aborted)).toBe(true);
+      controller.abort();
+      expect(observedSignals.every((signal) => signal.aborted)).toBe(true);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("preserves the connect failure and reports a failed SDK close without private details", async () => {
+    const connectFailure = new Error("handshake failed");
+    vi.spyOn(Client.prototype, "connect").mockRejectedValueOnce(connectFailure);
+    const close = vi
+      .spyOn(Client.prototype, "close")
+      .mockRejectedValueOnce(new TypeError("private cleanup body"));
+
+    await expect(TrailforksActivityClient.connect({ accessToken: ACCESS_TOKEN })).rejects.toBe(
+      connectFailure,
+    );
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(telemetryMocks.captureException).toHaveBeenCalledWith(
+      expect.any(TrailforksMcpToolError),
+      {
+        tags: { provider: "trailforks", mcpPhase: "close_after_connect_failure" },
+        extra: { errorName: "TypeError" },
+      },
+    );
+    expect(String(telemetryMocks.captureException.mock.calls[0]?.[0])).not.toContain(
+      "private cleanup body",
+    );
   });
 });
