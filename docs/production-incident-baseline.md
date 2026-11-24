@@ -40009,4 +40009,37 @@ Local qualification and CI are separate from production throughput acceptance. T
   to be present in the workflow. All 88 deploy workflow tests passed locally
   after the fix. Run that suite before pushing changes to a workflow
   environment variable it consumes.
+
+## 2026-11-23 — Sleep heart-rate builds dominated ClickHouse query CPU
+
+- **Symptoms and impact.** The November 21–23 UTC production window showed
+  recurring ClickHouse load from the sleep heart-rate window and sample builds.
+  Peak tracked server memory was 5.34 GiB against the 13 GiB container limit.
+  The profile establishes a recurring processing cost. Its effect on request
+  latency remains unmeasured. [Stack configuration](../deploy/docker-compose.yml)
+  · [ClickHouse query log](https://clickhouse.com/docs/operations/system-tables/query_log).
+- **Evidence.** `system.query_log` recorded 120,825 CPU seconds across initial
+  queries that finished or failed during execution. The calculation sums
+  `ProfileEvents` user and system CPU time and groups dbt queries by `node_id`.
+  dbt accounted for 91% of the total. `sleep_heart_rate_window` and
+  `sleep_heart_rate_sample` accounted for 67,398 CPU seconds together (56%).
+  Each insert ran 284 times, with a p95 duration of 157 and 155 seconds,
+  respectively. Application-table merges accounted for roughly 1,262 CPU
+  seconds in `system.part_log`. [ClickHouse part log](https://clickhouse.com/docs/operations/system-tables/part_log).
+- **Confirmed source of repeat work.** The day-change materialized view stamps
+  heart-rate inserts with the current wall clock. `deduped_sensor` reprocesses
+  daily batches with a one-day lookback, so reinserts can mark old logical
+  samples as changed. At 02:04 UTC on November 24, the view advanced markers
+  used by 11 rebuilt sleep windows. Four of those windows contained 202,208
+  heart-rate rows in total, and the latest heart-rate, sleep, and overlapping
+  activity source timestamps for those four all predated 01:34 UTC.
+  [Day-change view](../src/db/clickhouse-migrations/0060_heart_rate_day_change.ts)
+  · [Deduplication model](../analytics/models/read_models/deduped_sensor.sql)
+  · [Window model](../analytics/models/read_models/sleep_heart_rate_window.sql).
+- **Status and follow-up.** The investigation used read-only production queries.
+  Measure the effect of deriving sleep invalidation from logical input changes
+  while preserving late samples, priority corrections, and deletes. Validate
+  unchanged replay and genuine updates against ClickHouse, then compare model
+  CPU and output parity. The separate processing pause is tracked by
+  [deploy recovery PR #3473](https://github.com/Asherlc/dofek/pull/3473).
   [Workflow tests](../.github/workflows/deploy-web-stack.test.ts).
