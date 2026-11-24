@@ -66,7 +66,7 @@ function rethrowRetryableFailure(error: unknown): void {
   if (error instanceof Error && error.name === "AbortError") throw error;
 }
 
-/** Continue only for positively known PostgreSQL data-exception SQLSTATEs (class 22). */
+/** Continue only for positively known PostgreSQL data-exception error codes (class 22). */
 function isContinuableRowDataFailure(error: unknown): boolean {
   if (!(error instanceof DrizzleQueryError)) return false;
   const cause = error.cause;

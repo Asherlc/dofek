@@ -20,7 +20,7 @@ const authorizationRejectionSchema = z.object({
   error: z.enum(["invalid_grant", "invalid_client", "unauthorized_client"]),
 });
 
-/** Statusless token-endpoint transport failure — a fetch rejection has no HTTP status. */
+/** Token-endpoint transport failure with no HTTP status — a fetch rejection. */
 class TrailforksTokenTransportError extends Error {
   constructor() {
     super(TRANSPORT_UNAVAILABLE);
