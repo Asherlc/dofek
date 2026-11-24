@@ -13,6 +13,8 @@
   evaluation order remains unconfirmed. The sample model used a join to filter
   the sensor data by user and day. On 16 recent windows, moving that filter into
   the sensor read reduced the plan from 12,681 to 1,177 sensor granules.
+  The timings and granule counts are transcribed from the operator session.
+  Raw profiles and query plans are unavailable in the repository.
   [Window join](../analytics/models/read_models/sleep_heart_rate_window.sql#L278)
   · [Sample join](../analytics/models/read_models/sleep_heart_rate_sample.sql#L179)
   · [ClickHouse query plans](https://clickhouse.com/docs/reference/statements/explain)
