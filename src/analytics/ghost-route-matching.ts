@@ -312,15 +312,12 @@ function prepareTrack(
   return { coverage, segments, distanceMeters };
 }
 
-/** Project the matcher's continuity decisions onto the original, unsampled recording. */
-export function recordedGhostRouteChunks(points: readonly GhostTrackPoint[]): {
-  chunks: GhostRecordedWaypoint[][];
-  bounded: boolean;
-} {
-  if (points.length > maximumTrackPoints) return { chunks: [], bounded: true };
+function prepareRecordedRoute(points: readonly GhostTrackPoint[]) {
+  const unavailable = { chunks: [], bounded: false, source: null };
+  if (points.length > maximumTrackPoints) return { ...unavailable, bounded: true };
   const observations = collapseTiedPositions(points);
   const origin = observations.find(position);
-  if (!origin) return { chunks: [], bounded: false };
+  if (!origin) return unavailable;
 
   const chunks = new Map<number, GhostRecordedWaypoint[]>();
   let originalIndex = 0;
@@ -344,13 +341,23 @@ export function recordedGhostRouteChunks(points: readonly GhostTrackPoint[]): {
     if (recorded) recorded.push(waypoint);
     else chunks.set(chunk, [waypoint]);
   });
-  if (!track) return { chunks: [], bounded: true };
+  if (!track) return { ...unavailable, bounded: true };
   return {
     chunks: [...chunks.values()].filter(
       (chunk) => (chunk.at(-1)?.distanceMeters ?? 0) > (chunk[0]?.distanceMeters ?? 0),
     ),
     bounded: false,
+    source: { track, origin },
   };
+}
+
+/** Project the matcher's continuity decisions onto the original, unsampled recording. */
+export function recordedGhostRouteChunks(points: readonly GhostTrackPoint[]): {
+  chunks: GhostRecordedWaypoint[][];
+  bounded: boolean;
+} {
+  const { chunks, bounded } = prepareRecordedRoute(points);
+  return { chunks, bounded };
 }
 
 function segmentPosition(segment: Segment, meters: number): GhostPosition {
@@ -586,9 +593,11 @@ function alignTracks(anchor: Track, candidate: Track): Set<Alignment> | null {
 
 function routeGeometry(track: Track): GhostPosition[] {
   const geometry: GhostPosition[] = [];
+  const startDistanceMeters = track.segments[0]?.start.distanceMeters ?? 0;
+  const length = track.distanceMeters - startDistanceMeters;
   let segmentIndex = 0;
   for (let index = 0; index < maximumNormalizedRoutePoints; index += 1) {
-    const meters = (track.distanceMeters * index) / (maximumNormalizedRoutePoints - 1);
+    const meters = startDistanceMeters + (length * index) / (maximumNormalizedRoutePoints - 1);
     let segment = track.segments[segmentIndex];
     while (segment && segment.end.distanceMeters < meters - distanceEpsilon) {
       segmentIndex += 1;
@@ -600,11 +609,12 @@ function routeGeometry(track: Track): GhostPosition[] {
 }
 
 function coversTrack(track: Track, start: GhostPosition, end: GhostPosition): boolean {
+  const startDistanceMeters = track.segments[0]?.start.distanceMeters ?? 0;
   return (
     track.coverage === "complete" &&
-    start.distanceMeters <= maximumFullRouteTrimMeters &&
+    start.distanceMeters - startDistanceMeters <= maximumFullRouteTrimMeters &&
     track.distanceMeters - end.distanceMeters <= maximumFullRouteTrimMeters &&
-    (end.distanceMeters - start.distanceMeters) / track.distanceMeters >=
+    (end.distanceMeters - start.distanceMeters) / (track.distanceMeters - startDistanceMeters) >=
       ROUTE_MATCH_THRESHOLDS.overlap_percentage
   );
 }
@@ -778,25 +788,17 @@ function toMatch(alignment: Alignment, fullRoute: boolean): GhostRouteMatch {
 }
 
 /** Find independently timed, same-direction spans in two recorded operations. */
-export function matchGhostRoutes(
-  anchorPoints: readonly GhostTrackPoint[],
-  candidatePoints: readonly GhostTrackPoint[],
-): GhostRouteMatchResult {
-  const result: GhostRouteMatchResult = {
-    status: "complete",
+function emptyMatchResult(bounded = false): GhostRouteMatchResult {
+  return {
+    status: bounded ? "bounded" : "complete",
     anchorCoverage: "unusable",
     candidateCoverage: "unusable",
     matches: [],
   };
-  if (anchorPoints.length > maximumTrackPoints || candidatePoints.length > maximumTrackPoints)
-    return { ...result, status: "bounded" };
-  const anchorObservations = collapseTiedPositions(anchorPoints);
-  const candidateObservations = collapseTiedPositions(candidatePoints);
-  const origin = anchorObservations.find(position) ?? candidateObservations.find(position);
-  if (!origin) return result;
+}
 
-  const anchor = prepareTrack(anchorObservations, origin);
-  const candidate = prepareTrack(candidateObservations, origin);
+function matchPreparedTracks(anchor: Track | null, candidate: Track | null): GhostRouteMatchResult {
+  const result = emptyMatchResult();
   result.anchorCoverage = anchor?.coverage ?? "unusable";
   result.candidateCoverage = candidate?.coverage ?? "unusable";
   if (!anchor || !candidate) return { ...result, status: "bounded" };
@@ -845,4 +847,82 @@ export function matchGhostRoutes(
     )
     .map((alignment) => toMatch(alignment, alignment === completeRoute && coarse === "matched"));
   return result;
+}
+
+export function matchGhostRoutes(
+  anchorPoints: readonly GhostTrackPoint[],
+  candidatePoints: readonly GhostTrackPoint[],
+): GhostRouteMatchResult {
+  if (anchorPoints.length > maximumTrackPoints || candidatePoints.length > maximumTrackPoints)
+    return emptyMatchResult(true);
+  const anchorObservations = collapseTiedPositions(anchorPoints);
+  const candidateObservations = collapseTiedPositions(candidatePoints);
+  const origin = anchorObservations.find(position) ?? candidateObservations.find(position);
+  if (!origin) return emptyMatchResult();
+  return matchPreparedTracks(
+    prepareTrack(anchorObservations, origin),
+    prepareTrack(candidateObservations, origin),
+  );
+}
+
+function sameRecordedWaypoint(left: GhostRecordedWaypoint, right: GhostRecordedWaypoint): boolean {
+  return (
+    left.originalIndex === right.originalIndex &&
+    left.timestampMs === right.timestampMs &&
+    left.lat === right.lat &&
+    left.lng === right.lng &&
+    left.distanceMeters === right.distanceMeters
+  );
+}
+
+function recordedTrackWindow(
+  track: Track,
+  startedAtMs: number,
+  endedAtMs: number,
+  coverage: TrackCoverage,
+): Track {
+  const segments = track.segments.filter(
+    (segment) => segment.start.timestampMs >= startedAtMs && segment.end.timestampMs <= endedAtMs,
+  );
+  const first = segments[0];
+  const last = segments.at(-1);
+  if (!first || !last) return unavailableTrack();
+  // The first segment may leave a stop whose arrival predates this window.
+  segments[0] = {
+    ...first,
+    startsChunk: true,
+    arrival: { ...first.arrival, timestampMs: Math.max(first.arrival.timestampMs, startedAtMs) },
+  };
+  return { coverage, segments, distanceMeters: last.end.distanceMeters };
+}
+
+/** Align windows of the original prepared tracks, preserving their cadence and breaks. */
+export function prepareGhostRouteSectionMatch(
+  anchorPoints: readonly GhostTrackPoint[],
+  candidatePoints: readonly GhostTrackPoint[],
+  { start, end }: { start: GhostRecordedWaypoint; end: GhostRecordedWaypoint },
+): (useEarlierPrefix?: boolean) => GhostRouteMatchResult {
+  if (candidatePoints.length > maximumTrackPoints) return () => emptyMatchResult(true);
+  const recording = prepareRecordedRoute(anchorPoints);
+  if (!recording.source || start.originalIndex >= end.originalIndex)
+    return () => emptyMatchResult(recording.bounded);
+  const inOneChunk = recording.chunks.some(
+    (chunk) =>
+      chunk.some((point) => sameRecordedWaypoint(point, start)) &&
+      chunk.some((point) => sameRecordedWaypoint(point, end)),
+  );
+  if (!inOneChunk) return () => emptyMatchResult();
+  const { track, origin } = recording.source;
+  const anchor = recordedTrackWindow(track, start.timestampMs, end.timestampMs, "complete");
+  const candidate =
+    anchorPoints === candidatePoints
+      ? track
+      : prepareTrack(collapseTiedPositions(candidatePoints), origin);
+  return (useEarlierPrefix = false) =>
+    matchPreparedTracks(
+      anchor,
+      useEarlierPrefix && candidate === track
+        ? recordedTrackWindow(track, -Infinity, start.timestampMs, track.coverage)
+        : candidate,
+    );
 }
