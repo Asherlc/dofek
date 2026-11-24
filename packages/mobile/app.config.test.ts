@@ -138,6 +138,52 @@ describe("mobile app config", () => {
     }
   });
 
+  it("publishes the Sleep widget App Group from the host bundle identifier", () => {
+    const config = createConfig({
+      config: {
+        name: "Dofek",
+        slug: "dofek",
+        ios: { bundleIdentifier: "com.dofek.app" },
+      },
+    } satisfies ConfigContext);
+    expect(config.ios?.entitlements?.["com.apple.security.application-groups"]).toEqual([
+      "group.com.dofek.app.sleep-widget",
+    ]);
+  });
+
+  it("preserves existing host App Groups when adding the Sleep widget group", () => {
+    const config = createConfig({
+      config: {
+        name: "Dofek",
+        slug: "dofek",
+        ios: {
+          bundleIdentifier: "com.dofek.app",
+          entitlements: {
+            "com.apple.security.application-groups": ["group.com.dofek.app.existing"],
+          },
+        },
+      },
+    } satisfies ConfigContext);
+    expect(config.ios?.entitlements?.["com.apple.security.application-groups"]).toEqual([
+      "group.com.dofek.app.existing",
+      "group.com.dofek.app.sleep-widget",
+    ]);
+  });
+
+  it("isolates the Sleep widget App Group for preview bundle identifiers", async () => {
+    vi.stubEnv("PREVIEW_CHANNEL", "pr-123");
+    vi.stubEnv("PREVIEW_BUNDLE_IDENTIFIER", "com.dofek.app.preview");
+    vi.resetModules();
+    const { default: previewConfig } = await import("./app.config");
+    const config = previewConfig({
+      config: { name: "Dofek", slug: "dofek", ios: { bundleIdentifier: "com.dofek.app" } },
+    } satisfies ConfigContext);
+    expect(config.ios?.bundleIdentifier).toBe("com.dofek.app.preview");
+    expect(config.ios?.entitlements?.["com.apple.security.application-groups"]).toEqual([
+      "group.com.dofek.app.preview.sleep-widget",
+    ]);
+  });
+
   it("keeps the binary CocoaPod and watch SPM on the RNSentry Cocoa version", async () => {
     const require = createRequire(import.meta.url);
     const sentryPackagePath = require.resolve("@sentry/react-native/package.json");

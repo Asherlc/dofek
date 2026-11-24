@@ -129,6 +129,16 @@ jobs:
           swift test \
             --package-path packages/mobile/targets/DofekWatch \
             --scratch-path "$RUNNER_TEMP/dofek-watch-transfer-core"
+      - name: Run Sleep widget snapshot tests
+        run: |
+          swift test \
+            --package-path packages/mobile/targets/DofekSleepWidget \
+            --scratch-path "$RUNNER_TEMP/dofek-sleep-widget-core"
+      - name: Run Sleep widget writer tests
+        run: |
+          swift test \
+            --package-path packages/mobile/modules/sleep-widget \
+            --scratch-path "$RUNNER_TEMP/dofek-sleep-widget-lib"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.healthkit-coverage.outputs.coverage-directory != ''
         with:

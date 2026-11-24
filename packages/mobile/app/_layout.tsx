@@ -51,6 +51,7 @@ import { createAppQueryClient } from "../lib/query-client";
 import { rootStackScreenOptions } from "../lib/root-stack-screen-options";
 import { runAfterUiIdle } from "../lib/runAfterUiIdle";
 import { getTrpcUrl } from "../lib/server";
+import { registerSleepWidgetPublisher } from "../lib/sleep-widget";
 import {
   finishStartupPhase,
   markAppInteractive,
@@ -232,6 +233,10 @@ function AuthGate() {
   );
 
   const [queryClient] = useState(createAppQueryClient);
+
+  useEffect(() => {
+    return registerSleepWidgetPublisher({ queryClient }).dispose;
+  }, [queryClient]);
 
   useEffect(() => {
     finishStartupPhase("javascript", "ready");

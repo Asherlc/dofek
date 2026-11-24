@@ -48,6 +48,7 @@ describe("purgeMobileAccountState", () => {
         purgeHealthKitState: vi.fn(async (cutoff) => calls.push(`health-kit-state:${cutoff}`)),
         purgeHeartRate: vi.fn(async (cutoff) => calls.push(`heart-rate:${cutoff}`)),
         purgeQueryCaches: operation("query-persistence"),
+        purgeSleepWidget: operation("sleep-widget"),
         purgeWatchMotion: vi.fn(async (cutoff) => calls.push(`watch-motion:${cutoff}`)),
         purgeWhoopBle: vi.fn(async (cutoff) => calls.push(`whoop:${cutoff}`)),
         teardownAccelerometer: stop("stop-accelerometer"),
@@ -61,7 +62,8 @@ describe("purgeMobileAccountState", () => {
     });
 
     expect(result.errors).toEqual([]);
-    expect(calls.slice(0, 5)).toEqual([
+    expect(calls.slice(0, 6)).toEqual([
+      "sleep-widget",
       "stop-health-kit",
       "stop-accelerometer",
       "stop-watch",
@@ -110,10 +112,12 @@ describe("purgeMobileAccountState", () => {
         purgeHealthKitState: later,
         purgeHeartRate,
         purgeQueryCaches: later,
+        purgeSleepWidget: later,
         purgeWatchMotion: later,
         purgeWhoopBle: later,
         teardownAccelerometer: vi.fn(),
         teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
         teardownWatchMotion: vi.fn(),
         teardownWhoopBle: vi.fn(),
       },
@@ -145,6 +149,7 @@ describe("purgeMobileAccountState", () => {
         purgeHealthKitState: laterCleanup,
         purgeHeartRate: laterCleanup,
         purgeQueryCaches: laterCleanup,
+        purgeSleepWidget: laterCleanup,
         purgeWatchMotion: laterCleanup,
         purgeWhoopBle: laterCleanup,
         teardownAccelerometer: vi.fn(),
@@ -184,6 +189,7 @@ describe("purgeMobileAccountState", () => {
         purgeHealthKitState: vi.fn(),
         purgeHeartRate: vi.fn(),
         purgeQueryCaches: vi.fn(),
+        purgeSleepWidget: vi.fn(),
         purgeWatchMotion: vi.fn(),
         purgeWhoopBle: vi.fn(),
         teardownAccelerometer: vi.fn(),
@@ -223,6 +229,7 @@ describe("purgeMobileAccountState", () => {
         purgeHealthKitState: nativePurge,
         purgeHeartRate: nativePurge,
         purgeQueryCaches: vi.fn(),
+        purgeSleepWidget: vi.fn(),
         purgeWatchMotion: nativePurge,
         purgeWhoopBle: nativePurge,
         teardownAccelerometer: vi.fn(),
@@ -255,6 +262,7 @@ describe("purgeMobileAccountState", () => {
         purgeHealthKitState: nativePurge,
         purgeHeartRate: nativePurge,
         purgeQueryCaches: vi.fn(),
+        purgeSleepWidget: vi.fn(),
         purgeWatchMotion: nativePurge,
         purgeWhoopBle: nativePurge,
         teardownAccelerometer: vi.fn(),
@@ -288,6 +296,7 @@ describe("purgeMobileAccountState", () => {
         purgeHealthKitState: operation,
         purgeHeartRate: operation,
         purgeQueryCaches: operation,
+        purgeSleepWidget: operation,
         purgeWatchMotion: operation,
         purgeWhoopBle: operation,
         teardownAccelerometer: operation,
@@ -305,6 +314,40 @@ describe("purgeMobileAccountState", () => {
     ]);
     expect(operation).not.toHaveBeenCalled();
     expect(queryClient.clear).not.toHaveBeenCalled();
+  });
+
+  it("reports Sleep widget snapshot removal failures for the owned retry path", async () => {
+    const result = await purgeMobileAccountState({
+      cleanupLease,
+      dependencies: {
+        advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
+        clearBackgroundRefreshDiagnostics: vi.fn(),
+        clearPreparation: vi.fn(),
+        clearSession: vi.fn(),
+        purgeCoreMotion: vi.fn(),
+        purgeFoodWriteBack: vi.fn(),
+        purgeExportCache: vi.fn(),
+        purgeHealthKitState: vi.fn(),
+        purgeHeartRate: vi.fn(),
+        purgeQueryCaches: vi.fn(),
+        purgeSleepWidget: vi.fn(() => {
+          throw new Error("Unable to update the Sleep widget snapshot.");
+        }),
+        purgeWatchMotion: vi.fn(),
+        purgeWhoopBle: vi.fn(),
+        teardownAccelerometer: vi.fn(),
+        teardownHealthKit: vi.fn(),
+        teardownHeartRate: vi.fn(),
+        teardownWatchMotion: vi.fn(),
+        teardownWhoopBle: vi.fn(),
+      },
+      isCleanupLeaseCurrent: () => true,
+      queryClient: { clear: vi.fn() },
+    });
+
+    expect(result.errors.map((error) => error.message)).toEqual([
+      "Unable to update the Sleep widget snapshot.",
+    ]);
   });
 
   it("stops before later destructive targets when the session generation changes", async () => {
@@ -330,6 +373,7 @@ describe("purgeMobileAccountState", () => {
         purgeHealthKitState: vi.fn(),
         purgeHeartRate: vi.fn(),
         purgeQueryCaches,
+        purgeSleepWidget: vi.fn(),
         purgeWatchMotion: vi.fn(),
         purgeWhoopBle: vi.fn(),
         teardownAccelerometer: vi.fn(),

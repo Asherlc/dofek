@@ -61,28 +61,57 @@ function withRequiredSentryDsn(plugins) {
   return plugins?.map((plugin) => withSentryDsn(plugin, sentryDsn));
 }
 
-/** @type {(context: import("expo/config").ConfigContext) => ExpoConfig} */
-module.exports = ({ config }) => ({
-  ...config,
-  name: config.name || "Dofek",
-  slug: config.slug || "dofek",
-  plugins: withRequiredSentryDsn(config.plugins),
-  updates: {
-    ...config.updates,
-    requestHeaders: {
-      ...config.updates?.requestHeaders,
-      "expo-app-id": requireExpoAppId(),
-      ...(PREVIEW_CHANNEL ? { "expo-channel-name": PREVIEW_CHANNEL } : {}),
+/**
+ * @param {string} bundleIdentifier
+ * @returns {string}
+ */
+function sleepWidgetAppGroup(bundleIdentifier) {
+  return `group.${bundleIdentifier}.sleep-widget`;
+}
+
+/**
+ * @param {ExpoConfig["ios"] | undefined} ios
+ * @param {string} bundleIdentifier
+ * @returns {NonNullable<ExpoConfig["ios"]>}
+ */
+function withSleepWidgetAppGroup(ios, bundleIdentifier) {
+  const existingGroups = ios?.entitlements?.["com.apple.security.application-groups"];
+  const groups = Array.isArray(existingGroups) ? [...existingGroups] : [];
+  const sleepGroup = sleepWidgetAppGroup(bundleIdentifier);
+  if (!groups.includes(sleepGroup)) {
+    groups.push(sleepGroup);
+  }
+
+  return {
+    ...ios,
+    bundleIdentifier,
+    entitlements: {
+      ...ios?.entitlements,
+      "com.apple.security.application-groups": groups,
     },
-  },
-  ...(PREVIEW_CHANNEL
-    ? {
-        name: "Dofek Preview",
-        ios: {
-          ...config.ios,
-          bundleIdentifier:
-            PREVIEW_BUNDLE_IDENTIFIER?.trim() || config.ios?.bundleIdentifier || "com.dofek.app",
-        },
-      }
-    : {}),
-});
+  };
+}
+
+/** @type {(context: import("expo/config").ConfigContext) => ExpoConfig} */
+module.exports = ({ config }) => {
+  const defaultBundleIdentifier = config.ios?.bundleIdentifier || "com.dofek.app";
+  const bundleIdentifier = PREVIEW_CHANNEL
+    ? PREVIEW_BUNDLE_IDENTIFIER?.trim() || defaultBundleIdentifier
+    : defaultBundleIdentifier;
+
+  return {
+    ...config,
+    name: PREVIEW_CHANNEL ? "Dofek Preview" : config.name || "Dofek",
+    slug: config.slug || "dofek",
+    plugins: withRequiredSentryDsn(config.plugins),
+    updates: {
+      ...config.updates,
+      requestHeaders: {
+        ...config.updates?.requestHeaders,
+        "expo-app-id": requireExpoAppId(),
+        ...(PREVIEW_CHANNEL ? { "expo-channel-name": PREVIEW_CHANNEL } : {}),
+      },
+    },
+    ios: withSleepWidgetAppGroup(config.ios, bundleIdentifier),
+  };
+};

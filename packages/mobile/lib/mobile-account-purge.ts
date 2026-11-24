@@ -20,6 +20,7 @@ import { advanceDeviceErasureCutoff } from "./device-erasure-cutoff";
 import { purgeDofekFoodWriteBackFromHealthKit } from "./health-kit-food-writeback";
 import { purgeMobileExportCache } from "./mobile-export-cache";
 import { removeAllMobileQueryCaches } from "./mobile-query-persistence";
+import { purgeSleepWidgetSnapshot } from "./sleep-widget";
 import { captureException } from "./telemetry";
 import { purgeWhoopAccountState as purgeWhoopBleAccountState } from "./whoop-upload-session";
 
@@ -34,6 +35,7 @@ interface MobileAccountPurgeDependencies {
   purgeHealthKitState(cutoff: string): Promise<unknown>;
   purgeHeartRate(cutoff: string): Promise<unknown>;
   purgeQueryCaches(): Promise<unknown>;
+  purgeSleepWidget(): unknown;
   purgeWatchMotion(cutoff: string): Promise<unknown>;
   purgeWhoopBle(cutoff: string): Promise<unknown>;
   teardownAccelerometer(): void;
@@ -57,6 +59,7 @@ const defaultDependencies: MobileAccountPurgeDependencies = {
   purgeHealthKitState: purgeHealthKitAccountState,
   purgeHeartRate: purgeHeartRateAccountState,
   purgeQueryCaches: removeAllMobileQueryCaches,
+  purgeSleepWidget: purgeSleepWidgetSnapshot,
   purgeWatchMotion: purgeWatchMotionAccountState,
   purgeWhoopBle: purgeWhoopBleAccountState,
   teardownAccelerometer: teardownBackgroundAccelerometerSync,
@@ -120,6 +123,10 @@ export async function purgeMobileAccountState({
       source: "account-erasure-cutoff-persist",
     });
   }
+
+  // Remove the shared Sleep widget file before long native/JS cleanup so a retired
+  // lease cannot leave another account's snapshot in place after ownership changes.
+  await attempt("account-erasure-sleep-widget-purge", dependencies.purgeSleepWidget);
 
   await attempt("account-erasure-stop-health-kit", dependencies.teardownHealthKit);
   await attempt("account-erasure-stop-core-motion", dependencies.teardownAccelerometer);

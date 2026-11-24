@@ -1,9 +1,9 @@
 import { onlineManager } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
 import { AppState } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthProvider, useAuth } from "./auth-context";
+import { useAuth } from "./auth-context";
+import { defaultUser, importAuthApis, waitForAuthLoaded, wrapper } from "./auth-context.test-setup";
 
 const mockRemoveMobileQueryCache = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 const mockClearAccountErasurePreparation = vi.hoisted(() => vi.fn(() => Promise.resolve()));
@@ -26,10 +26,17 @@ const mockSaveSessionUser = mockAuthSession.saveSessionUser;
 vi.mock("./mobile-query-persistence", () => ({
   removeMobileQueryCache: mockRemoveMobileQueryCache,
 }));
-
 vi.mock("./account-erasure-storage", () => ({
   clearMobileAccountErasurePreparation: mockClearAccountErasurePreparation,
 }));
+
+const mockSleepWidget = vi.hoisted(() => ({
+  removeSleepWidgetSnapshot: vi.fn(),
+  restoreSleepWidgetWriter: vi.fn(),
+  retireSleepWidgetWriter: vi.fn(),
+  writeSleepWidgetSignedOutMarker: vi.fn(),
+}));
+vi.mock("./sleep-widget", () => mockSleepWidget);
 
 const mockCaptureException = vi.hoisted(() => vi.fn());
 const mockIdentifyUser = vi.hoisted(() => vi.fn());
@@ -44,14 +51,11 @@ vi.mock("./telemetry", () => ({
   identifyUser: mockIdentifyUser,
   resetUser: mockResetUser,
 }));
-
 vi.mock("./startup-telemetry", () => ({
   startStartupPhase: mockStartStartupPhase,
   finishStartupPhase: mockFinishStartupPhase,
 }));
-
 vi.mock("./auth-session", () => mockAuthSession);
-
 vi.mock("./auth", async (importOriginal) => {
   const original = await importOriginal<typeof import("./auth")>();
   return {
@@ -60,16 +64,6 @@ vi.mock("./auth", async (importOriginal) => {
     fetchCurrentUser: vi.fn(() => Promise.resolve(null)),
   };
 });
-
-const wrapper = ({ children }: { children: ReactNode }) =>
-  createElement(AuthProvider, null, children);
-
-const defaultUser = { id: "user-1", name: "Test User", email: "test@example.com" };
-const waitForAuthLoaded = (result: { current: { isLoading: boolean } }) =>
-  waitFor(() => expect(result.current.isLoading).toBe(false));
-
-const importAuthApis = async () =>
-  Object.assign(await import("./auth"), await import("./auth-session"));
 
 describe("auth-context", () => {
   beforeEach(async () => {
@@ -228,6 +222,9 @@ describe("auth-context", () => {
       expect(result.current.user).toBeNull();
       expect(mockCaptureException).not.toHaveBeenCalled();
       expect(mockFinishStartupPhase).toHaveBeenCalledWith("authentication", "deferred");
+      expect(mockSleepWidget.retireSleepWidgetWriter).toHaveBeenCalled();
+      expect(mockSleepWidget.removeSleepWidgetSnapshot).not.toHaveBeenCalled();
+      expect(mockSleepWidget.writeSleepWidgetSignedOutMarker).not.toHaveBeenCalled();
 
       AppState.currentState = "active";
       vi.mocked(getSessionToken).mockResolvedValue("existing-token");
@@ -642,6 +639,8 @@ describe("auth-context", () => {
       expect(result.current.user).toBeNull();
       expect(result.current.sessionToken).toBeNull();
       expect(mockResetUser).toHaveBeenCalledOnce();
+      expect(mockSleepWidget.removeSleepWidgetSnapshot).toHaveBeenCalled();
+      expect(mockSleepWidget.writeSleepWidgetSignedOutMarker).toHaveBeenCalled();
 
       // Clean up: resolve the pending logout
       if (resolveLogout) resolveLogout();

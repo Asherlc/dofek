@@ -95,20 +95,25 @@ vi.mock("../../lib/trpc", async () => {
             };
           },
         },
-        dashboardV2: {
-          useQuery: (...parameters: unknown[]) => {
-            mockDashboardV2UseQuery(...parameters);
-            return {
-              data: mockDashboardData,
-              isLoading: mockDashboardLoading,
-              isFetching: mockDashboardFetching,
-              isPaused: mockDashboardPaused,
-              isError: !!mockDashboardError,
-              error: mockDashboardError,
-              refetch: mockDashboardRefetch,
-            };
+        dashboardV2: new Proxy(actual.trpc.mobileDashboard.dashboardV2, {
+          get(target, property, receiver) {
+            if (property === "useQuery") {
+              return (...parameters: unknown[]) => {
+                mockDashboardV2UseQuery(...parameters);
+                return {
+                  data: mockDashboardData,
+                  isLoading: mockDashboardLoading,
+                  isFetching: mockDashboardFetching,
+                  isPaused: mockDashboardPaused,
+                  isError: !!mockDashboardError,
+                  error: mockDashboardError,
+                  refetch: mockDashboardRefetch,
+                };
+              };
+            }
+            return Reflect.get(target, property, receiver);
           },
-        },
+        }),
       },
       anomalyDetection: {
         check: {
@@ -805,20 +810,42 @@ describe("TodayScreen independent loading states", () => {
     );
   });
 
-  it("refetches the exact stale insights query when the Overview tab regains focus", async () => {
+  it("refetches the exact stale insights and dashboardV2 queries when Overview regains focus", async () => {
     const actualTrpc = await vi.importActual<typeof import("../../lib/trpc")>("../../lib/trpc");
-    const input = { days: 90, endDate: formatDateYmd() };
-    const queryKey = getQueryKey(actualTrpc.trpc.insights.compute, input, "query");
+    const endDate = formatDateYmd();
+    const insightsKey = getQueryKey(
+      actualTrpc.trpc.insights.compute,
+      { days: 90, endDate },
+      "query",
+    );
+    const dashboardKey = getQueryKey(
+      actualTrpc.trpc.mobileDashboard.dashboardV2,
+      { endDate },
+      "query",
+    );
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    queryClient.setQueryData(queryKey, [], { updatedAt: Date.now() - 301000 });
-    const queryFn = vi.fn().mockResolvedValue(overviewEvidenceFixture.insights.data);
-    const observer = new QueryObserver(queryClient, {
-      queryKey,
-      queryFn,
+    queryClient.setQueryData(insightsKey, [], { updatedAt: Date.now() - 301000 });
+    queryClient.setQueryData(
+      dashboardKey,
+      { sleep: { lastNight: null } },
+      { updatedAt: Date.now() - 301000 },
+    );
+    const insightsFn = vi.fn().mockResolvedValue(overviewEvidenceFixture.insights.data);
+    const dashboardFn = vi.fn().mockResolvedValue({ sleep: { lastNight: null } });
+    const insightsObserver = new QueryObserver(queryClient, {
+      queryKey: insightsKey,
+      queryFn: insightsFn,
       staleTime: 300000,
       refetchOnMount: false,
     });
-    const unsubscribe = observer.subscribe(() => {});
+    const dashboardObserver = new QueryObserver(queryClient, {
+      queryKey: dashboardKey,
+      queryFn: dashboardFn,
+      staleTime: 300000,
+      refetchOnMount: false,
+    });
+    const unsubscribeInsights = insightsObserver.subscribe(() => {});
+    const unsubscribeDashboard = dashboardObserver.subscribe(() => {});
     try {
       const { default: OverviewScreen } = await import("../../app/(tabs)/index");
       render(<OverviewScreen />, queryClient);
@@ -827,11 +854,17 @@ describe("TodayScreen independent loading states", () => {
       capturedFocusEffect?.();
 
       await waitFor(() => {
-        expect(queryClient.getQueryData(queryKey)).toEqual(overviewEvidenceFixture.insights.data);
+        expect(queryClient.getQueryData(insightsKey)).toEqual(
+          overviewEvidenceFixture.insights.data,
+        );
       });
-      expect(queryFn).toHaveBeenCalledTimes(1);
+      await waitFor(() => {
+        expect(dashboardFn).toHaveBeenCalledTimes(1);
+      });
+      expect(insightsFn).toHaveBeenCalledTimes(1);
     } finally {
-      unsubscribe();
+      unsubscribeInsights();
+      unsubscribeDashboard();
       queryClient.clear();
     }
   });

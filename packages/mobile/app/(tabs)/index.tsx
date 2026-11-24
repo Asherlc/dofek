@@ -6,7 +6,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getQueryKey } from "@trpc/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  AppState,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import Animated, { Easing, FadeInUp } from "react-native-reanimated";
 import { Card } from "../../components/Card";
 import { SleepBar } from "../../components/charts/SleepBar";
@@ -16,6 +24,7 @@ import { ProviderGuide } from "../../components/ProviderGuide";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { StrengthProgressionEvidence } from "../../components/StrengthProgressionEvidence";
 import { TrainingProgressionStatusCard } from "../../components/TrainingProgressionStatusCard";
+import { refetchStaleDashboardV2 } from "../../lib/sleep-widget";
 import {
   firstStatusRow,
   strengthEvidenceSummary,
@@ -71,11 +80,24 @@ export default function OverviewScreen() {
   const queryClient = useQueryClient();
   useFocusEffect(
     useCallback(() => {
-      const queryKey = getQueryKey(trpc.insights.compute, { days: overviewDays, endDate }, "query");
+      const insightsKey = getQueryKey(
+        trpc.insights.compute,
+        { days: overviewDays, endDate },
+        "query",
+      );
       void queryClient.refetchQueries(
-        { queryKey, exact: true, type: "active", stale: true },
+        { queryKey: insightsKey, exact: true, type: "active", stale: true },
         { cancelRefetch: false },
       );
+      void refetchStaleDashboardV2(queryClient, endDate);
+
+      // Foreground refetch only while Overview is focused; insights already uses refetchOnWindowFocus.
+      const subscription = AppState.addEventListener("change", (nextState) => {
+        if (nextState === "active") {
+          void refetchStaleDashboardV2(queryClient, endDate);
+        }
+      });
+      return () => subscription.remove();
     }, [queryClient, endDate]),
   );
 
