@@ -40010,3 +40010,37 @@ Local qualification and CI are separate from production throughput acceptance. T
   after the fix. Run that suite before pushing changes to a workflow
   environment variable it consumes.
   [Workflow tests](../.github/workflows/deploy-web-stack.test.ts).
+
+## 2026-11-23 — Pre-migration web check left health-data processing stopped
+
+- **Impact.** Dofek reported that updates to activities, sleep, recovery,
+  training, and body were taking longer than expected. Production web had
+  two running replicas. The sync worker, reconciliation service, analytics
+  worker, and three ClickHouse metric-stream sinks each had zero desired and
+  running replicas. A read-only Postgres query found 15 pending reconciliation
+  outbox entries. Some predated the release. The number of affected users is
+  unknown. [Processing lifecycle](processing-status-runbook.md#runtime-progression).
+- **Cause.** Release 45309490985 drained publishers starting at 02:10:53 UTC
+  on November 24 and applied the quiesced dependency stack. The rolling
+  deploy's `Wait for pre-migration web convergence` step ran
+  `docker service ls --filter name=dofek_web --format '{{.Replicas}}'`.
+  Docker returned one line for `dofek_web` and another for
+  `dofek_web-maintenance`. The resulting two-line value never equaled
+  `2/2`, even after the web update completed at 02:15:19 UTC. The first
+  fatal line at 02:18:24 UTC was `dofek_web did not converge before migrations`.
+  GitHub skipped migrations and the final stack rollout, leaving the
+  processing services at zero.
+  [Failed deployment job](https://github.com/Asherlc/dofek/actions/runs/45309490985/job/138162305677)
+  · [Docker service name filter](https://docs.docker.com/reference/cli/docker/service/ls/#name).
+- **Recovery.** The next automatic release stopped at
+  `live web and worker identities cannot be reconciled` because no worker
+  task was running. Both service definitions still named the last verified
+  image from receipt 8013867171. Receipt 8016422783 remained pending for the
+  failed candidate. Recovery is in progress through the production release
+  workflow.
+  [Admission failure](https://github.com/Asherlc/dofek/actions/runs/45313848197/job/138175857623)
+  · [Publication recovery runbook](../deploy/README.md#publication-recovery).
+- **Follow-up.** After release verification, confirm the six processing
+  services have running tasks, reconciliation advances, and analytics
+  publishes a successful refresh. Record the verified replacement release and
+  any pending work here after those checks.
