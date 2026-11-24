@@ -1,9 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { buildAccountErasureFenceTableSql } from "../metric-stream/clickhouse-table.ts";
 import {
+  getGhostAltitudeWindow,
   getGhostScalarSamples,
   getMeasuredGhostScalarWindow,
+  readGhostAltitudeWindowProof,
 } from "./activity-ghost-scalar-sample.ts";
 import { createActivitySourceRecordsSql } from "./activity-payload-dbt-source-test-helpers.ts";
 import type { ClickHouseClient } from "./clickhouse.ts";
@@ -26,6 +29,14 @@ const window = {
   memberActivityIds: [stravaMember, garminMember, appleMember],
   startedAt: "2026-09-07T10:00:00.000000Z",
   endedAt: "2026-09-07T10:10:00.000000Z",
+};
+const altitudeWindow = {
+  activityId,
+  memberActivityId: garminMember,
+  providerId: "garmin",
+  deviceId: null,
+  startedAt: window.startedAt,
+  endedAt: window.endedAt,
 };
 
 function sample(
@@ -92,7 +103,7 @@ function sourceRecord(
 describe("Ghost Sessions scalar evidence", () => {
   const database = `ghost_scalar_${randomUUID().replaceAll("-", "")}`;
   let client: ReturnType<typeof createClient>;
-  const scope = (query: string) => query.replaceAll("analytics.", `${database}.`);
+  const scope = (query: string) => query.replaceAll(/(?:analytics|ingest)\./g, `${database}.`);
   const queryClient: Pick<ClickHouseClient, "query"> = {
     query: (options) => client.query({ ...options, query: scope(options.query) }),
   };
@@ -100,6 +111,15 @@ describe("Ghost Sessions scalar evidence", () => {
     client.insert({ table: `${database}.sensor_scalar_sample`, format: "JSONEachRow", values });
   const insertSources = (values: ReturnType<typeof sourceRecord>[]) =>
     client.insert({ table: `${database}.activity_source_records`, format: "JSONEachRow", values });
+  const altitudeProof = (selection: Parameters<typeof readGhostAltitudeWindowProof>[2]) =>
+    readGhostAltitudeWindowProof(
+      async (schema, query, query_params) => {
+        const result = await queryClient.query({ query, query_params, format: "JSONEachRow" });
+        return schema.array().parse(await result.json());
+      },
+      userId,
+      selection,
+    );
 
   beforeAll(async () => {
     const url = process.env.CLICKHOUSE_URL;
@@ -110,10 +130,16 @@ describe("Ghost Sessions scalar evidence", () => {
       await client.command({ query: scope(query) });
     }
     await client.command({ query: createActivitySourceRecordsSql(database) });
+    await client.command({ query: scope(buildAccountErasureFenceTableSql()) });
   });
 
   beforeEach(async () => {
-    for (const table of ["sensor_scalar_sample", "deduped_sensor", "activity_source_records"]) {
+    for (const table of [
+      "sensor_scalar_sample",
+      "deduped_sensor",
+      "activity_source_records",
+      "account_erasure_fence",
+    ]) {
       await client.command({ query: `TRUNCATE TABLE ${database}.${table}` });
     }
   });
@@ -121,6 +147,203 @@ describe("Ghost Sessions scalar evidence", () => {
   afterAll(async () => {
     await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client.close();
+  });
+
+  it("attests to raw FIT altitude and invalidates that proof on replacement and deletion", async () => {
+    const rawAltitude = sample({
+      channel: "altitude",
+      device_id: null,
+      source_type: "file",
+      measurement_kind: "unknown",
+      scalar: -12,
+    });
+    const timestampMs = Date.parse(recordedAt) + 0.456;
+    await insertSources([sourceRecord(garminMember, "garmin")]);
+    await insertSamples([rawAltitude]);
+
+    const selectedTrackWindow = { ...altitudeWindow, points: [{ timestampMs, lat: 0, lng: 0 }] };
+    const before = await getGhostAltitudeWindow(queryClient, userId, selectedTrackWindow);
+    expect(before).toEqual({
+      status: "ready",
+      observations: [{ timestampMs, altitudeMeters: -12 }],
+      proof: { ...altitudeWindow, count: 1, digest: expect.stringMatching(/^[A-F0-9]{64}$/) },
+    });
+    expect(await altitudeProof(selectedTrackWindow)).toEqual(before.proof);
+
+    const corrected = { ...rawAltitude, scalar: -9, _peerdb_version: 2 };
+    await insertSamples([corrected]);
+    const replacement = await getGhostAltitudeWindow(queryClient, userId, altitudeWindow);
+    expect(replacement.observations).toEqual([{ timestampMs, altitudeMeters: -9 }]);
+    expect(replacement.proof?.count).toBe(1);
+    expect(replacement.proof?.digest).not.toBe(before.proof?.digest);
+    expect(await altitudeProof(altitudeWindow)).toEqual(replacement.proof);
+
+    await insertSamples([{ ...corrected, _peerdb_version: 3, _peerdb_is_deleted: 1 }]);
+    const deleted = await getGhostAltitudeWindow(queryClient, userId, altitudeWindow);
+    expect(deleted.observations).toEqual([{ timestampMs, altitudeMeters: null }]);
+    expect(deleted.proof?.count).toBe(1);
+    expect(deleted.proof?.digest).not.toBe(replacement.proof?.digest);
+    expect(await altitudeProof(altitudeWindow)).toEqual(deleted.proof);
+
+    await insertSamples([{ ...corrected, _peerdb_version: 4, measurement_kind: "estimated" }]);
+    const estimated = await getGhostAltitudeWindow(queryClient, userId, altitudeWindow);
+    expect(estimated.observations).toEqual([]);
+    expect(estimated.proof?.count).toBe(0);
+    expect(await altitudeProof(altitudeWindow)).toEqual(estimated.proof);
+  });
+
+  it("uses only the selected device's recorded altitude, with conflicts left as barriers", async () => {
+    const selection = { ...altitudeWindow, deviceId: "Edge 1040" };
+    const sibling = randomUUID();
+    const direct = sample({ channel: "altitude", measurement_kind: "direct", scalar: 15 });
+    await insertSources([
+      sourceRecord(garminMember, "garmin"),
+      sourceRecord(sibling, "garmin"),
+      sourceRecord(unrelatedMember, "garmin", { group_id: randomUUID() }),
+      sourceRecord(stravaMember, "strava"),
+      sourceRecord(appleMember, "apple_health", { raw: '{"sourceBundle":"com.strava.strava"}' }),
+    ]);
+    await insertSamples([direct]);
+    const before = await getGhostAltitudeWindow(queryClient, userId, selection);
+    expect(before.observations).toEqual([
+      { timestampMs: Date.parse(recordedAt) + 0.456, altitudeMeters: 15 },
+    ]);
+    const competing = { channel: "altitude", measurement_kind: "direct", scalar: 750 };
+    await insertSamples([
+      sample({ ...competing, device_id: "Other bike computer" }),
+      sample({ ...competing, device_id: null }),
+      sample({ ...competing, measurement_kind: "estimated" }),
+      sample({ ...competing, activity_id: sibling }),
+      sample({ ...competing, activity_id: unrelatedMember }),
+      sample({ ...competing, user_id: otherUserId }),
+      sample({ ...competing, provider_id: "other_provider" }),
+      sample({ ...competing, member_activity_id: sibling }),
+      sample({ ...competing, activity_id: null, source_type: "ble" }),
+      sample({ ...competing, activity_id: stravaMember, provider_id: "strava" }),
+      sample({ ...competing, activity_id: appleMember, provider_id: "apple_health" }),
+      sample({ ...competing, recorded_at: "2026-09-07 09:59:59.999999" }),
+      sample({ ...competing, recorded_at: "2026-09-07 10:10:00.000000" }),
+    ]);
+    expect(await getGhostAltitudeWindow(queryClient, userId, selection)).toEqual(before);
+    expect(await altitudeProof(selection)).toEqual(before.proof);
+    expect((await getGhostAltitudeWindow(queryClient, otherUserId, selection)).status).toBe(
+      "unavailable",
+    );
+    for (const excluded of [
+      { memberActivityId: stravaMember, providerId: "strava" },
+      { memberActivityId: appleMember, providerId: "apple_health" },
+      { memberActivityId: unrelatedMember, providerId: "garmin" },
+      { memberActivityId: garminMember, providerId: "other_provider" },
+    ]) {
+      const excludedWindow = { ...selection, ...excluded };
+      expect((await getGhostAltitudeWindow(queryClient, userId, excludedWindow)).status).toBe(
+        "unavailable",
+      );
+      expect(await altitudeProof(excludedWindow)).toBeNull();
+    }
+
+    await insertSamples([
+      sample({ ...competing, scalar: 14 }),
+      sample({ ...competing, recorded_at: "2026-09-07 10:05:00.123457", scalar: 16 }),
+      sample({ ...competing, recorded_at: "2026-09-07 10:05:00.123457", scalar: 16 }),
+    ]);
+    const conflicting = await getGhostAltitudeWindow(queryClient, userId, selection);
+    expect(conflicting.observations).toEqual([
+      { timestampMs: Date.parse(recordedAt) + 0.456, altitudeMeters: null },
+      { timestampMs: Date.parse(recordedAt) + 0.457, altitudeMeters: 16 },
+    ]);
+    expect(conflicting.proof?.count).toBe(4);
+    expect(await altitudeProof(selection)).toEqual(conflicting.proof);
+
+    await insertSources([
+      sourceRecord(garminMember, "garmin", { refresh_version: 2, is_deleted: 1 }),
+    ]);
+    expect((await getGhostAltitudeWindow(queryClient, userId, selection)).status).toBe(
+      "unavailable",
+    );
+    expect(await altitudeProof(selection)).toBeNull();
+  });
+
+  it("fences empty altitude proofs when account erasure starts", async () => {
+    await insertSources([sourceRecord(garminMember, "garmin")]);
+    const empty = await getGhostAltitudeWindow(queryClient, userId, altitudeWindow);
+    expect(empty).toEqual({
+      status: "ready",
+      observations: [],
+      proof: { ...altitudeWindow, count: 0, digest: expect.stringMatching(/^[A-F0-9]{64}$/) },
+    });
+    expect(await altitudeProof(altitudeWindow)).toEqual(empty.proof);
+
+    await client.insert({
+      table: `${database}.account_erasure_fence`,
+      format: "JSONEachRow",
+      values: [{ user_hash: createHash("sha256").update(userId).digest("hex") }],
+    });
+    expect((await getGhostAltitudeWindow(queryClient, userId, altitudeWindow)).status).toBe(
+      "unavailable",
+    );
+    expect(await altitudeProof(altitudeWindow)).toBeNull();
+  });
+
+  it("validates bounded UTC altitude windows before either query, preserving microseconds", async () => {
+    const rejectQuery = () => {
+      throw new Error("Invalid altitude window reached ClickHouse");
+    };
+    for (const bounds of [
+      { startedAt: recordedAt, endedAt: "2026-09-08T10:05:00.123457Z" },
+      { startedAt: recordedAt, endedAt: "2026-09-07T10:05:00.123455Z" },
+      { startedAt: recordedAt, endedAt: recordedAt },
+      { startedAt: "2026-09-31T10:05:00.123456Z", endedAt: recordedAt },
+      { startedAt: "2026-09-07T10:05:00.123456+00:00", endedAt: recordedAt },
+    ]) {
+      const invalid = { ...altitudeWindow, ...bounds };
+      expect(await getGhostAltitudeWindow({ query: rejectQuery }, userId, invalid)).toEqual({
+        status: "unavailable",
+        observations: [],
+        proof: null,
+      });
+      expect(await readGhostAltitudeWindowProof(rejectQuery, userId, invalid)).toBeNull();
+    }
+
+    await insertSources([sourceRecord(garminMember, "garmin")]);
+    await insertSamples([
+      sample({ channel: "altitude", device_id: null, measurement_kind: "unknown" }),
+    ]);
+    for (const endedAt of ["2026-09-07T10:05:00.123457Z", "2026-09-08T10:05:00.123456Z"]) {
+      const valid = { ...altitudeWindow, startedAt: recordedAt, endedAt };
+      const result = await getGhostAltitudeWindow(queryClient, userId, valid);
+      expect(result.proof?.count).toBe(1);
+      expect(await altitudeProof(valid)).toEqual(result.proof);
+    }
+  });
+
+  it("withholds altitude observations and proof at the 20,001-row sentinel", async () => {
+    await insertSources([sourceRecord(garminMember, "garmin")]);
+    await client.command({
+      query: `INSERT INTO ${database}.sensor_scalar_sample
+        (id, user_id, activity_id, member_activity_id, provider_id, channel, measurement_kind,
+          recorded_date, recorded_at, scalar)
+        SELECT generateUUIDv4(), {userId:UUID}, {memberId:UUID}, {memberId:UUID}, 'garmin',
+          'altitude', 'unknown', toDate('2026-09-07'),
+          fromUnixTimestamp64Micro(1788775500000000 + toInt64(number), 'UTC'), 30
+        FROM numbers(20000)`,
+      query_params: { userId, memberId: garminMember },
+    });
+    const bounded = await getGhostAltitudeWindow(queryClient, userId, altitudeWindow);
+    expect(bounded.status).toBe("ready");
+    expect(bounded.observations).toHaveLength(20_000);
+    expect(bounded.proof?.count).toBe(20_000);
+    expect(await altitudeProof(altitudeWindow)).toEqual(bounded.proof);
+
+    await insertSamples([
+      sample({ channel: "altitude", device_id: null, measurement_kind: "unknown" }),
+    ]);
+    expect(await getGhostAltitudeWindow(queryClient, userId, altitudeWindow)).toEqual({
+      status: "over-limit",
+      observations: [],
+      proof: null,
+    });
+    expect(await altitudeProof(altitudeWindow)).toBeNull();
   });
 
   it("can bound the deduplicated scalar result with a caller-supplied sentinel limit", async () => {

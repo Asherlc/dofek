@@ -1,5 +1,6 @@
 import { BLE_HEART_RATE_PROVIDER_ID, WHOOP_BLE_PROVIDER_ID } from "@dofek/providers/push-providers";
 import { z } from "zod";
+import { ACCOUNT_ERASURE_FENCE_TABLE } from "../metric-stream/clickhouse-table.ts";
 import { activityMetricSamplesSql, activityMetricSourceIdSql } from "./activity-metric-query.ts";
 import type { ClickHouseClient } from "./clickhouse.ts";
 
@@ -125,8 +126,9 @@ export function ghostScalarProofWindowRow(window: MeasuredWindow, index: number)
   };
 }
 
-/** Shared read/write statement proof for bounded internal HR and power windows. */
-export function ghostScalarProofSql(windowKeys: string): string {
+/** Shared proof for bounded HR/power windows or one selected altitude recording. */
+export function ghostScalarProofSql(windowKeys: string, channelScope?: "altitude"): string {
+  const altitude = channelScope === "altitude";
   return `
     ghost_scalar_members AS MATERIALIZED (
       SELECT assumeNotNull(group_id) AS group_id, activity_id, provider_id
@@ -136,6 +138,14 @@ export function ghostScalarProofSql(windowKeys: string): string {
           SELECT activity_id, member_activity_id FROM ${windowKeys}
         )
         AND ${independentMemberFilter}
+        ${
+          altitude
+            ? `AND provider_id = {providerId:String}
+        AND lower(hex(SHA256(toString({userId:UUID})))) NOT IN (
+          SELECT user_hash FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL
+        )`
+            : ""
+        }
     ), ghost_scalar_inputs AS MATERIALIZED (
       SELECT timed.window_id AS window_id, sample.id AS id, sample.channel AS channel,
         sample.recorded_at AS recorded_at, sample.scalar AS scalar, sample.provider_id AS provider_id,
@@ -146,7 +156,14 @@ export function ghostScalarProofSql(windowKeys: string): string {
         SELECT *, coalesce(member_activity_id, activity_id) AS linked_member_id
         FROM analytics.sensor_scalar_sample FINAL
         WHERE user_id = {userId:UUID}
-          AND channel IN ('heart_rate', 'power')
+          ${
+            altitude
+              ? `AND channel = 'altitude'
+          AND provider_id = {providerId:String}
+          AND isNotDistinctFrom(device_id, {deviceId:Nullable(String)})
+          AND measurement_kind IN ('direct', 'unknown')`
+              : "AND channel IN ('heart_rate', 'power')"
+          }
           AND recorded_date IN (
             SELECT toDate(arrayJoin(range(toUInt32(toDate(started_at)), toUInt32(toDate(ended_at)) + 1)))
             FROM ${windowKeys}
@@ -161,8 +178,12 @@ export function ghostScalarProofSql(windowKeys: string): string {
           (timed.activity_id, sample.linked_member_id, sample.provider_id)
             IN (SELECT group_id, activity_id, provider_id FROM ghost_scalar_members)
           AND sample.linked_member_id = timed.member_activity_id
-          OR (${directBleFilter} AND (timed.activity_id, timed.member_activity_id)
-            IN (SELECT group_id, activity_id FROM ghost_scalar_members))
+          ${
+            altitude
+              ? ""
+              : `OR (${directBleFilter} AND (timed.activity_id, timed.member_activity_id)
+            IN (SELECT group_id, activity_id FROM ghost_scalar_members))`
+          }
         )
       ORDER BY window_id, recorded_at, channel, provider_id, id
       LIMIT {ghostScalarFetchLimit:UInt32} BY window_id
@@ -182,9 +203,11 @@ export function ghostScalarProofSql(windowKeys: string): string {
     )`;
 }
 
-const measuredScalarResultSchema = z.object({
+const scalarProofRowSchema = z.object({
   raw_count: z.coerce.number(),
   digest: z.string(),
+});
+const measuredScalarResultSchema = scalarProofRowSchema.extend({
   observations: z.array(
     z.tuple([z.iso.datetime(), z.enum(["heart_rate", "power"]), z.number().nullable(), z.string()]),
   ),
@@ -236,4 +259,140 @@ export async function getMeasuredGhostScalarWindow(
   if (!evidence || rawCount >= fetchLimit) return { rawCount, observationRows: [], proof: null };
   const proof: GhostScalarWindowProof = { ...window, count: rawCount, digest: evidence.digest };
   return { rawCount, observationRows: evidence.observations, proof };
+}
+
+export interface GhostAltitudeWindow extends MeasuredWindow {
+  providerId: string;
+  deviceId: string | null;
+}
+
+export interface GhostAltitudeWindowProof extends GhostAltitudeWindow {
+  count: number;
+  digest: string;
+}
+
+const altitudeFetchLimit = 20_001;
+const altitudeWindowLimitMicroseconds = 24 * 60 * 60 * 1_000_000;
+const altitudeTimestamp = z.iso.datetime().regex(/:\d{2}(?:\.\d{1,6})?Z$/);
+const altitudeResultSchema = scalarProofRowSchema.extend({
+  observations: z.array(z.tuple([z.number(), z.number().nullable()])),
+});
+type AltitudeProofQuery = (
+  schema: typeof scalarProofRowSchema,
+  query: string,
+  params: Record<string, unknown>,
+) => Promise<z.infer<typeof scalarProofRowSchema>[]>;
+
+function subMillisecondMicroseconds(timestamp: string): number {
+  const [, fraction = ""] = timestamp.slice(0, -1).split(".");
+  return Number(fraction.padEnd(6, "0").slice(3));
+}
+
+function isBoundedAltitudeWindow({ startedAt, endedAt }: GhostAltitudeWindow): boolean {
+  if (
+    !altitudeTimestamp.safeParse(startedAt).success ||
+    !altitudeTimestamp.safeParse(endedAt).success
+  )
+    return false;
+  const elapsedMicroseconds =
+    (Date.parse(endedAt) - Date.parse(startedAt)) * 1_000 +
+    subMillisecondMicroseconds(endedAt) -
+    subMillisecondMicroseconds(startedAt);
+  return elapsedMicroseconds > 0 && elapsedMicroseconds <= altitudeWindowLimitMicroseconds;
+}
+
+function altitudeWindowKey({
+  activityId,
+  memberActivityId,
+  providerId,
+  deviceId,
+  startedAt,
+  endedAt,
+}: GhostAltitudeWindow): GhostAltitudeWindow {
+  return { activityId, memberActivityId, providerId, deviceId, startedAt, endedAt };
+}
+
+function altitudeWindowSql(includeObservations: boolean): string {
+  return `
+    WITH altitude_window AS MATERIALIZED (
+      SELECT toUInt16(0) AS window_id, {activityId:UUID} AS activity_id,
+        {memberActivityId:UUID} AS member_activity_id,
+        parseDateTime64BestEffort({startedAt:String}, 6, 'UTC') AS started_at,
+        parseDateTime64BestEffort({endedAt:String}, 6, 'UTC') AS ended_at
+    ), ${ghostScalarProofSql("altitude_window", "altitude")}
+    SELECT raw_count, digest
+    ${
+      includeObservations
+        ? `, if(raw_count < {ghostScalarFetchLimit:UInt32}, (
+      SELECT arraySort(groupArray(tuple(toUnixTimestamp64Micro(recorded_at) / 1000, altitude)))
+      FROM (
+        SELECT recorded_at, if(live_count > 0 AND finite_count = live_count AND minimum = maximum,
+          minimum, NULL) AS altitude
+        FROM (
+          SELECT recorded_at, countIf(deleted = 0) AS live_count,
+            countIf(deleted = 0 AND isFinite(scalar)) AS finite_count,
+            minIf(scalar, deleted = 0 AND isFinite(scalar)) AS minimum,
+            maxIf(scalar, deleted = 0 AND isFinite(scalar)) AS maximum
+          FROM ghost_scalar_inputs
+          GROUP BY recorded_at
+        )
+      )
+    ), []) AS observations`
+        : ""
+    }
+    FROM ghost_scalar_proofs
+    SETTINGS enable_materialized_cte = 1, max_threads = 1, log_queries = 0`;
+}
+
+function altitudeProof(
+  window: GhostAltitudeWindow,
+  row: z.infer<typeof scalarProofRowSchema>,
+): GhostAltitudeWindowProof {
+  return { ...window, count: row.raw_count, digest: row.digest };
+}
+
+/** Reads compact current evidence for an already verified GPS recording. */
+export async function readGhostAltitudeWindowProof(
+  query: AltitudeProofQuery,
+  userId: string,
+  window: GhostAltitudeWindow,
+): Promise<GhostAltitudeWindowProof | null> {
+  if (!isBoundedAltitudeWindow(window)) return null;
+  const key = altitudeWindowKey(window);
+  const [row] = await query(scalarProofRowSchema, altitudeWindowSql(false), {
+    ...key,
+    userId,
+    ghostScalarFetchLimit: altitudeFetchLimit,
+  });
+  return row && row.raw_count < altitudeFetchLimit ? altitudeProof(key, row) : null;
+}
+
+/** Reads recorded altitude and its proof together. Conflicts and missing values remain barriers. */
+export async function getGhostAltitudeWindow(
+  client: Pick<ClickHouseClient, "query">,
+  userId: string,
+  window: GhostAltitudeWindow,
+) {
+  if (!isBoundedAltitudeWindow(window)) {
+    return { status: "unavailable", observations: [], proof: null } as const;
+  }
+  const key = altitudeWindowKey(window);
+  const result = await client.query({
+    query: altitudeWindowSql(true),
+    format: "JSONEachRow",
+    query_params: { ...key, userId, ghostScalarFetchLimit: altitudeFetchLimit },
+  });
+  const [row] = altitudeResultSchema.array().parse(await result.json());
+  if (!row) return { status: "unavailable", observations: [], proof: null } as const;
+  if (row.raw_count >= altitudeFetchLimit) {
+    return { status: "over-limit", observations: [], proof: null } as const;
+  }
+  return {
+    status: "ready",
+    observations: row.observations.map(([timestampMs, altitudeMeters]) => ({
+      timestampMs,
+      altitudeMeters,
+    })),
+    proof: altitudeProof(key, row),
+  } as const;
 }
