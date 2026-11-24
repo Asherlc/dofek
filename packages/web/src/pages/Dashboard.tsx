@@ -160,8 +160,6 @@ export function Dashboard() {
   usePageLoadDomSection("resting-heart-rate", heartRateBaseline.error ? "error" : undefined);
 
   const trendsErrorHidden = sharedConnectionFailure && isConnectionFailure(trends.error);
-  const hideInsightCard =
-    sharedConnectionFailure && isConnectionFailure(insightsQuery.error) && topInsight == null;
   // A distinct heart rate failure still owns the trend card even when the
   // grouped trend query has no data — keep the card so its error stays visible.
   const hasDistinctHeartRateError =
@@ -209,12 +207,6 @@ export function Dashboard() {
     )
   ) : !insightsQuery.isFetched ? (
     <QueryStatePanel variant="loading" height={160} />
-  ) : !topInsight ? (
-    <QueryStatePanel
-      variant="empty"
-      message="No relationships met the evidence threshold for this period."
-      height={160}
-    />
   ) : null;
 
   return (
@@ -269,7 +261,6 @@ export function Dashboard() {
             : heartRateBaseline.error
         }
         healthMonitor={healthMonitor}
-        hideInsightCard={hideInsightCard}
         hideTrendCard={hideTrendCard}
         hideHealthMonitor={hideHealthMonitor}
       />
