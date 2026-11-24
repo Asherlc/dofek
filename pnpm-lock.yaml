@@ -142,8 +142,8 @@ importers:
         specifier: workspace:*
         version: link:packages/zwift-client
       '@garmin/fitsdk':
-        specifier: 21.208.0
-        version: 21.208.0
+        specifier: 21.222.0
+        version: 21.222.0
       '@modelcontextprotocol/client':
         specifier: 2.3.1
         version: 2.3.1
@@ -3482,8 +3482,8 @@ packages:
   '@gar/promisify@1.1.3':
     resolution: {integrity: sha512-k2Ty1JcVojjJFwrg/ThKi2ujJ7XNLYaFGNB/bWT9wGR+oSMJHMa5w+CUq6p/pVrKeNNgA7pCqEcjSnHVoqJQFw==}
 
-  '@garmin/fitsdk@21.208.0':
-    resolution: {integrity: sha512-mEmPHyzqaS3bb8n+yaOmgmBo/0CUrsLsN5J4viAUN5Kh6+YiwdvPh5OAzb2Jgy2IaI23q7mGtNr/8WRJC1+HoA==}
+  '@garmin/fitsdk@21.222.0':
+    resolution: {integrity: sha512-YIo/bPfvENuBKECsAT0wWromTy66Yxw3UqRB1FuAJIs8KMoJCkVPgqnUanFxkZwcAXgIN2qXaeFeRt7rvYlB0g==}
 
   '@gorhom/bottom-sheet@5.2.8':
     resolution: {integrity: sha512-+N27SMpbBxXZQ/IA2nlEV6RGxL/qSFHKfdFKcygvW+HqPG5jVNb1OqehLQsGfBP+Up42i0gW5ppI+DhpB7UCzA==}
@@ -20886,7 +20886,7 @@ snapshots:
 
   '@gar/promisify@1.1.3': {}
 
-  '@garmin/fitsdk@21.208.0': {}
+  '@garmin/fitsdk@21.222.0': {}
 
   '@gorhom/bottom-sheet@5.2.8(@types/react@19.3.0)(react-native-gesture-handler@3.3.0)(react-native-reanimated@4.7.1)(react-native@0.88.1)(react@19.3.0)':
     dependencies:
