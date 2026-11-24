@@ -1,5 +1,36 @@
 # Production Incident Baseline
 
+## 2026-11-24 — PR #3474 CI: deduped_sensor fixture contract and dotenv-linter install 503
+
+- **Impact.** [CI run 45336998012](https://github.com/Asherlc/dofek/actions/runs/45336998012)
+  for [PR #3474](https://github.com/Asherlc/dofek/pull/3474) failed required checks before
+  merge.
+- **Evidence / cause.**
+  [Integration shard 2/5 job 138252930888](https://github.com/Asherlc/dofek/actions/runs/45336998012/job/138252930888)
+  failed `src/db/clickhouse-deduped-sensor.integration.test.ts` with
+  `Number of columns doesn't match (source: 18 and result: 17)` on the intentional legacy
+  dbt insert path, and
+  `analytics/models/read_models/activity_sensor_dirty_keys.integration.test.ts` with
+  `Syntax error … { this }} FINAL`.
+  [Integration shard 4/5 job 138252930864](https://github.com/Asherlc/dofek/actions/runs/45336998012/job/138252930864)
+  failed `activity_heart_rate_distribution.integration.test.ts` with the same
+  `{{ this }}` residual after incremental `deduped_sensor.sql` replay.
+  [Dotenv Lint job 138251360215](https://github.com/Asherlc/dofek/actions/runs/45336998012/job/138251360215)
+  failed `Install dotenv-linter` with `curl: (22) The requested URL returned error: 503`
+  while fetching the pinned `raw.githubusercontent.com` install script.
+- **Fix.** Legacy dbt insert now `EXCEPT`s both `source_refreshed_at` and
+  `heart_rate_changed_at`. Activity performance fixtures resolve `{{ this }}` to the
+  fixture `deduped_sensor` and include `heart_rate_changed_at DateTime64(9, 'UTC')` in
+  DDL/projection. Dotenv Lint downloads the
+  [v4.0.0 linux-x86_64 release tarball](https://github.com/dotenv-linter/dotenv-linter/releases/download/v4.0.0/dotenv-linter-linux-x86_64.tar.gz)
+  into `RUNNER_TEMP`, verifies SHA-256
+  `9e2f1f6eb88a71ac15ef209f78f5a68644db82f132d2677112b4f80ec2bd2127`, extracts only
+  `dotenv-linter`, and runs `dotenv-linter check .`.
+- **Validation.** Local ClickHouse reproduced all three fixture failures. After
+  the repair, 54 integration tests, repository lint, workspace type checks, and
+  workflow lint passed. The verified Linux binary also passed dotenv lint on
+  Ubuntu 26.04. The GitHub Actions rerun is pending.
+
 ## 2026-11-18 — Vertical-Life search and detail disagree on a crag's broader area
 
 - **Impact.** Sentry reported 29 occurrences of `DOFEK-SERVER-89` from
@@ -40009,6 +40040,39 @@ Local qualification and CI are separate from production throughput acceptance. T
   to be present in the workflow. All 88 deploy workflow tests passed locally
   after the fix. Run that suite before pushing changes to a workflow
   environment variable it consumes.
+
+## 2026-11-23 — Sleep heart-rate builds dominated ClickHouse query CPU
+
+- **Symptoms and impact.** The November 21–23 UTC production window showed
+  recurring ClickHouse load from the sleep heart-rate window and sample builds.
+  Peak tracked server memory was 5.34 GiB against the 13 GiB container limit.
+  The profile establishes a recurring processing cost. Its effect on request
+  latency remains unmeasured. [Stack configuration](../deploy/docker-compose.yml)
+  · [ClickHouse query log](https://clickhouse.com/docs/operations/system-tables/query_log).
+- **Evidence.** `system.query_log` recorded 120,825 CPU seconds across initial
+  queries that finished or failed during execution. The calculation sums
+  `ProfileEvents` user and system CPU time and groups dbt queries by `node_id`.
+  dbt accounted for 91% of the total. `sleep_heart_rate_window` and
+  `sleep_heart_rate_sample` accounted for 67,398 CPU seconds together (56%).
+  Each insert ran 284 times, with a p95 duration of 157 and 155 seconds,
+  respectively. Application-table merges accounted for roughly 1,262 CPU
+  seconds in `system.part_log`. [ClickHouse part log](https://clickhouse.com/docs/operations/system-tables/part_log).
+- **Confirmed source of repeat work.** The day-change materialized view stamps
+  heart-rate inserts with the current wall clock. `deduped_sensor` reprocesses
+  daily batches with a one-day lookback, so reinserts can mark old logical
+  samples as changed. At 02:04 UTC on November 24, the view advanced markers
+  used by 11 rebuilt sleep windows. Four of those windows contained 202,208
+  heart-rate rows in total, and the latest heart-rate, sleep, and overlapping
+  activity source timestamps for those four all predated 01:34 UTC.
+  [Day-change view](../src/db/clickhouse-migrations/0060_heart_rate_day_change.ts)
+  · [Deduplication model](../analytics/models/read_models/deduped_sensor.sql)
+  · [Window model](../analytics/models/read_models/sleep_heart_rate_window.sql).
+- **Status and follow-up.** The investigation used read-only production queries.
+  Measure the effect of deriving sleep invalidation from logical input changes
+  while preserving late samples, priority corrections, and deletes. Validate
+  unchanged replay and genuine updates against ClickHouse, then compare model
+  CPU and output parity. The separate processing pause is tracked by
+  [deploy recovery PR #3473](https://github.com/Asherlc/dofek/pull/3473).
   [Workflow tests](../.github/workflows/deploy-web-stack.test.ts).
 
 ## 2026-11-23 — Pre-migration web check left health-data processing stopped
@@ -40056,6 +40120,51 @@ Local qualification and CI are separate from production throughput acceptance. T
   reconciliation for the pending operations.
   [Deployment verification](https://github.com/Asherlc/dofek/actions/runs/45332102234/job/138243564133)
   · [Reconciliation and stalled-operation cutoff](processing-status-runbook.md#runtime-progression).
+
+## 2026-11-24 — Archived Paseo workspaces retained Docker containers
+
+- **Impact and evidence.** Local Docker Desktop had 14 running containers
+  owned by seven archived Dofek workspaces. Docker's Compose working-directory
+  labels matched Paseo's archived workspace records. The containers accounted
+  for about 2.2 GiB in `docker stats`, including 1.1 GiB from the unhealthy
+  ClickHouse instance in `placid-armadillo`.
+  [Docker memory accounting](https://docs.docker.com/reference/cli/docker/container/stats/).
+- **Cause.** The archive script's project list omitted
+  `noxious-goat-deletion-qualification`, a custom project created from the
+  `noxious-goat` worktree. The other six projects used names covered by the
+  hook. Their archive requests predated the retained daemon logs, leaving
+  the reason for the missed cleanup unresolved. Paseo can record the archive
+  even when teardown fails. The containers were created before archive and
+  configured with the `unless-stopped` restart policy.
+  [Archive script](../scripts/workspace-archive.ts)
+  · [Paseo teardown](https://paseo.sh/docs/worktrees#setup-and-teardown).
+- **Recovery and validation.** Stopped and removed the 14 containers by ID.
+  After confirming the volumes had no container references, removed 23 named
+  volumes with matching Compose project labels. Docker listed no containers
+  from the seven workspaces afterward and retained the other 75 volumes.
+  [Docker container removal](https://docs.docker.com/reference/cli/docker/container/rm/)
+  · [Docker volume removal](https://docs.docker.com/reference/cli/docker/volume/rm/).
+- **Follow-up.** Discover additional Compose projects by exact workspace
+  directory during teardown and check for remaining containers after shutdown.
+  A read-only check against Paseo's active workspace list can detect leftovers
+  when teardown fails before that verification runs. A regression test should
+  cover a custom-suffix project and a neighboring workspace.
+  [Docker container label filters](https://docs.docker.com/reference/cli/docker/container/ls/#label)
+  · [Workspace lifecycle runbook](development-environment.md#workspace-setup-and-archive).
+
+## 2026-11-24 — Knip rejected the Paseo CLI in the workspace doctor
+
+- **Impact and cause.** PR #3476 failed the repository checks at `Run pnpm knip`.
+  The first fatal diagnostic was `Unlisted binaries (1)`, which identified
+  `paseo` in `scripts/dev-environment.ts`. The doctor uses the locally installed
+  Paseo CLI in a Paseo worktree, and pnpm does not provide that executable.
+  The repository and CI gates inherited the Knip failure.
+  [Failing job](https://github.com/Asherlc/dofek/actions/runs/45416888076/job/138525495384).
+- **Fix and validation.** Added `paseo` to the root Knip configuration's
+  `ignoreBinaries` list for external commands. The same `pnpm knip` command
+  passed locally with the CI fixture environment. Future checks that invoke
+  externally installed tools should run Knip with that fixture before push.
+  [Knip configuration](https://knip.dev/reference/configuration#ignorebinaries).
 
 ## 2026-11-24 — Overview relationship card empty after the evidence fix
 
