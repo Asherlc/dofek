@@ -64,10 +64,22 @@ claim new work within the provider's concurrency limit. BullMQ preserves
 the original job ID, retry budget, and queue-wide concurrency limit. Priority is enabled for
 configured queues without a BullMQ rate limiter. [BullMQ global concurrency](https://docs.bullmq.io/guide/queues/global-concurrency)
 
-Before a database restore, drain Fly with the same command as the release.
+Before a database restore, check the Fly Machine state. If the Machine is
+running, request the same graceful stop as the release.
 
 ```bash
-flyctl machine stop "$machine_id" --app "$app_name" --signal SIGTERM --timeout 300 --wait-timeout 6m
+flyctl machine stop "$machine_id" --app "$app_name" --signal SIGTERM --timeout 300
+```
+
+Check the state of the same Machine until it reaches `stopped`. The release
+allows six minutes for this confirmation. Restore only after the Machine is
+stopped.
+[Fly Machine stop](https://docs.fly.io/flyctl/cmd/fly_machine_stop) ·
+[Release workflow](../../.github/workflows/deploy-web-stack.yml).
+
+```bash
+flyctl machines list --app "$app_name" --json \
+  | jq -er --arg id "$machine_id" '.[] | select(.id == $id) | .state'
 ```
 
 Start Fly after the primary stack completes its restore and passes readiness.

@@ -1,5 +1,32 @@
 # Production Incident Baseline
 
+## 2026-11-24 — Fly drain blocked the dbt telemetry rollout
+
+- **Impact.** The server release for `11957a1` stopped before migrations at
+  20:08 UTC. The dbt model timing panel is awaiting its production telemetry.
+  Fly provider sync offload stopped. After the failure, the Oracle web, worker,
+  and analytics worker replicas were ready on the previously verified image and
+  `/healthz` returned HTTP 200.
+  [Failed server release](https://github.com/Asherlc/dofek/actions/runs/45473599071/job/138736657726).
+- **Cause.** The “Drain Fly provider sync before database migrations” step ran
+  `flyctl machine stop "$MACHINE_ID" --app "$FLY_SYNC_APP_NAME" --signal SIGTERM --timeout 300 --wait-timeout 6m`.
+  The wait request failed after 57 seconds with
+  `deadline_exceeded: machine failed to reach desired state, stopped, currently stopping`.
+  Fly CLI v0.5.16 sends one wait request from the stop command. Its Fly Go
+  dependency caps that request at 60 seconds. The API confirmed the machine
+  stopped at 20:13:04 UTC, about five minutes after the stop request.
+  [Fly CLI stop](https://github.com/superfly/flyctl/blob/v0.5.16/internal/command/machine/stop.go) ·
+  [Fly Go wait](https://github.com/superfly/fly-go/blob/v0.12.8/flaps/flaps_machines_wait.go).
+- **Mitigation and remaining risk.** The Oracle provider worker remained
+  running as the fallback. Axiom recorded 68 completed attempts across 11
+  providers from the Fly stop through the 21:01 UTC observation. Release
+  receipt `8039161770` was still pending at that point. The drain step now
+  lists the exact machine state, issues at most one graceful stop without
+  `--wait-timeout`, and polls `machines list` for up to six minutes so clear
+  API or identity failures stay fatal while transitional states are observed
+  to completion. Pending receipt reconciliation against the verified live
+  version remains.
+
 ## 2026-11-24 — PR #3474 CI: deduped_sensor fixture contract and dotenv-linter install 503
 
 - **Impact.** [CI run 45336998012](https://github.com/Asherlc/dofek/actions/runs/45336998012)
