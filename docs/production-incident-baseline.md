@@ -39944,3 +39944,18 @@ Local qualification and CI are separate from production throughput acceptance. T
   present the same session error. Consider showing a maintenance message at
   the proxy and in the web session screen when the fallback route handles
   the request.
+
+## 2026-11-23 — Maintenance notice PR failed two deploy workflow tests
+
+- **Impact and evidence.** PR #3470's `Check Server / Unit Tests` job failed
+  during `pnpm exec vitest run --project unit --coverage`. The first failing
+  test reported `STACK_SERVICE_FILTER: unbound variable`. The failure was
+  confined to PR validation. The focused deploy workflow suite reproduced
+  both failures locally. [CI job](https://github.com/Asherlc/dofek/actions/runs/45298874681/job/138126527690).
+- **Cause and fix.** The workflow renamed the stack filter to select the
+  maintenance service as well as web. Two fixtures still injected the old
+  variable. The fixtures now use the renamed variable and require the filter
+  to be present in the workflow. All 88 deploy workflow tests passed locally
+  after the fix. Run that suite before pushing changes to a workflow
+  environment variable it consumes.
+  [Workflow tests](../.github/workflows/deploy-web-stack.test.ts).

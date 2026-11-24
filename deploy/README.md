@@ -226,12 +226,14 @@ infrastructure has been retired.
 - During a scheduled schema change, the release enables the
   `web-maintenance@swarm` router and verifies its HTTP 503 response before
   draining web. It uses the same web host rule with higher priority. The
-  responder serves a self-contained HTML page and JSON errors under `/api/`.
+  responder serves HTML for page requests, a tRPC error envelope under
+  `/api/trpc`, and a plain JSON error for other `/api/` paths.
   It sends `Cache-Control: no-store`, `Retry-After`, and
-  `X-Dofek-Maintenance: 1`. Bump `web_maintenance_v1` when the response config
+  `X-Dofek-Maintenance: 1`. Bump `web_maintenance_v2` when the response config
   changes. [Traefik router priorities](https://doc.traefik.io/traefik/v3.6/reference/routing-configuration/http/routing/rules-and-priority/)
   · [Swarm configs](https://docs.docker.com/engine/swarm/configs/)
-  · [Nginx response headers](https://nginx.org/en/docs/http/ngx_http_headers_module.html).
+  · [Nginx response headers](https://nginx.org/en/docs/http/ngx_http_headers_module.html)
+  · [tRPC error codes](https://github.com/trpc/trpc/blob/v11.18.0/packages/server/src/unstable-core-do-not-import/rpc/codes.ts).
 
 ## Deployment
 
