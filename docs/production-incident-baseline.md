@@ -1,5 +1,36 @@
 # Production Incident Baseline
 
+## 2026-11-24 — PR #3474 CI: deduped_sensor fixture contract and dotenv-linter install 503
+
+- **Impact.** [CI run 45336998012](https://github.com/Asherlc/dofek/actions/runs/45336998012)
+  for [PR #3474](https://github.com/Asherlc/dofek/pull/3474) failed required checks before
+  merge.
+- **Evidence / cause.**
+  [Integration shard 2/5 job 138252930888](https://github.com/Asherlc/dofek/actions/runs/45336998012/job/138252930888)
+  failed `src/db/clickhouse-deduped-sensor.integration.test.ts` with
+  `Number of columns doesn't match (source: 18 and result: 17)` on the intentional legacy
+  dbt insert path, and
+  `analytics/models/read_models/activity_sensor_dirty_keys.integration.test.ts` with
+  `Syntax error … { this }} FINAL`.
+  [Integration shard 4/5 job 138252930864](https://github.com/Asherlc/dofek/actions/runs/45336998012/job/138252930864)
+  failed `activity_heart_rate_distribution.integration.test.ts` with the same
+  `{{ this }}` residual after incremental `deduped_sensor.sql` replay.
+  [Dotenv Lint job 138251360215](https://github.com/Asherlc/dofek/actions/runs/45336998012/job/138251360215)
+  failed `Install dotenv-linter` with `curl: (22) The requested URL returned error: 503`
+  while fetching the pinned `raw.githubusercontent.com` install script.
+- **Fix.** Legacy dbt insert now `EXCEPT`s both `source_refreshed_at` and
+  `heart_rate_changed_at`. Activity performance fixtures resolve `{{ this }}` to the
+  fixture `deduped_sensor` and include `heart_rate_changed_at DateTime64(9, 'UTC')` in
+  DDL/projection. Dotenv Lint downloads the
+  [v4.0.0 linux-x86_64 release tarball](https://github.com/dotenv-linter/dotenv-linter/releases/download/v4.0.0/dotenv-linter-linux-x86_64.tar.gz)
+  into `RUNNER_TEMP`, verifies SHA-256
+  `9e2f1f6eb88a71ac15ef209f78f5a68644db82f132d2677112b4f80ec2bd2127`, extracts only
+  `dotenv-linter`, and runs `dotenv-linter check .`.
+- **Validation.** Local ClickHouse reproduced all three fixture failures. After
+  the repair, 54 integration tests, repository lint, workspace type checks, and
+  workflow lint passed. The verified Linux binary also passed dotenv lint on
+  Ubuntu 26.04. The GitHub Actions rerun is pending.
+
 ## 2026-11-23 — Vitest drops the diagnostics reporter's hook event
 
 - **Impact.** The required server unit check for PR #3469 stopped at
@@ -50,11 +81,13 @@
   and matched the stored count and checksum of 730,989 active samples. An
   original window query restricted to three recent windows hit the probe's
   24-second limit. These probes left the scheduled models unchanged.
-- **Remaining risk and follow-up.** The scheduled refresh still incurs this
-  CPU cost. Before rollout, cover empty windows, late data, deletions,
-  and workout overlaps at sleep boundaries in real ClickHouse tests. After
-  rollout, compare query CPU, rows read, and refresh completion across
-  scheduled cycles. The probes exercised active windows only.
+- **Remaining risk and follow-up.** This profile predates the merged
+  [PR #3474](https://github.com/Asherlc/dofek/pull/3474) fix. See also the later
+  [Sleep heart-rate builds dominated ClickHouse query CPU](#2026-11-23--sleep-heart-rate-builds-dominated-clickhouse-query-cpu)
+  section. Measure query CPU, rows read, and refresh freshness after deploying
+  the fix. Before further model changes, cover empty windows, late data, deletions,
+  and workout overlaps at sleep boundaries in real ClickHouse tests. The probes
+  exercised active windows only.
 
 ## 2026-11-18 — Vertical-Life search and detail disagree on a crag's broader area
 
@@ -40065,4 +40098,83 @@ Local qualification and CI are separate from production throughput acceptance. T
   to be present in the workflow. All 88 deploy workflow tests passed locally
   after the fix. Run that suite before pushing changes to a workflow
   environment variable it consumes.
+
+## 2026-11-23 — Sleep heart-rate builds dominated ClickHouse query CPU
+
+- **Symptoms and impact.** The November 21–23 UTC production window showed
+  recurring ClickHouse load from the sleep heart-rate window and sample builds.
+  Peak tracked server memory was 5.34 GiB against the 13 GiB container limit.
+  The profile establishes a recurring processing cost. Its effect on request
+  latency remains unmeasured. [Stack configuration](../deploy/docker-compose.yml)
+  · [ClickHouse query log](https://clickhouse.com/docs/operations/system-tables/query_log).
+- **Evidence.** `system.query_log` recorded 120,825 CPU seconds across initial
+  queries that finished or failed during execution. The calculation sums
+  `ProfileEvents` user and system CPU time and groups dbt queries by `node_id`.
+  dbt accounted for 91% of the total. `sleep_heart_rate_window` and
+  `sleep_heart_rate_sample` accounted for 67,398 CPU seconds together (56%).
+  Each insert ran 284 times, with a p95 duration of 157 and 155 seconds,
+  respectively. Application-table merges accounted for roughly 1,262 CPU
+  seconds in `system.part_log`. [ClickHouse part log](https://clickhouse.com/docs/operations/system-tables/part_log).
+- **Confirmed source of repeat work.** The day-change materialized view stamps
+  heart-rate inserts with the current wall clock. `deduped_sensor` reprocesses
+  daily batches with a one-day lookback, so reinserts can mark old logical
+  samples as changed. At 02:04 UTC on November 24, the view advanced markers
+  used by 11 rebuilt sleep windows. Four of those windows contained 202,208
+  heart-rate rows in total, and the latest heart-rate, sleep, and overlapping
+  activity source timestamps for those four all predated 01:34 UTC.
+  [Day-change view](../src/db/clickhouse-migrations/0060_heart_rate_day_change.ts)
+  · [Deduplication model](../analytics/models/read_models/deduped_sensor.sql)
+  · [Window model](../analytics/models/read_models/sleep_heart_rate_window.sql).
+- **Status and follow-up.** The investigation used read-only production queries.
+  Measure the effect of deriving sleep invalidation from logical input changes
+  while preserving late samples, priority corrections, and deletes. Validate
+  unchanged replay and genuine updates against ClickHouse, then compare model
+  CPU and output parity. The separate processing pause is tracked by
+  [deploy recovery PR #3473](https://github.com/Asherlc/dofek/pull/3473).
   [Workflow tests](../.github/workflows/deploy-web-stack.test.ts).
+
+## 2026-11-23 — Pre-migration web check left health-data processing stopped
+
+- **Impact.** Dofek reported that updates to activities, sleep, recovery,
+  training, and body were taking longer than expected. Production web had
+  two running replicas. The sync worker, reconciliation service, analytics
+  worker, and three ClickHouse metric-stream sinks each had zero desired and
+  running replicas. A read-only Postgres query found 15 pending reconciliation
+  outbox entries. Some predated the release. The number of affected users is
+  unknown. [Processing lifecycle](processing-status-runbook.md#runtime-progression).
+- **Cause.** Release 45309490985 drained publishers starting at 02:10:53 UTC
+  on November 24 and applied the quiesced dependency stack. The rolling
+  deploy's `Wait for pre-migration web convergence` step ran
+  `docker service ls --filter name=dofek_web --format '{{.Replicas}}'`.
+  Docker returned one line for `dofek_web` and another for
+  `dofek_web-maintenance`. The resulting two-line value never equaled
+  `2/2`, even after the web update completed at 02:15:19 UTC. The first
+  fatal line at 02:18:24 UTC was `dofek_web did not converge before migrations`.
+  GitHub skipped migrations and the final stack rollout, leaving the
+  processing services at zero.
+  [Failed deployment job](https://github.com/Asherlc/dofek/actions/runs/45309490985/job/138162305677)
+  · [Docker service name filter](https://docs.docker.com/reference/cli/docker/service/ls/#name).
+- **Recovery.** The next automatic release stopped at
+  `live web and worker identities cannot be reconciled` because no worker
+  task was running. Both service definitions still named the last verified
+  image from receipt 8013867171. Receipt 8016422783 remained pending for the
+  failed candidate. The fix matched service names exactly in both web rollout
+  checks and added an explicit recovery path that verifies the pre-migration
+  failure and last verified image. The protected release recovered receipt
+  8016422783 with the validated `e46b8ee8f` image. It verified receipt
+  8019679486 and marked the failed receipt inactive.
+  [Admission failure](https://github.com/Asherlc/dofek/actions/runs/45313848197/job/138175857623)
+  · [Recovery fix](https://github.com/Asherlc/dofek/pull/3473)
+  · [Verified release](https://github.com/Asherlc/dofek/actions/runs/45332102234)
+  · [Publication recovery runbook](../deploy/README.md#publication-recovery).
+- **Validation and remaining backlog.** Swarm reported both web replicas and
+  all six processing services running. The public health check returned HTTP
+  200. The analytics worker reported its first successful refresh at 06:03:40
+  UTC. The processing ledger recorded successful analytics for 13 operations
+  after restart. The first three reconciliation passes recorded 14 completions
+  and classified three older operations as stalled under the existing cutoff.
+  Pending operations fell from 22 to 15 after the third pass. The outbox
+  included work queued after the sync worker restarted. Continue monitoring
+  reconciliation for the pending operations.
+  [Deployment verification](https://github.com/Asherlc/dofek/actions/runs/45332102234/job/138243564133)
+  · [Reconciliation and stalled-operation cutoff](processing-status-runbook.md#runtime-progression).

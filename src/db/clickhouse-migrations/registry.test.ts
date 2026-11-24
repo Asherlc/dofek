@@ -16,7 +16,6 @@ describe("clickHouseMigrations", () => {
     const migrationIds = migrations.map((migration) => migration.id);
     expect(new Set(migrationIds).size).toBe(migrationIds.length);
     expect(migrationIds.slice(-8)).toEqual([
-      "0111_daily_health_sensor",
       "0112_remove_healthspan",
       "0113_activity_fit_recovery_error",
       "0114_normalized_power_projection",
@@ -24,9 +23,16 @@ describe("clickHouseMigrations", () => {
       "0116_exclude_catalog_only_daily_metrics",
       "0117_cycling_polarization_elapsed_seconds",
       "0118_daily_sleep_wake_date_index",
+      "0119_heart_rate_changed_at",
     ]);
     expect(migrations.at(-1)).toMatchObject({
-      id: "0118_daily_sleep_wake_date_index",
+      id: "0119_heart_rate_changed_at",
+      statements: expect.arrayContaining([
+        expect.stringContaining("ADD COLUMN IF NOT EXISTS heart_rate_changed_at"),
+        expect.stringContaining("ALTER TABLE analytics.heart_rate_day_change_ingest"),
+        expect.stringContaining("MODIFY QUERY"),
+        expect.stringContaining("max(heart_rate_changed_at) AS changed_at"),
+      ]),
     });
     const migrationNumbers = migrationIds.map((migrationId) => Number(migrationId.slice(0, 4)));
     expect(migrationNumbers).toEqual(

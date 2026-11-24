@@ -123,6 +123,10 @@ else if (args[0] === 'service' && args[1] === 'inspect') {
   const format = args.at(-1);
   process.stdout.write(format.includes('Replicated.Replicas') ? '1' : 'ghcr.io/owner/dofek@' + process.env.CANDIDATE_DIGEST);
 } else if (args[0] === 'service' && args[1] === 'ps') process.stdout.write('task-fixture');
+else if (args[0] === 'ps' && process.env.DOCKER_PS_EXIT) {
+  console.error('mock docker ps failure');
+  process.exit(Number(process.env.DOCKER_PS_EXIT));
+}
 else if (args[0] === 'inspect' && args.includes('task')) process.stdout.write(JSON.stringify({image:'ghcr.io/owner/dofek@' + process.env.CANDIDATE_DIGEST,state:'running'}));
 else process.exit(2);
 `,
@@ -131,8 +135,24 @@ else process.exit(2);
     join(bin, "ssh"),
     `#!/usr/bin/env node
 const command = process.argv.slice(2).join(' ');
+if (process.env.SSH_LOG) require('node:fs').appendFileSync(process.env.SSH_LOG, command + '\\n');
+const query = process.argv.slice(2).at(-1);
+if (process.env.SSH_WORKER_PS_EXIT && query.includes('org.opencontainers.image.revision') && query.includes('dofek_worker')) {
+  const { spawnSync } = require('node:child_process');
+  const result = spawnSync('bash', ['-c', query], { encoding: 'utf8', env: process.env });
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  process.exit(result.status ?? 1);
+}
+const live = process.env.LIVE_SHA + ' ghcr.io/owner/dofek@' + process.env.LIVE_DIGEST + ' running\\n';
+const webImage = process.env.WEB_SPEC_IMAGE ?? ('ghcr.io/owner/dofek@' + process.env.LIVE_DIGEST);
 if (command.includes('service ls')) process.stdout.write('dofek_web\\ndofek_worker\\n');
-else process.stdout.write(process.env.LIVE_SHA + ' ghcr.io/owner/dofek@' + process.env.LIVE_DIGEST + ' running\\n');
+else if (command.includes('service inspect') && command.includes('ContainerSpec.Image')) process.stdout.write(command.includes('dofek_worker') ? (process.env.WORKER_SPEC_IMAGE ?? webImage) : webImage);
+else if (command.includes('service inspect') && command.includes('Replicated.Replicas')) process.stdout.write(process.env.WORKER_DESIRED_REPLICAS ?? '0');
+else if (command.includes('service ps') && command.includes('desired-state=running')) process.stdout.write(process.env.WORKER_RUNNING_TASKS ?? '');
+else if (command.includes('docker ps') && command.includes('{{.ID}}')) process.stdout.write(process.env.WORKER_RUNNING_CONTAINERS ?? '');
+else if (command.includes('org.opencontainers.image.revision')) process.stdout.write(command.includes('dofek_worker') ? (process.env.WORKER_LIVE ?? live) : live);
+else process.stdout.write(live);
 `,
   );
   writeFileSync(
@@ -200,3 +220,255 @@ export function runWorkflowStep(
     },
   });
 }
+
+export function failedServerReceipt(): ReturnType<typeof record> {
+  const pending = record(
+    parentSha,
+    "PENDING",
+    {
+      source_sha: parentSha,
+      image_digest: liveDigest,
+      run_id: "124",
+      run_attempt: "1",
+      run_url: "https://github.com/owner/dofek/actions/runs/124/attempts/1",
+    },
+    "Server source awaiting stack verification",
+  );
+  pending.databaseId = 99;
+  return pending;
+}
+
+export function failedRecoveryEnvironment(
+  directory: string,
+  logPath: string,
+  overrides: Record<string, string> = {},
+  jobName = "Deploy Server Production / Deploy Web Stack / Deploy Web Stack",
+): Record<string, string> {
+  const priorRun = {
+    id: 124,
+    run_attempt: 1,
+    head_sha: baseSha,
+    status: "completed",
+    conclusion: "failure",
+  };
+  const failedJob = {
+    id: 125,
+    run_id: 124,
+    run_attempt: 1,
+    head_sha: baseSha,
+    name: jobName,
+    status: "completed",
+    conclusion: "failure",
+  };
+  return {
+    GH_TOKEN: "fixture",
+    GH_LOG: logPath,
+    GH_HISTORY: history([
+      failedServerReceipt(),
+      record(baseSha, "SUCCESS", { source_sha: baseSha, image_digest: candidateDigest }),
+    ]),
+    GH_ACTION_RUN: JSON.stringify(priorRun),
+    GH_ACTION_ATTEMPT: JSON.stringify(priorRun),
+    GH_ACTION_JOBS: JSON.stringify([{ total_count: 1, jobs: [failedJob] }]),
+    RUNNER_TEMP: directory,
+    SOURCE_SHA: headSha,
+    IMAGE_TAG: "sha-test",
+    STACK_NAME: "dofek",
+    SERVER_HOST: "fixture-host",
+    SSH_USER: "ubuntu",
+    REPOSITORY: "owner/dofek",
+    RUN_ID: "400",
+    RUN_ATTEMPT: "1",
+    RUN_URL: "https://github.com/owner/dofek/actions/runs/400/attempts/1",
+    ENVIRONMENT_URL: "https://dofek.fit",
+    CANDIDATE_DIGEST: candidateDigest,
+    LIVE_SHA: parentSha,
+    LIVE_DIGEST: liveDigest,
+    RECOVER_FAILED_DEPLOYMENT_ID: "99",
+    ...overrides,
+  };
+}
+
+export interface WorkflowStepConclusion {
+  name: string;
+  conclusion: string;
+}
+
+export function preMigrationFailureSteps(): WorkflowStepConclusion[] {
+  return [
+    { name: "Wait for migration readers and writers to stop", conclusion: "success" },
+    { name: "Wait for pre-migration web convergence", conclusion: "failure" },
+    { name: "Run migrations", conclusion: "skipped" },
+  ];
+}
+
+export function stoppedWorkerFailedReceipt(): ReturnType<typeof record> {
+  const pending = failedServerReceipt();
+  pending.payload = {
+    ...(pending.payload as Record<string, unknown>),
+    image_digest: `sha256:${"d".repeat(64)}`,
+  };
+  return pending;
+}
+
+export function stoppedWorkerRecoveryEnvironment(
+  directory: string,
+  logPath: string,
+  overrides: Record<string, string> = {},
+  steps: WorkflowStepConclusion[] | null = preMigrationFailureSteps(),
+): Record<string, string> {
+  const base = failedRecoveryEnvironment(directory, logPath);
+  const failedJob = {
+    id: 125,
+    run_id: 124,
+    run_attempt: 1,
+    head_sha: baseSha,
+    name: "Deploy Server Production / Deploy Web Stack / Deploy Web Stack",
+    status: "completed",
+    conclusion: "failure",
+    ...(steps === null ? {} : { steps }),
+  };
+  return {
+    ...base,
+    GH_HISTORY: history([
+      stoppedWorkerFailedReceipt(),
+      record(baseSha, "SUCCESS", { source_sha: baseSha, image_digest: liveDigest }),
+    ]),
+    GH_ACTION_RUN: JSON.stringify({
+      id: 124,
+      run_attempt: 1,
+      head_sha: baseSha,
+      status: "completed",
+      conclusion: "failure",
+    }),
+    GH_ACTION_ATTEMPT: JSON.stringify({
+      id: 124,
+      run_attempt: 1,
+      head_sha: baseSha,
+      status: "completed",
+      conclusion: "failure",
+    }),
+    GH_ACTION_JOBS: JSON.stringify([{ total_count: 1, jobs: [failedJob] }]),
+    LIVE_SHA: baseSha,
+    LIVE_DIGEST: liveDigest,
+    WEB_SPEC_IMAGE: `ghcr.io/owner/dofek@${liveDigest}`,
+    WORKER_SPEC_IMAGE: `ghcr.io/owner/dofek@${liveDigest}`,
+    WORKER_LIVE: "",
+    WORKER_DESIRED_REPLICAS: "0",
+    WORKER_RUNNING_CONTAINERS: "",
+    WORKER_RUNNING_TASKS: "",
+    ...overrides,
+  };
+}
+
+export interface StoppedWorkerRecoveryFixture {
+  result: ReturnType<typeof runWorkflowStep>;
+  output: string;
+  calls: Array<{ args: string[]; input: string }>;
+  sshCommands: string[];
+}
+
+export function runStoppedWorkerRecovery(
+  script: string,
+  overrides: Record<string, string> = {},
+  steps: WorkflowStepConclusion[] | null = preMigrationFailureSteps(),
+): StoppedWorkerRecoveryFixture {
+  const directory = mkdtempSync(join(tmpdir(), "server-publication-pre-migration-"));
+  try {
+    const bin = fixtureBin(directory);
+    const logPath = join(directory, "gh.jsonl");
+    const sshLog = join(directory, "ssh.log");
+    const outputPath = join(directory, "output");
+    const result = runWorkflowStep(
+      script,
+      bin,
+      outputPath,
+      stoppedWorkerRecoveryEnvironment(directory, logPath, { SSH_LOG: sshLog, ...overrides }, steps),
+    );
+    const readLines = (path: string) =>
+      existsSync(path) ? readFileSync(path, "utf8").trim().split("\n").filter(Boolean) : [];
+    return {
+      result,
+      output: existsSync(outputPath) ? readFileSync(outputPath, "utf8") : "",
+      calls: readLines(logPath).map((line) => JSON.parse(line)),
+      sshCommands: readLines(sshLog),
+    };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+export interface StoppedWorkerRejection {
+  label: string;
+  overrides?: Record<string, string>;
+  steps?: WorkflowStepConclusion[] | null;
+  error: string;
+}
+
+export const stoppedWorkerRejections: StoppedWorkerRejection[] = [
+  { label: "missing step evidence", steps: null, error: "no step evidence for pre-migration recovery" },
+  {
+    label: "readers and writers not stopped",
+    steps: [
+      { name: "Wait for migration readers and writers to stop", conclusion: "failure" },
+      { name: "Wait for pre-migration web convergence", conclusion: "failure" },
+      { name: "Run migrations", conclusion: "skipped" },
+    ],
+    error: 'step "Wait for migration readers and writers to stop" concluded failure',
+  },
+  {
+    label: "pre-migration web convergence succeeded",
+    steps: [
+      { name: "Wait for migration readers and writers to stop", conclusion: "success" },
+      { name: "Wait for pre-migration web convergence", conclusion: "success" },
+      { name: "Run migrations", conclusion: "skipped" },
+    ],
+    error: 'step "Wait for pre-migration web convergence" concluded success',
+  },
+  {
+    label: "migrations ran",
+    steps: [
+      { name: "Wait for migration readers and writers to stop", conclusion: "success" },
+      { name: "Wait for pre-migration web convergence", conclusion: "failure" },
+      { name: "Run migrations", conclusion: "success" },
+    ],
+    error: 'step "Run migrations" concluded success',
+  },
+  {
+    label: "automatic admission without a recovery ID",
+    overrides: { RECOVER_FAILED_DEPLOYMENT_ID: "" },
+    error: "live web and worker identities cannot be reconciled",
+  },
+  { label: "a still-desired worker", overrides: { WORKER_DESIRED_REPLICAS: "2" }, error: "still desires" },
+  {
+    label: "a running worker container",
+    overrides: { WORKER_RUNNING_CONTAINERS: "worker-task\n" },
+    error: "running container",
+  },
+  {
+    label: "a desired-running worker task",
+    overrides: { WORKER_RUNNING_TASKS: "worker-task\n" },
+    error: "desired-running task",
+  },
+  {
+    label: "a worker service spec on another image",
+    overrides: { WORKER_SPEC_IMAGE: `ghcr.io/owner/dofek@sha256:${"e".repeat(64)}` },
+    error: "worker service spec image",
+  },
+  {
+    label: "a web service spec on another image",
+    overrides: { WEB_SPEC_IMAGE: `ghcr.io/owner/dofek@sha256:${"e".repeat(64)}` },
+    error: "web service spec image",
+  },
+  {
+    label: "a live web source behind the verified baseline",
+    overrides: { LIVE_SHA: parentSha },
+    error: "does not match the last verified successful server receipt",
+  },
+  {
+    label: "a live web digest behind the verified baseline",
+    overrides: { LIVE_DIGEST: candidateDigest },
+    error: "does not match the last verified successful server receipt",
+  },
+  { label: "a non-descendant candidate", overrides: { SOURCE_SHA: parentSha }, error: "must be a strict descendant" },
+];

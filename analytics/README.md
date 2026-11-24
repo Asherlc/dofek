@@ -628,7 +628,17 @@ because [incremental models retain prior output](https://docs.getdbt.com/docs/bu
 Scalar activity sample models use dbt's `microbatch`
 incremental strategy with daily batches and a one-batch lookback, so routine
 cycles process the previous and current freshness days instead of repeatedly
-replaying older historical refreshes. Activity
+replaying older historical refreshes. `deduped_sensor` still refreshes
+`refresh_version` and source freshness on those lookback replays, but it keeps a
+dedicated per-row `heart_rate_changed_at` stamp for heart-rate payload and
+deletion changes only. Non-heart-rate rows keep the epoch default.
+[Migration 0119](../src/db/clickhouse-migrations/0119_heart_rate_changed_at.ts)
+appends that column and rewires
+`analytics.heart_rate_day_change_ingest` with
+[`ALTER TABLE ... MODIFY QUERY`](https://clickhouse.com/docs/sql-reference/statements/alter/view)
+so day markers aggregate `max(heart_rate_changed_at)` and skip epoch-only
+groups. Sleep heart-rate invalidation therefore follows logical heart-rate
+changes. Activity
 stream staging uses the `metric_stream_freshness` source alias and batches by
 `_peerdb_synced_at`; downstream activity sample membership models
 (`activity_sensor_sample`) use upstream source freshness as their microbatch

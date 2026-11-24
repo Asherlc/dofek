@@ -233,14 +233,21 @@ jobs:
           persist-credentials: false
       - name: Install dotenv-linter
         run: |
+          set -euo pipefail
           # dotenv-linter v4.0.0
-          curl -sSfL https://raw.githubusercontent.com/dotenv-linter/dotenv-linter/f9076b02daed89f54ed0bd23951a4cfa5ccceac4/install.sh -o "$RUNNER_TEMP/dotenv-linter-install.sh"
-          sh "$RUNNER_TEMP/dotenv-linter-install.sh" -b "$HOME/.local/bin" v4.0.0
+          # https://github.com/dotenv-linter/dotenv-linter/releases/tag/v4.0.0
+          archive_url="https://github.com/dotenv-linter/dotenv-linter/releases/download/v4.0.0/dotenv-linter-linux-x86_64.tar.gz"
+          archive_sha256="9e2f1f6eb88a71ac15ef209f78f5a68644db82f132d2677112b4f80ec2bd2127"
+          archive_path="$RUNNER_TEMP/dotenv-linter-linux-x86_64.tar.gz"
+          curl --fail --location --silent --show-error "$archive_url" --output "$archive_path"
+          printf '%s  %s\n' "$archive_sha256" "$archive_path" | sha256sum --check --strict -
+          tar -xzf "$archive_path" -C "$RUNNER_TEMP" dotenv-linter
+          rm -f "$archive_path"
       - name: Run dotenv-linter
         env:
           DOTENV_LINTER_IGNORE_CHECKS: UnorderedKey
         run: |
-          "$HOME/.local/bin/dotenv-linter" check .
+          "$RUNNER_TEMP/dotenv-linter" check .
 
   tflint:
     name: TFLint
