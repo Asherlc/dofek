@@ -2,7 +2,6 @@ import {
   isExpectedImportInputError,
   userFacingErrorMessage,
 } from "@dofek/format/user-facing-error";
-import { groupProviderEntries, providerFamily } from "@dofek/providers/provider-catalog";
 import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
@@ -38,6 +37,7 @@ import {
   type Provider,
   ProviderCard,
 } from "../../components/providers/provider-card.tsx";
+import { ProviderDataSourcesList } from "../../components/providers/provider-data-sources-list.tsx";
 import { ProviderSyncHistory } from "../../components/providers/provider-sync-history.tsx";
 import { styles } from "../../components/providers/styles.ts";
 import { SyncAllControls } from "../../components/providers/sync-all-controls.tsx";
@@ -142,7 +142,6 @@ export default function ProvidersScreen() {
   >({});
   const [anySyncing, setAnySyncing] = useState(false);
   const [syncAllError, setSyncAllError] = useState<string>();
-  const [selectedFamilyMethods, setSelectedFamilyMethods] = useState<Record<string, string>>({});
   const [sharedImportState, setSharedImportState] = useState<ShareImportProgress | null>(null);
   const resumedJobIds = useRef(new Set<string>());
   const pollingJobIds = useRef(new Set<string>());
@@ -759,8 +758,6 @@ export default function ProvidersScreen() {
       : undefined;
   const appleHealthImportProgress =
     appleHealthLocalImportProgress ?? appleHealthActiveImportProgress;
-  const providerGroups = groupProviderEntries([appleHealthProvider, ...providerList]);
-
   const renderProviderCard = (provider: Provider) => {
     if (provider.id === "apple_health") {
       return (
@@ -937,7 +934,6 @@ export default function ProvidersScreen() {
           loading={processingStatus.isLoading}
         />
       </View>
-      <Text style={styles.sectionTitle}>Data Sources</Text>
       {activeSyncs.error ? (
         <QueryStatePanel
           variant="error"
@@ -946,70 +942,13 @@ export default function ProvidersScreen() {
           minHeight={96}
         />
       ) : null}
-      {providers.error ? (
-        <View style={styles.card}>
-          <QueryStatePanel
-            variant="error"
-            title="Could not load data sources"
-            message={getQueryErrorMessage(providers.error, "Failed to load providers.")}
-          />
-        </View>
-      ) : null}
-      {stats.error ? (
-        <View style={styles.card}>
-          <QueryStatePanel
-            variant="error"
-            title="Could not load provider stats"
-            message={getQueryErrorMessage(stats.error, "Failed to load provider stats.")}
-          />
-        </View>
-      ) : null}
-      {isLoading && !providers.error ? (
-        <QueryStatePanel variant="loading" style={styles.card} />
-      ) : null}
-      {providerGroups.map((group) => {
-        if (group.kind === "provider") {
-          return <View key={group.provider.id}>{renderProviderCard(group.provider)}</View>;
-        }
-        const selectedProviderId = selectedFamilyMethods[group.family.id] ?? group.providers[0].id;
-        const selectedProvider =
-          group.providers.find((provider) => provider.id === selectedProviderId) ??
-          group.providers[0];
-        return (
-          <View key={group.family.id} testID={`provider-family-${group.family.id}`}>
-            <View style={styles.providerFamilyHeader}>
-              <Text style={styles.providerFamilyTitle}>{group.family.label}</Text>
-              <View style={styles.providerFamilyMethods}>
-                {group.providers.map((provider) => {
-                  const methodLabel = providerFamily(provider.id)?.methodLabel ?? provider.label;
-                  const selected = provider.id === selectedProvider.id;
-                  return (
-                    <TouchableOpacity
-                      key={provider.id}
-                      style={[
-                        styles.providerFamilyMethod,
-                        selected && styles.providerFamilyMethodSelected,
-                      ]}
-                      onPress={() =>
-                        setSelectedFamilyMethods((current) => ({
-                          ...current,
-                          [group.family.id]: provider.id,
-                        }))
-                      }
-                      accessibilityRole="button"
-                      accessibilityLabel={`Select ${group.family.label} ${methodLabel}`}
-                      accessibilityState={{ selected }}
-                    >
-                      <Text style={styles.providerFamilyMethodText}>{methodLabel}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-            {renderProviderCard(selectedProvider)}
-          </View>
-        );
-      })}
+      <ProviderDataSourcesList
+        providers={[appleHealthProvider, ...providerList]}
+        providersError={providers.error}
+        statsError={stats.error}
+        isLoading={isLoading}
+        renderProviderCard={renderProviderCard}
+      />
 
       <ProviderSyncHistory data={logs.data} error={logs.error} isLoading={logs.isLoading} />
       {/* Credential Auth Modal */}
