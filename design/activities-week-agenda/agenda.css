@@ -14,13 +14,21 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--page); color: var(--ink); }
 h1, h2, h3, h4, p, ol { margin: 0; }
 h1, h2 { letter-spacing: -.035em; }
-a { color: inherit; }
-summary { cursor: pointer; }
-summary:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
-:target { scroll-margin: 12px; }
+button, input { font: inherit; color: inherit; }
+button, summary { cursor: pointer; }
+:is(button, input, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 .app-bar {
   display: flex;
@@ -57,9 +65,62 @@ summary:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outli
 .workspace { width: min(100% - 72px, 920px); margin: 0 auto; padding: 26px 0 30px; }
 .page-title { font-size: 32px; line-height: 1.15; margin-bottom: 17px; }
 .agenda { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
-.agenda-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 16px 20px 14px; }
+.agenda-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 13px 20px 11px; }
 .agenda-head h2 { font-size: 23px; line-height: 1.2; }
-.range { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.range, .range-form button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 680;
+}
+.range { color: var(--accent); }
+.range::after {
+  content: "";
+  flex: 0 0 6px;
+  height: 6px;
+  border-right: 1.5px solid;
+  border-bottom: 1.5px solid;
+  transform: translateY(-2px) rotate(45deg);
+}
+.range:hover, .range-form button:hover { background: var(--green-wash); }
+.range-dialog {
+  width: min(400px, calc(100% - 28px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 22px 60px #0f171230;
+}
+.range-dialog::backdrop { background: #0f171266; }
+.range-form { display: grid; gap: 15px; padding: 17px; }
+.range-form h2 { font-size: 22px; }
+.range-presets, .range-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.range-presets button { color: var(--accent); }
+.date-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.date-fields label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 650; }
+.date-fields input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--page);
+  color: var(--ink);
+  font-size: 14px;
+}
+.range-actions { justify-content: flex-end; }
+.range-form .apply-range { border-color: var(--accent); background: var(--accent); color: var(--surface); }
+.range-form .apply-range:hover { filter: brightness(.91); }
+.range-empty { padding: 15px 20px 21px; color: var(--muted); }
 .week { list-style: none; padding: 0 20px 8px; }
 .day {
   display: grid;
@@ -84,15 +145,13 @@ summary:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outli
 .steps ol { margin: 2px 0 1px; padding-left: 19px; color: var(--ink); }
 .steps li + li { margin-top: 3px; }
 .empty { color: var(--muted); font-size: 12px; align-self: center; }
-.later, .history {
+.history {
   margin-top: 11px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
+  padding: 11px 15px;
 }
-.later > summary { padding: 11px 15px; font-weight: 690; }
-.later > .workout { margin: 0 12px 10px; }
-.history { padding: 11px 15px; }
 .history h2 { font-size: 15px; }
 .history p { color: var(--muted); font-size: 12px; margin-top: 3px; }
 .bottom-tabs, .system-status { display: none; }
@@ -102,7 +161,9 @@ summary:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outli
 .ios .page-title { margin: 1px 2px 13px; font-size: 31px; }
 .ios .agenda-head { padding: 13px 12px 11px; }
 .ios .agenda-head h2 { font-size: 21px; }
-.ios .range { font-size: 12px; }
+.ios .range { min-height: 44px; font-size: 12px; }
+.ios .range-form :is(button, input) { min-height: 44px; }
+.ios .range-dialog { margin: auto auto 66px; }
 .ios .week { padding: 0 12px 5px; }
 .ios .day { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 7px 0; }
 .ios .day.is-today { margin-inline: -6px; padding-inline: 6px; }
@@ -111,7 +172,6 @@ summary:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outli
 .ios .day-entries { grid-template-columns: minmax(0, 1fr); gap: 5px; }
 .ios .workout { padding: 6px 8px; }
 .ios .steps summary { padding: 8px 4px; min-height: 44px; }
-.ios .later > summary { padding-block: 12px; }
 .ios .bottom-tabs {
   position: fixed;
   bottom: 0;

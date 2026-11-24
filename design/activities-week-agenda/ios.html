@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dofek Activities · iOS</title>
   <link rel="stylesheet" href="agenda.css">
+  <script src="agenda.js" defer></script>
 </head>
 <body class="ios">
   <div class="system-status" aria-hidden="true"><span>9:41</span><span>▰▰▰</span></div>
@@ -12,10 +13,19 @@
     <h1 class="page-title" data-dc-id="page-title">Activities</h1>
     <section class="agenda" aria-labelledby="agenda-heading" data-dc-id="week-agenda">
       <header class="agenda-head" data-dc-id="week-header">
-        <h2 id="agenda-heading">This week</h2>
-        <p class="range">Nov 23–29, 2026</p>
+        <h2 id="agenda-heading">Workout calendar</h2>
+        <button type="button" class="range" aria-haspopup="dialog" aria-label="Date range, Nov 23–29, 2026" data-dc-id="date-range">Nov 23–29, 2026</button>
       </header>
-      <ol class="week" aria-label="Days this week">
+      <ol class="week" aria-label="Days in the selected range">
+        <li class="day" data-dc-id="previous-week-friday" hidden>
+          <h3 class="day-heading"><time datetime="2026-11-20">Fri, Nov 20</time></h3>
+          <div class="day-entries">
+            <article class="workout" data-dc-id="previous-week-swim">
+              <div class="workout-head"><h4>Pool swim</h4><span class="status complete">Completed</span></div>
+              <p class="meta">6:20 PM · 36 min · Apple Health</p>
+            </article>
+          </div>
+        </li>
         <li class="day" data-dc-id="monday">
           <h3 class="day-heading"><time datetime="2026-11-23">Mon, Nov 23</time></h3>
           <div class="day-entries">
@@ -76,15 +86,37 @@
           <h3 class="day-heading"><time datetime="2026-11-29">Sun, Nov 29</time></h3>
           <p class="empty">No workouts</p>
         </li>
+        <li class="day" data-dc-id="next-week-tuesday" hidden>
+          <h3 class="day-heading"><time datetime="2026-12-01">Tue, Dec 1</time></h3>
+          <div class="day-entries">
+            <article class="workout" data-dc-id="next-week-plan">
+              <div class="workout-head"><h4>Cadence drills</h4><span class="status planned">Planned</span></div>
+              <p class="meta">Ride · Intervals.icu</p>
+            </article>
+          </div>
+        </li>
       </ol>
+      <p class="range-empty" hidden>No workouts in this date range.</p>
+      <p class="visually-hidden" role="status" data-range-status></p>
     </section>
-    <details class="later" data-dc-id="later-plans">
-      <summary>Later planned workouts</summary>
-      <article class="workout" data-dc-id="next-week-plan">
-        <div class="workout-head"><h4>Cadence drills</h4><span class="status planned">Planned</span></div>
-        <p class="meta">Tue, Dec 1 · Ride · Intervals.icu</p>
-      </article>
-    </details>
+    <dialog class="range-dialog" id="range-dialog" aria-labelledby="range-dialog-heading" data-dc-id="date-range-picker">
+      <form method="dialog" class="range-form">
+        <h2 id="range-dialog-heading">Date range</h2>
+        <div class="range-presets" aria-label="Date range shortcuts">
+          <button type="button" data-start="2026-11-16" data-end="2026-11-22" data-dc-id="previous-week">Previous week</button>
+          <button type="button" data-start="2026-11-23" data-end="2026-11-29" data-dc-id="this-week">This week</button>
+          <button type="button" data-start="2026-11-30" data-end="2026-12-06" data-dc-id="next-week">Next week</button>
+        </div>
+        <div class="date-fields">
+          <label data-dc-id="start-date">Start date <input name="startDate" type="date" value="2026-11-23" required></label>
+          <label data-dc-id="end-date">End date <input name="endDate" type="date" value="2026-11-29" required></label>
+        </div>
+        <div class="range-actions">
+          <button type="button" data-dc-id="cancel-range">Cancel</button>
+          <button type="submit" class="apply-range" data-dc-id="apply-range">Apply</button>
+        </div>
+      </form>
+    </dialog>
     <section class="history" aria-labelledby="history-heading" data-dc-id="activity-history">
       <h2 id="history-heading">Activity history</h2>
       <p>Training time this week · 1 h 33 min across 2 completed activities</p>

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "title": "Activities · This week",
+  "title": "Activities · Date range",
   "kind": "prototype",
-  "description": "Dofek web and iOS Activities mockups with planned and completed workouts in one weekly agenda. Uses sample data.",
+  "description": "Dofek web and iOS Activities mockups with planned and completed workouts in one date-filtered agenda. Uses sample data.",
   "artboards": [
     {
       "id": "web",
@@ -10,7 +10,7 @@
       "file": "web.html",
       "width": 1040,
       "height": 890,
-      "group": "Weekly agenda"
+      "group": "Workout calendar"
     },
     {
       "id": "ios",
@@ -18,7 +18,7 @@
       "file": "ios.html",
       "width": 390,
       "height": 844,
-      "group": "Weekly agenda"
+      "group": "Workout calendar"
     }
   ]
 }
