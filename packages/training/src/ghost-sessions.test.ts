@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ghostReplayAtElapsedMs,
   ghostSessionsCompareInputSchema,
   ghostSessionsCompareResponseSchema,
   ghostSessionsGetInputSchema,
@@ -393,6 +394,89 @@ describe("Ghost Sessions response contracts", () => {
         replay: Array.from({ length: 97 }, () => comparison.replay[0]),
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("ghostReplayAtElapsedMs", () => {
+  it("uses each recording's clock through repeated keys and pauses, then clamps each finish", () => {
+    const replay = (
+      [
+        [0, 0, 0, 0],
+        [4_000, 4, 2_000, 3],
+        [8_000, 4, 2_000, 3],
+        [8_000, 4, 5_000, 6],
+        [12_000, 8, 8_000, 9],
+      ] as const
+    ).map(([anchorElapsed, anchorProgress, candidateElapsed, candidateProgress]) => ({
+      anchor: {
+        timestampMs: 300_000.125 + anchorElapsed,
+        lat: anchorProgress,
+        lng: 10,
+        distanceMeters: anchorProgress,
+      },
+      candidate: {
+        timestampMs: 180_000.375 + candidateElapsed,
+        lat: candidateProgress,
+        lng: 20,
+        distanceMeters: candidateProgress,
+      },
+    }));
+
+    expect(ghostReplayAtElapsedMs(replay, 0)).toEqual({
+      anchor: { lat: 0, lng: 10 },
+      candidate: { lat: 0, lng: 20 },
+    });
+    expect(ghostReplayAtElapsedMs(replay, 2_000)).toEqual({
+      anchor: { lat: 2, lng: 10 },
+      candidate: { lat: 3, lng: 20 },
+    });
+    expect(ghostReplayAtElapsedMs(replay, 6_000)).toEqual({
+      anchor: { lat: 4, lng: 10 },
+      candidate: { lat: 7, lng: 20 },
+    });
+    const afterPause = ghostReplayAtElapsedMs(replay, 10_000.5);
+    expect(afterPause?.anchor.lat).toBeCloseTo(6.0005, 12);
+    expect(afterPause?.anchor.lng).toBe(10);
+    expect(afterPause?.candidate).toEqual({ lat: 9, lng: 20 });
+    expect(ghostReplayAtElapsedMs(replay, 40_000)).toEqual({
+      anchor: { lat: 8, lng: 10 },
+      candidate: { lat: 9, lng: 20 },
+    });
+  });
+
+  it("takes the shorter longitude path across the date line in both directions", () => {
+    const replay = [
+      {
+        anchor: { ...anchor.start, lat: 0, lng: 179 },
+        candidate: { ...candidate.start, lat: 0, lng: -178 },
+      },
+      {
+        anchor: { ...anchor.end, timestampMs: anchor.start.timestampMs + 1_000, lat: 4, lng: -179 },
+        candidate: {
+          ...candidate.end,
+          timestampMs: candidate.start.timestampMs + 1_000,
+          lat: 8,
+          lng: 178,
+        },
+      },
+    ];
+    expect(ghostReplayAtElapsedMs(replay, 250)).toEqual({
+      anchor: { lat: 1, lng: 179.5 },
+      candidate: { lat: 2, lng: -179 },
+    });
+    expect(ghostReplayAtElapsedMs(replay, 750)).toEqual({
+      anchor: { lat: 3, lng: -179.5 },
+      candidate: { lat: 6, lng: 179 },
+    });
+  });
+
+  it("returns no positions for missing replay or invalid elapsed time", () => {
+    expect(ghostReplayAtElapsedMs(null, 0)).toBeNull();
+    expect(ghostReplayAtElapsedMs([], 0)).toBeNull();
+    expect(ghostReplayAtElapsedMs([comparison.replay[0]], 0)).toBeNull();
+    for (const elapsedMs of [-0.001, NaN, Infinity, -Infinity]) {
+      expect(ghostReplayAtElapsedMs([...comparison.replay], elapsedMs)).toBeNull();
+    }
   });
 });
 

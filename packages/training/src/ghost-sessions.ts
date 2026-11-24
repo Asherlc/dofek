@@ -190,6 +190,56 @@ export type GhostSessionsGetResponse = z.infer<typeof ghostSessionsGetResponseSc
 export type GhostSessionsPassesResponse = z.infer<typeof ghostSessionsPassesResponseSchema>;
 export type GhostSessionsCompareResponse = z.infer<typeof ghostSessionsCompareResponseSchema>;
 
+type Replay = GhostSessionsCompareResponse["replay"];
+type ReplayCoordinates = Pick<RecordedPosition, "lat" | "lng">;
+
+function wrapReplayLongitude(longitude: number): number {
+  if (longitude > 180) return longitude - 360;
+  if (longitude < -180) return longitude + 360;
+  return longitude;
+}
+
+function replaySideAtElapsedMs(
+  replay: NonNullable<Replay>,
+  side: "anchor" | "candidate",
+  start: RecordedPosition,
+  elapsedMs: number,
+): ReplayCoordinates {
+  if (elapsedMs === 0) return { lat: start.lat, lng: start.lng };
+
+  let previous = start;
+  for (const key of replay) {
+    const next = key[side];
+    const nextElapsedMs = next.timestampMs - start.timestampMs;
+    // Consume repeated keys before interpolating to a strictly later timestamp.
+    if (nextElapsedMs > elapsedMs) {
+      const previousElapsedMs = previous.timestampMs - start.timestampMs;
+      const fraction = (elapsedMs - previousElapsedMs) / (nextElapsedMs - previousElapsedMs);
+      const longitudeDelta = wrapReplayLongitude(next.lng - previous.lng);
+      return {
+        lat: previous.lat + (next.lat - previous.lat) * fraction,
+        lng: wrapReplayLongitude(previous.lng + longitudeDelta * fraction),
+      };
+    }
+    previous = next;
+  }
+  return { lat: previous.lat, lng: previous.lng };
+}
+
+/** Advances both recordings by the same elapsed time on their own recorded clocks. */
+export function ghostReplayAtElapsedMs(
+  replay: GhostSessionsCompareResponse["replay"],
+  elapsedMs: number,
+): { anchor: ReplayCoordinates; candidate: ReplayCoordinates } | null {
+  if (!replay || replay.length < 2 || !Number.isFinite(elapsedMs) || elapsedMs < 0) return null;
+  const [start] = replay;
+  if (!start) return null;
+  return {
+    anchor: replaySideAtElapsedMs(replay, "anchor", start.anchor, elapsedMs),
+    candidate: replaySideAtElapsedMs(replay, "candidate", start.candidate, elapsedMs),
+  };
+}
+
 interface AnchorBoundaries {
   startTimestampMs: number;
   endTimestampMs: number;
