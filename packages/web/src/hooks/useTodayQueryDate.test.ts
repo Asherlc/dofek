@@ -34,11 +34,13 @@ describe("useTodayQueryDate", () => {
 
     const { result } = renderHook(() => useTodayQueryDate());
     expect(result.current).toBe("2026-03-21");
+    const pendingTimersBeforeFocus = vi.getTimerCount();
 
     await act(() => {
       window.dispatchEvent(new Event("focus"));
     });
     expect(result.current).toBe("2026-03-21");
+    expect(vi.getTimerCount()).toBe(pendingTimersBeforeFocus);
 
     vi.setSystemTime(new Date("2026-03-22T08:00:00"));
     await act(() => {
@@ -47,7 +49,7 @@ describe("useTodayQueryDate", () => {
     expect(result.current).toBe("2026-03-22");
   });
 
-  it("clears the midnight timer on unmount", () => {
+  it("clears the midnight timer on unmount", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-21T23:59:58"));
     const clearSpy = vi.spyOn(globalThis, "clearTimeout");
@@ -57,5 +59,11 @@ describe("useTodayQueryDate", () => {
 
     expect(clearSpy).toHaveBeenCalled();
     clearSpy.mockRestore();
+
+    const pendingTimersAfterUnmount = vi.getTimerCount();
+    await act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(vi.getTimerCount()).toBe(pendingTimersAfterUnmount);
   });
 });
