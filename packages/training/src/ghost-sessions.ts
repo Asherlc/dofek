@@ -15,6 +15,7 @@ export const ghostSessionsPassesInputSchema = z.strictObject({
   activityId,
   sectionId: opaqueId,
   cursor: pageCursor.optional(),
+  direction: z.literal("forward").optional(),
 });
 export const ghostSessionsCompareInputSchema = z.strictObject({
   activityId,

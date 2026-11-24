@@ -88,6 +88,20 @@ describe("Ghost Sessions response contracts", () => {
     ).toBe(false);
   });
 
+  it("accepts the forward infinite-query direction while keeping passes input strict", () => {
+    const firstPage = { activityId, sectionId, direction: "forward" };
+    const nextPage = { ...firstPage, cursor: "next-page-token" };
+    expect(ghostSessionsPassesInputSchema.parse(firstPage)).toEqual(firstPage);
+    expect(ghostSessionsPassesInputSchema.parse(nextPage)).toEqual(nextPage);
+    for (const invalid of [
+      { ...nextPage, direction: "backward" },
+      { ...nextPage, direction: "sideways" },
+      { ...nextPage, pageParam: nextPage.cursor },
+    ]) {
+      expect(ghostSessionsPassesInputSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
   it("validates a first visit with original geometry and no suggested pass", () => {
     const geometry = [
       [
