@@ -10,6 +10,9 @@ import {
   type ClimbingGradePreference,
   resolveClimbingGradePreference,
 } from "@dofek/training/climbing-grades";
+import type { GhostSessionsGetResponse } from "@dofek/training/ghost-sessions";
+import { useQueryClient } from "@tanstack/react-query";
+import { getQueryKey } from "@trpc/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -208,6 +211,7 @@ export default function SettingsScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 600;
   const trpcUtils = trpc.useUtils();
+  const queryClient = useQueryClient();
   // ── Data Sources ──
   const providers = trpc.sync.providers.useQuery();
 
@@ -234,6 +238,15 @@ export default function SettingsScreen() {
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
   const climbingGradeSetting = trpc.settings.get.useQuery({ key: "climbingGradeSystems" });
+  const ghostLabelsSetting = trpc.settings.get.useQuery(
+    { key: "ghostMapLabels" },
+    {
+      enabled: activeCategory === "privacy-export",
+      meta: { persist: false },
+      staleTime: 0,
+      refetchOnMount: "always",
+    },
+  );
   const setSettingMutation = trpc.settings.set.useMutation();
   const lastUnitReadError = useRef<unknown>(null);
   const billingStatus = trpc.billing.status.useQuery();
@@ -365,6 +378,41 @@ export default function SettingsScreen() {
         onSettled: () => {
           void trpcUtils.settings.get.invalidate({ key });
         },
+      },
+    );
+  }
+
+  function handleGhostLabelsChange(value: boolean) {
+    const key = "ghostMapLabels" as const;
+    const previous = trpcUtils.settings.get.getData({ key });
+    if (!value) {
+      trpcUtils.settings.get.setData({ key }, { key, value });
+      void trpcUtils.ghostSessions.get.cancel();
+      queryClient.setQueriesData<GhostSessionsGetResponse>(
+        { queryKey: getQueryKey(trpc.ghostSessions.get) },
+        (detail) =>
+          detail && {
+            ...detail,
+            nameStatus: "disabled",
+            mapCoverage: undefined,
+            sections: detail.sections.filter((section) => !("name" in section)),
+          },
+      );
+    }
+    setSettingMutation.mutate(
+      { key, value },
+      {
+        onSuccess: () => {
+          trpcUtils.settings.get.setData({ key }, { key, value });
+          void trpcUtils.ghostSessions.invalidate();
+        },
+        onError: (error) => {
+          trpcUtils.settings.get.setData({ key }, previous);
+          void trpcUtils.ghostSessions.invalidate();
+          captureException(error, { context: "ghost-map-label-consent" });
+          Alert.alert("Error", userFacingErrorMessage(error));
+        },
+        onSettled: () => void trpcUtils.settings.get.invalidate({ key }),
       },
     );
   }
@@ -825,7 +873,40 @@ export default function SettingsScreen() {
       ) : null}
 
       {activeCategory === "privacy-export" ? (
-        <DataExportSection serverUrl={auth.serverUrl} sessionToken={auth.sessionToken} />
+        <>
+          <DataExportSection serverUrl={auth.serverUrl} sessionToken={auth.sessionToken} />
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Ghost Sessions map labels</Text>
+            <Text style={styles.sectionDescription}>
+              Dofek sends only GPS coordinates and travel mode to Geoapify to look up road and trail
+              names for eligible new workouts and older workouts you open. You can turn names off at
+              any time and keep recorded route comparisons.
+            </Text>
+            <TouchableOpacity
+              style={styles.card}
+              accessibilityRole="switch"
+              accessibilityLabel="Road and trail names"
+              accessibilityState={{
+                checked: ghostLabelsSetting.data?.value === true,
+                disabled: setSettingMutation.isPending || ghostLabelsSetting.isLoading,
+              }}
+              disabled={setSettingMutation.isPending || ghostLabelsSetting.isLoading}
+              onPress={() => handleGhostLabelsChange(ghostLabelsSetting.data?.value !== true)}
+            >
+              <View style={styles.dataSourcesRow}>
+                <Text style={styles.navigationLabel}>Road and trail names</Text>
+                <Text style={styles.navigationLabel}>
+                  {ghostLabelsSetting.data?.value === true ? "On" : "Off"}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            {ghostLabelsSetting.error && (
+              <Text style={styles.sectionDescription}>
+                {userFacingErrorMessage(ghostLabelsSetting.error)}
+              </Text>
+            )}
+          </View>
+        </>
       ) : null}
 
       {/* ── Support ── */}
