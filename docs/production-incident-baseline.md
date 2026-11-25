@@ -40388,3 +40388,22 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Follow-up.** For future App Groups signing failures, verify the assignment
   of the specific group on each App ID and inspect the regenerated profiles
   before retrying the archive.
+
+## 2026-11-25 (UTC) — Intervals.icu mobile handoff returned HTTP 502
+
+- **Impact and evidence.** At 05:28:18 UTC, one iOS user tapped Connect for
+  Intervals.icu and received “Provider connection failed.” The app's
+  `POST /auth/provider/intervals.icu/hand-off` failed before it could open the
+  OAuth browser. Axiom recorded a Traefik POST with status 502 on `web@swarm`
+  at 05:28:18.177 UTC. [Sentry event](https://east-bay-software.sentry.io/issues/7866433045/events/61c9be1f73e04b2185a0535b226ac1cb/)
+  · [Traefik log fields](axiom-observability-runbook.md#traefik-server-error-access-logs).
+- **Cause and recovery.** The precise gateway failure is unresolved. Traefik's
+  `OriginStatus` was also 502, and the web logs have no matching failed request.
+  Both web replicas were already running the new image by 05:19:53 UTC. The
+  same endpoint returned 200 at 05:28:20 UTC. OAuth saved the affected user's
+  Intervals.icu connection at 05:28:33 UTC, and the worker logged that the
+  first sync attempt finished at 05:28:49 UTC. Recovery required no intervention.
+  [Server deployment](https://github.com/Asherlc/dofek/actions/runs/45549902222/job/138989135231).
+- **Follow-up.** Sentry recorded one occurrence. If it recurs, compare the
+  mobile breadcrumb timestamp with Traefik's error access log, then check
+  whether the web process recorded the same request.
