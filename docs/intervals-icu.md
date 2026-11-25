@@ -16,8 +16,12 @@ Apply for an OAuth client and include Dofek’s redirect URI, `/callback` on the
 ## Scopes and tokens
 
 Dofek requests `ACTIVITY:READ`, `WELLNESS:READ`, and `CALENDAR:READ` and rejects a connection that
-does not grant all three. Tokens have no documented expiry or refresh credential, so Dofek stores
-the access token with a one-year placeholder expiry and `reconnectStrategy: "replace"`.
+does not grant all three. Intervals.icu’s consent UI offers Read and Update per category; selecting
+Update returns the matching `*:WRITE` scope, which implies the same-category `*:READ` grant, so a
+token that returns `ACTIVITY:WRITE,WELLNESS:WRITE,CALENDAR:WRITE` satisfies the required READ set.
+[OAuth scopes](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759). Tokens have no
+documented expiry or refresh credential, so Dofek stores the access token with a one-year
+placeholder expiry and `reconnectStrategy: "replace"`.
 
 Intervals.icu applies the athlete’s latest grant scopes to all tokens for the app. If an athlete reduces the scopes, they must grant all three again before all data can sync. [Intervals.icu scope behavior](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759/24)
 
