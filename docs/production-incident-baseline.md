@@ -40336,3 +40336,20 @@ Local qualification and CI are separate from production throughput acceptance. T
   the pinned image locally. The next CI run validates the fixture in the
   complete integration shard. When updating the ClickHouse version, keep
   the fixture aligned with the CI and workspace image references.
+
+## 2026-11-24 — Dofek rejected an Intervals.icu grant with Update selected
+
+- **Impact and evidence.** A user selected Read and Update for Activities,
+  Wellness Data, and Calendar, then Dofek reported all three Read permissions
+  missing. The production web logs recorded the Intervals.icu token exchange
+  at 03:02:14 UTC on November 25. The grant was rejected before Dofek saved a
+  connection.
+- **Cause and fix.** Dofek required literal `:READ` entries from the token
+  exchange. Intervals.icu returns `:WRITE` for Update, which includes Read
+  access to the same category. Dofek now accepts either entry for each required
+  category and continues to request Read access.
+  [Intervals.icu OAuth scopes](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759).
+- **Validation and follow-up.** The OAuth regression reproduced the rejection
+  with the documented Write grants. With the fix, the token exchange accepts
+  that grant and still rejects a grant missing Calendar access. Verify a new
+  production connection and its first sync after the fix deploys.

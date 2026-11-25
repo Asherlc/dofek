@@ -240,7 +240,7 @@ export class PlannedWorkoutRepository {
                        AND EXISTS (
                          SELECT 1
                          FROM unnest(string_to_array(coalesce(ot.scopes, ''), ',')) AS scope_name
-                         WHERE btrim(scope_name) = 'CALENDAR:READ'
+                         WHERE btrim(scope_name) IN ('CALENDAR:READ', 'CALENDAR:WRITE')
                        )
                      ELSE pc.user_id IS NOT NULL
                    END

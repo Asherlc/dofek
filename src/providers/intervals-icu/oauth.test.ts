@@ -285,6 +285,54 @@ describe("Intervals.icu OAuth exchangeCode", () => {
     await expect(exchangeCode("code", "verifier")).rejects.toThrow(/Missing: CALENDAR:READ/);
   });
 
+  it("authorizes when the token returns same-category WRITE scopes that imply the required READ grants", async () => {
+    // Intervals.icu documents that selecting Update returns WRITE, which implies READ.
+    // https://forum.intervals.icu/t/intervals-icu-oauth-support/2759
+    const writeScope = "ACTIVITY:WRITE,WELLNESS:WRITE,CALENDAR:WRITE";
+    server.use(
+      http.post(TOKEN_URL, () => {
+        return HttpResponse.json({
+          token_type: "Bearer",
+          access_token: "icu-write-grant-token",
+          scope: writeScope,
+          athlete: {
+            id: "i2049151",
+            name: "Test Athlete",
+          },
+        });
+      }),
+    );
+
+    const setup = requireAuthSetup();
+    const exchangeCode = requireExchangeCode(setup);
+    const tokens = await exchangeCode("code", "verifier");
+
+    expect(tokens).toMatchObject({
+      accessToken: "icu-write-grant-token",
+      providerAccountId: "i2049151",
+      scopes: writeScope,
+    });
+  });
+
+  it("still rejects when a required category is missing even if other WRITE grants are present", async () => {
+    server.use(
+      http.post(TOKEN_URL, () => {
+        return HttpResponse.json({
+          token_type: "Bearer",
+          access_token: "secret-token",
+          scope: "ACTIVITY:WRITE,WELLNESS:READ",
+          athlete: { id: "i123" },
+        });
+      }),
+    );
+
+    const exchangeCode = requireExchangeCode(requireAuthSetup());
+    await expect(exchangeCode("code", "verifier")).rejects.toMatchObject({
+      name: "ProviderPartialGrantError",
+      message: expect.stringContaining("Missing: CALENDAR:READ."),
+    });
+  });
+
   it("identifies multiple missing scopes when only one grant was given", async () => {
     server.use(
       http.post(TOKEN_URL, () => {

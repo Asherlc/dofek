@@ -212,8 +212,10 @@ export function createIntervalsIcuAuthSetup(options?: { host?: string }): Provid
         .filter(Boolean),
     );
 
+    // Intervals.icu: same-category WRITE implies READ (Update checkbox returns WRITE).
+    // https://forum.intervals.icu/t/intervals-icu-oauth-support/2759
     const missingScopes = INTERVALS_ICU_REQUIRED_SCOPES.filter(
-      (scope) => !grantedScopes.has(scope),
+      (scope) => !grantedScopes.has(scope) && !grantedScopes.has(scope.replace(":READ", ":WRITE")),
     );
     if (missingScopes.length > 0) {
       throw new ProviderPartialGrantError("Intervals.icu", missingScopes);
