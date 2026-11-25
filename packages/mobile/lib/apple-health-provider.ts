@@ -273,8 +273,9 @@ export class AppleHealthSyncService {
 
     await assertCanContinue?.();
     try {
+      const degraded = result.errors.length > 0 || result.runningStepAuthorizationPending === true;
       await this.#trpcClient.healthKitSync.recordSync.mutate({
-        status: result.errors.length > 0 ? "degraded" : "success",
+        status: degraded ? "degraded" : "success",
         recordCount: result.inserted + result.deleted,
         durationMs: Date.now() - startedAt,
         ...(result.errors.length > 0 ? { errorMessage: result.errors.join("; ") } : {}),

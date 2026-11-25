@@ -186,6 +186,8 @@ export interface SyncResult {
   deleted: number;
   inserted: number;
   errors: string[];
+  /** Set when running-step native reads returned authorization-not-determined. */
+  runningStepAuthorizationPending?: true;
 }
 
 export interface HealthKitSyncStage {
