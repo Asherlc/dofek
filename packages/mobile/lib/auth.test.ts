@@ -366,6 +366,65 @@ describe("startNativeAppleSignIn", () => {
     await expect(startNativeAppleSignIn("https://srv")).rejects.toThrow("Apple Sign In failed");
   });
 
+  it("keeps the typed 5xx failure when reading the error body fails", async () => {
+    mockSignInAsync.mockResolvedValueOnce({
+      user: "apple-user-123",
+      authorizationCode: "code",
+      identityToken: "token",
+      fullName: null,
+      email: null,
+      state: null,
+      realUserStatus: 1,
+      authorizedScopes: [],
+    });
+    const bodyReadError = new TypeError("Body stream already read");
+    const failingBody = new Response(null, { status: 502 });
+    vi.spyOn(failingBody, "text").mockRejectedValue(bodyReadError);
+    vi.mocked(fetch).mockResolvedValueOnce(failingBody);
+    mockCaptureException.mockClear();
+
+    const { HttpResponseError, classifyHandledFailure } = await import(
+      "@dofek/telemetry/handled-failure"
+    );
+    let thrown: unknown;
+    try {
+      await startNativeAppleSignIn("https://srv");
+    } catch (error: unknown) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(HttpResponseError);
+    expect(thrown).toMatchObject({
+      message: "Apple Sign In failed: 502",
+      status: 502,
+    });
+    expect(classifyHandledFailure(thrown)).toBe("http_5xx");
+    expect(mockCaptureException).toHaveBeenCalledWith(bodyReadError, {
+      source: "apple-native-response-text",
+    });
+  });
+
+  it("rethrows the original body-read error for non-5xx Apple Sign In failures", async () => {
+    mockSignInAsync.mockResolvedValueOnce({
+      user: "apple-user-123",
+      authorizationCode: "code",
+      identityToken: "token",
+      fullName: null,
+      email: null,
+      state: null,
+      realUserStatus: 1,
+      authorizedScopes: [],
+    });
+    const bodyReadError = new TypeError("Body stream already read");
+    const failingBody = new Response(null, { status: 401 });
+    vi.spyOn(failingBody, "text").mockRejectedValue(bodyReadError);
+    vi.mocked(fetch).mockResolvedValueOnce(failingBody);
+    mockCaptureException.mockClear();
+
+    await expect(startNativeAppleSignIn("https://srv")).rejects.toBe(bodyReadError);
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
   it("throws when server response omits isNewUser", async () => {
     mockSignInAsync.mockResolvedValueOnce({
       user: "apple-user-123",
@@ -472,6 +531,16 @@ describe("startOAuthLogin", () => {
 });
 
 describe("createProviderHandoffCode", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    mockCaptureException.mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
   it("preserves a provider handoff error response", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ error: "Session expired" }), { status: 401 }),
@@ -482,13 +551,50 @@ describe("createProviderHandoffCode", () => {
     ).rejects.toThrow("Session expired");
   });
 
-  it("reports malformed JSON responses", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(new Response("not-json", { status: 500 }));
+  it("reports malformed JSON responses on successful HTTP status", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("not-json", { status: 200 }));
 
     await expect(
       createProviderHandoffCode("https://srv", "strava", "session-token"),
     ).rejects.toThrow("Provider connection failed");
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(SyntaxError), {
+      source: "provider-handoff-parse",
+    });
+  });
+
+  it("treats a malformed 5xx handoff body as an HTTP failure without a parse issue", async () => {
+    const { HttpResponseError } = await import("@dofek/telemetry/handled-failure");
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("not-json", { status: 500 }));
+
+    let thrown: unknown;
+    try {
+      await createProviderHandoffCode("https://srv", "strava", "session-token");
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(HttpResponseError);
+    expect(thrown).toMatchObject({
+      message: "Provider connection failed",
+      status: 500,
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("reports a non-SyntaxError body-read failure even on HTTP 5xx", async () => {
+    const response = new Response("{}", {
+      status: 502,
+      headers: { "content-type": "application/json" },
+    });
+    vi.spyOn(response, "json").mockRejectedValueOnce(new TypeError("Body already consumed"));
+    vi.mocked(fetch).mockResolvedValueOnce(response);
+
+    await expect(
+      createProviderHandoffCode("https://srv", "strava", "session-token"),
+    ).rejects.toMatchObject({
+      message: "Provider connection failed",
+      status: 502,
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(TypeError), {
       source: "provider-handoff-parse",
     });
   });

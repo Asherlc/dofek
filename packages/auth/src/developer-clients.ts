@@ -1,3 +1,4 @@
+import { HttpResponseError } from "@dofek/telemetry/handled-failure";
 import { z } from "zod";
 
 export const DEVELOPER_CLIENT_SCOPES = ["nutrition:write"] as const;
@@ -129,11 +130,10 @@ export const DeveloperApiProblemSchema = z
 
 export type DeveloperApiProblem = z.infer<typeof DeveloperApiProblemSchema>;
 
-export class DeveloperClientsApiError extends Error {
+export class DeveloperClientsApiError extends HttpResponseError {
   readonly code: string;
   readonly details: unknown[];
   readonly requestId: string | null;
-  readonly status: number;
 
   constructor(input: {
     code: string;
@@ -142,12 +142,11 @@ export class DeveloperClientsApiError extends Error {
     requestId?: string | null;
     status: number;
   }) {
-    super(input.message);
+    super(input.message, input.status);
     this.name = "DeveloperClientsApiError";
     this.code = input.code;
     this.details = input.details ?? [];
     this.requestId = input.requestId ?? null;
-    this.status = input.status;
   }
 }
 

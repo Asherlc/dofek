@@ -73,6 +73,7 @@ describe("fetchCurrentUser", () => {
   });
 
   it("throws server error details when session bootstrap fails", async () => {
+    const { HttpResponseError } = await import("@dofek/telemetry/handled-failure");
     vi.mocked(fetch).mockResolvedValue(
       mockResponse({
         ok: false,
@@ -82,7 +83,14 @@ describe("fetchCurrentUser", () => {
       }),
     );
 
-    await expect(fetchCurrentUser()).rejects.toThrow("Database unavailable");
+    let thrown: unknown;
+    try {
+      await fetchCurrentUser();
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(HttpResponseError);
+    expect(thrown).toMatchObject({ message: "Database unavailable", status: 500 });
   });
 
   it("throws network errors instead of treating them as logged out", async () => {
@@ -278,6 +286,51 @@ describe("loginWithPassword", () => {
     ).rejects.toThrow("Authentication failed");
   });
 
+  it("captures unexpected 5xx body-read failures while preserving the auth fallback", async () => {
+    const bodyReadError = new TypeError("Failed to fetch");
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: false,
+        status: 503,
+        json: () => Promise.reject(bodyReadError),
+      }),
+    );
+    mockCaptureException.mockClear();
+
+    const { HttpResponseError, classifyHandledFailure } = await import(
+      "@dofek/telemetry/handled-failure"
+    );
+    let thrown: unknown;
+    try {
+      await loginWithPassword({ email: "user@example.com", password: "password123" });
+    } catch (error: unknown) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(HttpResponseError);
+    expect(thrown).toMatchObject({ message: "Authentication failed", status: 503 });
+    expect(classifyHandledFailure(thrown)).toBe("http_5xx");
+    expect(mockCaptureException).toHaveBeenCalledWith(bodyReadError, {
+      source: "password-auth-response-json",
+    });
+  });
+
+  it("does not capture expected malformed JSON on an observed 5xx auth failure", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: false,
+        status: 502,
+        json: () => Promise.reject(new SyntaxError("Unexpected token <")),
+      }),
+    );
+    mockCaptureException.mockClear();
+
+    await expect(
+      loginWithPassword({ email: "user@example.com", password: "password123" }),
+    ).rejects.toThrow("Authentication failed");
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
   it("throws when login response has invalid shape", async () => {
     vi.mocked(fetch).mockResolvedValue(
       mockResponse({
@@ -395,6 +448,23 @@ describe("requestPasswordReset", () => {
     await expect(requestPasswordReset("user@example.com")).rejects.toThrow("Password reset failed");
   });
 
+  it("captures unexpected 5xx body-read failures for password reset requests", async () => {
+    const bodyReadError = new TypeError("Failed to fetch");
+    vi.mocked(fetch).mockResolvedValueOnce(
+      mockResponse({
+        ok: false,
+        status: 503,
+        json: () => Promise.reject(bodyReadError),
+      }),
+    );
+    mockCaptureException.mockClear();
+
+    await expect(requestPasswordReset("user@example.com")).rejects.toThrow("Password reset failed");
+    expect(mockCaptureException).toHaveBeenCalledWith(bodyReadError, {
+      source: "password-reset-response-json",
+    });
+  });
+
   it("throws when reset request response has invalid shape", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       mockResponse({
@@ -464,6 +534,25 @@ describe("confirmPasswordReset", () => {
     );
   });
 
+  it("captures unexpected 5xx body-read failures for password reset confirmation", async () => {
+    const bodyReadError = new TypeError("Failed to fetch");
+    vi.mocked(fetch).mockResolvedValueOnce(
+      mockResponse({
+        ok: false,
+        status: 503,
+        json: () => Promise.reject(bodyReadError),
+      }),
+    );
+    mockCaptureException.mockClear();
+
+    await expect(confirmPasswordReset("token", "new-password123")).rejects.toThrow(
+      "Password reset failed",
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(bodyReadError, {
+      source: "password-reset-confirm-json",
+    });
+  });
+
   it("throws when reset confirmation response has invalid shape", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       mockResponse({
@@ -513,6 +602,39 @@ describe("logout", () => {
     await expect(logout()).rejects.toThrow("Session store unavailable");
 
     expect(window.location.href).toBe("");
+  });
+
+  it("captures unexpected logout error-body reads and preserves the fallback", async () => {
+    const bodyReadError = new TypeError("Failed to fetch");
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: false,
+        status: 503,
+        statusText: "Service Unavailable",
+        json: () => Promise.reject(bodyReadError),
+      }),
+    );
+    mockCaptureException.mockClear();
+
+    await expect(logout()).rejects.toThrow("Logout failed: 503 Service Unavailable");
+    expect(mockCaptureException).toHaveBeenCalledWith(bodyReadError, {
+      source: "auth-error-response-json",
+    });
+  });
+
+  it("does not capture expected malformed JSON on an observed 5xx logout failure", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: false,
+        status: 502,
+        statusText: "Bad Gateway",
+        json: () => Promise.reject(new SyntaxError("Unexpected token <")),
+      }),
+    );
+    mockCaptureException.mockClear();
+
+    await expect(logout()).rejects.toThrow("Logout failed: 502 Bad Gateway");
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 });
 

@@ -1,3 +1,4 @@
+import { classifyHandledFailure, HttpResponseError } from "@dofek/telemetry/handled-failure";
 import { describe, expect, it, vi } from "vitest";
 import type { DeveloperClientsRequest } from "./developer-clients";
 import {
@@ -132,15 +133,15 @@ describe("developer client schemas", () => {
 
 describe("developer clients API", () => {
   it("preserves explicit and default problem metadata", () => {
-    expect(
-      new DeveloperClientsApiError({
-        code: "INVALID_CLIENT",
-        details: [{ field: "client_id" }],
-        message: "The client is invalid.",
-        requestId: "request-1",
-        status: 401,
-      }),
-    ).toMatchObject({
+    const clientError = new DeveloperClientsApiError({
+      code: "INVALID_CLIENT",
+      details: [{ field: "client_id" }],
+      message: "The client is invalid.",
+      requestId: "request-1",
+      status: 401,
+    });
+    expect(clientError).toBeInstanceOf(HttpResponseError);
+    expect(clientError).toMatchObject({
       code: "INVALID_CLIENT",
       details: [{ field: "client_id" }],
       message: "The client is invalid.",
@@ -148,13 +149,14 @@ describe("developer clients API", () => {
       requestId: "request-1",
       status: 401,
     });
-    expect(
-      new DeveloperClientsApiError({
-        code: "INVALID_RESPONSE",
-        message: "The server returned an invalid response.",
-        status: 502,
-      }),
-    ).toMatchObject({ details: [], requestId: null });
+    expect(classifyHandledFailure(clientError)).toBeNull();
+    const serverError = new DeveloperClientsApiError({
+      code: "INVALID_RESPONSE",
+      message: "The server returned an invalid response.",
+      status: 502,
+    });
+    expect(serverError).toMatchObject({ details: [], requestId: null });
+    expect(classifyHandledFailure(serverError)).toBe("http_5xx");
   });
 
   it("parses a safe problem and surfaces its server message", async () => {
@@ -286,11 +288,19 @@ describe("developer clients API", () => {
       async () => new Response("database host leaked", { status: 503 }),
     );
 
-    await expect(api.list()).rejects.toMatchObject({
+    let thrown: unknown;
+    try {
+      await api.list();
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(HttpResponseError);
+    expect(thrown).toMatchObject({
       code: "INVALID_RESPONSE",
       message: "The server returned an invalid response.",
       status: 503,
     });
+    expect(classifyHandledFailure(thrown)).toBe("http_5xx");
   });
 
   it("fails safely when an error response has JSON that is not a problem", async () => {

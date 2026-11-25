@@ -1,3 +1,4 @@
+import { guardTrpcHttpResponse } from "@dofek/telemetry/handled-failure";
 import { captureException, captureTelemetrySessionGuard, logger } from "./telemetry";
 
 const BODY_PREVIEW_LIMIT = 240;
@@ -105,6 +106,7 @@ export function createTrpcFetch(fetchImpl: typeof fetch = fetch): typeof fetch {
         elapsedMs: Date.now() - startedAt,
       });
     }
+    await guardTrpcHttpResponse(response);
     if (isJsonResponse(response)) {
       return withJsonBodyDiagnostics(response, input, isTelemetrySessionCurrent);
     }

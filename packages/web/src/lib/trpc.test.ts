@@ -121,11 +121,26 @@ describe("createTRPCClient", () => {
     }
   });
 
-  it("mutation link fetch uses credentials and redirects only on 401", async () => {
+  it("reuses one credentials fetch across links, redirects only on 401, and guards raw 5xx", async () => {
     const fetchMock = vi
       .fn<(requestUrl: RequestInfo | URL, requestOptions?: RequestInit) => Promise<Response>>()
       .mockResolvedValueOnce(new Response(null, { status: 200 }))
-      .mockResolvedValueOnce(new Response(null, { status: 401 }));
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response("<html>Bad Gateway</html>", {
+          status: 502,
+          headers: { "content-type": "text/html" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ error: { code: -32603, message: "INTERNAL_SERVER_ERROR" } }),
+          {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      );
 
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("window", { location: { href: "/dashboard" } });
@@ -133,11 +148,14 @@ describe("createTRPCClient", () => {
     const { createTRPCClient } = await import("./trpc.ts");
     createTRPCClient();
 
-    const batchLinkOptions = httpBatchLinkMock.mock.calls[0]?.[0];
-    const batchFetch = readObjectProperty(batchLinkOptions, "fetch");
-    if (!isFunction(batchFetch)) {
-      throw new Error("Expected mutation link fetch handler to be a function");
+    const batchFetch = readObjectProperty(httpBatchLinkMock.mock.calls[0]?.[0], "fetch");
+    const streamFetch = readObjectProperty(httpBatchStreamLinkMock.mock.calls[0]?.[0], "fetch");
+    const httpFetch = readObjectProperty(httpLinkMock.mock.calls[0]?.[0], "fetch");
+    if (!isFunction(batchFetch) || !isFunction(streamFetch) || !isFunction(httpFetch)) {
+      throw new Error("Expected shared link fetch handlers to be functions");
     }
+    expect(batchFetch).toBe(streamFetch);
+    expect(batchFetch).toBe(httpFetch);
 
     const okResponse = await batchFetch("/api/trpc", { method: "POST" });
     expect(okResponse).toBeInstanceOf(Response);
@@ -146,87 +164,27 @@ describe("createTRPCClient", () => {
     await batchFetch("/api/trpc", { method: "POST" });
     expect(readObjectProperty(window.location, "href")).toBe("/login");
 
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      "/api/trpc",
-      expect.objectContaining({ method: "POST", credentials: "include" }),
+    const { HttpResponseError, classifyHandledFailure } = await import(
+      "@dofek/telemetry/handled-failure"
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      "/api/trpc",
-      expect.objectContaining({ method: "POST", credentials: "include" }),
-    );
-  });
-
-  it("query link fetch uses credentials and redirects only on 401", async () => {
-    const fetchMock = vi
-      .fn<(requestUrl: RequestInfo | URL, requestOptions?: RequestInit) => Promise<Response>>()
-      .mockResolvedValueOnce(new Response(null, { status: 200 }))
-      .mockResolvedValueOnce(new Response(null, { status: 401 }));
-
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal("window", { location: { href: "/dashboard" } });
-
-    const { createTRPCClient } = await import("./trpc.ts");
-    createTRPCClient();
-
-    const streamLinkOptions = httpBatchStreamLinkMock.mock.calls[0]?.[0];
-    const streamFetch = readObjectProperty(streamLinkOptions, "fetch");
-    if (!isFunction(streamFetch)) {
-      throw new Error("Expected query link fetch handler to be a function");
+    let htmlFailure: unknown;
+    try {
+      await batchFetch("/api/trpc", { method: "POST" });
+    } catch (error: unknown) {
+      htmlFailure = error;
     }
+    expect(htmlFailure).toBeInstanceOf(HttpResponseError);
+    expect(classifyHandledFailure(htmlFailure)).toBe("http_5xx");
 
-    const okResponse = await streamFetch("/api/trpc", { method: "POST" });
-    expect(okResponse).toBeInstanceOf(Response);
-    expect(readObjectProperty(window.location, "href")).toBe("/dashboard");
-
-    await streamFetch("/api/trpc", { method: "POST" });
-    expect(readObjectProperty(window.location, "href")).toBe("/login");
-
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      "/api/trpc",
-      expect.objectContaining({ method: "POST", credentials: "include" }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      "/api/trpc",
-      expect.objectContaining({ method: "POST", credentials: "include" }),
-    );
-  });
-
-  it("unbatched dashboard query link fetch uses credentials and redirects only on 401", async () => {
-    const fetchMock = vi
-      .fn<(requestUrl: RequestInfo | URL, requestOptions?: RequestInit) => Promise<Response>>()
-      .mockResolvedValueOnce(new Response(null, { status: 200 }))
-      .mockResolvedValueOnce(new Response(null, { status: 401 }));
-
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal("window", { location: { href: "/dashboard" } });
-
-    const { createTRPCClient } = await import("./trpc.ts");
-    createTRPCClient();
-
-    const httpLinkOptions = httpLinkMock.mock.calls[0]?.[0];
-    const httpFetch = readObjectProperty(httpLinkOptions, "fetch");
-    if (!isFunction(httpFetch)) {
-      throw new Error("Expected unbatched query link fetch handler to be a function");
+    const structured = await batchFetch("/api/trpc", { method: "POST" });
+    if (!(structured instanceof Response)) {
+      throw new Error("Expected structured tRPC 5xx fetch to return a Response");
     }
+    await expect(structured.json()).resolves.toEqual({
+      error: { code: -32603, message: "INTERNAL_SERVER_ERROR" },
+    });
 
-    const okResponse = await httpFetch("/api/trpc", { method: "POST" });
-    expect(okResponse).toBeInstanceOf(Response);
-    expect(readObjectProperty(window.location, "href")).toBe("/dashboard");
-
-    await httpFetch("/api/trpc", { method: "POST" });
-    expect(readObjectProperty(window.location, "href")).toBe("/login");
-
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      "/api/trpc",
-      expect.objectContaining({ method: "POST", credentials: "include" }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
+    expect(fetchMock).toHaveBeenCalledWith(
       "/api/trpc",
       expect.objectContaining({ method: "POST", credentials: "include" }),
     );

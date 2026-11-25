@@ -73,6 +73,21 @@ describe("web telemetry", () => {
     expect(mocks.mockPostHogCaptureException).not.toHaveBeenCalled();
   });
 
+  it("counts a typed HTTP 5xx without creating an exception issue", async () => {
+    const { HttpResponseError } = await import("@dofek/telemetry/handled-failure");
+    const mod = await import("./telemetry.ts");
+    const error = new HttpResponseError("Bad gateway", 502);
+    mod.captureException(error, { userId: "private-user", url: "https://private.example" });
+    expect(mocks.mockCapture).toHaveBeenCalledWith("handled_failure", { kind: "http_5xx" });
+    expect(mocks.mockAddBreadcrumb).toHaveBeenCalledWith({
+      category: "handled-failure",
+      level: "info",
+      data: { kind: "http_5xx" },
+    });
+    expect(mocks.mockCaptureException).not.toHaveBeenCalled();
+    expect(mocks.mockPostHogCaptureException).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
