@@ -71,6 +71,7 @@ vi.mock("./device-erasure-cutoff", async (importOriginal) => {
 import {
   type HealthKitSample,
   queryDailyStatistics,
+  queryRunningStepSamples,
   querySleepSamples,
   queryWorkoutRoutes,
   queryWorkouts,
@@ -682,6 +683,95 @@ describe("initBackgroundHealthKitSync", () => {
     );
     expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
     vi.useRealTimers();
+  });
+
+  it("defers incomplete running-step authorization without capturing or acknowledging success", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = createMockClient();
+      const refreshQueries = vi.fn();
+      await initBackgroundHealthKitSync(client, refreshQueries);
+      await vi.runAllTimersAsync();
+      refreshQueries.mockClear();
+      mockCaptureException.mockClear();
+      mockCompleteObserverUpdates.mockClear();
+      mockLoggerInfo.mockClear();
+      vi.mocked(queryDailyStatistics).mockClear();
+      mockQueryAnchoredSamples.mockClear();
+      vi.mocked(queryRunningStepSamples).mockClear();
+      vi.mocked(queryDailyStatistics).mockResolvedValueOnce([{ date: "2026-03-22", value: 1000 }]);
+      client.healthKitSync.pushQuantitySamples.mutate.mockResolvedValueOnce({
+        inserted: 2,
+        errors: [],
+      });
+      vi.mocked(queryRunningStepSamples).mockRejectedValueOnce(
+        Object.assign(new Error("Authorization not determined"), {
+          code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+        }),
+      );
+
+      const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+      listener({
+        typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+        updateId: "steps-auth-pending",
+      });
+      await vi.advanceTimersByTimeAsync(5000);
+      await vi.runAllTimersAsync();
+
+      expect(client.healthKitSync.recordSync.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: "degraded",
+          recordCount: 2,
+          origin: "unknown",
+        }),
+      );
+      expect(refreshQueries).toHaveBeenCalledTimes(1);
+      expect(mockCaptureException).not.toHaveBeenCalled();
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledExactlyOnceWith(
+        ["steps-auth-pending"],
+        false,
+      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "bg-healthkit-sync",
+        "Sync stage completed",
+        expect.objectContaining({
+          operation: "queryRunningStepSamples",
+          outcome: "deferred",
+        }),
+      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "bg-healthkit-sync",
+        "Running step authorization not determined; deferring catch-up until the next delivery",
+        { deleted: 0, inserted: 2 },
+      );
+      expect(vi.mocked(queryRunningStepSamples)).toHaveBeenCalledTimes(1);
+
+      mockCompleteObserverUpdates.mockClear();
+      vi.mocked(queryDailyStatistics).mockClear();
+      mockQueryAnchoredSamples.mockClear();
+      vi.mocked(queryRunningStepSamples).mockClear();
+      vi.mocked(queryRunningStepSamples).mockResolvedValueOnce({ workouts: [], samples: [] });
+      listener({
+        typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+        updateId: "heart-rate-catch-up",
+      });
+      await vi.advanceTimersByTimeAsync(5000);
+      await vi.runAllTimersAsync();
+
+      expect(vi.mocked(queryDailyStatistics).mock.calls.map(([type]) => type)).toEqual([
+        "HKQuantityTypeIdentifierStepCount",
+      ]);
+      expect(mockQueryAnchoredSamples.mock.calls.map(([type]) => type)).toEqual([
+        "HKQuantityTypeIdentifierHeartRate",
+      ]);
+      expect(vi.mocked(queryRunningStepSamples)).toHaveBeenCalledTimes(1);
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledExactlyOnceWith(
+        ["heart-rate-catch-up"],
+        true,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reports partial sync errors without labeling completed stages as succeeded", async () => {

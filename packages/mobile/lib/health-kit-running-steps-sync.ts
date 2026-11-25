@@ -1,5 +1,6 @@
 import type { RunningStepSnapshot } from "../modules/health-kit";
 import { isAfterDeviceErasureCutoff } from "./device-erasure-cutoff";
+import { isHealthKitAuthorizationNotDetermined } from "./health-kit-errors";
 import {
   type ManualHealthKitSyncContext,
   ManualHealthKitSyncInterruptedError,
@@ -9,6 +10,15 @@ import {
 import { captureException } from "./telemetry";
 
 const BATCH_SIZE = 500;
+
+function authorizationPendingResult(inserted: number, deleted: number): SyncResult {
+  return {
+    inserted,
+    deleted,
+    errors: [],
+    runningStepAuthorizationPending: true,
+  };
+}
 
 /** Refresh association snapshots and consume historical parent additions/deletions. */
 export async function syncRunningSteps(
@@ -70,13 +80,30 @@ export async function syncRunningSteps(
   await manualExecution?.assertCanContinue();
   await options.assertCanContinue?.();
   onStage?.({ operation: "queryRunningStepSamples", typeIdentifier });
-  let inserted = await upload(await healthKit.queryRunningStepSamples(startDate, endDate));
+  const snapshot = await healthKit
+    .queryRunningStepSamples(startDate, endDate)
+    .catch((error: unknown) => {
+      if (!isHealthKitAuthorizationNotDetermined(error)) {
+        throw error;
+      }
+      return null;
+    });
+  if (snapshot === null) return authorizationPendingResult(0, 0);
+  let inserted = await upload(snapshot);
   let deleted = 0;
   while (true) {
     await manualExecution?.assertCanContinue();
     await options.assertCanContinue?.();
     onStage?.({ operation: "queryRunningStepChanges", typeIdentifier });
-    const changes = await healthKit.queryRunningStepChanges(minimumSampleDate ?? startDate);
+    const changes = await healthKit
+      .queryRunningStepChanges(minimumSampleDate ?? startDate)
+      .catch((error: unknown) => {
+        if (!isHealthKitAuthorizationNotDetermined(error)) {
+          throw error;
+        }
+        return null;
+      });
+    if (changes === null) return authorizationPendingResult(inserted, deleted);
     try {
       if (changes.hasMore && !changes.queryId) {
         throw new Error(

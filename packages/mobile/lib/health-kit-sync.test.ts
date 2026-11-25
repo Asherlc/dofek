@@ -1643,6 +1643,31 @@ describe("manual staged sync", () => {
     expect(stageCompletions(manual).map(({ stage }) => stage)).toEqual(["additive-and-category"]);
   });
 
+  it("pauses manual sync with Apple Health permission guidance when running steps await authorization", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockResolvedValue([]);
+    healthKit.queryRunningStepSamples.mockRejectedValue(
+      Object.assign(new Error("Authorization not determined"), {
+        code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+      }),
+    );
+    const manual = manualContext({ nextStage: "running-steps" });
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+      manualExecution: manual,
+    });
+
+    expect(result.errors).toEqual([
+      "Review Dofek's permissions in Apple Health, then resume sync to import running steps.",
+    ]);
+    expect(manual.onStageComplete).not.toHaveBeenCalled();
+  });
+
   it("stops before the first query when the operation is interrupted", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();
@@ -2471,6 +2496,79 @@ describe("syncHealthKitObserverChanges", () => {
       "query-1",
       false,
     );
+  });
+
+  it("defers dependent type completion when running-step authorization is pending", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const onTypeComplete = vi.fn();
+    healthKit.queryRunningStepSamples.mockRejectedValue(
+      Object.assign(new Error("Authorization not determined"), {
+        code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+      }),
+    );
+    healthKit.queryDailyStatistics.mockResolvedValue([{ date: "2026-07-27", value: 1234 }]);
+
+    const result = await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: [
+        "HKQuantityTypeIdentifierStepCount",
+        "HKQuantityTypeIdentifierHeartRate",
+        "HKCategoryTypeIdentifierSleepAnalysis",
+      ],
+      onTypeComplete,
+    });
+
+    expect(result).toEqual({
+      deleted: 1,
+      inserted: 2,
+      errors: [],
+      runningStepAuthorizationPending: true,
+    });
+    expect(onTypeComplete).toHaveBeenCalledWith("HKQuantityTypeIdentifierHeartRate");
+    expect(onTypeComplete).toHaveBeenCalledWith("HKCategoryTypeIdentifierSleepAnalysis");
+    expect(onTypeComplete).not.toHaveBeenCalledWith("HKQuantityTypeIdentifierStepCount");
+  });
+
+  it("still reports unrelated observer failures alongside a deferred running-step read", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const routePushError = new Error("route push failed");
+    healthKit.queryWorkouts.mockResolvedValue([
+      {
+        uuid: "workout-1",
+        workoutType: "running",
+        startDate: "2026-07-27T10:00:00Z",
+        endDate: "2026-07-27T11:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+    ]);
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: "2026-07-27T10:00:00Z", lat: 1, lng: 2 },
+    ]);
+    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValue(routePushError);
+    healthKit.queryRunningStepSamples.mockRejectedValue(
+      Object.assign(new Error("Authorization not determined"), {
+        code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+      }),
+    );
+
+    const result = await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: ["HKWorkoutTypeIdentifier"],
+    });
+
+    expect(result.errors).toEqual(["Push workout routes: route push failed"]);
+    expect(result.runningStepAuthorizationPending).toBe(true);
+    expect(captureException).toHaveBeenCalledWith(routePushError, {
+      routeCount: 1,
+      source: "health-kit-workout-route-observer-push",
+    });
   });
 });
 

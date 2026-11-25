@@ -50,7 +50,12 @@ vi.mock("../modules/health-kit", () => ({
   requestPermissions: vi.fn(async () => true),
 }));
 
-import { queryClinicalRecords, querySleepSamples } from "../modules/health-kit";
+import {
+  queryClinicalRecords,
+  queryDailyStatistics,
+  queryRunningStepSamples,
+  querySleepSamples,
+} from "../modules/health-kit";
 import {
   type AppleHealthAuthorizationNative,
   AppleHealthAuthorizationService,
@@ -521,6 +526,43 @@ describe("AppleHealthSyncService", () => {
       errorMessage: "Route query failed",
       origin: "manual",
     });
+  });
+
+  it("records a deferred observer running-step authorization as degraded with its record count", async () => {
+    const trpcClient = createTrpcClient();
+    const service = new AppleHealthSyncService({
+      trpcClient,
+      loadDeviceErasureCutoff: vi.fn(async () => null),
+      syncFunction: vi.fn(),
+    });
+    vi.mocked(queryRunningStepSamples).mockRejectedValueOnce(
+      Object.assign(new Error("Authorization not determined"), {
+        code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+      }),
+    );
+    vi.mocked(queryDailyStatistics).mockResolvedValueOnce([{ date: "2026-07-27", value: 1000 }]);
+    trpcClient.healthKitSync.pushQuantitySamples.mutate.mockResolvedValueOnce({
+      inserted: 3,
+      errors: [],
+    });
+
+    const result = await service.syncObserverChanges({
+      typeIdentifiers: ["HKQuantityTypeIdentifierStepCount"],
+    });
+
+    expect(result).toEqual({
+      deleted: 0,
+      inserted: 3,
+      errors: [],
+      runningStepAuthorizationPending: true,
+    });
+    expect(trpcClient.healthKitSync.recordSync.mutate).toHaveBeenCalledWith({
+      status: "degraded",
+      recordCount: 3,
+      durationMs: expect.any(Number),
+      origin: "unknown",
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
   it("forwards clinical-record queries through the default native adapter", async () => {

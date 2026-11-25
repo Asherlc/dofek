@@ -220,6 +220,92 @@ describe("syncRunningSteps manual interruption", () => {
   });
 });
 
+function authorizationNotDetermined(): Error {
+  return Object.assign(new Error("Authorization not determined"), {
+    code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+  });
+}
+
+describe("syncRunningSteps authorization deferral", () => {
+  beforeEach(() => {
+    vi.mocked(captureException).mockClear();
+  });
+
+  it("defers when the running-step snapshot query is not authorized", async () => {
+    const input = options();
+    input.healthKit.queryRunningStepSamples.mockRejectedValue(authorizationNotDetermined());
+
+    await expect(syncRunningSteps(input, start, end)).resolves.toEqual({
+      inserted: 0,
+      deleted: 0,
+      errors: [],
+      runningStepAuthorizationPending: true,
+    });
+
+    expect(input.healthKit.queryRunningStepChanges).not.toHaveBeenCalled();
+    expect(input.healthKit.completeAnchoredQuery).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("defers when an incremental running-step read is not authorized", async () => {
+    const input = options();
+    input.healthKit.queryRunningStepChanges.mockRejectedValue(authorizationNotDetermined());
+
+    await expect(syncRunningSteps(input, start, end)).resolves.toEqual({
+      inserted: 0,
+      deleted: 0,
+      errors: [],
+      runningStepAuthorizationPending: true,
+    });
+
+    expect(input.healthKit.completeAnchoredQuery).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("keeps prior committed page totals when a later incremental read awaits authorization", async () => {
+    const input = options();
+    input.healthKit.queryRunningStepChanges
+      .mockResolvedValueOnce({
+        hasMore: true,
+        workouts: [{ uuid: "run" }],
+        samples: [{ uuid: "parent", workoutUuids: ["run"] }],
+        deletedUUIDs: ["deleted-parent"],
+        queryId: "first",
+      })
+      .mockRejectedValueOnce(authorizationNotDetermined());
+    input.trpcClient.healthKitSync.pushRunningStepSamples.mutate.mockResolvedValue({ inserted: 2 });
+    input.trpcClient.healthKitSync.deleteQuantitySamples.mutate.mockResolvedValue({ deleted: 1 });
+
+    await expect(syncRunningSteps(input, start, end)).resolves.toEqual({
+      inserted: 2,
+      deleted: 1,
+      errors: [],
+      runningStepAuthorizationPending: true,
+    });
+
+    expect(input.healthKit.completeAnchoredQuery).toHaveBeenCalledExactlyOnceWith(
+      "HKQuantityTypeIdentifierStepCount",
+      "first",
+      true,
+    );
+    expect(input.healthKit.completeAnchoredQuery).not.toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierStepCount",
+      "first",
+      false,
+    );
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("still propagates unexpected running-step query failures", async () => {
+    const input = options();
+    const failure = Object.assign(new Error("query failed"), { code: "QUERY_ERROR" });
+    input.healthKit.queryRunningStepSamples.mockRejectedValue(failure);
+
+    await expect(syncRunningSteps(input, start, end)).rejects.toBe(failure);
+    expect(captureException).not.toHaveBeenCalled();
+  });
+});
+
 describe("syncRunningSteps", () => {
   it("drains a full unmatched parent page before uploading the next associated page", async () => {
     const input = options();
