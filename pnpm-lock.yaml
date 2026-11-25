@@ -193,8 +193,8 @@ importers:
         specifier: 0.35.0
         version: 0.35.0(@opentelemetry/api@1.10.0)
       '@posthog/ai':
-        specifier: 8.19.2
-        version: 8.19.2(@ai-sdk/provider@4.0.28)(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-trace-otlp-http@0.301.1)(posthog-node@5.56.2)
+        specifier: 8.21.0
+        version: 8.21.0(@ai-sdk/provider@4.0.28)(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-trace-otlp-http@0.301.1)(posthog-node@5.56.2)
       '@powersync/node':
         specifier: 0.19.6
         version: 0.19.6(@powersync/common@1.58.0)
@@ -5787,15 +5787,15 @@ packages:
     resolution: {integrity: sha512-//0sR/cow/s4ICQaYoAobOl4aU8cjU6x/V24V7XkKotb9+O+3zySIYp146vpaobYHnxa4pZX8NkV54Z5AwbDKA==}
     engines: {node: '>=12'}
 
-  '@posthog/ai@8.19.2':
-    resolution: {integrity: sha512-+RoboxMTJ/90LlhzPzqTG7V32V5crpOJxbqQ0s+1l18UUl5ocQGw3yMn5bNTwNJ4dfEBsQelEgZHn7aqP0o4XQ==}
+  '@posthog/ai@8.21.0':
+    resolution: {integrity: sha512-tOT/YA9heSshF4dOwVMBAQbmxwHnZ3uYa1RcmnRXodQSjzumB0E73e0vZfGnAg8DYsJAf+XLQvmz3pS5tZk66g==}
     engines: {node: ^20.20.0 || >=22.22.0}
     peerDependencies:
       '@ai-sdk/provider': ^2.0.0 || ^3.0.0 || ^4.0.0
       '@anthropic-ai/claude-agent-sdk': ^0.3.251
-      '@anthropic-ai/sdk': '>=0.112.3 <0.135.0'
+      '@anthropic-ai/sdk': '>=0.112.3 <2.0.0'
       '@google/adk': ^2.0.0
-      '@google/genai': ^1.52.0 || ^2.18.0
+      '@google/genai': ^1.52.0 || ^2.18.0 || ^3.0.0
       '@langchain/core': ^1.2.3
       '@openai/agents': ^0.8.0
       '@opentelemetry/api': ^1.9.0
@@ -5803,7 +5803,7 @@ packages:
       genkit: ^1.0.0
       langchain: '>=1.5.5 <2.0.0'
       openai: ^6.48.0 || ^7.0.0
-      posthog-node: ^5.0.0
+      posthog-node: ^5.0.0 || ^6.0.0
     peerDependenciesMeta:
       '@ai-sdk/provider':
         optional: true
@@ -5842,8 +5842,8 @@ packages:
   '@posthog/core@1.59.1':
     resolution: {integrity: sha512-P39YgzQVDh6oz6wAzQXEnoHgTYpM7gifonmVKq1scAJco79h31XmmNVurRq9tTmmyIrr1uX8FHT0riCsyfV9AQ==}
 
-  '@posthog/core@1.67.1':
-    resolution: {integrity: sha512-Fq8YySx3G2ggxKV/dLf5nfbQocB3/yU6TNSGIyRvVynizrIW8tZfB2HQ/13cY61PoU+cNzvKch+B7Ac+OUkORw==}
+  '@posthog/core@1.69.0':
+    resolution: {integrity: sha512-Dbzuba/INtfyXTaPFsNeVcXjZM2WWjwFmqNobOwuIEEp9HGMy/dEsxJB37r4rvlu0F4gBbYlTft2nWFcjK/cHQ==}
 
   '@posthog/types@1.399.0':
     resolution: {integrity: sha512-/WDwBzqIPko8VJ1B+0rlso2XQEz9+2sqtsY9Tqy3p1GhgTqsFakcz/PmMpAnA321LTEZVRcO6x5hAwABV4yrDw==}
@@ -5854,8 +5854,8 @@ packages:
   '@posthog/types@1.416.0':
     resolution: {integrity: sha512-0/9+02s/0uDyrH4G/qUg1yyl6gXUg8Uuxw/PlDad3KLzo9FFS9zS/kAQaEshx/saVGupj1aAy/4EUBxWisBogw==}
 
-  '@posthog/types@1.423.0':
-    resolution: {integrity: sha512-4gzXyyXKN6mktVoQQkeIlgAva054P99sUSvVGHd0/mDBYuk3gz2ZDHhPOP5C1j2cl+7Dtu2BeBJr4LfILptm/w==}
+  '@posthog/types@1.425.1':
+    resolution: {integrity: sha512-mh7jyQ5lN+XCeOnMdYkBEFtO/G0TxeLOKTWNH6E6OZjxS4nVM0Tb2xQt+FG5DCFM9qzL2HmuX6A793TwlJVDvw==}
 
   '@powersync/common@1.58.0':
     resolution: {integrity: sha512-TvYbR96C7GuH0SAPdGY++YRfxxGeLAWIHPIPfFmq9eSQ6A5DBkBt0LP9Jxtu+f7TA+PqW1UfsT0O8XwenK87Yg==}
@@ -23151,9 +23151,9 @@ snapshots:
       '@pnpm/network.ca-file': 1.0.2
       config-chain: 1.1.13
 
-  '@posthog/ai@8.19.2(@ai-sdk/provider@4.0.28)(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-trace-otlp-http@0.301.1)(posthog-node@5.56.2)':
+  '@posthog/ai@8.21.0(@ai-sdk/provider@4.0.28)(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-trace-otlp-http@0.301.1)(posthog-node@5.56.2)':
     dependencies:
-      '@posthog/core': 1.67.1
+      '@posthog/core': 1.69.0
       posthog-node: 5.56.2(@opentelemetry/api@1.10.0)(rxjs@7.8.2)
       uuid: 11.1.1
       zod: 4.6.7
@@ -23164,7 +23164,7 @@ snapshots:
 
   '@posthog/browser-common@0.9.2':
     dependencies:
-      '@posthog/core': 1.59.1
+      '@posthog/core': 1.69.0
       '@posthog/types': 1.415.1
 
   '@posthog/core@1.46.1':
@@ -23179,9 +23179,9 @@ snapshots:
     dependencies:
       '@posthog/types': 1.416.0
 
-  '@posthog/core@1.67.1':
+  '@posthog/core@1.69.0':
     dependencies:
-      '@posthog/types': 1.423.0
+      '@posthog/types': 1.425.1
 
   '@posthog/types@1.399.0': {}
 
@@ -23189,7 +23189,7 @@ snapshots:
 
   '@posthog/types@1.416.0': {}
 
-  '@posthog/types@1.423.0': {}
+  '@posthog/types@1.425.1': {}
 
   '@powersync/common@1.58.0':
     dependencies:
