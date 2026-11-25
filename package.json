@@ -87,6 +87,7 @@
     "./providers/peloton": "./src/providers/peloton.ts",
     "./providers/fatsecret": "./src/providers/fatsecret/provider.ts",
     "./providers/ziva": "./src/providers/ziva/provider.ts",
+    "./providers/trailforks": "./src/providers/trailforks/provider.ts",
     "./providers/apple-health/import": "./src/providers/apple-health/import.ts",
     "./providers/apple-health/db-insertion": "./src/providers/apple-health/db-insertion.ts",
     "./providers/apple-health/records": "./src/providers/apple-health/records.ts",
@@ -354,7 +355,7 @@
     "@types/sax": "1.2.7",
     "@types/tz-lookup": "6.1.2",
     "@types/yauzl": "3.4.0",
-    "@vitest/coverage-v8": "5.0.5",
+    "@vitest/coverage-v8": "5.1.1",
     "cspell": "10.0.1",
     "cypress": "15.20.0",
     "dependency-cruiser": "17.3.10",
@@ -376,7 +377,7 @@
     "testcontainers": "12.2.1",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
-    "vitest": "5.0.5",
+    "vitest": "5.1.1",
     "yaml": "2.9.1"
   },
   "sherif": {

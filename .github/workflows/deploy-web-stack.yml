@@ -212,6 +212,95 @@ jobs:
           INFISICAL_ENV_FILE_PATH: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
         run: pnpm tsx scripts/validate-deploy-env.ts "$INFISICAL_ENV_FILE_PATH"
 
+      - name: Load the Fly runner deployment credential
+        if: inputs.stack_override == 'deploy/stack.oracle.yml' && env.DEPLOY_ENVIRONMENT == 'prod'
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: FLY_SYNC_APP_NAME,FLY_SYNC_DEPLOY_TOKEN
+
+      - name: Install Fly CLI for the Oracle production release
+        if: inputs.stack_override == 'deploy/stack.oracle.yml' && env.DEPLOY_ENVIRONMENT == 'prod'
+        uses: superfly/flyctl-actions/setup-flyctl@98172f70657cb3e15db199af139be99bd3e61200
+        with:
+          version: "0.5.16"
+
+      - name: Verify the provisioned Fly runner and stage runtime credentials
+        id: fly_runner
+        if: inputs.stack_override == 'deploy/stack.oracle.yml' && env.DEPLOY_ENVIRONMENT == 'prod'
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_SYNC_DEPLOY_TOKEN }}
+          OCI_ENDPOINT: ${{ inputs.server_host != '' && inputs.server_host || vars.ORACLE_SERVER_HOST }}
+          INFISICAL_ENV_FILE_PATH: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
+        run: |
+          set -euo pipefail
+          machine_id="$(flyctl machines list --app "$FLY_SYNC_APP_NAME" --json | jq -er '
+            if length == 1 and .[0].name == "pipeline-runner" and .[0].region == "sjc"
+              and .[0].config.guest == {"cpu_kind":"shared","cpus":1,"memory_mb":512}
+              and (.[0].config.services // [] | length) == 0
+              and .[0].config.env.REDIS_URL == "redis://127.0.0.1:6379"
+              and .[0].config.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT == "http://127.0.0.1:4318/v1/logs"
+              and .[0].config.checks["provider-sync-ready"] != null
+            then .[0].id
+            else error("Apply deploy/fly-runner Terraform for the private 512 MB production runner in sjc with loopback Redis and OTLP endpoints")
+            end
+          ')"
+          node --input-type=module <<'NODE' | flyctl secrets import --stage --app "$FLY_SYNC_APP_NAME"
+          import { readFileSync } from "node:fs";
+          import { parseEnv } from "node:util";
+          const env = parseEnv(readFileSync(process.env.INFISICAL_ENV_FILE_PATH, "utf8"));
+          function required(key) {
+            const value = env[key];
+            if (!value) throw new Error(`Production Infisical is missing ${key}`);
+            return value;
+          }
+          const keys = [
+            "ACCOUNT_ERASURE_LEDGER_KEYRING_JSON", "BREVO_API_KEY", "CREDENTIAL_ENCRYPTION_KEY_BASE64",
+            "R2_ACCESS_KEY_ID", "R2_ENDPOINT", "R2_SECRET_ACCESS_KEY", "SYNC_WORKER_PROVIDERS",
+          ];
+          required("SYNC_WIREGUARD_GATEWAY_PRIVATE_KEY");
+          required("SYNC_WIREGUARD_RUNNER_PUBLIC_KEY");
+          const secrets = {
+            ...Object.fromEntries(keys.map(key => [key, required(key)])),
+            DATABASE_URL: `postgres://health:${encodeURIComponent(required("POSTGRES_PASSWORD"))}@127.0.0.1:5432/health`,
+            SENTRY_DSN: env.SENTRY_DSN || required("SENTRY_DSN_unencrypted"),
+            SYNC_WIREGUARD_PRIVATE_KEY: required("SYNC_WIREGUARD_RUNNER_PRIVATE_KEY"),
+            SYNC_WIREGUARD_PEER_PUBLIC_KEY: required("SYNC_WIREGUARD_GATEWAY_PUBLIC_KEY"),
+            SYNC_WIREGUARD_ENDPOINT: `${process.env.OCI_ENDPOINT}:51820`,
+          };
+          for (const key of Object.keys(secrets)) {
+            if (secrets[key].includes('"""')) throw new Error(`Unsupported Fly secret encoding for ${key}`);
+          }
+          for (const [key, value] of Object.entries(secrets)) process.stdout.write(`${key}="""${value}"""\n`);
+          NODE
+          flyctl auth docker
+          echo "machine_id=$machine_id" >> "$GITHUB_OUTPUT"
+
+      - name: Configure the portable worker image builder
+        if: steps.fly_runner.outcome == 'success'
+        uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+        with:
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+
+      - name: Publish the portable worker image for this release
+        id: build_fly_runner
+        if: steps.fly_runner.outcome == 'success'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+        with:
+          context: .
+          target: pipeline-runner
+          platforms: linux/amd64
+          push: true
+          tags: registry.fly.io/${{ env.FLY_SYNC_APP_NAME }}:${{ steps.resolve.outputs.tag }}
+          build-args: COMMIT_HASH=${{ inputs.commit_sha }}
+          cache-from: type=gha,scope=portable-sync-runner
+          cache-to: type=gha,scope=portable-sync-runner,mode=max
+
       - name: Render least-privilege service dotenv files
         env:
           INFISICAL_ENV_FILE_PATH: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
@@ -732,6 +821,57 @@ jobs:
           sparse-checkout-cone-mode: false
           path: control-checkout
 
+      - name: Drain Fly provider sync before database migrations
+        if: steps.fly_runner.outcome == 'success'
+        timeout-minutes: 6
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_SYNC_DEPLOY_TOKEN }}
+          MACHINE_ID: ${{ steps.fly_runner.outputs.machine_id }}
+        run: |
+          set -euo pipefail
+          # flyctl machine stop --wait-timeout is capped at 60s by fly-go
+          # (flyctl v0.5.16). Issue one graceful stop without waiting, then poll
+          # machines list for the full shutdown window.
+          # https://github.com/superfly/flyctl/blob/fd050512152def8fc78ee1cc01ca9b0d374ee15e/internal/command/machine/stop.go
+          # https://github.com/superfly/fly-go/blob/b985840a0fb614e0145b1df06121ea5547cb280e/flaps/flaps_machines_wait.go
+          fly_machine_state() {
+            flyctl machines list --app "$FLY_SYNC_APP_NAME" --json | jq -er --arg id "$MACHINE_ID" '
+              map(select(.id == $id))
+              | if length == 1 and (.[0].state | type == "string")
+                then .[0].state
+                else error("Fly production runner \($id) is missing, duplicated, or has a malformed state")
+                end
+            '
+          }
+          deadline=$((SECONDS + 360))
+          initial_observation=true
+          while true; do
+            state="$(fly_machine_state)"
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::Fly production runner ${MACHINE_ID} did not stop before timeout (state=${state})"
+              exit 124
+            fi
+            case "$state" in
+              stopped)
+                break
+                ;;
+              started|starting)
+                if [ "$initial_observation" = true ]; then
+                  flyctl machine stop "$MACHINE_ID" --app "$FLY_SYNC_APP_NAME" --signal SIGTERM --timeout 300
+                fi
+                ;;
+              stopping)
+                ;;
+              *)
+                echo "::error::Fly production runner ${MACHINE_ID} entered unexpected state ${state}"
+                exit 1
+                ;;
+            esac
+            initial_observation=false
+            sleep 5
+          done
+          echo "Fly production runner ${MACHINE_ID} stopped"
+
       - name: Enable scheduled maintenance notice before web drains
         env:
           APP_IMAGE: ${{ steps.pull_images.outputs.pre_migration_image_ref }}
@@ -1106,7 +1246,7 @@ jobs:
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "${APP_IMAGE}" \
-             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts src/db/run-migrate.ts'
+             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation-preload.ts src/db/run-migrate.ts'
 
            inspect_failure_count=0
            max_inspect_failures=10
@@ -1474,7 +1614,7 @@ jobs:
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "${APP_IMAGE}" \
-             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts src/db/setup-clickhouse-cdc.ts'
+             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation-preload.ts src/db/setup-clickhouse-cdc.ts'
 
       - name: Finalize PeerDB CDC contract
         id: finalize_peerdb_cdc_contract
@@ -1599,6 +1739,9 @@ jobs:
         run: |
           stack_file_flags=()
           read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
+          if [ -n "$FLY_SYNC_APP_NAME" ]; then
+            stack_file_flags+=(-c deploy/stack.portable-sync.yml)
+          fi
           if [ "$WEB_CONVERGENCE_FAILED" = "true" ]; then
             web_excluded_stack_config="$RUNNER_TEMP/stack-without-web.yml"
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
@@ -1741,6 +1884,56 @@ jobs:
         env:
           APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
         run: *verify_kafka_topic_policy
+
+      - name: Start the verified production worker image on Fly
+        if: steps.fly_runner.outcome == 'success' && steps.deploy_stack_full.outcome == 'success' && steps.deploy_stack_quiesced.outputs.web_convergence_failed != 'true'
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_SYNC_DEPLOY_TOKEN }}
+          MACHINE_ID: ${{ steps.fly_runner.outputs.machine_id }}
+          IMAGE_DIGEST: ${{ steps.build_fly_runner.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          flyctl machine update "$MACHINE_ID" --app "$FLY_SYNC_APP_NAME" \
+            --image "registry.fly.io/$FLY_SYNC_APP_NAME@$IMAGE_DIGEST" --skip-start --yes
+          staged_version="$(flyctl machines list --app "$FLY_SYNC_APP_NAME" --json | jq -er --arg id "$MACHINE_ID" '
+            map(select(.id == $id))
+            | if length == 1 and .[0].config.checks["provider-sync-ready"] != null
+              then .[0].version
+              else error("updated Fly production runner is missing or lacks provider-sync-ready")
+              end
+          ')"
+          flyctl machine start --app "$FLY_SYNC_APP_NAME" --wait "$MACHINE_ID"
+          # machine start --wait skips health checks when the start payload has no
+          # runtime check entries (pinned flyctl 0.5.16). Poll list --json for the
+          # staged Machine version after start.
+          # https://github.com/superfly/flyctl/blob/fd050512152def8fc78ee1cc01ca9b0d374ee15e/internal/command/machine/start.go#L105
+          deadline=$((SECONDS + 180))
+          while true; do
+            if flyctl machines list --app "$FLY_SYNC_APP_NAME" --json | jq -e --arg id "$MACHINE_ID" --arg version "$staged_version" '
+              map(select(.id == $id and .version == $version))
+              | length == 1
+                and .[0].state == "started"
+                and ([.[0].checks[]? | select(.name == "provider-sync-ready" and .status == "passing")] | length) == 1
+            ' >/dev/null; then
+              echo "Fly production runner ${MACHINE_ID} version ${staged_version} started"
+              break
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              flyctl machines list --app "$FLY_SYNC_APP_NAME" --json | jq --arg id "$MACHINE_ID" '
+                map(select(.id == $id))
+                | map({
+                    id,
+                    version,
+                    state,
+                    "provider-sync-ready": ([.checks[]? | select(.name == "provider-sync-ready") | .status] | first // null)
+                  })
+              '
+              echo "::error::Fly production runner did not report provider-sync-ready passing before timeout"
+              exit 124
+            fi
+            sleep 5
+          done
 
       - name: Remove unused Apple private key Swarm secrets
         if: steps.deploy_stack_full.outcome == 'success'

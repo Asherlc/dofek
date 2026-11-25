@@ -1,3 +1,4 @@
+import { activityAgendaPlannedWindow } from "@dofek/format/activity-agenda";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import type { Database } from "dofek/db";
 import type { z } from "zod";
@@ -81,12 +82,19 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     for (const row of hiddenRows) {
       if (!candidates.has(row.id)) candidates.set(row.id, { row, hidden: true });
     }
-    const ordered = [...candidates.values()].sort(
-      (left, right) =>
-        right.row.local_date.localeCompare(left.row.local_date) ||
+    const dateOrder = input.dateOrder ?? "newest";
+    const ordered = [...candidates.values()].sort((left, right) => {
+      const dateCmp =
+        dateOrder === "oldest"
+          ? left.row.local_date.localeCompare(right.row.local_date)
+          : right.row.local_date.localeCompare(left.row.local_date);
+      if (dateCmp !== 0) return dateCmp;
+      // Within a day keep newest-time ordering for both agenda date orders.
+      return (
         right.row.started_at.localeCompare(left.row.started_at) ||
-        left.row.id.localeCompare(right.row.id),
-    );
+        left.row.id.localeCompare(right.row.id)
+      );
+    });
     const totalCount = ordered.length;
     const page = Math.min(input.page, Math.max(0, Math.ceil(totalCount / input.pageSize) - 1));
     const selected = ordered.slice(page * input.pageSize, (page + 1) * input.pageSize);
@@ -99,28 +107,57 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       hiddenRepository.getDayGroups(hiddenRows.filter((row) => hiddenIds.has(row.id))),
     ]);
     const days = mergeDayGroups(activeDays, hiddenDays);
+    days.sort((left, right) =>
+      dateOrder === "oldest"
+        ? left.date.localeCompare(right.date)
+        : right.date.localeCompare(left.date),
+    );
     for (const day of days) {
       day.activities.sort(
         (left, right) =>
           right.startedAt.localeCompare(left.startedAt) || left.id.localeCompare(right.id),
       );
     }
-    return { days, totalCount, page, pageSize: input.pageSize };
+    const result: ActivityListPage = { days, totalCount, page, pageSize: input.pageSize };
+    if (input.startDate) {
+      const hasLaterPage = (page + 1) * input.pageSize < totalCount;
+      const previousPageLastActivityDate =
+        page > 0 ? ordered[page * input.pageSize - 1]?.row.local_date : undefined;
+      result.plannedWindow = activityAgendaPlannedWindow({
+        rangeStart: input.startDate,
+        rangeEnd: input.endDate,
+        pageActivityDates: selected.map((entry) => entry.row.local_date),
+        hasLaterPage,
+        previousPageLastActivityDate,
+        dateOrder,
+      });
+    }
+    return result;
   }
 
   async #getActiveRows(input: WeekListInput | { activityIds: string[]; activityType?: string }) {
     const activityTypeFilter = input.activityType
       ? "AND coalesce(activity.primary_canonical_type, activity.canonical_type) = {activityType:String}"
       : "";
+    const explicitStartDate = !("activityIds" in input) ? input.startDate : undefined;
     const queryParams = {
       userId: this.userId,
       timezone: this.timezone,
       ...("activityIds" in input
         ? { activityIds: input.activityIds }
-        : { windowStart: dateWindowStartString(input.endDate, input.weeks * 7) }),
+        : explicitStartDate
+          ? { windowStart: explicitStartDate, windowEnd: input.endDate }
+          : { windowStart: dateWindowStartString(input.endDate, input.weeks * 7) }),
       ...(input.activityType ? { activityType: input.activityType } : {}),
     };
     const activityDate = clickHouseActivityCalendarDate("activity");
+    const dateBounds =
+      "activityIds" in input
+        ? "AND activity.activity_id IN {activityIds:Array(UUID)}"
+        : explicitStartDate
+          ? `AND ${activityDate} >= toDate({windowStart:String})
+            AND ${activityDate} <= toDate({windowEnd:String})`
+          : `AND ${activityDate} >= toDate({windowStart:String})`;
 
     const activityRows = await this.#sensorStore.query(
       activityRowSchema,
@@ -169,11 +206,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           WHERE activity.user_id = {userId:UUID}
             AND activity.is_deleted = 0
             AND (activity.ended_at IS NOT NULL OR activity.provider_type = 'climbing_log')
-            ${
-              "activityIds" in input
-                ? "AND activity.activity_id IN {activityIds:Array(UUID)}"
-                : `AND ${activityDate} >= toDate({windowStart:String})`
-            }
+            ${dateBounds}
             ${activityTypeFilter}
           ORDER BY activity.started_at DESC`,
       queryParams,

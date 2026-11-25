@@ -28,6 +28,7 @@ export const PROVIDER_GUIDE_CATEGORIES: ProviderGuideCategory[] = [
       "komoot",
       "mapmyfitness",
       "ride-with-gps",
+      "trailforks",
       "cycling_analytics",
       "xert",
       "mountain-project",

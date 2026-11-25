@@ -1,8 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { validateAccountErasureLedgerKeyring } from "../account-erasure/identity.ts";
-import { createEncryptedAccountErasureSnapshot } from "../account-erasure/remote-snapshot.ts";
-import { createAccountErasureRestoreLedgerFromEnv } from "../account-erasure/restore-ledger.ts";
-import { reconcileAccountErasureRestoreIntents } from "../account-erasure/restore-reconciliation.ts";
 import { readGhostRouteLabelsWorkerConfig } from "../analytics/ghost-route-label-config.ts";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
@@ -13,11 +9,10 @@ import { captureException } from "../lib/error-reporting.ts";
 import { initProductionSentry } from "../lib/sentry.ts";
 import { logger } from "../logger.ts";
 import { validateMetricStreamTopicConfiguration } from "../metric-stream/routes.ts";
-import { getAllProviders } from "../providers/index.ts";
 import { requiredR2EnvironmentVariable } from "../r2-storage.ts";
 import { startAccountErasureOutboxDispatcher } from "./account-erasure-outbox.ts";
 import { createAccountErasureRuntime } from "./account-erasure-runtime.ts";
-import { runAccountErasureRestoreStartupGate } from "./account-erasure-startup.ts";
+import { prepareProviderWorker } from "./account-erasure-startup.ts";
 import { createAccountErasureWorkLockPoolFromEnv } from "./account-erasure-work-guard.ts";
 import { createAccountErasureWorkPurgerFromEnv } from "./account-erasure-work-purger.ts";
 import { startActivityImageOutboxDispatcher } from "./activity-image-outbox.ts";
@@ -29,7 +24,6 @@ import { createGarminImportProgressCoordinator } from "./garmin-import-progress.
 import { dispatchActivityImageBackfills } from "./process-activity-image-backfill-job.ts";
 import { startProviderDataDeletionOutboxDispatcher } from "./provider-data-deletion-outbox.ts";
 import { providerPollingIntervalMinutes } from "./provider-queue-config.ts";
-import { ensureProvidersRegistered } from "./provider-registration.ts";
 import {
   getAccountErasureQueue,
   getActivityImageQueue,
@@ -54,17 +48,7 @@ const WORKER_READINESS_PORT = 3001;
 
 const db = createDatabaseFromEnv();
 const accountErasureWorkLockPool = createAccountErasureWorkLockPoolFromEnv();
-validateAccountErasureLedgerKeyring();
-const accountErasureRestoreLedger = createAccountErasureRestoreLedgerFromEnv();
-await ensureProvidersRegistered();
-await runAccountErasureRestoreStartupGate(() =>
-  reconcileAccountErasureRestoreIntents({
-    createEncryptedRemoteSnapshot: (transaction, userId) =>
-      createEncryptedAccountErasureSnapshot(transaction, userId, getAllProviders()),
-    database: db,
-    ledger: accountErasureRestoreLedger,
-  }),
-);
+await prepareProviderWorker(db);
 const connection = getRedisConnection();
 let importUploadStorage: ReturnType<typeof createImportUploadStorageFromEnv> | null = null;
 

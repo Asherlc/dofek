@@ -454,6 +454,7 @@ const PROVIDER_DATASET_CAPABILITIES: Readonly<Record<string, readonly Processing
   "eight-sleep": ["sleep", "recovery", "training", "providers"],
   fatsecret: ["nutrition", "providers"],
   ziva: ["nutrition", "providers"],
+  trailforks: ["activity", "hiking", "cycling", "recovery", "training", "providers"],
   fitbit: ["activity", "hiking", "cycling", "sleep", "recovery", "training", "body", "providers"],
   garmin: ["activity", "hiking", "cycling", "sleep", "recovery", "training", "body", "providers"],
   // Calendar events stay in the existing relational provider scope; no separate CDC flow or

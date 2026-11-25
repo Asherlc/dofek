@@ -1,10 +1,12 @@
 import { shiftDateYmd } from "@dofek/format/format";
+import { resolveProviderActivityType } from "@dofek/training/activity-types";
+import { STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { PLANNED_WORKOUT_HORIZON_DAYS } from "dofek/db/planned-workout-repository";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { type AccessWindow, dateAccessPredicate } from "../billing/entitlement.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 export const plannedWorkoutTargetTypeSchema = z.enum(["power", "heart_rate", "pace", "cadence"]);
 
@@ -60,10 +62,27 @@ export const plannedWorkoutDaySchema = z.object({
       sportType: z.string().nullable(),
       startTime: z.string().nullable(),
       steps: z.array(plannedWorkoutStepSchema),
+      /** Present only when the provider connection is gone; last importer confirmation. */
+      snapshotImportedAt: z.string().optional(),
     }),
   ),
 });
 export type PlannedWorkoutDay = z.infer<typeof plannedWorkoutDaySchema>;
+
+export interface PlannedWorkoutUpcomingInput {
+  dateRange?: { startDate: string; endDate: string };
+  activityType?: string;
+}
+
+function plannedSportMatches(sportType: string | null, activityType: string): boolean {
+  // Retained plans may store whitespace-only sport; trim-empty must not take down the feed.
+  if (!sportType || sportType.trim().length === 0) return false;
+  const mapped = resolveProviderActivityType(
+    sportType,
+    STRAVA_ACTIVITY_TYPE_MAP[sportType] ?? "other",
+  );
+  return mapped.canonicalType === activityType;
+}
 
 // Bounds for untrusted authoring data: an absurd source document must never
 // hang the request or produce an unbounded response. The original document
@@ -176,6 +195,8 @@ const rowSchema = z.object({
   description: z.string().nullable(),
   sport_type: z.string().nullable(),
   workout_doc: z.unknown(),
+  updated_at: timestampStringSchema,
+  provider_connected: z.boolean(),
 });
 
 export class PlannedWorkoutRepository {
@@ -200,23 +221,48 @@ export class PlannedWorkoutRepository {
     this.accessWindow = accessWindow;
   }
 
-  async upcoming(): Promise<PlannedWorkoutDay[]> {
+  async upcoming(input: PlannedWorkoutUpcomingInput = {}): Promise<PlannedWorkoutDay[]> {
+    const startDate = input.dateRange?.startDate ?? this.today;
+    const endDate =
+      input.dateRange?.endDate ?? shiftDateYmd(this.today, PLANNED_WORKOUT_HORIZON_DAYS);
     const rows = await executeWithSchema(
       this.db,
       rowSchema,
-      sql`SELECT external_id AS id, provider_id, start_date::text AS start_date,
-                 to_char(start_time, 'HH24:MI') AS start_time,
-                 title, description, sport_type, workout_doc
-          FROM fitness.planned_workout
-          WHERE user_id = ${this.userId}::uuid
-            AND start_date BETWEEN ${this.today}::date
-              AND ${shiftDateYmd(this.today, PLANNED_WORKOUT_HORIZON_DAYS)}::date
-            ${dateAccessPredicate(this.accessWindow, sql`start_date`)}
-            ${this.providerId ? sql`AND provider_id = ${this.providerId}` : sql``}
-          ORDER BY start_date, start_time NULLS FIRST, external_id`,
+      sql`SELECT pw.external_id AS id, pw.provider_id, pw.start_date::text AS start_date,
+                 to_char(pw.start_time, 'HH24:MI') AS start_time,
+                 pw.title, pw.description, pw.sport_type, pw.workout_doc,
+                 pw.updated_at AS updated_at,
+                 (
+                   CASE
+                     WHEN pw.provider_id = 'intervals.icu' THEN
+                       pc.user_id IS NOT NULL
+                       AND ot.user_id IS NOT NULL
+                       AND EXISTS (
+                         SELECT 1
+                         FROM unnest(string_to_array(coalesce(ot.scopes, ''), ',')) AS scope_name
+                         WHERE btrim(scope_name) = 'CALENDAR:READ'
+                       )
+                     ELSE pc.user_id IS NOT NULL
+                   END
+                 ) AS provider_connected
+          FROM fitness.planned_workout pw
+          LEFT JOIN fitness.provider_connection pc
+            ON pc.user_id = pw.user_id
+           AND pc.provider_id = pw.provider_id
+          LEFT JOIN fitness.oauth_token ot
+            ON ot.user_id = pw.user_id
+           AND ot.provider_id = pw.provider_id
+          WHERE pw.user_id = ${this.userId}::uuid
+            AND pw.start_date BETWEEN ${startDate}::date AND ${endDate}::date
+            ${dateAccessPredicate(this.accessWindow, sql`pw.start_date`)}
+            ${this.providerId ? sql`AND pw.provider_id = ${this.providerId}` : sql``}
+          ORDER BY pw.start_date, pw.start_time NULLS FIRST, pw.external_id`,
     );
     const days = new Map<string, PlannedWorkoutDay>();
     for (const row of rows) {
+      if (input.activityType && !plannedSportMatches(row.sport_type, input.activityType)) {
+        continue;
+      }
       const day = days.get(row.start_date) ?? { date: row.start_date, workouts: [] };
       day.workouts.push({
         id: row.id,
@@ -226,6 +272,7 @@ export class PlannedWorkoutRepository {
         sportType: row.sport_type,
         startTime: row.start_time,
         steps: projectWorkoutSteps(row.workout_doc),
+        ...(row.provider_connected ? {} : { snapshotImportedAt: row.updated_at }),
       });
       days.set(row.start_date, day);
     }

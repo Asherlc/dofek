@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "title": "Dofek · iOS Sleep widgets",
+  "kind": "prototype",
+  "description": "Home Screen and Lock Screen concepts for the proposed Sleep widget, with synthetic values and the privacy and fallback states.",
+  "artboards": [
+    {
+      "id": "home",
+      "title": "Home Screen · Sleep recorded",
+      "file": "home.html",
+      "width": 390,
+      "height": 720,
+      "group": "In context"
+    },
+    {
+      "id": "lock-authenticated",
+      "title": "Lock Screen · Authenticated",
+      "file": "lock-authenticated.html",
+      "width": 390,
+      "height": 720,
+      "group": "In context"
+    },
+    {
+      "id": "lock-private",
+      "title": "Lock Screen · Locked",
+      "file": "lock-private.html",
+      "width": 390,
+      "height": 720,
+      "group": "In context"
+    },
+    {
+      "id": "no-record",
+      "title": "No recent sleep",
+      "file": "no-record.html",
+      "width": 390,
+      "height": 300,
+      "group": "Fallbacks"
+    },
+    {
+      "id": "expired",
+      "title": "Snapshot expired",
+      "file": "expired.html",
+      "width": 390,
+      "height": 300,
+      "group": "Fallbacks"
+    },
+    {
+      "id": "signed-out",
+      "title": "Signed out",
+      "file": "signed-out.html",
+      "width": 390,
+      "height": 300,
+      "group": "Fallbacks"
+    }
+  ]
+}

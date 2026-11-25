@@ -5,13 +5,17 @@ import {
   requestedKafkaImage,
   runClickHouseReadinessFixture,
   runDeployQuiesced,
+  runFlyDrainFixture,
   runKafkaBackendFixture,
   runKafkaImageFixture,
   runKafkaInstallerFixture,
+  runMigrationHistorySelectionFixture,
   runPeerdbMigrationFixture,
   runPipedashVerificationFixture,
   runPreMigrationWebConvergence,
+  runPreMigrationWebLsFailureFixture,
   runTopicPolicyFixture,
+  runWebEnvSelectionFixture,
   runWorkflowDeployConsumers,
   webStackSteps,
   workflowRunScript,
@@ -19,10 +23,6 @@ import {
   workflowText,
 } from "./deploy-web-stack-test-helpers.ts";
 import { deployTestDigest, deployTestOldImage, deployTestRepository, runDeployImageFixture } from "../../scripts/deploy-image-test-helpers.ts";
-import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const otaImage = `${deployTestRepository}-ota@${deployTestDigest}`;
@@ -388,39 +388,91 @@ describe("deploy-web-stack workflow contract", () => {
     },
   );
 
+  it("polls the staged Fly Machine version for started state and provider-sync-ready after start --wait", () => {
+    const step = "Start the verified production worker image on Fly";
+    const script = workflowRunScript(step);
+    const startAt = script.indexOf('flyctl machine start --app "$FLY_SYNC_APP_NAME" --wait "$MACHINE_ID"');
+    expect(script).toContain('flyctl machine update "$MACHINE_ID" --app "$FLY_SYNC_APP_NAME"');
+    expect(script).toContain("--skip-start --yes");
+    expect(startAt).toBeGreaterThan(script.indexOf("flyctl machine update"));
+    const afterStart = script.slice(startAt);
+    expect(afterStart).toContain('flyctl machines list --app "$FLY_SYNC_APP_NAME" --json');
+    expect(afterStart).toContain('.[0].state == "started"');
+    expect(afterStart).toContain('.name == "provider-sync-ready" and .status == "passing"');
+    expect(afterStart).toMatch(/\.version == \$version|\.version == \$staged_version/);
+    expect(afterStart).toContain("deadline=$((SECONDS +");
+    expect(afterStart).toContain('echo "Fly production runner ${MACHINE_ID} version ${staged_version} started"');
+    expect(afterStart).toContain('"provider-sync-ready": ([.checks[]? | select(.name == "provider-sync-ready") | .status] | first // null)');
+    expect(afterStart).toMatch(/map\(\{\s*id,\s*version,\s*state,/);
+    expect(afterStart).not.toContain(".config");
+    expect(afterStart).not.toContain(".output");
+  });
+
+  describe("Drain Fly provider sync before database migrations", () => {
+    const drain = () => workflowRunScript("Drain Fly provider sync before database migrations");
+
+    it("starts the deadline before the first lookup and stops only on the initial observation", () => {
+      const script = drain();
+      expect(workflowText).toMatch(
+        /- name: Drain Fly provider sync before database migrations\n {8}if: .+\n {8}timeout-minutes: 6\n/,
+      );
+      expect(script).toContain("deadline=$((SECONDS + 360))");
+      expect(script).toContain("initial_observation=true");
+      expect(script.indexOf("deadline=$((SECONDS + 360))")).toBeLessThan(script.indexOf('state="$(fly_machine_state)"'));
+      expect(script.indexOf('state="$(fly_machine_state)"')).toBeLessThan(script.indexOf('flyctl machine stop "$MACHINE_ID"'));
+    });
+
+    it("issues one graceful stop after listing started, then polls to stopped", () => {
+      const result = runFlyDrainFixture(drain(), { states: ["started", "stopping", "stopped"] });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.calls[0]).toEqual(["machines", "list", "--app", result.appName, "--json"]);
+      expect(result.calls[1]).toEqual([
+        "machine", "stop", result.machineId, "--app", result.appName, "--signal", "SIGTERM", "--timeout", "300",
+      ]);
+      expect(result.calls[1]).not.toContain("--wait-timeout");
+      expect(result.calls.slice(2).every((call) => call[0] === "machines" && call[1] === "list")).toBe(true);
+      expect(result.calls.filter((call) => call[1] === "stop")).toHaveLength(1);
+    });
+
+    it("skips stop when already stopped and observes stopping without stop", () => {
+      const stopped = runFlyDrainFixture(drain(), { states: ["stopped"] });
+      expect(stopped.status, stopped.stderr).toBe(0);
+      expect(stopped.calls).toEqual([["machines", "list", "--app", stopped.appName, "--json"]]);
+      const stopping = runFlyDrainFixture(drain(), { states: ["stopping", "stopped"] });
+      expect(stopping.status, stopping.stderr).toBe(0);
+      expect(stopping.calls.every((call) => call[1] === "list")).toBe(true);
+      expect(stopping.calls.length).toBeGreaterThan(1);
+    });
+
+    it("exits 124 when stopped arrives after the deadline", () => {
+      const result = runFlyDrainFixture(drain(), { states: ["stopping", "stopped"], sleepSeconds: 361 });
+      expect(result.status).toBe(124);
+      expect(result.calls.every((call) => call[1] === "list")).toBe(true);
+      expect(result.calls.filter((call) => call[1] === "stop")).toHaveLength(0);
+    });
+
+    it("fails immediately on list errors, missing IDs, unexpected states, and stop failures", () => {
+      for (const options of [
+        { listFails: true }, { missingMachine: true }, { wrongId: true }, { states: ["destroyed"] },
+      ] as const) {
+        const result = runFlyDrainFixture(drain(), { states: ["started"], ...options });
+        expect(result.status).not.toBe(0);
+        expect(result.calls.filter((call) => call[1] === "stop")).toHaveLength(0);
+      }
+      const stopFailure = runFlyDrainFixture(drain(), { states: ["started"], stopFails: true });
+      expect(stopFailure.status).not.toBe(0);
+      expect(stopFailure.calls.some((call) => call[1] === "stop")).toBe(true);
+    });
+  });
+
   it.each([
-    ["Deploy stack without ClickHouse consumers", "web.env", deployTestRepository + "@" + deployTestDigest],
-    ["Deploy and verify remaining services", "web.env", deployTestRepository + "@" + deployTestDigest],
-  ])("selects the correct web environment in %s", (step, expectedFile, expectedImage) => {
-    const result = spawnSync(
-      "bash",
-      [
-        "-c",
-        `node() {
-  printf 'selected-web-env=%s image=%s\\n' "$WEB_ENV_FILE" "$APP_IMAGE"
-  return 23
-}
-timeout() { shift; "$@"; }
-${workflowRunScript(step)}
-`,
-      ],
-      {
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          APP_IMAGE: expectedImage,
-          MIGRATION_DEPLOYMENT_MODE: "rolling",
-          WEB_ENV_FILE: "/synthetic/web.env",
-          WEB_PRE_MIGRATION_ENV_FILE: "/synthetic/web-pre-migration.env",
-          RUNNER_TEMP: "/synthetic",
-          STACK_NAME: "dofek",
-          STACK_FILE_FLAGS: "-c deploy/docker-compose.yml",
-        },
-      },
-    );
+    "Deploy stack without ClickHouse consumers",
+    "Deploy and verify remaining services",
+  ])("selects the correct web environment in %s", (step) => {
+    const result = runWebEnvSelectionFixture(workflowRunScript(step));
     expect(result.status).toBe(23);
     expect(result.stdout).toContain(
-      `selected-web-env=/synthetic/${expectedFile} image=${expectedImage}`,
+      `selected-web-env=/synthetic/web.env image=${deployTestRepository}@${deployTestDigest}`,
     );
   });
 
@@ -558,45 +610,11 @@ ${workflowRunScript(step)}
   );
 
   it("fails immediately when the pre-migration web replica lookup loses its Docker CLI", () => {
-    const directory = mkdtempSync(join(tmpdir(), "dofek-web-ls-failure-"));
-    try {
-      const bin = join(directory, "bin");
-      mkdirSync(bin);
-      const dockerPath = join(bin, "docker");
-      writeFileSync(
-        dockerPath,
-        `#!/usr/bin/env bash
-set -euo pipefail
-if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
-  printf 'completed\\n'
-  exit 0
-fi
-if [ "$1" = "service" ] && [ "$2" = "ls" ]; then
-  printf 'mock docker service ls failure\\n' >&2
-  exit 42
-fi
-exit 64
-`,
-      );
-      chmodSync(dockerPath, 0o755);
-      const result = spawnSync(
-        "timeout",
-        ["5", "bash", "-e", "-c", workflowRunScript("Wait for pre-migration web convergence")],
-        {
-          encoding: "utf8",
-          env: {
-            ...process.env,
-            PATH: `${bin}:${process.env.PATH ?? ""}`,
-            APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
-            STACK_NAME: "dofek",
-          },
-        },
-      );
-      expect(result.status).toBe(42);
-      expect(result.stderr).toContain("mock docker service ls failure");
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
-    }
+    const result = runPreMigrationWebLsFailureFixture(
+      workflowRunScript("Wait for pre-migration web convergence"),
+    );
+    expect(result.status).toBe(42);
+    expect(result.stderr).toContain("mock docker service ls failure");
   });
 
   it("waits for an in-progress web rollback to settle before deferring it", () => {
@@ -869,24 +887,8 @@ function runImageSelection() {
 describe("deploy workflow image selection", () => {
   it("passes both pinned images to migration history selection", () => {
     const requested = `${deployTestRepository}@${deployTestDigest}`;
-    const result = spawnSync(
-      "bash",
-      [
-        "-e", "-o", "pipefail", "-c",
-        `
-pnpm() { printf '%s\\n' "$@"; }
-${workflowRunScript("Select migration deployment mode from image histories")}
-`,
-      ],
-      {
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          APP_IMAGE: requested,
-          PRE_MIGRATION_APP_IMAGE: deployTestOldImage,
-          STACK_NAME: "dofek",
-        },
-      },
+    const result = runMigrationHistorySelectionFixture(
+      workflowRunScript("Select migration deployment mode from image histories"),
     );
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout.trim().split("\n")).toEqual([

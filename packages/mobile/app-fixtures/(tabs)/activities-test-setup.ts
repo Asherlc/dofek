@@ -28,17 +28,22 @@ export const activityMocks: {
     data: unknown;
     isLoading: boolean;
     isError: boolean;
+    isSuccess?: boolean;
     error: Error | null;
     isFetching: boolean;
+    isPlaceholderData?: boolean;
     refetch: CallableVitestMock;
   };
   upcomingQueryInput: unknown;
+  upcomingOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
   weekListInput: unknown;
   weekListOptions: WeekListQueryOptions | undefined;
   calendarDataInput: unknown;
   calendarDataOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
   overviewInput: unknown;
-  overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
+  overviewOptions:
+    | { enabled?: boolean; placeholderData?: (previousData: unknown) => unknown }
+    | undefined;
   bulkDeleteMutateAsync: CallableVitestMock;
   mergeMutateAsync: CallableVitestMock;
   mockMergeShouldFail: boolean;
@@ -72,6 +77,7 @@ export const activityMocks: {
     refetch: vi.fn(),
   },
   upcomingQueryInput: undefined,
+  upcomingOptions: undefined,
   weekListInput: undefined,
   weekListOptions: undefined,
   calendarDataInput: undefined,
@@ -119,7 +125,12 @@ vi.mock("../../lib/trpc", () => ({
       searchActivities: { useInfiniteQuery: titleSearchQuery },
       weekListV2: {
         useQuery: (
-          input: { page?: number; pageSize?: number },
+          input: {
+            page?: number;
+            pageSize?: number;
+            startDate?: string;
+            endDate?: string;
+          },
           options: WeekListQueryOptions | undefined,
         ) => {
           activityMocks.weekListInput = input;
@@ -135,7 +146,10 @@ vi.mock("../../lib/trpc", () => ({
             activityMocks.liveQueryClient ?? queryFixtureClient,
           );
           if (activityMocks.livePageFetch) return liveQuery;
-          const page = input.page ?? 0;
+          // Same-range placeholders keep the prior page payload while input.page advances.
+          const page = activityMocks.mockQuery.isPlaceholderData
+            ? (activityMocks.mockQuery.page ?? 0)
+            : (activityMocks.mockQuery.page ?? input.page ?? 0);
           const pageSize = input.pageSize ?? 20;
           let offset = 0;
           const days = activityMocks.mockQuery.data
@@ -151,16 +165,39 @@ vi.mock("../../lib/trpc", () => ({
               };
             })
             .filter((day) => day.activities.length > 0);
+          const plannedWindow =
+            "plannedWindow" in activityMocks.mockQuery
+              ? activityMocks.mockQuery.plannedWindow
+              : input.startDate && input.endDate
+                ? { startDate: input.startDate, endDate: input.endDate }
+                : undefined;
+          const data = days
+            ? {
+                days,
+                totalCount: activityMocks.mockQuery.totalCount ?? offset,
+                page,
+                pageSize,
+                ...(plannedWindow !== undefined ? { plannedWindow } : {}),
+              }
+            : undefined;
           return {
             ...activityMocks.mockQuery,
-            data: days ? { days, totalCount: offset, page, pageSize } : undefined,
+            data,
+            isSuccess:
+              activityMocks.mockQuery.isSuccess ??
+              (!activityMocks.mockQuery.isLoading &&
+                !activityMocks.mockQuery.isError &&
+                data !== undefined),
+            isPlaceholderData: activityMocks.mockQuery.isPlaceholderData ?? false,
           };
         },
       },
       activityOverview: {
         useQuery: (
           input: unknown,
-          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
+          options:
+            | { enabled?: boolean; placeholderData?: (previousData: unknown) => unknown }
+            | undefined,
         ) => {
           activityMocks.overviewInput = input;
           activityMocks.overviewOptions = options;
@@ -178,9 +215,18 @@ vi.mock("../../lib/trpc", () => ({
         },
       },
       upcomingWorkouts: {
-        useQuery: (input: unknown) => {
+        useQuery: (
+          input: unknown,
+          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
+        ) => {
           activityMocks.upcomingQueryInput = input;
-          return activityMocks.mockUpcomingQuery;
+          activityMocks.upcomingOptions = options;
+          const mock = activityMocks.mockUpcomingQuery;
+          return {
+            ...mock,
+            isSuccess:
+              mock.isSuccess ?? (!mock.isLoading && !mock.isError && mock.data !== undefined),
+          };
         },
       },
     },
@@ -300,9 +346,11 @@ beforeEach(() => {
     isError: false,
     error: null,
     isFetching: false,
+    isPlaceholderData: false,
     refetch: vi.fn(),
   };
   activityMocks.upcomingQueryInput = undefined;
+  activityMocks.upcomingOptions = undefined;
   activityMocks.invalidateUpcoming = vi.fn();
   activityMocks.weekListInput = undefined;
   activityMocks.calendarDataInput = undefined;

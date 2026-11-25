@@ -5,11 +5,11 @@
 # Docker context (SSH); this root only provisions infrastructure, never secrets
 # or app deploys.
 #
-# Uses a local backend (no Terraform Cloud workspace) so it stays isolated
-# from the primary deploy/ root.
+# Uses a local backend (Terraform 1.16.6+ and no Terraform Cloud workspace)
+# so it stays isolated from the primary deploy/ root.
 
 terraform {
-  required_version = ">= 1.6"
+  required_version = ">= 1.16.6"
   required_providers {
     oci = {
       source  = "oracle/oci"

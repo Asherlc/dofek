@@ -29,8 +29,8 @@ the exact section.
 - [testing.md](testing.md): testing patterns that come up repeatedly in this codebase.
 - [processing-status-runbook.md](processing-status-runbook.md): durable processing evidence, deployment order, and stage diagnosis.
 - [account-erasure-runbook.md](account-erasure-runbook.md): durable account deletion, retention proof, restore reconciliation, and incident response.
-- [roadmap.md](roadmap.md): product strategy, release gates, Daily Brief,
-  calendar, and trust roadmap.
+- [roadmap.md](roadmap.md): product strategy, release readiness, planned
+  workouts, iOS widgets and Apple Watch.
 - [review-fixture-scenarios.md](review-fixture-scenarios.md): paired web/mobile
   Storybook fixtures for empty, partial, conflicting-source, stale-provider,
   processing, and error review states.
@@ -63,7 +63,7 @@ the exact section.
 | [external-api.md](external-api.md) | Target-agnostic authenticated write API, explicit external identity linking, nutrition writes, and account-erasure coordination. |
 | [credential-encryption.md](credential-encryption.md) | Stored credential encryption, required key material, context binding, and rotation boundary. |
 | [posthog-support.md](posthog-support.md) | In-app support ticket flow, PostHog Conversations integration, and failure handling. |
-| [roadmap.md](roadmap.md) | Product strategy and release gates across the Daily Brief, calendar, trust, and onboarding. |
+| [roadmap.md](roadmap.md) | Product strategy and release readiness across planned workouts, iOS widgets, and Apple Watch. |
 | [ghost-sessions.md](ghost-sessions.md) | Ghost Sessions processing limits, scoped history diagnosis, and Geoapify map-matching qualification. |
 | [apple-health.md](apple-health.md) | Apple Health import model and type mapping. |
 | [apple-watch-accelerometer.md](apple-watch-accelerometer.md) | Notes on Apple Watch accelerometer capture and interpretation. |
@@ -90,6 +90,7 @@ the exact section.
 | Peloton | [peloton.md](peloton.md) | Auth and workout sync notes. |
 | Ride with GPS | [ride-with-gps.md](ride-with-gps.md) | OAuth flow and activity import notes. |
 | Polar | [polar.md](polar.md) | OAuth, exercise, sleep, and Nightly Recharge mappings. |
+| Trailforks | [trailforks.md](trailforks.md) | OAuth and read-only activity summary sync. |
 | TrainerRoad | [trainerroad.md](trainerroad.md) | Cookie auth, workouts, and parsing details. |
 | Wahoo | [wahoo.md](wahoo.md) | OAuth and workout ingestion notes. |
 | Withings | [withings.md](withings.md) | Sleep/body sync and webhook details. |

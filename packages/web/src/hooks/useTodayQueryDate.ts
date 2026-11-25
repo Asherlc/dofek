@@ -17,19 +17,17 @@ export function useTodayQueryDate(): string {
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-    const scheduleUpdate = () => {
-      timeoutId = setTimeout(() => {
-        setTodayQueryDate(formatQueryDate());
-        scheduleUpdate();
-      }, getMillisecondsUntilNextLocalMidnight(new Date()));
+    const refresh = () => {
+      setTodayQueryDate(formatQueryDate());
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      timeoutId = setTimeout(refresh, getMillisecondsUntilNextLocalMidnight(new Date()));
     };
 
-    scheduleUpdate();
-
+    refresh();
+    window.addEventListener("focus", refresh);
     return () => {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
+      window.removeEventListener("focus", refresh);
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
     };
   }, []);
 

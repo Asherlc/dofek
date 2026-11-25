@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./activity-agenda": "./src/activity-agenda.ts",
     "./activity-overview": "./src/activity-overview.ts",
     "./activity-data-state": "./src/activity-data-state.ts",
+
     "./baseline-context": "./src/baseline-context.ts",
     "./climbing-context": "./src/climbing-context.ts",
     "./climbing-log": "./src/climbing-log.ts",

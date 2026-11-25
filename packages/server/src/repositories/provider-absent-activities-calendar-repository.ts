@@ -52,19 +52,24 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
   }
 
   async getRows(input: WeekListInput) {
-    const days = input.weeks * 7;
-    const windowStart = dateWindowStartString(input.endDate, days);
     const activityTypeFilter = input.activityType
       ? "AND activity.canonical_type = {activityType:String}"
       : "";
     const activityDate = clickHouseActivityCalendarDate("activity");
+    const explicitStartDate = input.startDate;
     const queryParams = {
       userId: this.userId,
       timezone: this.timezone,
-      windowStart,
+      ...(explicitStartDate
+        ? { windowStart: explicitStartDate, windowEnd: input.endDate }
+        : { windowStart: dateWindowStartString(input.endDate, input.weeks * 7) }),
       ...(input.activityType ? { activityType: input.activityType } : {}),
       ...this.#clickhouseTimestampAccessParams(),
     };
+    const dateBounds = explicitStartDate
+      ? `AND ${activityDate} >= toDate({windowStart:String})
+          AND ${activityDate} <= toDate({windowEnd:String})`
+      : `AND ${activityDate} >= toDate({windowStart:String})`;
 
     const activityRows = await this.#sensorStore.query(
       providerAbsentActivityRowSchema,
@@ -109,7 +114,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           AND activity._peerdb_is_deleted = 0
           AND activity.provider_absent_at IS NOT NULL
           AND activity.ended_at IS NOT NULL
-          AND ${activityDate} >= toDate({windowStart:String})
+          ${dateBounds}
           ${activityTypeFilter}
           ${this.#clickhouseTimestampAccessClause()}
         ORDER BY activity.started_at DESC`,

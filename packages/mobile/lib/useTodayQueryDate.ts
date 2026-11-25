@@ -1,5 +1,6 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { useEffect, useState } from "react";
+import { AppState } from "react-native";
 
 function formatQueryDate(date: Date = new Date()): string {
   return formatDateYmd(date);
@@ -17,19 +18,19 @@ export function useTodayQueryDate(): string {
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-    const scheduleUpdate = () => {
-      timeoutId = setTimeout(() => {
-        setTodayQueryDate(formatQueryDate());
-        scheduleUpdate();
-      }, getMillisecondsUntilNextLocalMidnight(new Date()));
+    const refresh = () => {
+      setTodayQueryDate(formatQueryDate());
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      timeoutId = setTimeout(refresh, getMillisecondsUntilNextLocalMidnight(new Date()));
     };
 
-    scheduleUpdate();
-
+    refresh();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") refresh();
+    });
     return () => {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
+      subscription.remove();
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
     };
   }, []);
 

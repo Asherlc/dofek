@@ -36,6 +36,15 @@ export const DEFAULT_QUEUE_CONFIG: ProviderQueueConfig = {
   syncTier: "frequent",
 };
 
+export function parseSyncWorkerProviders(configured: string | undefined): Set<string> {
+  return new Set(
+    configured
+      ?.split(",")
+      .map((providerId) => providerId.trim())
+      .filter(Boolean),
+  );
+}
+
 // ── Provider configs ──
 
 function realtimeProvider(concurrency = 3, limiter?: RateLimiterConfig): ProviderQueueConfig {
@@ -97,6 +106,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
 
   // ── Daily tier ──
   ["fatsecret", { concurrency: 2, syncTier: "daily" }],
+  ["trailforks", { concurrency: 1, syncTier: "daily" }],
   ["thecrag", { concurrency: 1, syncTier: "daily" }],
 
   // ── On-demand tier ──

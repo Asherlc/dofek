@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AppState } from "react-native";
+import { Alert, AppState } from "react-native";
 import { clearMobileAccountErasurePreparation } from "./account-erasure-storage";
 import { type AuthUser, logout as authLogout, fetchCurrentUser } from "./auth";
 import {
@@ -27,8 +27,18 @@ import {
 import { removeMobileQueryCache } from "./mobile-query-persistence";
 import { isSecureStoreAccessibilityError } from "./secure-store-access";
 import { SERVER_URL } from "./server";
+import {
+  removeSleepWidgetSnapshot,
+  restoreSleepWidgetWriter,
+  retireSleepWidgetWriter,
+  writeSleepWidgetSignedOutMarker,
+} from "./sleep-widget";
 import { finishStartupPhase, startStartupPhase } from "./startup-telemetry";
 import { captureException, identifyUser, resetUser } from "./telemetry";
+
+const SLEEP_WIDGET_CLEAR_ALERT_TITLE = "Unable to clear Sleep widget";
+const SLEEP_WIDGET_CLEAR_ALERT_MESSAGE =
+  "Dofek could not remove the previous Sleep widget cache. Stay signed in and try again.";
 
 export interface AccountErasureCleanupLease {
   cleanupId: number;
@@ -78,6 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [accountSessionOwnerNonce, setAccountSessionOwnerNonce] = useState<string | null>(null);
   const activeCleanupLeaseRef = useRef<AccountErasureCleanupLease | null>(null);
   const bootstrapRetryPendingRef = useRef(false);
+  /** Set to the in-flight interactive login generation so AppState/online retries cannot supersede it. */
+  const interactiveAdoptionGenerationRef = useRef<number | null>(null);
   const nextCleanupIdRef = useRef(0);
   const sessionGenerationRef = useRef(0);
   const sessionOwnerNonceRef = useRef<string | null>(null);
@@ -104,8 +116,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccountSessionOwnerNonce(nonce);
   }, []);
 
+  /**
+   * Confirmed missing/revoked auth: retire first so late publishes cannot land, then remove the
+   * App Group file and write the signed-out marker. Interactive logout/login keep remove-before-retire
+   * so a failed clear leaves the prior session/activation intact.
+   */
+  const clearSleepWidgetForAuthTransition = useCallback((): void => {
+    retireSleepWidgetWriter();
+    removeSleepWidgetSnapshot();
+    writeSleepWidgetSignedOutMarker();
+  }, []);
+
   const retryBootstrap = useCallback(async () => {
     if (activeCleanupLeaseRef.current) return;
+    // Foreground/reconnect must not bump generation over an in-flight interactive login.
+    if (interactiveAdoptionGenerationRef.current !== null) return;
     startStartupPhase("authentication");
     setIsLoading(userRef.current === null);
     bootstrapRetryPendingRef.current = false;
@@ -129,6 +154,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           updateUser(null);
           updateSessionToken(null);
           updateSessionOwnerNonce(null);
+          // Retire publishes without removing the on-disk snapshot while locked.
+          retireSleepWidgetWriter();
           setBootstrapError(null);
           startupOutcome = "deferred";
           return;
@@ -138,6 +165,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateSessionToken(null);
         updateSessionOwnerNonce(null);
         setBootstrapError(null);
+        try {
+          clearSleepWidgetForAuthTransition();
+        } catch (error: unknown) {
+          bootstrapRetryPendingRef.current = true;
+          captureException(error, { source: "auth-bootstrap-sleep-widget" });
+          setBootstrapError(
+            userFacingErrorMessage(
+              error,
+              "Dofek could not clear the Sleep widget cache. Try again when you are ready.",
+            ),
+          );
+          startupOutcome = "error";
+          return;
+        }
         startupOutcome = "unauthenticated";
         return;
       }
@@ -154,6 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const sessionOwnerNonce = await getOrCreateSessionOwnerNonce();
         if (!isCurrentRestore()) return;
         updateSessionOwnerNonce(sessionOwnerNonce);
+        restoreSleepWidgetWriter(sessionOwnerNonce);
         updateUser(savedUser);
         setBootstrapError(null);
         setIsLoading(false);
@@ -170,6 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const sessionOwnerNonce = await getOrCreateSessionOwnerNonce();
         if (!isCurrentRestore()) return;
         updateSessionOwnerNonce(sessionOwnerNonce);
+        restoreSleepWidgetWriter(sessionOwnerNonce);
         updateUser(currentUser);
         setBootstrapError(null);
         startupOutcome = "authenticated";
@@ -178,9 +221,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateSessionToken(null);
         updateSessionOwnerNonce(null);
         setBootstrapError(null);
-        await clearSessionToken();
+        try {
+          try {
+            clearSleepWidgetForAuthTransition();
+          } catch (error: unknown) {
+            bootstrapRetryPendingRef.current = true;
+            captureException(error, { source: "auth-bootstrap-sleep-widget" });
+            setBootstrapError(
+              userFacingErrorMessage(
+                error,
+                "Dofek could not clear the Sleep widget cache. Try again when you are ready.",
+              ),
+            );
+            startupOutcome = "error";
+            return;
+          }
+          startupOutcome = "unauthenticated";
+        } finally {
+          await clearSessionToken();
+        }
         if (!isCurrentRestore()) return;
-        startupOutcome = "unauthenticated";
       }
     } catch (error: unknown) {
       if (!isCurrentRestore()) {
@@ -200,6 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateUser(null);
         updateSessionToken(null);
         updateSessionOwnerNonce(null);
+        retireSleepWidgetWriter();
         setBootstrapError(null);
         startupOutcome = "deferred";
         return;
@@ -225,7 +286,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
       }
     }
-  }, [updateSessionOwnerNonce, updateSessionToken, updateUser]);
+  }, [clearSleepWidgetForAuthTransition, updateSessionOwnerNonce, updateSessionToken, updateUser]);
 
   // On mount, restore auth state from secure storage.
   useEffect(() => {
@@ -268,42 +329,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           "Account deletion cleanup is still in progress. Try signing in again after cleanup finishes.",
         );
       }
+      // Remove the prior App Group file before retiring the writer or bumping generation so an
+      // interactive failure keeps the previous session/activation intact. Login itself is the gate.
+      removeSleepWidgetSnapshot();
+      retireSleepWidgetWriter();
+
       const loginGeneration = sessionGenerationRef.current + 1;
       sessionGenerationRef.current = loginGeneration;
+      interactiveAdoptionGenerationRef.current = loginGeneration;
       bootstrapRetryPendingRef.current = false;
       finishStartupPhase("authentication", "skipped");
       setBootstrapError(null);
-      await saveSessionToken(token);
-      if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== loginGeneration) {
-        throw new Error(
-          "Account deletion cleanup is still in progress. Try signing in again after cleanup finishes.",
-        );
-      }
-      updateSessionToken(token);
-
-      const currentUser = await fetchCurrentUser(SERVER_URL, token);
-      if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== loginGeneration) {
-        throw new Error(
-          "Account deletion cleanup is still in progress. Try signing in again after cleanup finishes.",
-        );
-      }
-      if (currentUser) {
-        await saveSessionUser(token, currentUser);
+      try {
+        await saveSessionToken(token);
         if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== loginGeneration) {
           throw new Error(
             "Account deletion cleanup is still in progress. Try signing in again after cleanup finishes.",
           );
         }
+        updateSessionToken(token);
+
+        const currentUser = await fetchCurrentUser(SERVER_URL, token);
+        if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== loginGeneration) {
+          throw new Error(
+            "Account deletion cleanup is still in progress. Try signing in again after cleanup finishes.",
+          );
+        }
+        if (currentUser) {
+          await saveSessionUser(token, currentUser);
+          if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== loginGeneration) {
+            throw new Error(
+              "Account deletion cleanup is still in progress. Try signing in again after cleanup finishes.",
+            );
+          }
+        }
+        const sessionOwnerNonce = await rotateSessionOwnerNonce();
+        if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== loginGeneration) {
+          throw new Error(
+            "Account deletion cleanup is still in progress. Try signing in again after cleanup finishes.",
+          );
+        }
+        updateSessionOwnerNonce(sessionOwnerNonce);
+        if (currentUser) {
+          restoreSleepWidgetWriter(sessionOwnerNonce);
+        } else {
+          // File already removed above; keep the writer retired and publish the generic signed-out marker.
+          writeSleepWidgetSignedOutMarker();
+        }
+        updateUser(currentUser);
+        setBootstrapError(null);
+      } finally {
+        if (interactiveAdoptionGenerationRef.current === loginGeneration) {
+          interactiveAdoptionGenerationRef.current = null;
+        }
       }
-      const sessionOwnerNonce = await rotateSessionOwnerNonce();
-      if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== loginGeneration) {
-        throw new Error(
-          "Account deletion cleanup is still in progress. Try signing in again after cleanup finishes.",
-        );
-      }
-      updateSessionOwnerNonce(sessionOwnerNonce);
-      updateUser(currentUser);
-      setBootstrapError(null);
     },
     [updateSessionOwnerNonce, updateSessionToken, updateUser],
   );
@@ -330,6 +409,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAccountErasureCleanupInProgress(true);
 
       if (clearCurrentAuth) {
+        // Stop widget publishes; owned purge removes the App Group file early in cleanup.
+        retireSleepWidgetWriter();
         updateSessionToken(null);
         updateUser(null);
       }
@@ -392,6 +473,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     finishStartupPhase("authentication", "skipped");
     updateSessionToken(null);
     updateSessionOwnerNonce(null);
+    retireSleepWidgetWriter();
     updateUser(null);
     setBootstrapError(null);
   }, [updateSessionOwnerNonce, updateSessionToken, updateUser]);
@@ -399,7 +481,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     const currentUserId = user?.id;
     const token = sessionToken;
+
+    // Successful App Group removal must complete before retiring the writer or revoking auth.
+    try {
+      removeSleepWidgetSnapshot();
+    } catch (error: unknown) {
+      captureException(error, { source: "logout-sleep-widget" });
+      Alert.alert(SLEEP_WIDGET_CLEAR_ALERT_TITLE, SLEEP_WIDGET_CLEAR_ALERT_MESSAGE, [
+        { text: "OK" },
+      ]);
+      return;
+    }
+    writeSleepWidgetSignedOutMarker();
+
+    // Start token/network cleanup before awaiting local storage work so a later rejection
+    // cannot skip secure session removal.
     const logoutOperation = token ? authLogout(SERVER_URL, token) : clearSessionToken();
+
     // Clear React state immediately so the UI shows the login screen
     clearLocalAuthState();
     await clearMobileAccountErasurePreparation();

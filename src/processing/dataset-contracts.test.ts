@@ -296,6 +296,14 @@ describe("dataset contracts", () => {
     );
     expect(processingDatasetKeysForProvider("bodyspec", [])).toEqual(["body", "providers"]);
     expect(processingDatasetKeysForProvider("ziva")).toEqual(["nutrition", "providers"]);
+    expect(processingDatasetKeysForProvider("trailforks")).toEqual([
+      "activity",
+      "hiking",
+      "cycling",
+      "recovery",
+      "training",
+      "providers",
+    ]);
   });
 
   it("maps imports to bounded scopes and selects only emitted output paths", () => {

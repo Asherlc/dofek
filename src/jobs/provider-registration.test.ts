@@ -14,6 +14,7 @@ const mockProviders = {
   peloton: { id: "peloton" },
   fatsecret: { id: "fatsecret" },
   ziva: { id: "ziva" },
+  trailforks: { id: "trailforks" },
   whoop: { id: "whoop" },
   kaya: { id: "kaya" },
   "ride-with-gps": { id: "ride-with-gps" },
@@ -64,6 +65,9 @@ vi.mock("../providers/fatsecret/provider.ts", () => ({
 }));
 vi.mock("../providers/ziva/provider.ts", () => ({
   ZivaProvider: mockProviderConstructor(mockProviders.ziva),
+}));
+vi.mock("../providers/trailforks/provider.ts", () => ({
+  TrailforksProvider: mockProviderConstructor(mockProviders.trailforks),
 }));
 vi.mock("../providers/whoop/provider.ts", () => ({
   WhoopProvider: mockProviderConstructor(mockProviders.whoop),
@@ -170,6 +174,7 @@ describe("provider-registration", () => {
 
     expect(mockRegisterProvider).toHaveBeenCalledTimes(PROVIDER_COUNT);
     expect(mockRegisterProvider).toHaveBeenCalledWith(mockProviders.ziva);
+    expect(mockRegisterProvider).toHaveBeenCalledWith(mockProviders.trailforks);
   });
 
   it("loads account-connected boards and climbing file providers", async () => {

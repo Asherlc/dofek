@@ -154,6 +154,7 @@ high-risk change, but must not remove required rows.
 | IOS-PHY-09 | Background refresh registration and lifecycle — Current | Every RC | Confirm Background App Refresh is available, background/lock the app during the matrix, and inspect logs for registration, submission, expiration, or completion errors | No registration/submission failure or crash occurs; any delivered task completes exactly once after required work settles |
 | IOS-PHY-10 | Compatibility native smoke — Compatibility | When native module/config/deployment target changes | Repeat the changed capability on the compatibility lane | The changed capability passes on the oldest claimed OS without availability assumptions or unsupported API failure |
 | IOS-PHY-11 | Post-run telemetry — Current | Every RC | Review device, Sentry, and server evidence after all paths | No unexplained fatal error, privacy-sensitive log value, repeated completion, or stuck upload remains |
+| IOS-PHY-12 | Sleep widget App Group, privacy, and session fences — Current | When Sleep widget, App Group, Overview publish, or auth/session-owner fencing changes | On the exact signed candidate outside the debugger, confirm the host and widget share `group.<host bundle id>.sleep-widget`, add small Home and rectangular Lock widgets, request a WidgetKit timeline reload, then assert on-screen fresh, empty, expired, and signed-out copy plus taps after that refresh, lock the device / Always On Display and confirm the generic Locked redaction with no personal values while ordinary expired copy stays readable when unlocked, sign out and switch accounts and confirm the widget clears or switches without leaking the prior owner's snapshot, and repeat the changed privacy/App Group path on the compatibility lane when that native area changed | App Group container is present for host and extension, Locked privacy shows only redacted placeholder, expired or missing copy remains readable when unlocked, logout and account switch never leave the previous owner's duration or date on disk or on screen, and the compatibility lane passes when required |
 
 HealthKit observer background delivery is not supported in Simulator, and
 Apple explicitly requires device testing:
@@ -167,6 +168,23 @@ instead of assuming it:
 Apple's Watch Connectivity sample requires a physical iPhone and Watch and
 describes background file-transfer handling:
 [transferring data with Watch Connectivity](https://developer.apple.com/documentation/watchconnectivity/transferring-data-with-watch-connectivity).
+Sleep widgets share purgeable snapshot bytes through an App Group container and
+reload on WidgetKit's timeline schedule rather than painting host writes
+immediately. For IOS-PHY-12, request a timeline reload for the Sleep widget
+kind and only then assert on-screen copy. Apple documents App Groups and
+timeline reload in
+[Configuring App Groups](https://developer.apple.com/documentation/xcode/configuring-app-groups)
+and
+[`WidgetCenter.reloadTimelines(ofKind:)`](https://developer.apple.com/documentation/widgetkit/widgetcenter/reloadtimelines(ofkind:)).
+
+When the Watch transfer screen, transport, or account cleanup changes, extend
+IOS-PHY-07. Queue files while the iPhone is out of range, confirm the Watch
+shows the pending handoff, then reconnect and verify the queue clears when the
+files reach the phone. Verify server upload separately through the phone inbox
+and its upload acknowledgment. With the synthetic audit account, exercise
+device cleanup and confirm the Watch shows **Sync paused** once the cleanup
+message arrives. On hardware with Always On, lower the wrist and confirm the
+Watch shows the generic transfer label. [Apple's Always On guidance](https://developer.apple.com/documentation/watchos-apps/designing-your-app-for-the-always-on-state/).
 
 `BGAppRefreshTask` execution is scheduled by the system; the requested earliest
 date is not a delivery deadline. Do not fail or pass IOS-PHY-09 solely because
@@ -225,6 +243,7 @@ provider credentials.
 | IOS-PHY-09 | | |
 | IOS-PHY-10 | | |
 | IOS-PHY-11 | | |
+| IOS-PHY-12 | | |
 
 Release decision: `Approved` or `Blocked`
 Decision owner:

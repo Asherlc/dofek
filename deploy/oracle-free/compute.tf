@@ -23,11 +23,21 @@ resource "oci_core_instance" "dofek" {
 
   # Fail clearly at plan time if the image filter returns nothing, instead of an
   # opaque "index 0 out of range" on data.oci_core_images.ubuntu.images[0].
+
+  # Preserve first-boot inputs (user_data cloud-init volume format, source_id image id,
+  # assign_public_ip=false reserved public IP) so instances survive recreation during
+  # migration without triggering host replacement.
   lifecycle {
     precondition {
       condition     = length(data.oci_core_images.ubuntu.images) > 0
       error_message = "No Canonical Ubuntu 24.04 image found for shape VM.Standard.A1.Flex in this region."
     }
+    prevent_destroy = true
+    ignore_changes = [
+      create_vnic_details[0].assign_public_ip,
+      metadata["user_data"],
+      source_details[0].source_id,
+    ]
   }
 
   # Require IMDSv2 (disable the legacy unauthenticated v1 metadata endpoint),

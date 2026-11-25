@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dofek Activities · Web</title>
+  <link rel="stylesheet" href="agenda.css">
+  <script src="agenda.js" defer></script>
+</head>
+<body class="web">
+  <header class="app-bar" data-dc-id="app-header">
+    <div class="wordmark"><span class="logo" aria-hidden="true">∿</span>Dofek</div>
+    <nav class="app-nav" aria-label="App sections">
+      <span>Overview</span><span>Training</span><span aria-current="page">Activities</span><span>Sleep</span>
+    </nav>
+  </header>
+  <main class="workspace">
+    <h1 class="page-title" data-dc-id="page-title">Activities</h1>
+    <div class="activity-filters" data-dc-id="activity-filters">
+      <label class="range-label">Date range
+        <select data-dc-id="date-range">
+          <option data-start="2026-11-23" data-end="2026-11-29">This week</option>
+          <option data-start="2026-10-28" data-end="2026-11-24">4 weeks</option>
+          <option data-start="2026-09-30" data-end="2026-11-24">8 weeks</option>
+          <option data-start="2026-09-02" data-end="2026-11-24">12 weeks</option>
+          <option data-start="2026-11-25" data-end="2027-02-22">Next 90 days</option>
+        </select>
+      </label>
+    </div>
+    <section class="agenda" aria-labelledby="agenda-heading" data-dc-id="week-agenda">
+      <header class="agenda-head" data-dc-id="week-header">
+        <h2 id="agenda-heading">Workout calendar</h2>
+        <p class="range-caption" data-dc-id="selected-dates">Nov 23–29, 2026</p>
+      </header>
+      <ol class="week" aria-label="Days in the selected range">
+        <li class="day" data-dc-id="previous-week-friday" hidden>
+          <h3 class="day-heading"><time datetime="2026-11-20">Fri, Nov 20</time></h3>
+          <div class="day-entries">
+            <article class="workout" data-dc-id="previous-week-swim">
+              <div class="workout-head"><h4>Pool swim</h4><span class="status complete">Completed</span></div>
+              <p class="meta">6:20 PM · 36 min · Apple Health</p>
+            </article>
+          </div>
+        </li>
+        <li class="day" data-dc-id="monday">
+          <h3 class="day-heading"><time datetime="2026-11-23">Mon, Nov 23</time></h3>
+          <div class="day-entries">
+            <article class="workout" data-dc-id="monday-run">
+              <div class="workout-head"><h4>Easy run</h4><span class="status complete">Completed</span></div>
+              <p class="meta">7:31 AM · 41 min · Apple Health</p>
+            </article>
+          </div>
+        </li>
+        <li class="day is-today" data-dc-id="tuesday">
+          <h3 class="day-heading"><time datetime="2026-11-24">Tue, Nov 24</time><small>Today</small></h3>
+          <div class="day-entries">
+            <article class="workout" data-dc-id="tuesday-plan">
+              <div class="workout-head"><h4>Tempo intervals</h4><span class="status planned">Planned</span></div>
+              <p class="meta">7:00 AM · Ride · Intervals.icu</p>
+              <details class="steps" data-dc-id="tuesday-steps">
+                <summary>Workout steps</summary>
+                <ol>
+                  <li>10 min warm-up</li>
+                  <li>3 × 8 min at 85–90% of threshold power, with 4 min easy between efforts</li>
+                  <li>10 min cool-down</li>
+                </ol>
+              </details>
+            </article>
+            <article class="workout" data-dc-id="tuesday-completed">
+              <div class="workout-head"><h4>Morning ride</h4><span class="status complete">Completed</span></div>
+              <p class="meta">7:08 AM · 52 min · Garmin Connect</p>
+            </article>
+          </div>
+        </li>
+        <li class="day" data-dc-id="wednesday">
+          <h3 class="day-heading"><time datetime="2026-11-25">Wed, Nov 25</time></h3>
+          <p class="empty">No workouts</p>
+        </li>
+        <li class="day" data-dc-id="thursday">
+          <h3 class="day-heading"><time datetime="2026-11-26">Thu, Nov 26</time></h3>
+          <div class="day-entries">
+            <article class="workout" data-dc-id="thursday-plan">
+              <div class="workout-head"><h4>Easy endurance</h4><span class="status planned">Planned</span></div>
+              <p class="meta">Ride · Intervals.icu</p>
+            </article>
+          </div>
+        </li>
+        <li class="day" data-dc-id="friday">
+          <h3 class="day-heading"><time datetime="2026-11-27">Fri, Nov 27</time></h3>
+          <p class="empty">No workouts</p>
+        </li>
+        <li class="day" data-dc-id="saturday">
+          <h3 class="day-heading"><time datetime="2026-11-28">Sat, Nov 28</time></h3>
+          <div class="day-entries">
+            <article class="workout" data-dc-id="saturday-plan">
+              <div class="workout-head"><h4>Long run</h4><span class="status planned">Planned</span></div>
+              <p class="meta">9:00 AM · Run · Intervals.icu</p>
+            </article>
+          </div>
+        </li>
+        <li class="day" data-dc-id="sunday">
+          <h3 class="day-heading"><time datetime="2026-11-29">Sun, Nov 29</time></h3>
+          <p class="empty">No workouts</p>
+        </li>
+        <li class="day" data-dc-id="next-week-tuesday" hidden>
+          <h3 class="day-heading"><time datetime="2026-12-01">Tue, Dec 1</time></h3>
+          <div class="day-entries">
+            <article class="workout" data-dc-id="next-week-plan">
+              <div class="workout-head"><h4>Cadence drills</h4><span class="status planned">Planned</span></div>
+              <p class="meta">Ride · Intervals.icu</p>
+            </article>
+          </div>
+        </li>
+      </ol>
+      <p class="range-empty" hidden>No workouts in this date range.</p>
+      <p class="visually-hidden" role="status" data-range-status></p>
+    </section>
+    <section class="history" aria-labelledby="history-heading" data-dc-id="activity-history">
+      <h2 id="history-heading">Activity history</h2>
+      <p>Training time this week · 1 h 33 min across 2 completed activities</p>
+    </section>
+  </main>
+</body>
+</html>

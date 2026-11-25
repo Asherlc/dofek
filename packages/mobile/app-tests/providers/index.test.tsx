@@ -29,13 +29,23 @@ vi.mock("react-native", () => ({
       activeOpacity: _ao,
       numberOfLines: _nl,
       testID,
+      accessibilityRole,
+      accessibilityLabel,
+      accessibilityState,
       ...rest
     } = props;
+    const state =
+      typeof accessibilityState === "object" && accessibilityState !== null
+        ? accessibilityState
+        : {};
     return React.createElement(
       "div",
       {
         ...(testID ? { "data-testid": testID } : {}),
         ...(testID && style ? { "data-style": JSON.stringify(style) } : {}),
+        role: typeof accessibilityRole === "string" ? accessibilityRole : undefined,
+        "aria-label": typeof accessibilityLabel === "string" ? accessibilityLabel : undefined,
+        "aria-selected": "selected" in state ? state.selected : undefined,
         ...rest,
       },
       children,
@@ -54,53 +64,57 @@ vi.mock("react-native", () => ({
   },
   RefreshControl: () => null,
   Alert: { alert: mockAlert },
-  TouchableOpacity: React.forwardRef(
-    (
-      {
-        children,
-        onPress,
-        disabled,
-        ...props
-      }: {
-        children?: React.ReactNode;
-        onPress?: () => void;
-        disabled?: boolean;
-      } & Record<string, unknown>,
-      ref: React.ForwardedRef<HTMLButtonElement>,
-    ) => {
-      const {
-        accessibilityLabel,
-        accessibilityRole,
-        accessibilityState,
-        accessible,
-        style: _s,
-        activeOpacity: _ao,
-        testID,
-        ...rest
-      } = props;
-      const state =
-        typeof accessibilityState === "object" && accessibilityState !== null
-          ? accessibilityState
-          : {};
-      return React.createElement(
-        "button",
+  ...(() => {
+    const PressableLike = React.forwardRef(
+      (
         {
-          type: "button",
-          ref,
-          onClick: onPress,
+          children,
+          onPress,
           disabled,
-          "aria-busy": "busy" in state ? state.busy : undefined,
-          "aria-disabled": "disabled" in state ? state.disabled : undefined,
-          "aria-label": accessibilityLabel,
-          "data-accessible": accessible,
-          role: accessibilityRole ?? "presentation",
-          ...(testID ? { "data-testid": testID } : {}),
-          ...rest,
-        },
-        children,
-      );
-    },
-  ),
+          ...props
+        }: {
+          children?: React.ReactNode;
+          onPress?: () => void;
+          disabled?: boolean;
+        } & Record<string, unknown>,
+        ref: React.ForwardedRef<HTMLButtonElement>,
+      ) => {
+        const {
+          accessibilityLabel,
+          accessibilityRole,
+          accessibilityState,
+          accessible,
+          style: _s,
+          activeOpacity: _ao,
+          testID,
+          ...rest
+        } = props;
+        const state =
+          typeof accessibilityState === "object" && accessibilityState !== null
+            ? accessibilityState
+            : {};
+        return React.createElement(
+          "button",
+          {
+            type: "button",
+            ref,
+            onClick: onPress,
+            disabled,
+            "aria-busy": "busy" in state ? state.busy : undefined,
+            "aria-disabled": "disabled" in state ? state.disabled : undefined,
+            "aria-selected": "selected" in state ? state.selected : undefined,
+            "aria-label": accessibilityLabel,
+            "data-accessible": accessible,
+            role: accessibilityRole ?? "presentation",
+            ...(testID ? { "data-testid": testID } : {}),
+            ...rest,
+          },
+          children,
+        );
+      },
+    );
+    return { TouchableOpacity: PressableLike, Pressable: PressableLike };
+  })(),
   TextInput: ({
     placeholder,
     value,
@@ -3633,5 +3647,114 @@ describe("ProvidersScreen", () => {
       expect.objectContaining({ message: expect.stringContaining("healthkit entitlement") }),
       expect.objectContaining({ context: "healthkit-connect" }),
     );
+  });
+
+  describe("activity type tabs", () => {
+    it("defaults to All and resets to All after filtering", async () => {
+      mockProvidersQuery.mockReturnValue({
+        data: [
+          { ...connectedProvider, id: "concept2", name: "Concept2" },
+          { ...connectedProvider, id: "ziva", name: "Ziva" },
+          disconnectedProvider,
+        ],
+        isLoading: false,
+        error: null,
+      });
+      await renderProvidersScreen();
+
+      const tablist = screen.getByRole("tablist", { name: "Activity types" });
+      expect(within(tablist).getByRole("tab", { name: "All" }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+      expect(screen.getByTestId("provider-card-concept2")).toBeTruthy();
+      expect(screen.getByTestId("provider-card-ziva")).toBeTruthy();
+
+      fireEvent.click(within(tablist).getByRole("tab", { name: "Rowing" }));
+      expect(screen.getByTestId("provider-card-concept2")).toBeTruthy();
+      expect(screen.queryByTestId("provider-card-ziva")).toBeNull();
+
+      fireEvent.click(within(tablist).getByRole("tab", { name: "All" }));
+      expect(screen.getByTestId("provider-card-ziva")).toBeTruthy();
+    });
+
+    it("shows a specialist, multi-category source, and full Garmin family methods", async () => {
+      mockProvidersQuery.mockReturnValue({
+        data: [
+          { ...connectedProvider, id: "concept2", name: "Concept2" },
+          { ...connectedProvider, id: "strava", name: "Strava" },
+          { ...connectedProvider, id: "garmin", name: "Garmin" },
+          {
+            id: "garmin-dump",
+            name: "Garmin Dump",
+            authType: "file-import",
+            authorized: false,
+            importOnly: true,
+            lastSyncedAt: null,
+          },
+          { ...connectedProvider, id: "ziva", name: "Ziva" },
+        ],
+        isLoading: false,
+        error: null,
+      });
+      await renderProvidersScreen();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Rowing" }));
+      expect(screen.getByTestId("provider-card-concept2")).toBeTruthy();
+      expect(screen.queryByTestId("provider-card-ziva")).toBeNull();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Cycling" }));
+      expect(screen.getByTestId("provider-card-strava")).toBeTruthy();
+      expect(screen.getByTestId("provider-family-garmin")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Select Garmin Garmin Connect" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Select Garmin Data export" })).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Running" }));
+      expect(screen.getByTestId("provider-card-strava")).toBeTruthy();
+    });
+
+    it("keeps an unknown ID only under All", async () => {
+      mockProvidersQuery.mockReturnValue({
+        data: [
+          {
+            id: "brand-new-source",
+            name: "Brand New Source",
+            authType: "oauth",
+            authorized: false,
+            importOnly: false,
+            lastSyncedAt: null,
+          },
+          { ...connectedProvider, id: "ziva", name: "Ziva" },
+        ],
+        isLoading: false,
+        error: null,
+      });
+      await renderProvidersScreen();
+      expect(screen.getByTestId("provider-card-brand-new-source")).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Nutrition" }));
+      expect(screen.queryByTestId("provider-card-brand-new-source")).toBeNull();
+      expect(screen.getByTestId("provider-card-ziva")).toBeTruthy();
+    });
+
+    it("keeps Apple Health in a specialty tab when no server providers match", async () => {
+      mockProvidersQuery.mockReturnValue({
+        data: [
+          {
+            id: "brand-new-source",
+            name: "Brand New Source",
+            authType: "oauth",
+            authorized: false,
+            importOnly: false,
+            lastSyncedAt: null,
+          },
+        ],
+        isLoading: false,
+        error: null,
+      });
+      await renderProvidersScreen();
+      fireEvent.click(screen.getByRole("tab", { name: "Rowing" }));
+      expect(screen.queryByTestId("provider-card-brand-new-source")).toBeNull();
+      expect(screen.getByTestId("provider-card-apple_health")).toBeTruthy();
+    });
   });
 });

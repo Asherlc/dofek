@@ -1,4 +1,13 @@
 import {
+  type ActivityAgendaPreset,
+  activityAgendaDateOrder,
+  activityAgendaRange,
+  formatActivityAgendaCaption,
+  mergeActivityAgendaDays,
+  resolveActivityAgendaOwnedPlannedWindow,
+  withActivityAgendaEmptyDays,
+} from "@dofek/format/activity-agenda";
+import {
   type ActivityDataState,
   type ActivityMetric,
   activityDataStateLabel,
@@ -12,7 +21,6 @@ import {
 } from "@dofek/format/activity-overview";
 import {
   formatDateForDisplay,
-  formatDateYmd,
   formatDurationMinutes,
   isToday,
   isYesterday,
@@ -24,29 +32,26 @@ import { processingPollInterval } from "@dofek/providers/processing-status";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityCardContent, type ActivityCardData } from "../components/ActivityCardContent.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PaginationControls } from "../components/PaginationControls.tsx";
+import { PlannedWorkoutCard } from "../components/PlannedWorkoutCard.tsx";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
-import { UpcomingWorkouts } from "../components/UpcomingWorkouts.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
+import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { ActivityControls } from "./ActivityControls.tsx";
 import { ActivitySearchControls, type ActivitySearchSelection } from "./ActivitySearchControls.tsx";
 
-const DEFAULT_WEEKS = 4;
 const ACTIVITY_PAGE_SIZE = 20;
 const ALL_ACTIVITY_TYPES = "all";
-const DATE_RANGE_OPTIONS = [
-  { value: 4, label: "4 weeks" },
-  { value: 8, label: "8 weeks" },
-  { value: 12, label: "12 weeks" },
-] as const;
+const DEFAULT_PRESET: ActivityAgendaPreset = "this-week";
 
 export function ActivitiesPage() {
-  const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
+  const [preset, setPreset] = useState<ActivityAgendaPreset>(DEFAULT_PRESET);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
   const [showHidden, setShowHidden] = useState(false);
   const [searchSelection, setSearchSelection] = useState<ActivitySearchSelection>();
@@ -78,17 +83,45 @@ export function ActivitiesPage() {
   const selectedActivityIds = new Set(selectedActivities.keys());
   const [deletedActivityIds, setDeletedActivityIds] = useState<Set<string>>(new Set());
   const [activityPage, setActivityPage] = useState(0);
-  const endDate = useMemo(() => formatDateYmd(), []);
+  const today = useTodayQueryDate();
   const units = useUnitConverter();
   const selectedActivityType = activityType === ALL_ACTIVITY_TYPES ? undefined : activityType;
+  const agendaRange = useMemo(() => activityAgendaRange(preset, today), [preset, today]);
+  const dateOrder = activityAgendaDateOrder(preset);
+  const futureOnly = preset === "next-90-days";
+  const showOverview = agendaRange.weeks != null && !futureOnly;
+  const selectedSpan = useMemo(
+    () => ({ startDate: agendaRange.startDate, endDate: agendaRange.endDate }),
+    [agendaRange.startDate, agendaRange.endDate],
+  );
+  const agendaSpanKey = `${agendaRange.startDate}:${agendaRange.endDate}`;
+  const [observedAgendaSpanKey, setObservedAgendaSpanKey] = useState(agendaSpanKey);
+  const cancelSelection = () => {
+    setSelectedActivities(new Map());
+    setSelectMode(false);
+    setConfirmDelete(false);
+    setConfirmMerge(false);
+    setConfirmRestore(false);
+  };
+  // When start/end change (day rollover or preset), query page 0 and clear selection before paint.
+  const agendaSpanChanged = observedAgendaSpanKey !== agendaSpanKey;
+  if (agendaSpanChanged) {
+    setObservedAgendaSpanKey(agendaSpanKey);
+    setActivityPage(0);
+    cancelSelection();
+  }
+  const resolvedActivityPage = agendaSpanChanged ? 0 : activityPage;
+  const lastSportTypes = useRef<string[]>([]);
   const queryInput = useMemo(
     () => ({
-      weeks,
-      endDate,
+      weeks: agendaRange.weeks ?? 4,
+      startDate: agendaRange.startDate,
+      endDate: agendaRange.endDate,
+      dateOrder,
       ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
       ...(showHidden ? { includeProviderAbsent: true } : {}),
     }),
-    [weeks, endDate, selectedActivityType, showHidden],
+    [agendaRange, dateOrder, selectedActivityType, showHidden],
   );
   const trpcUtils = trpc.useUtils();
   const titleSearchQuery = trpc.calendar.searchActivities.useInfiniteQuery(
@@ -121,15 +154,15 @@ export function ActivitiesPage() {
   );
   const searchQuery = searchLocation ? locationSearchQuery : titleSearchQuery;
   const pageInput = useMemo(
-    () => ({ ...queryInput, page: activityPage, pageSize: ACTIVITY_PAGE_SIZE }),
-    [queryInput, activityPage],
+    () => ({ ...queryInput, page: resolvedActivityPage, pageSize: ACTIVITY_PAGE_SIZE }),
+    [queryInput, resolvedActivityPage],
   );
   const rangeKey = JSON.stringify(queryInput);
   const lastSuccessfulInput = useRef<{ rangeKey: string; input: typeof pageInput } | undefined>(
     undefined,
   );
   const query = trpc.calendar.weekListV2.useQuery(pageInput, {
-    enabled: !searching,
+    enabled: !searching && !futureOnly,
     placeholderData: (previousData) => previousData,
     refetchInterval: (query) =>
       query.state.data?.days.some((day) =>
@@ -138,23 +171,53 @@ export function ActivitiesPage() {
         ? processingPollInterval("active")
         : false,
   });
-  const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
-    placeholderData: (previousData) => previousData,
-  });
-  const upcomingQuery = trpc.calendar.upcomingWorkouts.useQuery(undefined, {
-    placeholderData: (previousData) => previousData,
-  });
+  const overviewQuery = trpc.calendar.activityOverview.useQuery(
+    {
+      weeks: agendaRange.weeks ?? 4,
+      endDate: agendaRange.endDate,
+      ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
+      ...(showHidden ? { includeProviderAbsent: true } : {}),
+    },
+    {
+      enabled: showOverview && !searching,
+      placeholderData: (previousData) => previousData,
+    },
+  );
+  useEffect(() => {
+    if (overviewQuery.data?.activityTypes) {
+      lastSportTypes.current = overviewQuery.data.activityTypes;
+    }
+  }, [overviewQuery.data?.activityTypes]);
   useEffect(() => {
     if (query.data && !query.isPlaceholderData && !query.isError) {
       lastSuccessfulInput.current = { rangeKey, input: pageInput };
     }
   }, [query.data, query.isPlaceholderData, query.isError, rangeKey, pageInput]);
   const previousInput = lastSuccessfulInput.current;
+  // Ignore cross-range placeholder cards; keep same-range soft pagination/refetch.
   const pageData =
-    query.data ??
-    (previousInput?.rangeKey === rangeKey
-      ? trpcUtils.calendar.weekListV2.getData(previousInput.input)
-      : undefined);
+    query.data && (!query.isPlaceholderData || previousInput?.rangeKey === rangeKey)
+      ? query.data
+      : previousInput?.rangeKey === rangeKey
+        ? trpcUtils.calendar.weekListV2.getData(previousInput.input)
+        : undefined;
+  const upcomingInput = useMemo(
+    () => ({
+      dateRange: selectedSpan,
+      ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
+    }),
+    [selectedSpan, selectedActivityType],
+  );
+  const upcomingQuery = trpc.calendar.upcomingWorkouts.useQuery(upcomingInput, {
+    enabled: !searching,
+  });
+  // Ownership follows the page currently shown (including same-range placeholders).
+  const ownedPlannedWindow = resolveActivityAgendaOwnedPlannedWindow({
+    futureOnly,
+    selectedSpan,
+    pageData,
+    activityPage: resolvedActivityPage,
+  });
   const processingStatus = useProcessingStatus({ datasets: ["activity"] });
   const previousProcessingStatus = useRef(processingStatus.data?.overallStatus);
   useEffect(() => {
@@ -221,28 +284,81 @@ export function ActivitiesPage() {
     },
   });
 
-  const dayGroups = useMemo(() => {
+  const completedDays = useMemo(() => {
     const days = searching
       ? searchQuery.data?.pages.flatMap(({ activities }) =>
           activities.map(({ date, ...activity }) => ({ date, activities: [activity] })),
         )
       : pageData?.days;
-    return days
-      ?.map((day) => ({
-        ...day,
-        activities: day.activities.filter((activity) => !deletedActivityIds.has(activity.id)),
-      }))
-      .filter((day) => day.activities.length > 0);
+    return days?.map((day) => ({
+      ...day,
+      activities: day.activities.filter((activity) => !deletedActivityIds.has(activity.id)),
+    }));
   }, [pageData, deletedActivityIds, searching, searchQuery.data]);
   const listQuery = searching ? searchQuery : query;
   const hasListData = searching ? !!searchQuery.data : !!pageData;
+  // pageData already drops cross-range placeholders; also require current success so an
+  // errored completed request cannot treat a retained empty payload as settled.
+  const completedSucceeded = futureOnly || (pageData != null && query.isSuccess === true);
+  const plannedSucceeded = upcomingQuery.isSuccess === true;
+  const agendaDays = useMemo(() => {
+    if (searching) {
+      return (completedDays ?? [])
+        .filter((day) => day.activities.length > 0)
+        .map((day) => ({ date: day.date, activities: day.activities, workouts: [] }));
+    }
+    let merged = mergeActivityAgendaDays(
+      futureOnly ? undefined : completedDays,
+      upcomingQuery.data,
+      ownedPlannedWindow,
+      dateOrder,
+    );
+    if (preset === "this-week" && completedSucceeded && plannedSucceeded && ownedPlannedWindow) {
+      merged = withActivityAgendaEmptyDays(merged, ownedPlannedWindow, dateOrder);
+    }
+    return merged;
+  }, [
+    searching,
+    completedDays,
+    upcomingQuery.data,
+    ownedPlannedWindow,
+    dateOrder,
+    preset,
+    futureOnly,
+    completedSucceeded,
+    plannedSucceeded,
+  ]);
   const hiddenActivityIds = new Set(
     [...selectedActivities].filter(([, activity]) => activity.isProviderAbsent).map(([id]) => id),
   );
-  const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
-  // The overview panel is hidden while searching, so its failure must not be
-  // grouped with the failures the person can currently see.
-  const visibleQueries = [...(!searching ? [overviewQuery] : []), listQuery, processingStatus];
+  const hasActivities = agendaDays.some((day) => day.activities.length > 0);
+  const hasAgendaRows = agendaDays.some(
+    (day) => day.activities.length > 0 || day.workouts.length > 0,
+  );
+  const sportTypes = overviewQuery.data?.activityTypes ?? lastSportTypes.current;
+  const agendaFeedsSettled =
+    (futureOnly || (!query.isLoading && !query.isFetching)) &&
+    !upcomingQuery.isLoading &&
+    !upcomingQuery.isFetching;
+  const showAgendaLoading =
+    !hasAgendaRows &&
+    !searching &&
+    ((futureOnly ? false : query.isLoading && !pageData) ||
+      (upcomingQuery.isLoading && upcomingQuery.data == null));
+  const showRangeEmpty =
+    !hasAgendaRows &&
+    agendaFeedsSettled &&
+    completedSucceeded &&
+    plannedSucceeded &&
+    (futureOnly || pageData?.totalCount === 0);
+  // The overview panel is hidden while searching or on the future-only range, so
+  // its failure must not be grouped with the failures the person can currently see.
+  const visibleQueries = [
+    ...(!searching && showOverview ? [overviewQuery] : []),
+    // Keep recorded search visible even when Next 90 days disables completed browse.
+    ...(searching || !futureOnly ? [listQuery] : []),
+    processingStatus,
+  ];
   const connectionFailures = visibleQueries.filter(
     (query) => query.error != null && isConnectionFailure(query.error),
   );
@@ -254,8 +370,8 @@ export function ActivitiesPage() {
   };
   const retryingConnectionFailures = connectionFailures.some((query) => query.isFetching === true);
   const activityCount = pageData?.totalCount ?? 0;
-  const currentActivityPage = pageData?.page ?? activityPage;
-  const visibleDayGroups = dayGroups;
+  const currentActivityPage = pageData?.page ?? resolvedActivityPage;
+  const rangeCaption = formatActivityAgendaCaption(agendaRange.startDate, agendaRange.endDate);
   useEffect(() => {
     if (query.data && !query.isPlaceholderData) setActivityPage(query.data.page);
   }, [query.data, query.isPlaceholderData]);
@@ -271,14 +387,6 @@ export function ActivitiesPage() {
   );
   const mergeEligible =
     selectedVisibleCount >= 2 && selectedTypes.size === 1 && selectedCount === selectedVisibleCount;
-
-  const cancelSelection = () => {
-    setSelectedActivities(new Map());
-    setSelectMode(false);
-    setConfirmDelete(false);
-    setConfirmMerge(false);
-    setConfirmRestore(false);
-  };
 
   const toggleSelectedActivity = (activity: ActivityCardData) => {
     setSelectedActivities((current) => {
@@ -315,8 +423,8 @@ export function ActivitiesPage() {
     cancelSelection();
   };
 
-  const updateWeeks = (nextWeeks: number) => {
-    setWeeks(nextWeeks);
+  const updatePreset = (nextPreset: ActivityAgendaPreset) => {
+    setPreset(nextPreset);
     setActivityPage(0);
     cancelSelection();
   };
@@ -345,9 +453,9 @@ export function ActivitiesPage() {
           }}
         />
         <ActivityControls
-          activityTypes={overviewQuery.data?.activityTypes ?? []}
+          activityTypes={sportTypes}
           activityType={activityType}
-          weeks={weeks}
+          preset={preset}
           showHidden={showHidden && !searching}
           searching={searching}
           canSelect={hasActivities}
@@ -364,7 +472,7 @@ export function ActivitiesPage() {
           deletePending={bulkDelete.isPending}
           restorePending={restoreProviderAbsent.isPending}
           onActivityTypeChange={updateActivityType}
-          onWeeksChange={updateWeeks}
+          onPresetChange={updatePreset}
           onShowHiddenChange={updateShowHidden}
           onSelect={() => setSelectMode(true)}
           onCancelSelection={cancelSelection}
@@ -382,7 +490,7 @@ export function ActivitiesPage() {
         {restoreProviderAbsent.error ? (
           <QueryStatePanel error={restoreProviderAbsent.error} height={80} />
         ) : null}
-        {searching ? null : overviewQuery.isLoading && !overviewQuery.data ? (
+        {searching || !showOverview ? null : overviewQuery.isLoading && !overviewQuery.data ? (
           <QueryStatePanel variant="loading" height={120} />
         ) : overviewQuery.isError && !overviewQuery.data ? (
           isSharedConnectionFailure(overviewQuery.error) ? null : (
@@ -405,73 +513,55 @@ export function ActivitiesPage() {
           retrying={retryingConnectionFailures}
         />
       ) : null}
-      <UpcomingWorkouts
-        days={upcomingQuery.data}
-        isLoading={upcomingQuery.isLoading}
-        isError={upcomingQuery.isError}
-        error={upcomingQuery.error}
-        onRetry={() => void upcomingQuery.refetch()}
-        retrying={upcomingQuery.isFetching}
-      />
-      {listQuery.isLoading && !hasListData ? (
-        <QueryStatePanel variant="loading" height={400} />
-      ) : listQuery.isError &&
-        !isSharedConnectionFailure(listQuery.error) &&
-        (!hasListData || (searching && !hasActivities)) ? (
-        <QueryStatePanel
-          error={listQuery.error}
-          height={200}
-          onRetry={() => void listQuery.refetch()}
-          retrying={listQuery.isFetching}
-        />
-      ) : !hasActivities &&
-        !(searching && searchQuery.hasNextPage) &&
-        !isSharedConnectionFailure(listQuery.error) ? (
-        <QueryStatePanel
-          variant="empty"
-          message={
-            searching
-              ? "No matching activities."
-              : showHidden
-                ? `No activities in the last ${weeks} weeks, including hidden ones.`
-                : `No activities in the last ${weeks} weeks.`
-          }
-          height={200}
-        />
-      ) : (
-        <div className="space-y-7">
-          {listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
-            <QueryStatePanel
-              error={listQuery.error}
-              height={72}
-              onRetry={() => void listQuery.refetch()}
-              retrying={listQuery.isFetching}
-            />
-          ) : null}
-          {visibleDayGroups?.map((day) => (
-            <section key={searching ? day.activities[0]?.id : day.date}>
-              <div className="mb-2 flex items-center gap-3">
-                <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">
-                  {formatDayHeader(day.date)}
-                </h3>
-                <div className="h-px flex-1 bg-border/60" />
-              </div>
-              <div data-testid="activity-card-grid" className="grid gap-3 lg:grid-cols-2">
-                {day.activities.map((activity) => (
-                  <ActivityCard
-                    key={activity.id}
-                    activity={activity}
-                    units={units}
-                    selectMode={selectMode}
-                    selected={selectedActivityIds.has(activity.id)}
-                    onToggleSelected={() => toggleSelectedActivity(activity)}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
-          {searching ? (
-            searchQuery.hasNextPage ? (
+      {searching ? (
+        listQuery.isLoading && !hasListData ? (
+          <QueryStatePanel variant="loading" height={400} />
+        ) : listQuery.isError &&
+          !isSharedConnectionFailure(listQuery.error) &&
+          (!hasListData || !hasActivities) ? (
+          <QueryStatePanel
+            error={listQuery.error}
+            height={200}
+            onRetry={() => void listQuery.refetch()}
+            retrying={listQuery.isFetching}
+          />
+        ) : !hasActivities &&
+          !searchQuery.hasNextPage &&
+          !isSharedConnectionFailure(listQuery.error) ? (
+          <QueryStatePanel variant="empty" message="No matching activities." height={200} />
+        ) : (
+          <div className="space-y-7">
+            {listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
+              <QueryStatePanel
+                error={listQuery.error}
+                height={72}
+                onRetry={() => void listQuery.refetch()}
+                retrying={listQuery.isFetching}
+              />
+            ) : null}
+            {agendaDays.map((day) => (
+              <section key={day.activities[0]?.id ?? day.date}>
+                <div className="mb-2 flex items-center gap-3">
+                  <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">
+                    {formatDayHeader(day.date)}
+                  </h3>
+                  <div className="h-px flex-1 bg-border/60" />
+                </div>
+                <div data-testid="activity-card-grid" className="grid gap-3 lg:grid-cols-2">
+                  {day.activities.map((activity) => (
+                    <ActivityCard
+                      key={activity.id}
+                      activity={activity}
+                      units={units}
+                      selectMode={selectMode}
+                      selected={selectedActivityIds.has(activity.id)}
+                      onToggleSelected={() => toggleSelectedActivity(activity)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+            {searchQuery.hasNextPage ? (
               <button
                 type="button"
                 disabled={searchQuery.isFetching}
@@ -480,251 +570,97 @@ export function ActivitiesPage() {
               >
                 {searchQuery.isFetchingNextPage ? "Loading…" : "Load more"}
               </button>
-            ) : null
-          ) : (
-            <PaginationControls
-              page={currentActivityPage}
-              pageSize={ACTIVITY_PAGE_SIZE}
-              totalItems={activityCount}
-              itemLabel="activities"
-              onPageChange={setActivityPage}
-            />
-          )}
-        </div>
+            ) : null}
+          </div>
+        )
+      ) : (
+        <section aria-labelledby="workout-calendar-heading" className="space-y-4">
+          <header className="space-y-1">
+            <h2
+              id="workout-calendar-heading"
+              className="text-sm font-semibold text-foreground tracking-wide"
+            >
+              Workout calendar
+            </h2>
+            <p className="text-xs text-muted">{rangeCaption}</p>
+          </header>
+          <div className="space-y-7">
+            {!futureOnly && listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
+              <QueryStatePanel
+                error={listQuery.error}
+                height={72}
+                onRetry={() => void listQuery.refetch()}
+                retrying={listQuery.isFetching}
+              />
+            ) : null}
+            {upcomingQuery.isError ? (
+              <QueryStatePanel
+                contextLabel="Planned workouts"
+                error={upcomingQuery.error}
+                height={72}
+                onRetry={() => void upcomingQuery.refetch()}
+                retrying={upcomingQuery.isFetching}
+              />
+            ) : null}
+            {showAgendaLoading ? (
+              <QueryStatePanel variant="loading" height={400} />
+            ) : showRangeEmpty ? (
+              <QueryStatePanel
+                variant="empty"
+                message="No workouts in this date range."
+                height={200}
+              />
+            ) : (
+              agendaDays.map((day) => {
+                const emptyDay = day.activities.length === 0 && day.workouts.length === 0;
+                return (
+                  <section key={day.date}>
+                    <div className="mb-2 flex items-center gap-3">
+                      <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">
+                        {formatDayHeader(day.date)}
+                      </h3>
+                      <div className="h-px flex-1 bg-border/60" />
+                    </div>
+                    {emptyDay && completedSucceeded && plannedSucceeded ? (
+                      <p className="text-sm text-subtle">No workouts</p>
+                    ) : emptyDay ? null : (
+                      <div data-testid="activity-card-grid" className="grid gap-3 lg:grid-cols-2">
+                        {day.workouts.map((workout) => (
+                          <PlannedWorkoutCard
+                            key={`${workout.providerId}:${workout.id}`}
+                            workout={workout}
+                          />
+                        ))}
+                        {day.activities.map((activity) => (
+                          <ActivityCard
+                            key={activity.id}
+                            activity={activity}
+                            units={units}
+                            selectMode={selectMode}
+                            selected={selectedActivityIds.has(activity.id)}
+                            onToggleSelected={() => toggleSelectedActivity(activity)}
+                            showCompleted
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                );
+              })
+            )}
+            {!futureOnly ? (
+              <PaginationControls
+                page={currentActivityPage}
+                pageSize={ACTIVITY_PAGE_SIZE}
+                totalItems={activityCount}
+                itemLabel="activities"
+                onPageChange={setActivityPage}
+              />
+            ) : null}
+          </div>
+        </section>
       )}
     </PageLayout>
-  );
-}
-
-interface ActivityControlsProps {
-  activityTypes: string[];
-  activityType: string;
-  weeks: number;
-  showHidden: boolean;
-  searching: boolean;
-  canSelect: boolean;
-  selectMode: boolean;
-  confirmDelete: boolean;
-  confirmMerge: boolean;
-  confirmRestore: boolean;
-  selectedCount: number;
-  selectedHiddenCount: number;
-  selectedVisibleCount: number;
-  mergeEligible: boolean;
-  mergePending: boolean;
-  mixedTypes: boolean;
-  deletePending: boolean;
-  restorePending: boolean;
-  onActivityTypeChange: (activityType: string) => void;
-  onWeeksChange: (weeks: number) => void;
-  onShowHiddenChange: (showHidden: boolean) => void;
-  onSelect: () => void;
-  onCancelSelection: () => void;
-  onDeleteSelected: () => void;
-  onMergeSelected: () => void;
-  onRestoreSelected: () => void;
-  onConfirmDelete: () => void;
-  onConfirmMerge: () => void;
-  onConfirmRestore: () => void;
-}
-
-function ActivityControls({
-  activityTypes,
-  activityType,
-  weeks,
-  showHidden,
-  searching,
-  canSelect,
-  selectMode,
-  confirmDelete,
-  confirmMerge,
-  confirmRestore,
-  selectedCount,
-  selectedHiddenCount,
-  selectedVisibleCount,
-  mergeEligible,
-  mergePending,
-  mixedTypes,
-  deletePending,
-  restorePending,
-  onActivityTypeChange,
-  onWeeksChange,
-  onShowHiddenChange,
-  onSelect,
-  onCancelSelection,
-  onDeleteSelected,
-  onMergeSelected,
-  onRestoreSelected,
-  onConfirmDelete,
-  onConfirmMerge,
-  onConfirmRestore,
-}: ActivityControlsProps) {
-  const selectionGuidanceId = useId();
-  const selectionGuidance = showHidden
-    ? "Choose visible activities to merge or delete, or hidden activities to restore."
-    : "Choose activities to merge or delete.";
-  const selectedCountLabel = `${selectedCount} ${
-    selectedCount === 1 ? "activity" : "activities"
-  } selected`;
-
-  return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-solid p-3">
-      {canSelect ? (
-        <p id={selectionGuidanceId} className={selectMode ? "text-xs text-muted" : "sr-only"}>
-          {selectionGuidance}
-        </p>
-      ) : null}
-      {selectMode ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <output
-            aria-live="polite"
-            aria-atomic="true"
-            className="text-xs text-subtle tabular-nums"
-          >
-            {selectedCountLabel}
-          </output>
-          {confirmDelete ? (
-            <>
-              <span className="text-xs text-muted">
-                Delete selected activities? This cannot be undone.
-              </span>
-              <button
-                type="button"
-                onClick={onConfirmDelete}
-                disabled={deletePending || selectedVisibleCount === 0}
-                className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-              >
-                {deletePending ? "Deleting..." : "Confirm Delete"}
-              </button>
-            </>
-          ) : confirmRestore ? (
-            <>
-              <span className="text-xs text-muted">
-                Restore selected hidden activities? They will reappear in your activity log.
-              </span>
-              <button
-                type="button"
-                onClick={onConfirmRestore}
-                disabled={restorePending || selectedHiddenCount === 0}
-                className="px-3 py-1.5 text-xs rounded bg-accent text-on-accent hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-              >
-                {restorePending ? "Restoring..." : "Confirm Restore"}
-              </button>
-            </>
-          ) : confirmMerge ? (
-            <>
-              <span className="text-xs text-muted">
-                Merge selected activities into one activity spanning their times? Original provider
-                records remain.
-              </span>
-              <button
-                type="button"
-                onClick={onConfirmMerge}
-                disabled={mergePending || !mergeEligible}
-                className="px-3 py-1.5 text-xs rounded bg-accent text-on-accent disabled:opacity-50"
-              >
-                {mergePending ? "Merging..." : "Confirm Merge"}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={onMergeSelected}
-                disabled={!mergeEligible || mergePending}
-                title={mixedTypes ? "Selected activities must have the same type" : undefined}
-                className="px-3 py-1.5 text-xs rounded bg-accent text-on-accent disabled:opacity-50"
-              >
-                Merge
-              </button>
-              {mixedTypes ? (
-                <span className="text-xs text-muted">Select activities of one type to merge.</span>
-              ) : null}
-              {showHidden ? (
-                <button
-                  type="button"
-                  onClick={onRestoreSelected}
-                  disabled={restorePending || selectedHiddenCount === 0}
-                  className="px-3 py-1.5 text-xs rounded bg-accent text-on-accent hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                >
-                  Restore
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={onDeleteSelected}
-                disabled={deletePending || selectedVisibleCount === 0}
-                className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-              >
-                Delete
-              </button>
-            </>
-          )}
-          <button
-            type="button"
-            onClick={onCancelSelection}
-            disabled={deletePending || restorePending || mergePending}
-            className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-        </div>
-      ) : null}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-        {canSelect && !selectMode ? (
-          <button
-            type="button"
-            onClick={onSelect}
-            aria-describedby={selectionGuidanceId}
-            className="sm:mr-auto px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors cursor-pointer"
-          >
-            Select activities
-          </button>
-        ) : null}
-        {!searching ? (
-          <>
-            <label className="flex items-center gap-2 text-xs text-muted">
-              <input
-                type="checkbox"
-                checked={showHidden}
-                onChange={(event) => onShowHiddenChange(event.target.checked)}
-                className="h-4 w-4 accent-accent cursor-pointer"
-              />
-              Show hidden activities
-            </label>
-            <label className="flex items-center gap-2 text-xs text-muted">
-              Date range
-              <select
-                value={weeks}
-                onChange={(event) => onWeeksChange(Number(event.target.value))}
-                className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
-              >
-                {DATE_RANGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </>
-        ) : null}
-        <label className="flex items-center gap-2 text-xs text-muted">
-          Activity type
-          <select
-            value={activityType}
-            onChange={(event) => onActivityTypeChange(event.target.value)}
-            className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
-          >
-            <option value={ALL_ACTIVITY_TYPES}>All activities</option>
-            {activityTypes.map((type) => (
-              <option key={type} value={type}>
-                {formatActivityTypeLabel(type)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-    </div>
   );
 }
 
@@ -734,6 +670,7 @@ interface ActivityCardProps {
   selectMode: boolean;
   selected: boolean;
   onToggleSelected: () => void;
+  showCompleted?: boolean;
 }
 
 function ActivityCard({
@@ -742,6 +679,7 @@ function ActivityCard({
   selectMode,
   selected,
   onToggleSelected,
+  showCompleted = false,
 }: ActivityCardProps) {
   const isHidden = activity.isProviderAbsent === true;
   const cardRef = useRef<HTMLElement>(null);
@@ -790,6 +728,11 @@ function ActivityCard({
 
   return (
     <article ref={cardRef} className={cardClassName}>
+      {showCompleted ? (
+        <span className="pointer-events-none absolute top-3 right-3 z-20 rounded bg-surface-elevated px-1.5 py-0.5 text-[11px] font-medium text-muted">
+          Completed
+        </span>
+      ) : null}
       <ActivityCardContent
         activity={activity}
         units={units}
