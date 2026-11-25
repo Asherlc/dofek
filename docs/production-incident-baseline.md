@@ -40388,3 +40388,28 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Follow-up.** For future App Groups signing failures, verify the assignment
   of the specific group on each App ID and inspect the regenerated profiles
   before retrying the archive.
+
+## 2026-11-25 — Pending HealthKit authorization interrupts running-step sync
+
+- **Impact and evidence.** Sentry grouped four handled exceptions across three
+  users. Three events were tagged development. The production-tagged event
+  occurred at 07:06 UTC on iOS 26.5, build `1795546204`, and reported device
+  identifier `iPhone99,7`. Its observer sync completed the workout and sleep query
+  stages before `queryRunningStepSamples` failed with
+  `Authorization not determined (com.apple.healthkit:5)`. Customer impact
+  remains unconfirmed.
+  [Sentry issue](https://east-bay-software.sentry.io/issues/7853311049/)
+  · [Latest event](https://east-bay-software.sentry.io/issues/7853311049/events/42931df2d013468890e7826666cf08f9/).
+- **Cause.** The native bridge classifies HealthKit code 5 as
+  `HEALTHKIT_AUTHORIZATION_NOT_DETERMINED`. Observer sync can run whenever
+  HealthKit is available, and the running-step query propagates that code as
+  a batch failure. The Swift method wraps workout, step sample, and quantity
+  series reads under one operation, so the event cannot identify the
+  individual read that returned code 5.
+  [Apple error definition](https://developer.apple.com/documentation/healthkit/hkerror/code/errorauthorizationnotdetermined)
+  · [Native query](../packages/mobile/modules/health-kit/ios/HealthKitModule.swift#L381)
+  · [Running-step sync](../packages/mobile/lib/health-kit-running-steps-sync.ts#L72).
+- **Remaining risk and follow-up.** The failure remains open. Reproduce with
+  a pending HealthKit permission and confirm which read fails before changing
+  the observer's handling. Verify that the running-step anchor stays eligible
+  for catch-up and that unexpected failures still surface.
