@@ -1,5 +1,9 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import {
+  HttpResponseError,
+  isHttpServerErrorJsonParseFailure,
+} from "@dofek/telemetry/handled-failure";
 import { File as ExpoFile } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -78,7 +82,9 @@ async function getResponseErrorMessage(response: Response, fallback: string): Pr
     if (parsed.data.error?.message) return userFacingErrorMessage(parsed.data.error);
     return parsed.data.message ?? fallback;
   } catch (error: unknown) {
-    captureException(error, { source: "data-export-response-error-json" });
+    if (!isHttpServerErrorJsonParseFailure(error, response.status)) {
+      captureException(error, { source: "data-export-response-error-json" });
+    }
     return fallback;
   }
 }
@@ -119,7 +125,10 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
         headers: getAuthHeaders(usableSessionToken),
       });
       if (!response.ok) {
-        throw new Error(await getResponseErrorMessage(response, "Failed to load exports"));
+        throw new HttpResponseError(
+          await getResponseErrorMessage(response, "Failed to load exports"),
+          response.status,
+        );
       }
       const parsed = ExportListSchema.parse(await response.json());
       if (!isMounted.current) return;

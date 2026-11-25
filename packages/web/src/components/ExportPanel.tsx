@@ -1,5 +1,9 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import {
+  HttpResponseError,
+  isHttpServerErrorJsonParseFailure,
+} from "@dofek/telemetry/handled-failure";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
 
@@ -59,7 +63,7 @@ function formatDate(value: string): string {
 async function fetchExports(): Promise<DataExport[]> {
   const response = await fetch("/api/export", { credentials: "include" });
   if (!response.ok) {
-    throw new Error("Failed to load exports");
+    throw new HttpResponseError("Failed to load exports", response.status);
   }
   const body: unknown = await response.json();
   if (!isExportListResponse(body)) {
@@ -73,7 +77,9 @@ async function getResponseErrorMessage(response: Response, fallback: string): Pr
     const body: unknown = await response.json();
     return isRecord(body) && typeof body.error === "string" ? body.error : fallback;
   } catch (error: unknown) {
-    captureException(error, { context: "data-export-response-error-json" });
+    if (!isHttpServerErrorJsonParseFailure(error, response.status)) {
+      captureException(error, { context: "data-export-response-error-json" });
+    }
     return fallback;
   }
 }
@@ -134,7 +140,10 @@ export function ExportPanel() {
       });
 
       if (!triggerRes.ok) {
-        throw new Error(await getResponseErrorMessage(triggerRes, "Failed to start export"));
+        throw new HttpResponseError(
+          await getResponseErrorMessage(triggerRes, "Failed to start export"),
+          triggerRes.status,
+        );
       }
 
       await refreshExports();

@@ -1,4 +1,5 @@
 import { type AuthUser, AuthUserSchema, type ConfiguredProviders } from "@dofek/auth/auth";
+import { HttpResponseError } from "@dofek/telemetry/handled-failure";
 import { z } from "zod";
 import { captureException } from "./telemetry.ts";
 import { withWebAccountStateLockWhenAvailable } from "./web-account-state-lock.ts";
@@ -47,8 +48,9 @@ async function submitPasswordAuth(
     const data: unknown = await res.json().catch(() => null);
     const parsed = passwordAuthResponseSchema.safeParse(data);
     if (!res.ok) {
-      throw new Error(
+      throw new HttpResponseError(
         parsed.success && parsed.data.error ? parsed.data.error : "Authentication failed",
+        res.status,
       );
     }
     if (!parsed.success) {
@@ -63,8 +65,9 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
   const res = await fetch("/api/auth/me", { credentials: "include" });
   if (res.status === 401 || res.status === 403) return null;
   if (!res.ok) {
-    throw new Error(
+    throw new HttpResponseError(
       await getErrorMessage(res, `Auth bootstrap failed: ${res.status} ${res.statusText}`),
+      res.status,
     );
   }
   const data: unknown = await res.json().catch((error: unknown) => {
@@ -83,7 +86,10 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
 export async function fetchConfiguredProviders(): Promise<ConfiguredProviders> {
   const res = await fetch("/api/auth/providers");
   if (!res.ok) {
-    throw new Error(`Failed to fetch providers: ${res.status} ${res.statusText}`);
+    throw new HttpResponseError(
+      `Failed to fetch providers: ${res.status} ${res.statusText}`,
+      res.status,
+    );
   }
   return res.json();
 }
@@ -128,8 +134,9 @@ export async function requestPasswordReset(email: string): Promise<{ message: st
   const data: unknown = await response.json().catch(() => null);
   const parsed = resetRequestResponseSchema.safeParse(data);
   if (!response.ok) {
-    throw new Error(
+    throw new HttpResponseError(
       parsed.success && parsed.data.error ? parsed.data.error : "Password reset failed",
+      response.status,
     );
   }
   if (!parsed.success) {
@@ -147,8 +154,9 @@ export async function confirmPasswordReset(token: string, password: string): Pro
   const data: unknown = await response.json().catch(() => null);
   const parsed = resetConfirmResponseSchema.safeParse(data);
   if (!response.ok) {
-    throw new Error(
+    throw new HttpResponseError(
       parsed.success && parsed.data.error ? parsed.data.error : "Password reset failed",
+      response.status,
     );
   }
   if (!parsed.success || !parsed.data.ok) {
@@ -161,8 +169,9 @@ export async function confirmPasswordReset(token: string, password: string): Pro
 export async function logout(): Promise<void> {
   const response = await fetch("/auth/logout", { method: "POST", credentials: "include" });
   if (!response.ok) {
-    throw new Error(
+    throw new HttpResponseError(
       await getErrorMessage(response, `Logout failed: ${response.status} ${response.statusText}`),
+      response.status,
     );
   }
 }

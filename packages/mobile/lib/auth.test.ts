@@ -472,6 +472,16 @@ describe("startOAuthLogin", () => {
 });
 
 describe("createProviderHandoffCode", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    mockCaptureException.mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
   it("preserves a provider handoff error response", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ error: "Session expired" }), { status: 401 }),
@@ -482,13 +492,50 @@ describe("createProviderHandoffCode", () => {
     ).rejects.toThrow("Session expired");
   });
 
-  it("reports malformed JSON responses", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(new Response("not-json", { status: 500 }));
+  it("reports malformed JSON responses on successful HTTP status", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("not-json", { status: 200 }));
 
     await expect(
       createProviderHandoffCode("https://srv", "strava", "session-token"),
     ).rejects.toThrow("Provider connection failed");
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(SyntaxError), {
+      source: "provider-handoff-parse",
+    });
+  });
+
+  it("treats a malformed 5xx handoff body as an HTTP failure without a parse issue", async () => {
+    const { HttpResponseError } = await import("@dofek/telemetry/handled-failure");
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("not-json", { status: 500 }));
+
+    let thrown: unknown;
+    try {
+      await createProviderHandoffCode("https://srv", "strava", "session-token");
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(HttpResponseError);
+    expect(thrown).toMatchObject({
+      message: "Provider connection failed",
+      status: 500,
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("reports a non-SyntaxError body-read failure even on HTTP 5xx", async () => {
+    const response = new Response("{}", {
+      status: 502,
+      headers: { "content-type": "application/json" },
+    });
+    vi.spyOn(response, "json").mockRejectedValueOnce(new TypeError("Body already consumed"));
+    vi.mocked(fetch).mockResolvedValueOnce(response);
+
+    await expect(
+      createProviderHandoffCode("https://srv", "strava", "session-token"),
+    ).rejects.toMatchObject({
+      message: "Provider connection failed",
+      status: 502,
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(TypeError), {
       source: "provider-handoff-parse",
     });
   });

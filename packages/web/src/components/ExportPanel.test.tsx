@@ -1,6 +1,13 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("../lib/telemetry.ts", () => ({
+  captureException: mockCaptureException,
+}));
+
 import { ExportPanel } from "./ExportPanel.tsx";
 
 const activeExport = {
@@ -93,6 +100,7 @@ describe("ExportPanel", () => {
       })
       .mockResolvedValueOnce({
         ok: false,
+        status: 503,
         json: () =>
           Promise.resolve({
             error:
@@ -111,5 +119,39 @@ describe("ExportPanel", () => {
         "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.",
       ),
     ).toBeTruthy();
+    const { HttpResponseError, classifyHandledFailure } = await import(
+      "@dofek/telemetry/handled-failure"
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.any(HttpResponseError),
+      expect.objectContaining({ context: "data-export-start" }),
+    );
+    expect(classifyHandledFailure(mockCaptureException.mock.calls.at(-1)?.[0])).toBe("http_5xx");
+  });
+
+  it("does not report a separate parse issue for a malformed 5xx export error body", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ exports: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        json: () => Promise.reject(new SyntaxError("Unexpected token <")),
+      });
+    vi.stubGlobal("fetch", mockFetch);
+    mockCaptureException.mockClear();
+
+    render(<ExportPanel />);
+
+    await screen.findByText("No exports available.");
+    fireEvent.click(screen.getByRole("button", { name: "Start Export" }));
+
+    expect(await screen.findByText("Failed to start export")).toBeTruthy();
+    const { classifyHandledFailure } = await import("@dofek/telemetry/handled-failure");
+    expect(mockCaptureException).toHaveBeenCalledOnce();
+    expect(classifyHandledFailure(mockCaptureException.mock.calls[0]?.[0])).toBe("http_5xx");
   });
 });

@@ -73,6 +73,7 @@ describe("fetchCurrentUser", () => {
   });
 
   it("throws server error details when session bootstrap fails", async () => {
+    const { HttpResponseError } = await import("@dofek/telemetry/handled-failure");
     vi.mocked(fetch).mockResolvedValue(
       mockResponse({
         ok: false,
@@ -82,7 +83,14 @@ describe("fetchCurrentUser", () => {
       }),
     );
 
-    await expect(fetchCurrentUser()).rejects.toThrow("Database unavailable");
+    let thrown: unknown;
+    try {
+      await fetchCurrentUser();
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(HttpResponseError);
+    expect(thrown).toMatchObject({ message: "Database unavailable", status: 500 });
   });
 
   it("throws network errors instead of treating them as logged out", async () => {

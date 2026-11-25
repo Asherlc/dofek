@@ -1,7 +1,173 @@
-import { describe, expect, it } from "vitest";
-import { classifyHandledFailure } from "./handled-failure.ts";
+import { describe, expect, it, vi } from "vitest";
+import {
+  classifyHandledFailure,
+  guardTrpcHttpResponse,
+  HttpResponseError,
+  isHttpServerErrorJsonParseFailure,
+} from "./handled-failure.ts";
+
+describe("HttpResponseError", () => {
+  it("exposes the response status on a typed Error subclass", () => {
+    const error = new HttpResponseError("Server unavailable", 503);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(HttpResponseError);
+    expect(error.message).toBe("Server unavailable");
+    expect(error.status).toBe(503);
+    expect(error.name).toBe("HttpResponseError");
+  });
+});
+
+describe("isHttpServerErrorJsonParseFailure", () => {
+  it("recognizes a SyntaxError on an observed 5xx", () => {
+    expect(isHttpServerErrorJsonParseFailure(new SyntaxError("Unexpected token"), 502)).toBe(true);
+  });
+
+  it.each([
+    [new SyntaxError("Unexpected token"), 200],
+    [new SyntaxError("Unexpected token"), 404],
+    [new TypeError("Body already consumed"), 502],
+    [new Error("read failed"), 500],
+    ["not an error", 503],
+  ])("rejects %#", (error, status) => {
+    expect(isHttpServerErrorJsonParseFailure(error, status)).toBe(false);
+  });
+});
+
+describe("guardTrpcHttpResponse", () => {
+  it("passes non-5xx responses through without reading the body", async () => {
+    const response = new Response("not-json", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    const clone = vi.spyOn(response, "clone");
+    await expect(guardTrpcHttpResponse(response)).resolves.toBe(response);
+    expect(clone).not.toHaveBeenCalled();
+  });
+
+  it("throws a typed HTTP failure for an HTML 502", async () => {
+    const response = new Response("<html>Bad Gateway</html>", {
+      status: 502,
+      headers: { "content-type": "text/html" },
+    });
+    await expect(guardTrpcHttpResponse(response)).rejects.toEqual(
+      expect.objectContaining({
+        name: "HttpResponseError",
+        status: 502,
+        message: expect.stringContaining("502"),
+      }),
+    );
+  });
+
+  it.each([
+    ['{"message":"upstream failed"}', "generic JSON"],
+    ["{not-json", "malformed JSON"],
+  ])("throws a typed HTTP failure for %s 5xx bodies", async (body) => {
+    const response = new Response(body, {
+      status: 503,
+      headers: { "content-type": "application/json" },
+    });
+    await expect(guardTrpcHttpResponse(response)).rejects.toMatchObject({
+      name: "HttpResponseError",
+      status: 503,
+    });
+  });
+
+  it("returns the original response for a structured tRPC error envelope with body intact", async () => {
+    const envelope = {
+      error: {
+        code: -32603,
+        message: "INTERNAL_SERVER_ERROR",
+        data: { code: "INTERNAL_SERVER_ERROR" },
+      },
+    };
+    const response = new Response(JSON.stringify(envelope), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+    await expect(guardTrpcHttpResponse(response)).resolves.toBe(response);
+    await expect(response.json()).resolves.toEqual(envelope);
+  });
+
+  it("returns the original response for a nonempty batched tRPC error array", async () => {
+    const envelopes = [
+      { error: { code: -32600, message: "BAD_REQUEST" } },
+      { error: { code: -32603, message: "INTERNAL_SERVER_ERROR" } },
+    ];
+    const response = new Response(JSON.stringify(envelopes), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+    await expect(guardTrpcHttpResponse(response)).resolves.toBe(response);
+    await expect(response.json()).resolves.toEqual(envelopes);
+  });
+
+  it("throws when clone or decode of an observed 5xx JSON body fails", async () => {
+    const response = new Response(JSON.stringify({ ok: true }), {
+      status: 502,
+      headers: { "content-type": "application/json" },
+    });
+    vi.spyOn(response, "clone").mockImplementation(() => {
+      throw new Error("clone failed");
+    });
+    await expect(guardTrpcHttpResponse(response)).rejects.toMatchObject({
+      name: "HttpResponseError",
+      status: 502,
+    });
+  });
+
+  it("retains non-5xx parse handling for callers by not inspecting the body", async () => {
+    const response = new Response("{broken", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    await expect(guardTrpcHttpResponse(response)).resolves.toBe(response);
+    await expect(response.json()).rejects.toBeInstanceOf(SyntaxError);
+  });
+});
 
 describe("classifyHandledFailure", () => {
+  it.each([500, 599])("classifies a typed HTTP %s response as http_5xx", (status) => {
+    expect(classifyHandledFailure(new HttpResponseError(`HTTP ${status}`, status))).toBe(
+      "http_5xx",
+    );
+  });
+
+  it("classifies a wrapped typed HTTP 5xx through its innermost cause", () => {
+    expect(
+      classifyHandledFailure(
+        new Error("Request failed", { cause: new HttpResponseError("Bad gateway", 502) }),
+      ),
+    ).toBe("http_5xx");
+  });
+
+  it.each([400, 404, 499, 600])("retains a typed HTTP %s response as reportable", (status) => {
+    expect(classifyHandledFailure(new HttpResponseError(`HTTP ${status}`, status))).toBeNull();
+  });
+
+  it.each([
+    new Error("HTTP 500"),
+    new Error("HTTP 503"),
+    Object.assign(new Error("upload failed"), { status: 500 }),
+    { status: 502, message: "Bad gateway" },
+    new Error("Part 1 upload failed (HTTP 500)"),
+  ])("does not guess http_5xx from message or status metadata %#", (error) => {
+    expect(classifyHandledFailure(error)).toBeNull();
+  });
+
+  it("keeps an unexpected underlying cause reportable under an HTTP 5xx wrapper", () => {
+    const error = new HttpResponseError("Bad gateway", 502);
+    error.cause = new Error("Failed to write value.");
+    expect(classifyHandledFailure(error)).toBeNull();
+  });
+
+  it("does not hide a parse failure behind an HTTP 5xx cause", () => {
+    expect(
+      classifyHandledFailure(
+        new SyntaxError("Invalid JSON", { cause: new HttpResponseError("Bad gateway", 502) }),
+      ),
+    ).toBeNull();
+  });
+
   it("classifies the observed auth restore connection loss through its underlying cause", () => {
     const error = new Error("fetch failed: The network connection was lost.");
     expect(classifyHandledFailure(error, "auth-state-restore")).toBe("connection_lost");

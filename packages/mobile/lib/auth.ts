@@ -4,6 +4,10 @@ import {
   type ConfiguredProviders,
   ConfiguredProvidersSchema,
 } from "@dofek/auth/auth";
+import {
+  HttpResponseError,
+  isHttpServerErrorJsonParseFailure,
+} from "@dofek/telemetry/handled-failure";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
@@ -60,13 +64,16 @@ export async function fetchCurrentUser(serverUrl: string, token: string): Promis
   if (!res.ok) {
     const data: unknown = res.headers.get("content-type")?.includes("application/json")
       ? await res.json().catch((error: unknown) => {
-          captureException(error, { source: "auth-bootstrap-error-json" });
+          if (!isHttpServerErrorJsonParseFailure(error, res.status)) {
+            captureException(error, { source: "auth-bootstrap-error-json" });
+          }
           return null;
         })
       : null;
     const parsed = ErrorResponseSchema.safeParse(data);
-    throw new Error(
+    throw new HttpResponseError(
       parsed.success ? parsed.data.error : `Auth bootstrap failed: ${res.status} ${res.statusText}`,
+      res.status,
     );
   }
   const data: unknown = await res.json().catch((error: unknown) => {
@@ -85,7 +92,10 @@ export async function fetchCurrentUser(serverUrl: string, token: string): Promis
 export async function fetchConfiguredProviders(serverUrl: string): Promise<ConfiguredProviders> {
   const res = await fetch(`${serverUrl}/api/auth/providers`);
   if (!res.ok) {
-    throw new Error(`Failed to fetch providers: ${res.status} ${res.statusText}`);
+    throw new HttpResponseError(
+      `Failed to fetch providers: ${res.status} ${res.statusText}`,
+      res.status,
+    );
   }
   const data: unknown = await res.json();
   return ConfiguredProvidersSchema.parse(data);
@@ -106,10 +116,12 @@ async function submitPasswordAuth(
   });
 
   const data: unknown = await response.json().catch((error: unknown) => {
-    captureException(error, {
-      source: "password-auth-response-json",
-      path,
-    });
+    if (!isHttpServerErrorJsonParseFailure(error, response.status)) {
+      captureException(error, {
+        source: "password-auth-response-json",
+        path,
+      });
+    }
     return null;
   });
   const parsed = z
@@ -122,10 +134,11 @@ async function submitPasswordAuth(
   const errorParsed = z.object({ error: z.string().optional() }).safeParse(data);
 
   if (!response.ok) {
-    throw new Error(
+    throw new HttpResponseError(
       errorParsed.success && errorParsed.data.error
         ? errorParsed.data.error
         : "Authentication failed",
+      response.status,
     );
   }
   if (!parsed.success || !parsed.data.session) {
@@ -170,13 +183,16 @@ export async function requestPasswordReset(
     body: JSON.stringify({ email }),
   });
   const data: unknown = await response.json().catch((error: unknown) => {
-    captureException(error, { source: "password-reset-response-json" });
+    if (!isHttpServerErrorJsonParseFailure(error, response.status)) {
+      captureException(error, { source: "password-reset-response-json" });
+    }
     return null;
   });
   const parsed = PasswordResetResponseSchema.safeParse(data);
   if (!response.ok) {
-    throw new Error(
+    throw new HttpResponseError(
       parsed.success && parsed.data.error ? parsed.data.error : "Password reset failed",
+      response.status,
     );
   }
   if (!parsed.success) {
@@ -211,18 +227,22 @@ export async function startOAuthLogin(
     body: JSON.stringify({ code }),
   });
   const exchangeData: unknown = await exchangeResponse.json().catch((error: unknown) => {
-    captureException(error, { source: "mobile-auth-exchange-parse" });
+    if (!isHttpServerErrorJsonParseFailure(error, exchangeResponse.status)) {
+      captureException(error, { source: "mobile-auth-exchange-parse" });
+    }
     return null;
   });
   const parsedExchange = z
     .union([z.object({ session: z.string(), isNewUser: z.boolean() }), ErrorResponseSchema])
     .safeParse(exchangeData);
   if (!exchangeResponse.ok || !parsedExchange.success || "error" in parsedExchange.data) {
-    throw new Error(
+    const message =
       parsedExchange.success && "error" in parsedExchange.data
         ? parsedExchange.data.error
-        : "Authentication failed",
-    );
+        : "Authentication failed";
+    throw !exchangeResponse.ok
+      ? new HttpResponseError(message, exchangeResponse.status)
+      : new Error(message);
   }
   return {
     session: parsedExchange.data.session,
@@ -244,14 +264,16 @@ export async function createProviderHandoffCode(
     },
   });
   const data: unknown = await response.json().catch((error: unknown) => {
-    captureException(error, { source: "provider-handoff-parse" });
+    if (!isHttpServerErrorJsonParseFailure(error, response.status)) {
+      captureException(error, { source: "provider-handoff-parse" });
+    }
     return null;
   });
   const parsed = z.union([z.object({ code: z.string() }), ErrorResponseSchema]).safeParse(data);
   if (!response.ok || !parsed.success || "error" in parsed.data) {
-    throw new Error(
-      parsed.success && "error" in parsed.data ? parsed.data.error : "Provider connection failed",
-    );
+    const message =
+      parsed.success && "error" in parsed.data ? parsed.data.error : "Provider connection failed";
+    throw !response.ok ? new HttpResponseError(message, response.status) : new Error(message);
   }
   return parsed.data.code;
 }
@@ -299,7 +321,10 @@ export async function startNativeAppleSignIn(serverUrl: string): Promise<AuthRes
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Apple Sign In failed: ${response.status}`);
+    throw new HttpResponseError(
+      text || `Apple Sign In failed: ${response.status}`,
+      response.status,
+    );
   }
 
   const data: unknown = await response.json();
