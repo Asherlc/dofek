@@ -9,6 +9,11 @@ The provider ID is `intervals.icu`.
 
 Set both in Infisical in each environment that offers the provider. Dofek shows the connection option once both credentials are configured.
 
+The optional `INTERVALS_ICU_WEBHOOK_SECRET` authenticates push deliveries. Store it in Infisical
+for environments that receive Intervals.icu webhooks. Deploy routing sends it only to the web and
+pre-migration web services. Without it, `POST /api/webhooks/intervals.icu` returns 503 naming the
+key.
+
 ## Vendor approval
 
 Apply for an OAuth client and include Dofek’s redirect URI, `/callback` on the Dofek web host. Require S256 PKCE on the client. Intervals.icu must approve the app before users can connect. [OAuth application guide](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759)
@@ -124,6 +129,36 @@ routed only to the web and worker service environments by
 [`scripts/deploy-service-environment.ts`](../scripts/deploy-service-environment.ts). Missing keys
 hide new connections and pause scheduled sync. Disconnect and account erasure still revoke saved
 bearer tokens through the vendor endpoint. [OAuth revocation](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759)
+
+## Webhooks
+
+Open the Intervals.icu [Apps settings](https://intervals.icu/settings/apps) and choose Manage App
+for the approved client. Register the HTTPS endpoint `https://dofek.fit/api/webhooks/intervals.icu`
+and confirm the webhook secret matches `INTERVALS_ICU_WEBHOOK_SECRET` in Infisical. The worker uses
+each athlete’s existing OAuth grant.
+[API integration cookbook](https://forum.intervals.icu/t/intervals-icu-api-integration-cookbook/80090)
+
+Enable these event types in the app’s webhook settings.
+
+- `ACTIVITY_UPLOADED`
+- `ACTIVITY_ANALYZED`
+- `ACTIVITY_DELETED`
+- `CALENDAR_UPDATED`
+- `WELLNESS_UPDATED`
+
+A historical vendor admin screenshot documents activity deletion among webhook types
+([activity deletion availability](https://forum.intervals.icu/uploads/default/original/3X/3/0/3057cd07337b696d97e3a1e561bbdbbf57e8ad84.png)).
+`WELLNESS_UPDATED` is covered in the vendor’s
+[OAuth and wellness notes](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759?page=2).
+The current [API integration cookbook](https://forum.intervals.icu/t/intervals-icu-api-integration-cookbook/80090)
+is authoritative for modern `CALENDAR_UPDATED`. Legacy `CALENDAR_EVENT_UPDATED` and
+`CALENDAR_EVENT_DELETED` are not used. Calendar edits do not always produce a delivery.
+
+Dofek groups events by connected athlete and queues one normal one-day sync per athlete per
+delivery. The latest event time in the batch anchors the request. The worker fetches current
+activity, wellness, and upcoming calendar data through the API. Intervals.icu omits Strava-sourced
+activity webhooks and retries unsuccessful deliveries with backoff. Scheduled sync catches recent
+changes when delivery is absent. Use manual backfill for older dates.
 
 ## Calendar dates and rollout
 

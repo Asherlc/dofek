@@ -90,7 +90,11 @@ const APPLICATION_ENVIRONMENT_KEYS = [
   "ZOHO_DESK_REFRESH_TOKEN",
 ] as const;
 
-const WEB_ONLY_ENVIRONMENT_KEYS = ["MCP_OIDC_COOKIE_KEY", "OPENAI_APPS_CHALLENGE_TOKEN"] as const;
+const WEB_ONLY_ENVIRONMENT_KEYS = [
+  "INTERVALS_ICU_WEBHOOK_SECRET",
+  "MCP_OIDC_COOKIE_KEY",
+  "OPENAI_APPS_CHALLENGE_TOKEN",
+] as const;
 
 const APP_STORE_ENVIRONMENT_KEYS = [
   "APP_STORE_ISSUER_ID",
@@ -477,6 +481,27 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       expect(environment, `${service} environment`).not.toHaveProperty("INTERVALS_ICU_CLIENT_ID");
       expect(environment, `${service} environment`).not.toHaveProperty(
         "INTERVALS_ICU_CLIENT_SECRET",
+      );
+    }
+  });
+
+  it("routes the optional Intervals.icu webhook secret only to web services", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(sourcePath, dotenv(completeDeployEnvironment()));
+
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+    for (const artifact of [paths.web, paths.webPreMigration]) {
+      expect(parseEnv(readFileSync(artifact, "utf8"))).toMatchObject({
+        INTERVALS_ICU_WEBHOOK_SECRET: "intervals_icu_webhook_secret-value",
+      });
+    }
+
+    for (const [service, artifact] of Object.entries(paths)) {
+      if (["web", "webPreMigration"].includes(service)) continue;
+      const environment = parseEnv(readFileSync(artifact, "utf8"));
+      expect(environment, `${service} environment`).not.toHaveProperty(
+        "INTERVALS_ICU_WEBHOOK_SECRET",
       );
     }
   });
