@@ -1,3 +1,4 @@
+import { guardTrpcHttpResponse } from "@dofek/telemetry/handled-failure";
 import { httpBatchLink, httpBatchStreamLink, httpLink, splitLink } from "@trpc/client";
 import type { CreateTRPCReact } from "@trpc/react-query";
 import { createTRPCReact } from "@trpc/react-query";
@@ -9,11 +10,23 @@ const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const unbatchedQueryPaths = new Set(["recovery.workloadRatio"]);
 
+async function fetchWithCredentials(
+  url: RequestInfo | URL,
+  options?: RequestInit,
+): Promise<Response> {
+  const response = await fetch(url, { ...options, credentials: "include" });
+  if (response.status === 401) {
+    window.location.href = "/login";
+  }
+  return guardTrpcHttpResponse(response);
+}
+
 export function createTRPCClient() {
   const buildCommonOptions = () => ({
     url: "/api/trpc",
     methodOverride: "POST" as const,
     headers: () => ({ "x-timezone": clientTimezone }),
+    fetch: fetchWithCredentials,
   });
 
   return trpc.createClient({
@@ -22,36 +35,15 @@ export function createTRPCClient() {
         condition: (operation) => operation.type === "mutation",
         true: httpBatchLink({
           ...buildCommonOptions(),
-          fetch: async (url, options) => {
-            const response = await fetch(url, { ...options, credentials: "include" });
-            if (response.status === 401) {
-              window.location.href = "/login";
-            }
-            return response;
-          },
         }),
         false: splitLink({
           condition: (operation) =>
             operation.type === "query" && unbatchedQueryPaths.has(operation.path),
           true: httpLink({
             ...buildCommonOptions(),
-            fetch: async (url, options) => {
-              const response = await fetch(url, { ...options, credentials: "include" });
-              if (response.status === 401) {
-                window.location.href = "/login";
-              }
-              return response;
-            },
           }),
           false: httpBatchStreamLink({
             ...buildCommonOptions(),
-            fetch: async (url, options) => {
-              const response = await fetch(url, { ...options, credentials: "include" });
-              if (response.status === 401) {
-                window.location.href = "/login";
-              }
-              return response;
-            },
           }),
         }),
       }),

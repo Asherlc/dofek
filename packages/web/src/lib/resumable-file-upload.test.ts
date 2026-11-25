@@ -77,7 +77,8 @@ describe("runResumableFileUpload", () => {
       "fetch",
       vi.fn(async () => {
         requestCount++;
-        if (requestCount === 1) return new Response(null, { status: 503 });
+        if (requestCount === 1)
+          return new Response(null, { status: 503, headers: { etag: "failed-etag" } });
         return new Response(null, { status: 200, headers: { etag: `etag-${requestCount}` } });
       }),
     );
@@ -94,6 +95,11 @@ describe("runResumableFileUpload", () => {
 
     expect(api.authorizeParts).toHaveBeenCalledTimes(3);
     expect(api.complete).toHaveBeenCalledOnce();
+    expect(api.complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parts: expect.not.arrayContaining([expect.objectContaining({ etag: "failed-etag" })]),
+      }),
+    );
     expect(store.value).toBeNull();
   });
 

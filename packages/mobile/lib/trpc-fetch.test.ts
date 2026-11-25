@@ -35,6 +35,51 @@ describe("createTrpcFetch", () => {
     );
   });
 
+  it("throws a typed HTTP failure for an HTML 502 before body diagnostics", async () => {
+    const { HttpResponseError, classifyHandledFailure } = await import(
+      "@dofek/telemetry/handled-failure"
+    );
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("<html>Bad Gateway</html>", {
+        status: 502,
+        statusText: "Bad Gateway",
+        headers: { "content-type": "text/html" },
+      }),
+    );
+    const trpcFetch = createTrpcFetch(fetchImpl);
+
+    let thrown: unknown;
+    try {
+      await trpcFetch("https://dofek.test/api/trpc/processing.status", {
+        headers: { "x-dofek-upload-id": "11111111-1111-4111-8111-111111111111" },
+      });
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(HttpResponseError);
+    expect(classifyHandledFailure(thrown)).toBe("http_5xx");
+    expect(mockLogInfo).toHaveBeenCalledWith(
+      "whoop-ble",
+      "upload_http_response",
+      expect.objectContaining({ httpStatus: 502 }),
+    );
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("passes structured tRPC 5xx envelopes through with body intact", async () => {
+    const envelope = { error: { code: -32603, message: "INTERNAL_SERVER_ERROR" } };
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(envelope), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const trpcFetch = createTrpcFetch(fetchImpl);
+
+    const response = await trpcFetch("https://dofek.test/api/trpc/processing.status");
+    await expect(response.json()).resolves.toEqual(envelope);
+  });
+
   it("keeps the diagnostic error when the body preview cannot be read", async () => {
     const response = new Response("payload too large", {
       status: 413,
@@ -279,10 +324,11 @@ describe("createTrpcFetch", () => {
     );
     const trpcFetch = createTrpcFetch(vi.fn<typeof fetch>().mockResolvedValue(response));
     const request = trpcFetch("https://dofek.test/api/trpc/whoopBleSync.pushRealtimeData");
-    await Promise.resolve();
-    if (!rejectPreview) throw new Error("Preview read did not start.");
+    await vi.waitFor(() => {
+      expect(rejectPreview).toBeTypeOf("function");
+    });
     identifyUser({ id: "second-account", name: "Second User", email: null });
-    rejectPreview(new Error("Retired response preview failed"));
+    rejectPreview?.(new Error("Retired response preview failed"));
 
     await expect(request).rejects.toThrow(
       "Non-JSON tRPC response from whoopBleSync.pushRealtimeData: 413, content-type text/plain, body preview unavailable",

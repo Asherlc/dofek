@@ -93,6 +93,15 @@ The existing SDK identity/consent behavior still applies.
 
 Mobile also records informational logs and breadcrumbs.
 
+Web and mobile count raw HTTP `500`–`599` responses as `http_5xx` when the
+client has the response status. A gateway error page or malformed body on one
+of those responses follows the HTTP failure policy, so it produces no parsing
+issue. Structured tRPC errors keep their application details and follow normal
+exception reporting. Parsing and schema failures on successful responses also
+remain reportable. For the production request error rate, use the Traefik
+request counter by response status. [Traefik request counts](axiom-observability-runbook.md#traefik-request-counts)
+· [tRPC error format](https://trpc.io/docs/server/error-formatting).
+
 Auth restore's exact `fetch failed: The network connection was lost.` outcome
 counts as `connection_lost` only with source `auth-state-restore`. Other sources
 retain their existing reporting policy; unknown underlying causes remain

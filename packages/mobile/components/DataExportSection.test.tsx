@@ -2,6 +2,13 @@
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("../lib/telemetry", () => ({
+  captureException: mockCaptureException,
+}));
+
 import { DataExportSection } from "./DataExportSection";
 
 const fileSystemMocks = vi.hoisted(() => ({
@@ -31,6 +38,13 @@ vi.mock("expo-file-system", () => ({
 }));
 
 vi.mock("expo-sharing", () => sharingMocks);
+
+function emptyExportListResponse() {
+  return {
+    ok: true,
+    json: async () => ({ exports: [] }),
+  };
+}
 
 describe("DataExportSection", () => {
   beforeEach(() => {
@@ -138,5 +152,66 @@ describe("DataExportSection", () => {
     } finally {
       vi.stubGlobal("window", existingWindow);
     }
+  });
+
+  it("captures a typed HTTP 5xx when starting an export fails", async () => {
+    const serverMessage =
+      "Export request was saved, but the queue is temporarily unavailable. It will retry automatically.";
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(emptyExportListResponse())
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          json: async () => ({ error: serverMessage }),
+        }),
+    );
+
+    render(<DataExportSection serverUrl="https://dofek.test" sessionToken="session-token" />);
+    await screen.findByText("No exports available.");
+    mockCaptureException.mockClear();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Start Export" }));
+    });
+
+    expect(await screen.findByText(serverMessage)).toBeTruthy();
+    const { HttpResponseError, classifyHandledFailure } = await import(
+      "@dofek/telemetry/handled-failure"
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.any(HttpResponseError),
+      expect.objectContaining({ context: "data-export-start" }),
+    );
+    const captured = mockCaptureException.mock.calls[0]?.[0];
+    expect(captured).toMatchObject({ message: serverMessage, status: 503 });
+    expect(classifyHandledFailure(captured)).toBe("http_5xx");
+  });
+
+  it("shows a non-5xx export start failure without counting it as http_5xx", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(emptyExportListResponse())
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 400,
+          json: async () => ({ error: "Export already in progress" }),
+        }),
+    );
+
+    render(<DataExportSection serverUrl="https://dofek.test" sessionToken="session-token" />);
+    await screen.findByText("No exports available.");
+    mockCaptureException.mockClear();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Start Export" }));
+    });
+
+    expect(await screen.findByText("Export already in progress")).toBeTruthy();
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 });

@@ -199,6 +199,31 @@ describe("ios telemetry", () => {
     },
   );
 
+  it("counts a typed HTTP 5xx and retains a log without an exception issue", async () => {
+    vi.stubGlobal("__DEV__", false);
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+    const { HttpResponseError } = await import("@dofek/telemetry/handled-failure");
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    const error = new HttpResponseError("Bad gateway", 502);
+    mod.captureException(error, { source: "whoop-ble-realtime-upload" });
+    expect(posthogMocks.capture).toHaveBeenCalledWith("handled_failure", { kind: "http_5xx" });
+    expect(mocks.mockCaptureException).not.toHaveBeenCalled();
+    expect(posthogMocks.captureException).not.toHaveBeenCalled();
+    expect(mocks.mockEmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severityText: "INFO",
+        body: "[handled-failure] Handled operational failure",
+        attributes: expect.objectContaining({
+          ...runtimeContext,
+          kind: "http_5xx",
+          source: "whoop-ble-realtime-upload",
+        }),
+      }),
+    );
+  });
+
   let originalDsn: string | undefined;
   let originalRelease: string | undefined;
   let originalDist: string | undefined;

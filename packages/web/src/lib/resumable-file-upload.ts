@@ -1,4 +1,5 @@
 import { Sha256 } from "@aws-crypto/sha256-browser";
+import { HttpResponseError } from "@dofek/telemetry/handled-failure";
 import { z } from "zod";
 
 const HASH_CHUNK_SIZE_BYTES = 4 * 1024 * 1024;
@@ -221,7 +222,10 @@ async function uploadPartWithRetry(
       if (!authorizedPart) throw new Error(`Part ${partNumber} authorization was not returned`);
       const response = await fetch(authorizedPart.url, { method: "PUT", body, signal });
       if (!response.ok)
-        throw new Error(`Part ${partNumber} upload failed (HTTP ${response.status})`);
+        throw new HttpResponseError(
+          `Part ${partNumber} upload failed (HTTP ${response.status})`,
+          response.status,
+        );
       const etag = response.headers.get("etag");
       if (!etag) throw new Error(`Part ${partNumber} upload did not return an ETag`);
       return { partNumber, etag };
