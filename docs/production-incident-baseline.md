@@ -40353,3 +40353,27 @@ Local qualification and CI are separate from production throughput acceptance. T
   with the documented Write grants. With the fix, the token exchange accepts
   that grant and still rejects a grant missing Calendar access. Verify a new
   production connection and its first sync after the fix deploys.
+
+## 2026-11-24 — Sleep widget App Group blocked the signed iOS archive
+
+- **Impact and evidence.** `xcodebuild archive` failed in
+  `Archive (Release, signed)` with exit code 65. The first fatal diagnostic
+  reported that the widget provisioning profile did not match the
+  `com.apple.security.application-groups` entitlement. Xcode reported the
+  same mismatch for the host app. The signed archive could not be published
+  to TestFlight. The separate production run completed its server and OTA jobs.
+  [Archive job](https://github.com/Asherlc/dofek/actions/runs/45546568431/job/138978260518)
+  · [Production run](https://github.com/Asherlc/dofek/actions/runs/45542750545).
+- **Cause.** Both targets request `group.com.dofek.app.sleep-widget`. Apple
+  listed App Groups as enabled on `com.dofek.app` and
+  `com.dofek.app.sleep-widget`, but the Developer Portal group list for team
+  `68LEL35DQ9` lacked that identifier. The App Store Connect API returned only
+  invalid App Store profiles for the host app and no profiles for the widget.
+  [Host configuration](../packages/mobile/app.config.js)
+  · [Widget configuration](../packages/mobile/targets/DofekSleepWidget/expo-target.config.js).
+- **Recovery pending.** Register the group and assign it to both App IDs.
+  Verify the exact entitlement value in regenerated profiles for both targets.
+  The archive already allows Xcode to update provisioning. Verify the signed
+  archive uses the replacement profiles and uploads its artifact successfully.
+  [Apple capability and profile guidance](https://developer.apple.com/help/account/identifiers/enable-app-capabilities/)
+  · [Signed archive workflow](../.github/workflows/build-ios-release.yml).
