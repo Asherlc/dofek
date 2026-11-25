@@ -59,6 +59,7 @@ const mockCreateAppStoreWebhookRouter = vi.fn(() => {
   router.post("/", (_req, res) => res.sendStatus(204));
   return router;
 });
+const mockCreateWebhookRouter = vi.fn(() => express.Router());
 
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(function vitestConstructor() {
@@ -203,7 +204,7 @@ vi.mock("../routes/stripe-webhook.ts", () => ({
 vi.mock("./routes/app-store-webhook.ts", () => ({
   createAppStoreWebhookRouter: mockCreateAppStoreWebhookRouter,
 }));
-vi.mock("../routes/webhooks.ts", () => ({ createWebhookRouter: vi.fn(() => express.Router()) }));
+vi.mock("./routes/webhooks.ts", () => ({ createWebhookRouter: mockCreateWebhookRouter }));
 
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
@@ -488,6 +489,26 @@ describe("createApp", () => {
 
     expect(createAppStoreWebhookRouter).toHaveBeenCalledWith({ db: fakeDb });
     expect((await request(app, "POST", "/api/webhooks/app-store")).status).toBe(204);
+  });
+
+  it("passes the Intervals.icu webhook secret into the shared webhook router", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const { createWebhookRouter } = await import("./routes/webhooks.ts");
+    const fakeDb = createDatabaseFromEnv();
+    const fakeSecret = "intervals-icu-webhook-test-secret";
+    vi.mocked(createWebhookRouter).mockClear();
+    vi.stubEnv("INTERVALS_ICU_WEBHOOK_SECRET", fakeSecret);
+
+    try {
+      createApp(fakeDb, makeMockSensorStore());
+      expect(createWebhookRouter).toHaveBeenCalledWith({
+        db: fakeDb,
+        syncQueue: mockQueue,
+        intervalsIcuWebhookSecret: fakeSecret,
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("passes db to companion route modules", async () => {
