@@ -68,7 +68,9 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |
 | `endurance-types` | Endurance and indoor-cycling type guards |
 | `grade-adjusted-pace` | Grade cost factor and adjusted running pace |
+| `ghost-sessions` | [Shared route, pass history, and timed comparison contracts](src/ghost-sessions.ts) with default ghost selection |
 | `route-comparison` | [GPS-matched route and identified attempt response schemas](src/route-comparison.ts), shared by web and mobile; unavailable pace remains `null` |
+| `route-equivalence` | [Bounded route geometry comparison](src/route-equivalence.ts) for repeated efforts and Ghost Sessions |
 | `muscle-groups` | Muscle-group expansion, totals, intensities, and display colors |
 | `pmc` | TRIMP and power-based performance-management contracts |
 | `running-cadence` | [Cadence basis and supplied-coverage labels](src/running-cadence.ts) shared by web and mobile; values remain server-authored |

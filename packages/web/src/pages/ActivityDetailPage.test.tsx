@@ -44,6 +44,7 @@ import {
   mockClimbingEntriesInvalidate,
   mockClimbingEntriesUseQuery,
   mockEntrySuggestionsUseQuery,
+  mockGhostSessionsGet,
   mockHangboardDetailsUseQuery,
   mockHardwareUseQuery,
   mockHeartRateContextQuery,
@@ -85,6 +86,14 @@ beforeAll(async () => {
 afterEach(resetActivityDetailPageMocks);
 
 describe("ActivityDetailPage", () => {
+  it("checks Ghost availability for the canonical activity independent of the ordinary GPS map", () => {
+    const activityId = "709eda73-17fc-415d-8789-8f99278dc07d";
+    mockActivityByIdUseQuery.mockReturnValue(queryResult({ ...mockActivity, id: activityId }));
+    mockRouteUseQuery.mockReturnValue(queryResult({ status: "unavailable" }));
+    renderWithUnits(<ActivityDetailPage />);
+    expect(mockGhostSessionsGet).toHaveBeenCalledWith({ activityId }, expect.any(Object));
+    expect(screen.queryByRole("heading", { name: "Ghost Sessions" })).toBeNull();
+  });
   it("uses the server's surrounding HR observations for a climbing activity", async () => {
     mockActivityByIdUseQuery.mockReturnValue(
       queryResult({ ...mockActivity, activityType: "climbing" }),

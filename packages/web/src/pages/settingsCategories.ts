@@ -30,7 +30,8 @@ export const SETTINGS_CATEGORIES: readonly {
   {
     id: "privacy-export",
     label: "Privacy/Export",
-    searchText: "privacy export data export download delete danger zone",
+    searchText:
+      "privacy export data export download delete danger zone ghost sessions map labels geoapify",
   },
   {
     id: "medications",

@@ -1,3 +1,7 @@
+import {
+  GHOST_MAP_LABELS_SETTING_KEY,
+  ghostRouteLabelsCachePrefix,
+} from "dofek/db/ghost-map-label-consent";
 import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { z } from "zod";
 import {
@@ -22,6 +26,10 @@ const settingInputSchema = z.discriminatedUnion("key", [
   z.strictObject({
     key: z.literal("unitSystem"),
     value: z.enum(["metric", "imperial"]),
+  }),
+  z.strictObject({
+    key: z.literal(GHOST_MAP_LABELS_SETTING_KEY),
+    value: z.boolean(),
   }),
   z.strictObject({
     key: z.literal("homeTimezone"),
@@ -69,6 +77,11 @@ export const settingsRouter = router({
         queryCache.invalidateByPrefix(`${ctx.userId}:settings.`),
         queryCache.invalidateByPrefix(`${ctx.userId}:climbing.`),
         queryCache.invalidateByPrefix(`${ctx.userId}:mobileDashboard.training`),
+      ]);
+    } else if (input.key === GHOST_MAP_LABELS_SETTING_KEY) {
+      await Promise.all([
+        queryCache.invalidateByPrefix(`${ctx.userId}:settings.`),
+        queryCache.invalidateByPrefix(ghostRouteLabelsCachePrefix(ctx.userId)),
       ]);
     } else {
       await queryCache.invalidateByPrefix(`${ctx.userId}:settings.`);

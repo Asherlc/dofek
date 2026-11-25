@@ -26,9 +26,24 @@ export function renderDbtModelSql(
     activityStepCadenceRepairScoped?: boolean;
   },
 ): string {
+  const withLocationSample = modelSql.replace(
+    "{{ activity_location_sample_query(ghost_eligible=false) }}",
+    () => {
+      const macro = readFileSync(
+        new URL("../../analytics/macros/activity_location_sample_query.sql", import.meta.url),
+        "utf8",
+      );
+      const body = macro.match(
+        /\{% macro activity_location_sample_query\(ghost_eligible=false\) %\}([\s\S]*?)\{% endmacro %\}/,
+      )?.[1];
+      if (!body) throw new Error("Could not find activity location sample macro body");
+      // Keep whitespace around the SQL when normalizing Jinja trim markers.
+      return body.replaceAll("{%-", "{%").replaceAll("-%}", "%}");
+    },
+  );
   // Focused fixtures supply their already-resolved scope. Actual dbt integration tests
   // exercise the user-fenced HealthKit expansion against the complete source schema.
-  const withScope = modelSql
+  const withScope = withLocationSample
     .replace("{{ activity_refresh_scope_ctes() }}", () => {
       if (!options.activityRefreshScoped) return "";
       if (!options.activityRefreshIds)
@@ -136,6 +151,7 @@ function renderDbtBooleanBranches(
       ["is_incremental()", options.isIncremental],
       ["activity_step_cadence_repair_scoped", options.activityStepCadenceRepairScoped ?? false],
       ["activity_refresh_scoped", options.activityRefreshScoped],
+      ["ghost_eligible", false],
       [
         "not activity_refresh_scoped",
         options.activityRefreshScoped == null ? undefined : !options.activityRefreshScoped,

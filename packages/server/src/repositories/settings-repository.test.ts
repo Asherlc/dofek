@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { SettingsRepository } from "./settings-repository.ts";
 
@@ -127,6 +128,23 @@ describe("SettingsRepository", () => {
     it("throws when upsert returns no rows", async () => {
       const { repo } = makeRepository([]);
       await expect(repo.set("theme", "dark")).rejects.toThrow("Failed to upsert setting");
+    });
+
+    it.each([
+      [
+        "ghostMapLabels",
+        false,
+        "GREATEST(NOW(), user_settings.updated_at + INTERVAL '1 microsecond')",
+      ],
+      ["theme", "dark", "NOW()"],
+    ])("writes the correct revision on conflict for %s", async (key, value, updatedAt) => {
+      const { repo, execute } = makeRepository([{ key, value }]);
+      await expect(repo.set(key, value)).resolves.toEqual({ key, value });
+      const statement = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(statement.params).toEqual(["user-1", key, JSON.stringify(value)]);
+      expect(statement.sql.replace(/\s+/g, " ")).toContain(
+        `ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = ${updatedAt} RETURNING key, value`,
+      );
     });
   });
 

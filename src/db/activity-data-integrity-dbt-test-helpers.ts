@@ -6,6 +6,10 @@ import { buildIngestMetricStreamCreateTableSql } from "../metric-stream/clickhou
 import { diagnosticOperationId, projectDiagnosticError } from "../test/ci-diagnostic-fields.ts";
 import type { ActivityIntegrityClickHouseClient } from "./activity-data-integrity-clickhouse.ts";
 import {
+  createActivityLocationMemberChangeSql,
+  createActivityLocationMemberChangeViewSql,
+} from "./activity-payload-dbt-microbatch-test-helpers.ts";
+import {
   buildPostgresFitnessProviderFieldPriorityRawTableStatement,
   buildPostgresFitnessRawTableStatements,
 } from "./clickhouse-raw-tables.ts";
@@ -104,6 +108,8 @@ export async function seedProductionDbtFixture(
       "ingest.metric_stream",
       `${database}.metric_stream`,
     ),
+    createActivityLocationMemberChangeSql(database),
+    createActivityLocationMemberChangeViewSql(database),
     `CREATE TABLE ${database}.metric_stream_day_change (
       user_id UUID,
       provider_id String,

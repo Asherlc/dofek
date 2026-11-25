@@ -56,6 +56,7 @@ import {
   ANALYTICS_PUBLICATION_RESOURCE,
   withAnalyticsQueryOwner,
 } from "../analytics/analytics-query-owner.ts";
+import { drainGhostSessionHistory } from "../analytics/ghost-session-history-publication.ts";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { createPeerDbMirrorApiClientFromEnv } from "../db/clickhouse-cdc.ts";
 import type { Database } from "../db/index.ts";
@@ -250,6 +251,7 @@ export async function createAccountErasureRuntime(
           options,
         ),
       eraseClickHouse: async (input) => {
+        await drainGhostSessionHistory(database, clickHouseClient);
         await withAnalyticsQueryOwner(
           database,
           clickHouseClient,

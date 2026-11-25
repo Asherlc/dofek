@@ -24,6 +24,7 @@ const UPSTREAM_MODELS = [
   "activity_effort_identity",
   "activity_sensor_sample",
   "activity_location_sample",
+  "activity_ghost_location_sample",
   "activity_route_identity",
 ] as const;
 const DOWNSTREAM_MODELS = [

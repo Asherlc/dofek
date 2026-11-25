@@ -82,6 +82,11 @@ vi.mock("../../components/ChartTitleWithTooltip", async () => ({
 vi.mock("../../components/MuscleGroupBodyDiagram", async () => ({
   MuscleGroupBodyDiagram: (await testHelpers).activityDetailSimpleMocks.MuscleGroupBodyDiagram,
 }));
+vi.mock("../../components/GhostSessions", () => ({
+  GhostSessions: ({ activityId }: { activityId: string }) => (
+    <span data-testid="ghost-sessions-activity">{activityId}</span>
+  ),
+}));
 vi.mock("../../components/ProviderLogo", async () => ({
   ProviderLogo: (await testHelpers).activityDetailSimpleMocks.ProviderLogo,
 }));
@@ -143,6 +148,13 @@ beforeAll(async () => {
 function renderActivityDetail() {
   return render(<ActivityDetailScreen />);
 }
+
+it("checks protected Ghost eligibility for the canonical activity regardless of its displayed sport", () => {
+  activityRouteParams.id = activityAliasRouteId;
+  mocks.byIdQuery.mockReturnValue(defaultObserver(yogaActivity));
+  renderActivityDetail();
+  expect(screen.getByTestId("ghost-sessions-activity").textContent).toBe(yogaActivity.id);
+});
 
 const authFixture = vi.hoisted(() => ({
   user: { id: "mobile-test-user", name: "Mobile Test User", email: null } satisfies AuthUser,

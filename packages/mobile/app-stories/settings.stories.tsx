@@ -96,6 +96,10 @@ function createSeededProviders() {
     [["settings", "get"], { input: { key: "climbingGradeSystems" }, type: "query" }],
     null,
   );
+  queryClient.setQueryData(
+    [["settings", "get"], { input: { key: "ghostMapLabels" }, type: "query" }],
+    { key: "ghostMapLabels", value: false },
+  );
 
   // personalization.status (used by PersonalizationPanel)
   queryClient.setQueryData([["personalization", "status"], { type: "query" }], {

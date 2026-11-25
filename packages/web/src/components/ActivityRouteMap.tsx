@@ -1,5 +1,5 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
-import { statusColors } from "@dofek/scoring/colors";
+import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { type ClimbingMapMarker, groupClimbingMapMarkers } from "@dofek/training/climbing-map";
 import { createMapStyle } from "@dofek/training/map-style";
 import type { Map as MapLibreMap } from "maplibre-gl";
@@ -9,9 +9,19 @@ import { captureException } from "../lib/telemetry.ts";
 import { MapProcessingIndicator } from "./MapProcessingIndicator.tsx";
 
 const NO_CLIMB_MARKERS: readonly ClimbingMapMarker[] = [];
+type Coordinate = { lat: number; lng: number };
+type ReplayPositions = { anchor: Coordinate; candidate: Coordinate } | null;
+export const ghostReplayMarkerColors = {
+  anchor: statusColors.positive,
+  candidate: chartColors.purple,
+};
 
 export function ActivityRouteMap({
   points,
+  routeChunks,
+  contextChunks,
+  replayBounds,
+  replayPositions = null,
   onRegisterHoverCallback,
   climbMarkers = NO_CLIMB_MARKERS,
   presentation = "detail",
@@ -21,7 +31,11 @@ export function ActivityRouteMap({
 }: {
   selectedEntryId?: string | null;
   highlightedEntryId?: string | null;
-  points: Array<{ lat: number; lng: number }>;
+  points: Coordinate[];
+  routeChunks?: readonly (readonly Coordinate[])[];
+  contextChunks?: readonly (readonly Coordinate[])[];
+  replayBounds?: readonly Coordinate[];
+  replayPositions?: ReplayPositions;
   climbMarkers?: readonly ClimbingMapMarker[];
   presentation?: "detail" | "compact";
   onSelectEntry?: (entryId: string) => void;
@@ -31,6 +45,8 @@ export function ActivityRouteMap({
 }) {
   const mapRef = useRef<HTMLElement>(null);
   const mapInstanceRef = useRef<MapLibreMap | null>(null);
+  const replayRef = useRef(replayPositions);
+  const updateReplay = useRef<((positions: ReplayPositions) => void) | null>(null);
   const [previewVisible, setPreviewVisible] = useState(presentation === "detail");
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [markerElements, setMarkerElements] = useState<HTMLElement[]>([]);
@@ -56,13 +72,29 @@ export function ActivityRouteMap({
     loading: true,
     error: null,
   });
+  const empty =
+    points.length === 0 &&
+    !routeChunks?.some((chunk) => chunk.length >= 2) &&
+    !contextChunks?.some((chunk) => chunk.length >= 2) &&
+    !replayBounds?.length &&
+    climbMarkers.length === 0;
+  const heightClass =
+    presentation === "compact"
+      ? "h-[160px]"
+      : routeChunks || contextChunks || replayBounds
+        ? "h-[250px] @min-[720px]:h-[330px]"
+        : "h-[400px]";
+  useEffect(() => {
+    replayRef.current = replayPositions;
+    updateReplay.current?.(replayPositions);
+  }, [replayPositions]);
 
   useEffect(() => {
     if (presentation === "compact" && !previewVisible) return;
     const container = mapRef.current;
     if (!container) return;
 
-    if (points.length === 0 && climbMarkers.length === 0) return;
+    if (empty) return;
     setMapState({ loading: true, error: null });
     setTileWarning(null);
 
@@ -93,24 +125,53 @@ export function ActivityRouteMap({
           setTileWarning("Some map tiles could not load. Check your connection.");
           setMapState({ loading: false, error: null });
         });
-        const route = points.map((point): [number, number] => [point.lng, point.lat]);
-        const drawRoute = () => {
-          if (cancelled || route.length < 2 || map.getSource("activity-route")) return;
-          map.addSource("activity-route", {
+        const toLngLat = (point: Coordinate): [number, number] => [point.lng, point.lat];
+        const route = points.map(toLngLat);
+        const lineChunks = (input?: readonly (readonly Coordinate[])[]) =>
+          input?.filter((chunk) => chunk.length >= 2).map((chunk) => chunk.map(toLngLat));
+        const chunks = lineChunks(routeChunks);
+        const context = lineChunks(contextChunks);
+        const addRouteLine = (
+          id: string,
+          geometry: GeoJSON.LineString | GeoJSON.MultiLineString,
+          width: number,
+          opacity: number,
+        ) => {
+          if (map.getSource(id)) return;
+          map.addSource(id, {
             type: "geojson",
-            data: {
-              type: "Feature",
-              properties: {},
-              geometry: { type: "LineString", coordinates: route },
-            },
+            data: { type: "Feature", properties: {}, geometry },
           });
           map.addLayer({
-            id: "activity-route",
+            id,
             type: "line",
-            source: "activity-route",
+            source: id,
             layout: { "line-cap": "round", "line-join": "round" },
-            paint: { "line-color": statusColors.positive, "line-width": 3, "line-opacity": 0.8 },
+            paint: {
+              "line-color": statusColors.positive,
+              "line-width": width,
+              "line-opacity": opacity,
+            },
           });
+        };
+        const drawRoute = () => {
+          if (cancelled) return;
+          if (context?.length)
+            addRouteLine(
+              "recorded-route-context",
+              { type: "MultiLineString", coordinates: context },
+              3,
+              0.4,
+            );
+          if (chunks?.length)
+            addRouteLine(
+              "activity-route",
+              { type: "MultiLineString", coordinates: chunks },
+              4,
+              0.9,
+            );
+          else if (route.length >= 2)
+            addRouteLine("activity-route", { type: "LineString", coordinates: route }, 3, 0.8);
         };
         map.on("style.load", drawRoute);
         map.on("load", drawRoute);
@@ -120,6 +181,42 @@ export function ActivityRouteMap({
           cleanups.push(mapDot(M, map, start, { radius: 6, color: statusColors.positive }).remove);
         if (end)
           cleanups.push(mapDot(M, map, end, { radius: 6, color: statusColors.danger }).remove);
+        const replayMarkers = new Map<
+          keyof NonNullable<ReplayPositions>,
+          ReturnType<typeof mapDot>
+        >();
+        updateReplay.current = (positions) => {
+          if (!positions) {
+            for (const dot of replayMarkers.values()) dot.remove();
+            replayMarkers.clear();
+            return;
+          }
+          for (const side of ["anchor", "candidate"] as const) {
+            const coordinate = toLngLat(positions[side]);
+            const existing = replayMarkers.get(side);
+            if (existing) {
+              existing.marker.setLngLat(coordinate);
+              continue;
+            }
+            const dot = mapDot(M, map, coordinate, {
+              radius: side === "anchor" ? 7 : 10,
+              color: ghostReplayMarkerColors[side],
+              fill: side === "candidate" ? "transparent" : undefined,
+            });
+            dot.element.removeAttribute("aria-hidden");
+            dot.element.setAttribute("role", "img");
+            dot.element.setAttribute(
+              "aria-label",
+              side === "anchor" ? "This activity position" : "Ghost position",
+            );
+            replayMarkers.set(side, dot);
+          }
+        };
+        cleanups.push(() => {
+          updateReplay.current?.(null);
+          updateReplay.current = null;
+        });
+        updateReplay.current(replayRef.current);
         const groups = groupClimbingMapMarkers(climbMarkers, providerSourceLabel);
         const elements: HTMLElement[] = [];
         for (const group of groups) {
@@ -148,8 +245,11 @@ export function ActivityRouteMap({
           cleanups.push(dot.remove);
         }
         setMarkerElements(elements);
+        const routeCoordinates = [...route, ...(chunks?.flat() ?? []), ...(context?.flat() ?? [])];
+        const replayCoordinates = replayBounds?.map(toLngLat) ?? [];
         const coordinates = [
-          ...route,
+          ...(context?.length && replayCoordinates.length > 0 ? [] : routeCoordinates),
+          ...replayCoordinates,
           ...groups.map((group): [number, number] => [
             group.coordinates.longitude,
             group.coordinates.latitude,
@@ -164,7 +264,7 @@ export function ActivityRouteMap({
             [west, south],
             [east, north],
           ],
-          { padding: 30, duration: 0, ...(points.length === 0 ? { maxZoom: 14 } : {}) },
+          { padding: 30, duration: 0, ...(routeCoordinates.length === 0 ? { maxZoom: 14 } : {}) },
         );
         if (onRegisterHoverCallback) {
           let hover: ReturnType<typeof mapDot> | null = null;
@@ -212,7 +312,17 @@ export function ActivityRouteMap({
         mapInstanceRef.current = null;
       }
     };
-  }, [points, climbMarkers, presentation, onRegisterHoverCallback, previewVisible]);
+  }, [
+    points,
+    routeChunks,
+    contextChunks,
+    replayBounds,
+    empty,
+    climbMarkers,
+    presentation,
+    onRegisterHoverCallback,
+    previewVisible,
+  ]);
 
   useEffect(() => {
     if (presentation !== "detail") return;
@@ -249,14 +359,13 @@ export function ActivityRouteMap({
     });
   }, [selectedMarker, markerElements, presentation]);
 
-  const empty = points.length === 0 && climbMarkers.length === 0;
   return (
     <div>
       <div className="relative isolate rounded-lg">
         <section
           ref={mapRef}
           aria-label={climbMarkers.length > 0 ? "Climbing locations" : "Recorded activity route"}
-          className={`isolate w-full rounded-lg ${presentation === "compact" ? "h-[160px]" : "h-[400px]"}${empty || mapState.error ? " hidden" : ""}`}
+          className={`isolate w-full rounded-lg ${heightClass}${empty || mapState.error ? " hidden" : ""}`}
         />
         {!empty && !mapState.error && mapState.loading ? <MapProcessingIndicator /> : null}
       </div>

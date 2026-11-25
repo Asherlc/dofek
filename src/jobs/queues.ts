@@ -149,6 +149,21 @@ export interface UserRefitPostSyncJobData {
   userId: string;
 }
 
+export const ghostRouteLabelsJobDataSchema = z.strictObject({
+  type: z.literal("ghost-route-labels"),
+  userId: z.uuid(),
+  activityId: z.uuid(),
+  sourceVersion: z.string().regex(/^[a-f0-9]{64}$/),
+  consentRevision: z.iso.datetime({ precision: 6 }),
+  prepareOnly: z.boolean().optional(),
+});
+export type GhostRouteLabelsJobData = z.infer<typeof ghostRouteLabelsJobDataSchema>;
+
+export const ghostRouteClimbsJobDataSchema = ghostRouteLabelsJobDataSchema
+  .omit({ consentRevision: true, prepareOnly: true })
+  .extend({ type: z.literal("ghost-route-climbs") });
+export type GhostRouteClimbsJobData = z.infer<typeof ghostRouteClimbsJobDataSchema>;
+
 export const climbingCatalogueJobDataSchema = z
   .strictObject({
     type: z.literal("climbing-catalogue"),
@@ -163,6 +178,8 @@ export type ClimbingCatalogueJobData = z.infer<typeof climbingCatalogueJobDataSc
 export type PostSyncJobData =
   | GlobalMaintenancePostSyncJobData
   | UserRefitPostSyncJobData
+  | GhostRouteLabelsJobData
+  | GhostRouteClimbsJobData
   | ClimbingCatalogueJobData;
 
 export interface ActivityDeleteAnalyticsJobData {
@@ -769,6 +786,38 @@ export async function enqueueClimbingCatalogueRefresh(
     removeOnComplete: true,
     removeOnFail: true,
     jobId: climbingCatalogueJobId(seed.userId, seed.logEntryId),
+  });
+}
+
+export function ghostRouteLabelsRevisionDigest(
+  data: Pick<GhostRouteLabelsJobData, "sourceVersion" | "consentRevision">,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify([data.sourceVersion, data.consentRevision]))
+    .digest("hex");
+}
+
+export async function enqueueGhostRouteLabels(
+  input: Omit<GhostRouteLabelsJobData, "type">,
+  queue: Pick<Queue<PostSyncJobData>, "add"> = getPostSyncQueue(),
+): Promise<void> {
+  const data = ghostRouteLabelsJobDataSchema.parse({ type: "ghost-route-labels", ...input });
+  await queue.add(data.type, data, {
+    jobId: `ghost-route-labels-${data.userId}-${data.activityId}-${ghostRouteLabelsRevisionDigest(data)}`,
+    removeOnComplete: true,
+    removeOnFail: true,
+  });
+}
+
+export async function enqueueGhostRouteClimbs(
+  input: Omit<GhostRouteClimbsJobData, "type">,
+  queue: Pick<Queue<PostSyncJobData>, "add"> = getPostSyncQueue(),
+): Promise<void> {
+  const data = ghostRouteClimbsJobDataSchema.parse({ type: "ghost-route-climbs", ...input });
+  await queue.add(data.type, data, {
+    jobId: `ghost-route-climbs-${data.userId}-${data.activityId}-${data.sourceVersion}`,
+    removeOnComplete: true,
+    removeOnFail: true,
   });
 }
 

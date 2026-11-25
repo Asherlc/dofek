@@ -1,5 +1,9 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
+import {
+  activityMetricSamplesSql,
+  activityMetricSourceIdSql,
+} from "dofek/db/activity-metric-query";
 import { z } from "zod";
 import {
   ACTIVITY_CHART_METRICS,
@@ -8,22 +12,6 @@ import {
 import { presentActivityMetricSource } from "./activity-metric-source-presentation.ts";
 import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
 import { healthSensorSamplesSql } from "./health-sensor-query.ts";
-
-/** Includes standalone recordings, but excludes recordings attached to unrelated activities. */
-export const activityMetricSamplesSql = `SELECT *
-  FROM analytics.sensor_scalar_sample FINAL
-  WHERE user_id = {userId:UUID}
-    AND {isPointOnly:Bool} = 0
-    AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')
-    AND recorded_date >= toDate(parseDateTime64BestEffort({windowStartedAt:String}, 6, 'UTC'))
-    AND recorded_date <= toDate(parseDateTime64BestEffort({windowEndedAt:String}, 6, 'UTC'))
-    AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String}, 6, 'UTC')
-    AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String}, 6, 'UTC')
-    AND (activity_id IS NULL OR activity_id IN (
-      SELECT arrayJoin(CAST({memberActivityIds:Array(String)}, 'Array(UUID)'))
-    ))
-    AND _peerdb_is_deleted = 0
-    AND (channel != 'heart_rate' OR scalar > 0)`;
 
 /** Decoded temperature is filtered by strap measurement time, not the upload/reception day. */
 export const activitySkinTemperatureSamplesSql = `SELECT id, CAST(NULL, 'Nullable(UUID)') AS activity_id,
@@ -83,9 +71,6 @@ export const activitySkinTemperatureSamplesSql = `SELECT id, CAST(NULL, 'Nullabl
     LEFT JOIN device_priority_match
       ON device_priority_match.sample_id = temperature_candidates.id
   ) AS selected_temperature`;
-
-/** Keep device identities distinct, including multiple recordings delivered by Apple Health. */
-export const activityMetricSourceIdSql = `if(coalesce(device_id, '') = '', provider_id, toJSONString(tuple(provider_id, device_id)))`;
 
 export function activityMetricParams(window: ActivitySensorWindow) {
   return {

@@ -23,6 +23,7 @@ import { durationCurvesRouter } from "./routers/duration-curves.ts";
 import { efficiencyRouter } from "./routers/efficiency.ts";
 import { fileUploadRouter } from "./routers/file-upload.ts";
 import { foodRouter } from "./routers/food.ts";
+import { ghostSessionsRouter } from "./routers/ghost-sessions.ts";
 import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
 import { heartRateRouter } from "./routers/heart-rate.ts";
 import { hikingRouter } from "./routers/hiking.ts";
@@ -99,6 +100,7 @@ const appRouterProcedures = {
   efficiency: efficiencyRouter,
   food: foodRouter,
   fileUpload: fileUploadRouter,
+  ghostSessions: ghostSessionsRouter,
   heartRate: heartRateRouter,
   healthKitSync: healthKitSyncRouter,
   whoopAuth: whoopAuthRouter,

@@ -7,6 +7,7 @@ import { ClimbingGradeSystemToggle } from "../components/ClimbingGradeSystemTogg
 import { CyclingFtpSettings } from "../components/CyclingFtpSettings.tsx";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
+import { GhostMapLabelsSetting } from "../components/GhostMapLabelsSetting.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -352,9 +353,14 @@ export function SettingsPage() {
         ) : null}
 
         {activeCategory === "privacy-export" ? (
-          <PageSection title="Data Export" subtitle="Download all your data">
-            <ExportPanel />
-          </PageSection>
+          <>
+            <PageSection title="Ghost Sessions map labels">
+              <GhostMapLabelsSetting />
+            </PageSection>
+            <PageSection title="Data Export" subtitle="Download all your data">
+              <ExportPanel />
+            </PageSection>
+          </>
         ) : null}
 
         {activeCategory === "account" ? (

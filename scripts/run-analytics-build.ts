@@ -10,11 +10,9 @@ import {
   listChangedActivityTitles,
   publishActivitySearchChanges,
 } from "../src/activity-search/publisher.ts";
-import {
-  ANALYTICS_PUBLICATION_RESOURCE,
-  withAnalyticsQueryOwner,
-} from "../src/analytics/analytics-query-owner.ts";
+import { withAnalyticsQueryOwner } from "../src/analytics/analytics-query-owner.ts";
 import { runOwnedDbtBuild } from "../src/analytics/dbt-build.ts";
+import { runAnalyticsWithGhostHistory } from "../src/analytics/ghost-session-history-publication.ts";
 import { withAccountErasureUserWriteFence } from "../src/db/account-erasure.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
@@ -293,10 +291,10 @@ export async function runAnalyticsBuildFromEnvironment(
     try {
       const clickHouse = createClickHouseClientFromEnv();
       try {
-        await withAnalyticsQueryOwner(
+        await runAnalyticsWithGhostHistory(
           database,
           clickHouse,
-          { resourceId: ANALYTICS_PUBLICATION_RESOURCE, intentId: "analytics-build" },
+          "analytics-build",
           async (owner) => {
             const pendingDatasets = await listProcessingDatasetsAwaitingAnalytics(database);
             const microbatchBounds = await resolveAnalyticsMicrobatchBounds(owner.client);

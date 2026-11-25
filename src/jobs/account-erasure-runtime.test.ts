@@ -476,6 +476,7 @@ describe("createAccountErasureRuntime", () => {
     const runSynchronousRequest = vi.fn();
     mocks.withOwner
       .mockImplementationOnce(async (_db, client, _scope, task) => task({ client }))
+      .mockImplementationOnce(async (_db, client, _scope, task) => task({ client }))
       .mockImplementationOnce(async (_db, client, _scope, task) =>
         task({ client, runSynchronousRequest }),
       );
@@ -489,7 +490,14 @@ describe("createAccountErasureRuntime", () => {
           verified: false,
         });
         expect(mocks.withOwner).toHaveBeenNthCalledWith(
-          2,
+          1,
+          database,
+          clickHouseClient,
+          { resourceId: "ghost-session-history", intentId: "ghost-session-history" },
+          expect.any(Function),
+        );
+        expect(mocks.withOwner).toHaveBeenNthCalledWith(
+          3,
           database,
           clickHouseClient,
           { resourceId: "activity-search-index", intentId: "activity-search" },
@@ -517,6 +525,26 @@ describe("createAccountErasureRuntime", () => {
       eraseSearch.mockRestore();
       fetchBackups.mockRestore();
       vi.unstubAllEnvs();
+    }
+  });
+
+  it("blocks physical erasure when the Ghost publication drain cannot establish liveness", async () => {
+    mocks.withOwner.mockRejectedValueOnce(new Error("Ghost publication remains blocked"));
+    const { database, clickHouseClient, workPurger } = runtimeInputs();
+    const runtime = await createAccountErasureRuntime(database, clickHouseClient, workPurger);
+    try {
+      await expect(runtime.phaseRunner.runPhase("clickhouse_initial", execution())).rejects.toThrow(
+        "Ghost publication remains blocked",
+      );
+      expect(mocks.withOwner).toHaveBeenCalledExactlyOnceWith(
+        database,
+        clickHouseClient,
+        { resourceId: "ghost-session-history", intentId: "ghost-session-history" },
+        expect.any(Function),
+      );
+      expect(mocks.eraseClickHouse).not.toHaveBeenCalled();
+    } finally {
+      await runtime.close();
     }
   });
 
@@ -885,14 +913,15 @@ describe("createAccountErasureRuntime", () => {
 
   it("reuses the failed final erasure intent when retrying its preparation", async () => {
     mocks.decryptSnapshot.mockResolvedValue(snapshot);
-    let pendingIntent: string | null = null;
+    const pendingIntents = new Map<string, string>();
     mocks.withOwner.mockImplementation(async (_database, client, input, operation) => {
-      const { intentId } = input;
-      if (pendingIntent !== null && pendingIntent !== intentId)
+      const { resourceId, intentId } = input;
+      const pendingIntent = pendingIntents.get(resourceId);
+      if (pendingIntent !== undefined && pendingIntent !== intentId)
         throw new Error("pending intent mismatch");
-      pendingIntent = intentId;
+      pendingIntents.set(resourceId, intentId);
       const result = await operation({ client });
-      pendingIntent = null;
+      pendingIntents.delete(resourceId);
       return result;
     });
     mocks.eraseClickHouse.mockRejectedValueOnce(new Error("terminal erasure failure"));
@@ -904,11 +933,11 @@ describe("createAccountErasureRuntime", () => {
       await expect(
         runtime.phaseRunner.runPhase("clickhouse_verification", execution()),
       ).rejects.toThrow("terminal erasure failure");
-      expect(pendingIntent).toBe(`account-erasure:${request.id}`);
+      expect(pendingIntents.get("metric-stream-source")).toBe(`account-erasure:${request.id}`);
       await expect(
         runtime.phaseRunner.runPhase("clickhouse_verification", execution()),
       ).resolves.toEqual({ verified: true });
-      expect(pendingIntent).toBeNull();
+      expect(pendingIntents.size).toBe(0);
       expect(mocks.prepareIdentifiers).toHaveBeenCalledTimes(2);
       expect(mocks.eraseClickHouse).toHaveBeenCalledTimes(2);
     } finally {
