@@ -52,6 +52,54 @@ describe("RouteMap", () => {
     nativeSnapshot.mockClear();
     nativeCamera.easeTo.mockClear();
   });
+  it("keeps recorded route chunks separate and moves paired replay markers without remounting the map", () => {
+    const [one, two, three, four] = gpsPoints;
+    if (!one || !two || !three || !four) throw new Error("Expected recorded vertices");
+    const anchor = [
+      [one, two],
+      [three, four],
+    ];
+    const candidate = [[two, three]];
+    const view = render(
+      <RouteMap
+        points={[]}
+        comparison={{ anchor, candidate, positions: { anchor: one, candidate: two } }}
+      />,
+    );
+    measure(view.container);
+    const map = screen.getByTestId("map");
+    const [anchorLine, candidateLine] = screen.getAllByTestId("polyline");
+    expect(JSON.parse(anchorLine?.getAttribute("data-coordinates") ?? "null").geometry).toEqual({
+      type: "MultiLineString",
+      coordinates: [
+        [
+          [one.lng, one.lat],
+          [two.lng, two.lat],
+        ],
+        [
+          [three.lng, three.lat],
+          [four.lng, four.lat],
+        ],
+      ],
+    });
+    expect(
+      JSON.parse(candidateLine?.getAttribute("data-coordinates") ?? "null").geometry.coordinates,
+    ).toHaveLength(1);
+    expect(screen.getByLabelText("Current effort position").getAttribute("data-coordinate")).toBe(
+      JSON.stringify([one.lng, one.lat]),
+    );
+    view.rerender(
+      <RouteMap
+        points={[]}
+        comparison={{ anchor, candidate, positions: { anchor: two, candidate: three } }}
+      />,
+    );
+    expect(screen.getByTestId("map")).toBe(map);
+    expect(screen.getAllByTestId("polyline")[0]).toBe(anchorLine);
+    expect(screen.getByLabelText("Past effort position").getAttribute("data-coordinate")).toBe(
+      JSON.stringify([three.lng, three.lat]),
+    );
+  });
   it("centers and zooms on the selected climb when ready and on subsequent area selections", () => {
     const points: { lat: number; lng: number }[] = [];
     const view = render(

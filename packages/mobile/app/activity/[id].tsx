@@ -48,6 +48,7 @@ import { useActivityMetrics } from "../../components/activity/useActivityMetrics
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
 import { CyclingProgressionEvidence } from "../../components/CyclingProgressionEvidence";
 import { CyclingThresholdDetails } from "../../components/CyclingThresholdDetails";
+import { GhostSessions } from "../../components/GhostSessions";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MapProcessingState } from "../../components/MapProcessingState";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
@@ -927,6 +928,8 @@ function ActivityDetailScreen({ id }: { id: string }) {
           )}
         </>
       ) : null}
+
+      <GhostSessions key={`ghost:${activity.id}`} activityId={activity.id} />
 
       {showDetails ? (
         <View>

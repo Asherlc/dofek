@@ -3,7 +3,13 @@ import { CatalogueSearchError } from "@dofek/climbing-catalogue";
 import { KayaCatalogueUnavailableError } from "@dofek/climbing-catalogue/kaya";
 import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
+import { queryCache } from "../lib/cache.ts";
+import { runQueuedUserWorkUnlessAccountErasing } from "./account-erasure-work-guard.ts";
 import { createPortableSyncSlot, yieldSyncToPortableWorker } from "./portable-sync-slot.ts";
+import {
+  processGhostRouteClimbsJob,
+  processGhostRouteLabelsJob,
+} from "./process-ghost-route-labels-job.ts";
 import { processSyncJob } from "./process-sync-job.ts";
 import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
 import { createWorkerQueues } from "./worker-queues.ts";
@@ -25,6 +31,10 @@ createWorkerQueues(dependencies);
 vi.mock("./portable-sync-slot.ts", () => ({
   createPortableSyncSlot: vi.fn(),
   yieldSyncToPortableWorker: vi.fn(),
+}));
+vi.mock("./process-ghost-route-labels-job.ts", () => ({
+  processGhostRouteClimbsJob: vi.fn(),
+  processGhostRouteLabelsJob: vi.fn(),
 }));
 
 describe("worker queues", () => {
@@ -553,7 +563,96 @@ describe("worker queues", () => {
     await invokeProcessor("post-sync-queue", { type: "user-refit", userId: "u" });
 
     expect(processPostSyncJob).toHaveBeenCalled();
+    expect(runQueuedUserWorkUnlessAccountErasing).toHaveBeenLastCalledWith(
+      dependencies.accountErasureWorkLockPool,
+      mockDatabase,
+      "u",
+      "post-sync refit",
+      expect.any(Function),
+    );
   });
+
+  it.each([
+    { type: "ghost-route-labels", labelsEnabled: true },
+    { type: "ghost-route-labels", labelsEnabled: false },
+    { type: "ghost-route-climbs", labelsEnabled: false },
+  ] as const)(
+    "routes $type with optional label configuration $labelsEnabled",
+    async ({ type, labelsEnabled }) => {
+      const { Worker } = await import("bullmq");
+      const { processPostSyncJob } = await import("./process-post-sync-job.ts");
+      const signal = new AbortController().signal;
+      const getClickHouseClient = vi.fn(dependencies.getClickHouseClient);
+      const config = {
+        provider: { apiKey: "fixture", region: "global" },
+        resultTtlMs: 60_000,
+      } as const;
+      const identity = {
+        userId: "00000000-0000-4000-8000-000000000001",
+        activityId: "00000000-0000-4000-8000-000000000002",
+        sourceVersion: "a".repeat(64),
+      };
+      const data =
+        type === "ghost-route-labels"
+          ? { type, ...identity, consentRevision: "2026-11-24T12:00:00.123456Z" }
+          : { type, ...identity };
+      const route = {
+        db: mockDatabase,
+        clickhouse: mockClickHouseClient,
+        cache: queryCache,
+        signal,
+      };
+
+      vi.mocked(processGhostRouteLabelsJob).mockClear();
+      vi.mocked(processGhostRouteClimbsJob).mockClear();
+      vi.mocked(Worker).mockClear();
+      createWorkerQueues({
+        ...dependencies,
+        getClickHouseClient,
+        ghostRouteLabelsConfig: labelsEnabled ? config : undefined,
+      });
+      try {
+        expect(await processorArity("post-sync-queue")).toBeGreaterThanOrEqual(3);
+        await vi.mocked(processPostSyncJob).withImplementation(
+          async (_job, _database, _getSensorStore, _refresh, prepare) => {
+            if (!prepare) throw new Error("Ghost preparation callback was not registered");
+            await prepare(data);
+          },
+          async () => {
+            await invokeProcessor("post-sync-queue", data, undefined, undefined, signal);
+          },
+        );
+      } finally {
+        vi.mocked(processPostSyncJob).mockReset();
+        vi.mocked(Worker).mockClear();
+        createWorkerQueues(dependencies);
+      }
+
+      expect(runQueuedUserWorkUnlessAccountErasing).toHaveBeenLastCalledWith(
+        dependencies.accountErasureWorkLockPool,
+        mockDatabase,
+        data.userId,
+        type,
+        expect.any(Function),
+      );
+      if (type === "ghost-route-climbs") {
+        expect(processGhostRouteClimbsJob).toHaveBeenCalledExactlyOnceWith(data, route);
+      } else {
+        expect(processGhostRouteClimbsJob).not.toHaveBeenCalled();
+      }
+      if (labelsEnabled) {
+        expect(processGhostRouteLabelsJob).toHaveBeenCalledExactlyOnceWith(data, {
+          ...route,
+          config,
+        });
+      } else {
+        expect(processGhostRouteLabelsJob).not.toHaveBeenCalled();
+      }
+      expect(getClickHouseClient).toHaveBeenCalledTimes(
+        type === "ghost-route-climbs" || labelsEnabled ? 1 : 0,
+      );
+    },
+  );
 
   it("runs global maintenance without a per-user work lock", async () => {
     const { runQueuedUserWorkUnlessAccountErasing } = await import(

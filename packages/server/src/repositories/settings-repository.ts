@@ -1,5 +1,6 @@
 import type { NutritionCalorieTargetType } from "@dofek/nutrition/selected-date-summary";
 import type { Database } from "dofek/db";
+import { GHOST_MAP_LABELS_SETTING_KEY } from "dofek/db/ghost-map-label-consent";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -112,12 +113,17 @@ export class SettingsRepository {
 
   /** Upsert a setting. Returns the saved setting or throws on failure. */
   async set(key: string, value: unknown): Promise<Setting> {
+    // A consent write needs a distinct revision even when NOW() is unchanged or older.
+    const updatedAt =
+      key === GHOST_MAP_LABELS_SETTING_KEY
+        ? sql`GREATEST(NOW(), user_settings.updated_at + INTERVAL '1 microsecond')`
+        : sql`NOW()`;
     const rows = await executeWithSchema(
       this.#db,
       settingRowSchema,
       sql`INSERT INTO fitness.user_settings (user_id, key, value, updated_at)
           VALUES (${this.#userId}, ${key}, ${JSON.stringify(value)}::jsonb, NOW())
-          ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+          ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = ${updatedAt}
           RETURNING key, value`,
     );
     const result = rows[0];

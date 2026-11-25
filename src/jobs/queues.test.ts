@@ -88,6 +88,90 @@ const catalogueSeed: CatalogueSeed = {
 };
 
 describe("queues", () => {
+  it("deduplicates Ghost label jobs by owner, recording, source and consent revision", async () => {
+    const { enqueueGhostRouteLabels } = await import("./queues.ts");
+    const data = {
+      userId: "00000000-0000-4000-8000-000000000001",
+      activityId: "00000000-0000-4000-8000-000000000002",
+      sourceVersion: "a".repeat(64),
+      consentRevision: "2026-11-24T12:00:00.123456Z",
+    };
+    mockQueueAdd.mockClear();
+    await enqueueGhostRouteLabels(data);
+    await enqueueGhostRouteLabels(data);
+    await enqueueGhostRouteLabels({ ...data, prepareOnly: true });
+    await enqueueGhostRouteLabels({ ...data, sourceVersion: "b".repeat(64) });
+    await enqueueGhostRouteLabels({ ...data, consentRevision: "2026-11-24T12:00:00.123457Z" });
+    await enqueueGhostRouteLabels({
+      ...data,
+      activityId: "00000000-0000-4000-8000-000000000003",
+    });
+    await enqueueGhostRouteLabels({
+      ...data,
+      userId: "00000000-0000-4000-8000-000000000004",
+    });
+    expect(mockQueueAdd).toHaveBeenNthCalledWith(
+      1,
+      "ghost-route-labels",
+      { type: "ghost-route-labels", ...data },
+      expect.objectContaining({ removeOnComplete: true, removeOnFail: true }),
+    );
+    const ids = mockQueueAdd.mock.calls.map((call) => call[2]?.jobId);
+    expect(ids[0]).toBe(ids[1]);
+    expect(ids[0]).toBe(ids[2]);
+    expect(mockQueueAdd).toHaveBeenNthCalledWith(
+      3,
+      "ghost-route-labels",
+      { type: "ghost-route-labels", ...data, prepareOnly: true },
+      expect.any(Object),
+    );
+    expect(ids[0]).toContain(data.userId);
+    expect(new Set(ids)).toHaveLength(5);
+  });
+
+  it("rejects raw coordinates at the Ghost label enqueue boundary", async () => {
+    const { enqueueGhostRouteLabels } = await import("./queues.ts");
+    const data = {
+      userId: "00000000-0000-4000-8000-000000000001",
+      activityId: "00000000-0000-4000-8000-000000000002",
+      sourceVersion: "a".repeat(64),
+      consentRevision: "2026-11-24T12:00:00.123456Z",
+      points: [[0, 0]],
+    };
+    mockQueueAdd.mockClear();
+    await expect(enqueueGhostRouteLabels(data)).rejects.toThrow();
+    expect(mockQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates local Ghost climb work by owner, activity and source without consent or samples", async () => {
+    const { enqueueGhostRouteClimbs } = await import("./queues.ts");
+    const data = {
+      userId: "00000000-0000-4000-8000-000000000001",
+      activityId: "00000000-0000-4000-8000-000000000002",
+      sourceVersion: "a".repeat(64),
+    };
+    await enqueueGhostRouteClimbs(data);
+    await enqueueGhostRouteClimbs(data);
+    await enqueueGhostRouteClimbs({ ...data, sourceVersion: "b".repeat(64) });
+    const unsafe = { ...data, observations: [{ altitudeMeters: 100 }] };
+    await expect(enqueueGhostRouteClimbs(unsafe)).rejects.toThrow();
+
+    expect(mockQueueAdd).toHaveBeenCalledTimes(3);
+    expect(mockQueueAdd).toHaveBeenNthCalledWith(
+      1,
+      "ghost-route-climbs",
+      { type: "ghost-route-climbs", ...data },
+      expect.objectContaining({
+        jobId: `ghost-route-climbs-${data.userId}-${data.activityId}-${data.sourceVersion}`,
+        removeOnComplete: true,
+        removeOnFail: true,
+      }),
+    );
+    const ids = mockQueueAdd.mock.calls.map((call) => call[2]?.jobId);
+    expect(ids[0]).toBe(ids[1]);
+    expect(ids[2]).not.toBe(ids[0]);
+  });
+
   it("queues one disposable catalogue refresh per user and log", async () => {
     const { enqueueClimbingCatalogueRefresh } = await import("./queues.ts");
     await enqueueClimbingCatalogueRefresh(catalogueSeed);
@@ -1028,4 +1112,49 @@ describe("analytics refresh resource lifecycle", () => {
     expect(MockQueueEvents).toHaveBeenCalledTimes(2);
     await closeAllQueueResources();
   });
+});
+
+it("validates Ghost labels and local climbs when a fresh queue module loads", async () => {
+  // Reload after the queue lifecycle tests so those tests share the original queue handles.
+  vi.resetModules();
+  const { ghostRouteLabelsJobDataSchema, ghostRouteClimbsJobDataSchema } = await import(
+    "./queues.ts"
+  );
+  const identity = {
+    userId: "00000000-0000-4000-8000-000000000001",
+    activityId: "00000000-0000-4000-8000-000000000002",
+    sourceVersion: "a".repeat(64),
+  };
+  const label = {
+    type: "ghost-route-labels",
+    ...identity,
+    consentRevision: "2026-11-24T12:00:00.123456Z",
+  };
+  expect(ghostRouteLabelsJobDataSchema.parse(label)).toEqual(label);
+  for (const sourceVersion of [
+    "a",
+    "A".repeat(64),
+    `g${identity.sourceVersion}`,
+    `${identity.sourceVersion}g`,
+  ]) {
+    expect(ghostRouteLabelsJobDataSchema.safeParse({ ...label, sourceVersion }).success).toBe(
+      false,
+    );
+  }
+  expect(
+    ghostRouteLabelsJobDataSchema.safeParse({
+      ...label,
+      consentRevision: "2026-11-24T12:00:00.123Z",
+    }).success,
+  ).toBe(false);
+
+  const climb = { type: "ghost-route-climbs", ...identity };
+  expect(ghostRouteClimbsJobDataSchema.parse(climb)).toEqual(climb);
+  expect(
+    ghostRouteClimbsJobDataSchema.safeParse({ ...climb, consentRevision: label.consentRevision })
+      .success,
+  ).toBe(false);
+  expect(ghostRouteClimbsJobDataSchema.safeParse({ ...climb, prepareOnly: true }).success).toBe(
+    false,
+  );
 });

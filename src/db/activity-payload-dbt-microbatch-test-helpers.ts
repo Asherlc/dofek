@@ -117,6 +117,8 @@ export async function seedLocationFixture(
 export async function moveRouteMember(client: ClickHouseClient, database: string): Promise<void> {
   await runStatements(client, [
     `INSERT INTO ${database}.deduped_activities
+      (activity_id, user_id, started_at, ended_at, source_synced_at, member_activity_ids,
+       refresh_version, is_deleted, refreshed_at, provider_type)
       SELECT toUUID('${routeGroupId}'), toUUID('${userId}'),
         toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
         toNullable(toDateTime64('2026-09-03 11:00:00', 6, 'UTC')),
@@ -127,6 +129,8 @@ export async function moveRouteMember(client: ClickHouseClient, database: string
         FROM ${database}.activity_location_sample
       )`,
     `INSERT INTO ${database}.deduped_activities
+      (activity_id, user_id, started_at, ended_at, source_synced_at, member_activity_ids,
+       refresh_version, is_deleted, refreshed_at, provider_type)
       SELECT toUUID('${movedRouteGroupId}'), toUUID('${userId}'),
         toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
         toNullable(toDateTime64('2026-09-03 11:00:00', 6, 'UTC')),

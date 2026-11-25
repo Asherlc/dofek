@@ -689,7 +689,7 @@ services:
           memory: 128M
 
   peerdb-flow-api:
-    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.15
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.17
     environment: &peerdb-flow-environment
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"
@@ -724,7 +724,7 @@ services:
           memory: 512M
 
   peerdb-flow-worker:
-    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.15
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.17
     environment: *peerdb-flow-environment
     deploy:
       resources:
@@ -753,7 +753,7 @@ services:
           memory: 128M
 
   peerdb-ui:
-    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.37.15
+    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.37.17
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"

@@ -24,6 +24,12 @@ function readModel(name: string): string {
   return sql;
 }
 
+function readLocationSampleSql(): string {
+  return `${readModel("activity_location_sample")}\n${readProjectFile(
+    "analytics/macros/activity_location_sample_query.sql",
+  )}`;
+}
+
 describe("production analytics read-model build", () => {
   it("gives the activity refresh chain one reusable user and affected-key scope", () => {
     const scopeMacro = readProjectFile("analytics/macros/activity_refresh_scope.sql");
@@ -388,7 +394,7 @@ describe("production analytics read-model build", () => {
       "analytics/models/staging/sensor_scalar_sample.sql",
     );
     const dedupedSensorSql = readModel("deduped_sensor");
-    const activityLocationSampleSql = readModel("activity_location_sample");
+    const activityLocationSampleSql = readLocationSampleSql();
 
     expect(sourcesYaml).toContain("name: metric_stream_freshness");
     expect(sourcesYaml).toContain("identifier: metric_stream");
@@ -415,7 +421,7 @@ describe("production analytics read-model build", () => {
     const sensorSql = readProjectFile("analytics/models/staging/sensor_scalar_sample.sql");
     const dedupedSql = readModel("deduped_sensor");
     const activitySampleSql = readModel("activity_sensor_sample");
-    const locationSampleSql = readModel("activity_location_sample");
+    const locationSampleSql = readLocationSampleSql();
 
     const latestRowsMatch = sensorSql.match(
       /metric_stream_latest AS \((?<body>[\s\S]*?)\),\n\nmetric_stream_rows AS/,
@@ -464,10 +470,17 @@ describe("production analytics read-model build", () => {
 
   it("reconciles activity location membership from complete affected-group tracks", () => {
     expect(existsSync(new URL("./activity_location_sample.sql", import.meta.url))).toBe(true);
-    const sql = readModel("activity_location_sample");
+    expect(existsSync(new URL("./activity_ghost_location_sample.sql", import.meta.url))).toBe(
+      true,
+    );
+    const modelSql = readModel("activity_location_sample");
+    const ghostModelSql = readModel("activity_ghost_location_sample");
+    const sql = readLocationSampleSql();
 
-    expect(sql).toContain("incremental_strategy='append'");
-    expect(sql).toContain("'enable_materialized_cte': 1");
+    expect(modelSql).toContain("incremental_strategy='append'");
+    expect(modelSql).toContain("'enable_materialized_cte': 1");
+    expect(modelSql).toContain("activity_location_sample_query(ghost_eligible=false)");
+    expect(ghostModelSql).toContain("activity_location_sample_query(ghost_eligible=true)");
     expect(sql).toContain("affected_groups AS MATERIALIZED");
     expect(sql).toContain("existing_group_watermarks AS MATERIALIZED");
     expect(sql).toContain("candidate_affected_groups AS (");
@@ -491,6 +504,8 @@ describe("production analytics read-model build", () => {
     expect(sql).not.toContain("affected_location_versions AS MATERIALIZED");
     expect(sql).toContain("affected_location_rows AS MATERIALIZED");
     expect(sql).toContain("provider_counts AS");
+    expect(sql).toContain("ranking_location_rows AS (");
+    expect(sql).toContain("provider_id != 'strava'");
     expect(sql).toContain("existing_location_samples AS MATERIALIZED");
     expect(sql).toContain("source('ingest', 'metric_stream_freshness')");
     expect(sql).toContain("ref('deduped_activity_members')");
@@ -528,7 +543,7 @@ describe("production analytics read-model build", () => {
   it("carries upstream source freshness through lookback microbatch intermediaries", () => {
     const dedupedSensorSql = readModel("deduped_sensor");
     const activitySensorSampleSql = readModel("activity_sensor_sample");
-    const activityLocationSampleSql = readModel("activity_location_sample");
+    const activityLocationSampleSql = readLocationSampleSql();
     const sleepHeartRateSampleSql = readModel("sleep_heart_rate_sample");
 
     expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS source_refreshed_at");

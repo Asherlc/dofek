@@ -64,6 +64,7 @@ the exact section.
 | [credential-encryption.md](credential-encryption.md) | Stored credential encryption, required key material, context binding, and rotation boundary. |
 | [posthog-support.md](posthog-support.md) | In-app support ticket flow, PostHog Conversations integration, and failure handling. |
 | [roadmap.md](roadmap.md) | Product strategy and release readiness across planned workouts, iOS widgets, and Apple Watch. |
+| [ghost-sessions.md](ghost-sessions.md) | Ghost Sessions processing limits, scoped history diagnosis, and Geoapify map-matching qualification. |
 | [apple-health.md](apple-health.md) | Apple Health import model and type mapping. |
 | [apple-watch-accelerometer.md](apple-watch-accelerometer.md) | Notes on Apple Watch accelerometer capture and interpretation. |
 

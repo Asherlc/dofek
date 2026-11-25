@@ -15,6 +15,7 @@ import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExerti
 import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
 import { CyclingProgressionEvidence } from "../components/CyclingProgressionEvidence.tsx";
 import { CyclingThresholdDetails } from "../components/CyclingThresholdDetails.tsx";
+import { GhostSessions } from "../components/GhostSessions.tsx";
 import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
@@ -546,6 +547,7 @@ export function ActivityDetailPage() {
           </Section>
         )}
       </div>
+      <GhostSessions key={`ghost-${activity.id}`} activityId={activity.id} />
     </PageLayout>
   );
 }

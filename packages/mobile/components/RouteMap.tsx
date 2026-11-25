@@ -1,5 +1,5 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
-import { statusColors } from "@dofek/scoring/colors";
+import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { type ClimbingMapMarker, groupClimbingMapMarkers } from "@dofek/training/climbing-map";
 import { createMapStyle } from "@dofek/training/map-style";
 import {
@@ -24,6 +24,9 @@ interface GpsPoint {
   lng: number | null;
 }
 
+type MapPoint = { lat: number; lng: number };
+type RouteSegments = readonly (readonly MapPoint[])[];
+
 interface RouteMapProps {
   selectedEntryId?: string | null;
   points: GpsPoint[];
@@ -32,10 +35,20 @@ interface RouteMapProps {
   compact?: boolean;
   height?: number;
   onSelectEntry?: (entryId: string) => void;
+  comparison?: {
+    anchor: RouteSegments;
+    candidate: RouteSegments;
+    positions?: { anchor: MapPoint; candidate: MapPoint } | null;
+  };
 }
 
 const MAP_HEIGHT = 280;
 const NO_CLIMB_MARKERS: readonly ClimbingMapMarker[] = [];
+const NO_SEGMENTS: RouteSegments = [];
+const replaySides = [
+  { side: "anchor", label: "Current effort position", color: chartColors.green },
+  { side: "candidate", label: "Past effort position", color: chartColors.blue },
+] as const;
 
 export function RouteMap({
   points,
@@ -45,6 +58,7 @@ export function RouteMap({
   height = MAP_HEIGHT,
   onSelectEntry,
   selectedEntryId: controlledEntryId,
+  comparison,
 }: RouteMapProps) {
   const mode = useColorScheme() === "dark" ? "dark" : "light";
   const mapStyle = useMemo(() => createMapStyle(mode), [mode]);
@@ -90,9 +104,31 @@ export function RouteMap({
     [points],
   );
 
+  const anchorSegments = comparison?.anchor ?? NO_SEGMENTS;
+  const candidateSegments = comparison?.candidate ?? NO_SEGMENTS;
+  const comparisonRoutes = useMemo(
+    () =>
+      replaySides.map((track) => ({
+        ...track,
+        data: {
+          type: "Feature" as const,
+          properties: {},
+          geometry: {
+            type: "MultiLineString" as const,
+            coordinates: (track.side === "anchor" ? anchorSegments : candidateSegments)
+              .filter((segment) => segment.length > 1)
+              .map((segment) => segment.map(({ lng, lat }) => [lng, lat])),
+          },
+        },
+      })),
+    [anchorSegments, candidateSegments],
+  );
+
   const bounds = useMemo<[number, number, number, number] | null>(() => {
     const mapPoints = [
       ...gpsPoints,
+      ...anchorSegments.flat(),
+      ...candidateSegments.flat(),
       ...(climbMarkers ?? []).map(({ location }) => ({
         lat: location.coordinates.latitude,
         lng: location.coordinates.longitude,
@@ -122,7 +158,7 @@ export function RouteMap({
       (minLng + maxLng + lngDelta) / 2,
       (minLat + maxLat + latDelta) / 2,
     ];
-  }, [gpsPoints, climbMarkers]);
+  }, [gpsPoints, climbMarkers, anchorSegments, candidateSegments]);
   const initialViewState = useMemo(() => (bounds ? { bounds } : undefined), [bounds]);
 
   const coordinates = useMemo(
@@ -193,6 +229,19 @@ export function RouteMap({
                 />
               </GeoJSONSource>
             )}
+            {comparisonRoutes.map(
+              ({ side, data, color }) =>
+                data.geometry.coordinates.length > 0 && (
+                  <GeoJSONSource key={side} id={`ghost-${side}`} data={data}>
+                    <Layer
+                      id={`ghost-${side}-line`}
+                      type="line"
+                      paint={{ "line-color": color, "line-width": 3 }}
+                      layout={{ "line-cap": "round", "line-join": "round" }}
+                    />
+                  </GeoJSONSource>
+                ),
+            )}
             {startCoordinate != null && (
               <Marker id="route-start" lngLat={startCoordinate} accessibilityLabel="Start">
                 <View style={[styles.sourceMarker, { backgroundColor: statusColors.positive }]} />
@@ -243,6 +292,22 @@ export function RouteMap({
                 <View style={styles.hoverMarker} />
               </Marker>
             )}
+            {comparison?.positions &&
+              replaySides.map(({ side, label, color }) => {
+                const position = comparison.positions?.[side];
+                if (!position) return null;
+                return (
+                  <Marker
+                    key={side}
+                    id={`ghost-${side}-position`}
+                    lngLat={[position.lng, position.lat]}
+                    accessibilityLabel={label}
+                    anchor="center"
+                  >
+                    <View style={[styles.sourceMarker, { backgroundColor: color }]} />
+                  </Marker>
+                );
+              })}
           </NativeMap>
         )}
         {mapFailed && (

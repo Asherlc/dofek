@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readGhostRouteLabelsWorkerConfig } from "../analytics/ghost-route-label-config.ts";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
@@ -40,6 +41,7 @@ import { createWorkerReadinessServer } from "./worker-readiness.ts";
 const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
 initProductionSentry(sentryDsn);
 validateMetricStreamTopicConfiguration();
+const ghostRouteLabelsConfig = readGhostRouteLabelsWorkerConfig(process.env);
 
 const WORKER_READINESS_HOST = "127.0.0.1";
 const WORKER_READINESS_PORT = 3001;
@@ -103,6 +105,7 @@ const { allWorkers, fitFileImportWorker, providerDataDeletionWorker } = createWo
   getClickHouseClient,
   getRefitSensorStore,
   refreshPostSyncBodyMeasurements,
+  ghostRouteLabelsConfig,
   accountErasureLeaseOwner,
   accountErasureRuntime,
 });

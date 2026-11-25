@@ -1,12 +1,12 @@
 import { computeCyclingPowerWork } from "@dofek/training/cycling-workout-metrics";
 import { cyclingPowerCoveragePolicy } from "dofek/analytics/cycling-power-policy";
-import { z } from "zod";
-import type { ActivityPowerWork } from "../contracts/activity-metric-sources.ts";
 import {
-  activityMetricParams,
   activityMetricSamplesSql,
   activityMetricSourceIdSql,
-} from "./activity-metric-sources-repository.ts";
+} from "dofek/db/activity-metric-query";
+import { z } from "zod";
+import type { ActivityPowerWork } from "../contracts/activity-metric-sources.ts";
+import { activityMetricParams } from "./activity-metric-sources-repository.ts";
 import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
 
 const powerSampleSchema = z.object({

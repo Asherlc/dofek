@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import React from "react";
 import { Alert, Linking } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ghostNamesReady } from "../app-fixtures/ghost-sessions";
 
 const mockFileWrite = vi.fn();
 const mockFileDelete = vi.fn();
@@ -138,6 +139,17 @@ const mockSettingsGetData = vi.fn();
 const mockSettingsSetData = vi.fn();
 const mockSettingsInvalidate = vi.fn();
 const mockSettingsSetMutate = vi.fn();
+const mockGhostSettings: { data: { key: string; value: boolean | null }; error: Error | null } = {
+  data: { key: "ghostMapLabels", value: null },
+  error: null,
+};
+const mockGhostInvalidate = vi.fn();
+const mockGhostCancel = vi.fn();
+const mockSetQueriesData = vi.fn();
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
+  useQueryClient: () => ({ setQueriesData: mockSetQueriesData }),
+}));
 const mockUnitSettingRefetch = vi.fn();
 const mockUnitSettingQuery: {
   data: { key: string; value: unknown } | undefined;
@@ -195,12 +207,14 @@ const mockProvidersQuery: {
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
+    ghostSessions: { get: { _def: () => ({ path: ["ghostSessions", "get"] }) } },
     useUtils: () => ({
       invalidate: vi.fn(),
       client: {},
       auth: { passwordCredentialStatus: { invalidate: vi.fn() } },
       billing: { status: { invalidate: mockBillingStatusInvalidate } },
       bodyAnalytics: { weightPrediction: { invalidate: vi.fn() } },
+      ghostSessions: { invalidate: mockGhostInvalidate, get: { cancel: mockGhostCancel } },
       settings: {
         get: {
           getData: mockSettingsGetData,
@@ -310,8 +324,10 @@ vi.mock("../lib/trpc", () => ({
     },
     settings: {
       get: {
-        useQuery: (input: { key: string }) =>
-          input.key === "unitSystem" ? mockUnitSettingQuery : mockClimbingGradeSettingQuery,
+        useQuery: (input: { key: string }) => {
+          if (input.key === "ghostMapLabels") return mockGhostSettings;
+          return input.key === "unitSystem" ? mockUnitSettingQuery : mockClimbingGradeSettingQuery;
+        },
       },
       set: {
         useMutation: () => ({ mutate: mockSettingsSetMutate, isPending: false }),
@@ -353,6 +369,7 @@ beforeEach(() => {
   mockUnitSettingQuery.error = null;
   mockClimbingGradeSettingQuery.data = null;
   mockClimbingGradeSettingQuery.error = null;
+  mockGhostSettings.data.value = null;
   vi.clearAllMocks();
   mockAppStoreBilling.loadProduct.mockResolvedValue({
     productID: "com.dofek.premium.monthly",
@@ -363,6 +380,42 @@ beforeEach(() => {
 });
 
 describe("SettingsScreen categories", () => {
+  it("starts map names off and retains recorded comparisons when names are withdrawn", async () => {
+    mockSearchParams = { tab: "privacy-export" };
+    const { default: SettingsScreen } = await import("../app/settings");
+    const view = render(<SettingsScreen />);
+    const toggle = screen.getByRole("switch", { name: "Road and trail names" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText(/GPS coordinates and travel mode to Geoapify/)).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(mockSettingsSetMutate.mock.lastCall?.[0]).toEqual({
+      key: "ghostMapLabels",
+      value: true,
+    });
+
+    mockGhostSettings.data.value = true;
+    view.rerender(<SettingsScreen />);
+    fireEvent.click(toggle);
+    expect(mockSettingsSetData).toHaveBeenCalledWith(
+      { key: "ghostMapLabels" },
+      { key: "ghostMapLabels", value: false },
+    );
+    expect(mockGhostCancel).toHaveBeenCalled();
+    expect(mockSettingsSetMutate.mock.lastCall?.[0]).toEqual({
+      key: "ghostMapLabels",
+      value: false,
+    });
+    const update = mockSetQueriesData.mock.lastCall?.[1];
+    expect(update(ghostNamesReady)).toEqual({
+      ...ghostNamesReady,
+      nameStatus: "disabled",
+      mapCoverage: undefined,
+      sections: [ghostNamesReady.sections[0]],
+    });
+    act(() => mockSettingsSetMutate.mock.lastCall?.[1].onSuccess());
+    expect(mockGhostInvalidate).toHaveBeenCalled();
+  });
+
   it("shows searchable categories with Account selected by default", async () => {
     const { default: SettingsScreen } = await import("../app/settings");
     render(<SettingsScreen />);

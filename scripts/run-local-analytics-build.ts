@@ -3,12 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import {
-  ANALYTICS_PUBLICATION_RESOURCE,
-  type AnalyticsQueryOwner,
-  withAnalyticsQueryOwner,
-} from "../src/analytics/analytics-query-owner.ts";
+import type { AnalyticsQueryOwner } from "../src/analytics/analytics-query-owner.ts";
 import { runOwnedDbtBuild } from "../src/analytics/dbt-build.ts";
+import { runAnalyticsWithGhostHistory } from "../src/analytics/ghost-session-history-publication.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
@@ -78,11 +75,8 @@ async function runLocalAnalyticsBuildFromEnvironment(): Promise<void> {
     try {
       const artifactDirectory = await mkdtemp(join(tmpdir(), "dofek-local-dbt-artifacts-"));
       try {
-        await withAnalyticsQueryOwner(
-          database,
-          clickHouse,
-          { resourceId: ANALYTICS_PUBLICATION_RESOURCE, intentId: "analytics-local-build" },
-          (owner) => runLocalAnalyticsBuild({ owner, artifactDirectory, runDbt: runUvProcess }),
+        await runAnalyticsWithGhostHistory(database, clickHouse, "analytics-local-build", (owner) =>
+          runLocalAnalyticsBuild({ owner, artifactDirectory, runDbt: runUvProcess }),
         );
       } finally {
         await rm(artifactDirectory, { recursive: true, force: true });

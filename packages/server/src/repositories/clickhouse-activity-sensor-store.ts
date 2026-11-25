@@ -1,4 +1,8 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import {
+  activityMetricSamplesSql,
+  activityMetricSourceIdSql,
+} from "dofek/db/activity-metric-query";
 import type { ClickHouseCommandClient } from "dofek/db/clickhouse";
 import { refreshBodyMeasurementReadModel } from "dofek/db/clickhouse-read-model-refresh";
 import { z } from "zod";
@@ -14,8 +18,6 @@ import {
 } from "../lib/date-window.ts";
 import {
   activityMetricParams,
-  activityMetricSamplesSql,
-  activityMetricSourceIdSql,
   activitySkinTemperatureSamplesSql,
 } from "./activity-metric-sources-repository.ts";
 import type {

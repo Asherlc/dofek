@@ -47,7 +47,7 @@ const input: ActivityIntegrityDbtBuildInput = {
   eventTimeEnd: new Date("2026-09-08"),
 };
 const upstream =
-  "activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members activity_effort_identity activity_sensor_sample activity_location_sample activity_route_identity";
+  "activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members activity_effort_identity activity_sensor_sample activity_location_sample activity_ghost_location_sample activity_route_identity";
 const downstream =
   "activity_sensor_summary_rows activity_location_summary_rows activity_stream_points activity_summary_rows activity_vo2max_estimate";
 const configSchema = z.object({
