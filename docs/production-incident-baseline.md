@@ -40371,9 +40371,20 @@ Local qualification and CI are separate from production throughput acceptance. T
   invalid App Store profiles for the host app and no profiles for the widget.
   [Host configuration](../packages/mobile/app.config.js)
   · [Widget configuration](../packages/mobile/targets/DofekSleepWidget/expo-target.config.js).
-- **Recovery pending.** Register the group and assign it to both App IDs.
-  Verify the exact entitlement value in regenerated profiles for both targets.
-  The archive already allows Xcode to update provisioning. Verify the signed
-  archive uses the replacement profiles and uploads its artifact successfully.
+- **Recovery.** Registered the group and assigned it to both App IDs.
+  Generated active App Store profiles for both targets with the existing
+  distribution certificate and verified the exact App Group entitlement in
+  each profile. Xcode used automatic signing on the rerun.
   [Apple capability and profile guidance](https://developer.apple.com/help/account/identifiers/enable-app-capabilities/)
   · [Signed archive workflow](../.github/workflows/build-ios-release.yml).
+- **Validation.** CI attempt 2 completed successfully and uploaded the signed
+  archive for build `1795582958`. Both profiles embedded in the archive matched
+  their target bundle IDs and contained `group.com.dofek.app.sleep-widget`.
+  The automatic release exported the archive and uploaded the build to
+  TestFlight.
+  [Successful archive job](https://github.com/Asherlc/dofek/actions/runs/45546568431/job/138989297712)
+  · [Signed archive artifact](https://github.com/Asherlc/dofek/actions/runs/45546568431/artifacts/14993799347)
+  · [Successful TestFlight upload](https://github.com/Asherlc/dofek/actions/runs/45553311753/job/138999408844).
+- **Follow-up.** For future App Groups signing failures, verify the assignment
+  of the specific group on each App ID and inspect the regenerated profiles
+  before retrying the archive.
