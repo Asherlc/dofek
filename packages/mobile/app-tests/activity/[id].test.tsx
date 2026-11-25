@@ -738,11 +738,10 @@ describe("ActivityDetailScreen", () => {
     renderActivityDetail();
     expect(screen.getByText("Training Stress Score")).toBeTruthy();
     expect(screen.getByText("82.4")).toBeTruthy();
-    expect(screen.queryByText("Power zones failed to refresh")).toBeNull();
+    expect(screen.getByText("Power zones failed to refresh")).toBeTruthy();
     openPerformance("Power");
     expect(screen.getByText("Power zones failed to refresh")).toBeTruthy();
   });
-
   it("keeps recorded output visible and shows the refresh status only while fetching in Performance", async () => {
     mocks.metricSourcesQuery.mockReturnValue(
       defaultObserver(activityDetailMetricSources.filter((source) => source.key === "power")),

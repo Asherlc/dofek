@@ -233,7 +233,7 @@ export function ActivityDetailPage() {
       {isCycling && powerWork.error ? (
         <QueryStatePanel error={powerWork.error} height={72} />
       ) : null}
-      {isCycling && !hasPower && powerZonesError && !powerZonesData ? (
+      {isCycling && !hasPower && powerZonesError ? (
         <QueryStatePanel error={powerZonesError} height={72} />
       ) : null}
       <ActivityPerceivedExertion value={activity.perceivedExertion} />

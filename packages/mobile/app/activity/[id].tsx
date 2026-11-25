@@ -675,7 +675,7 @@ function ActivityDetailScreen({ id }: { id: string }) {
           {isCycling && powerWork.error && (
             <QueryStatePanel variant="error" message={powerWork.error.message} />
           )}
-          {isCycling && powerZones.error && powerZones.data == null && (
+          {isCycling && powerZones.error && (
             <QueryStatePanel variant="error" message={powerZones.error.message} />
           )}
           {isCycling && plannedIntervals.error && !plannedIntervals.data && (
