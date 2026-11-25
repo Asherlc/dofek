@@ -106,6 +106,7 @@ describe("activity power zones contract", () => {
         activityDate: "2026-06-15",
         zones: [zone],
         ftp: 250,
+        trainingStressScore: 82,
         thresholdEvidence: evidence,
       })?.ftp,
     ).toBe(250);
@@ -114,6 +115,7 @@ describe("activity power zones contract", () => {
         activityDate: "2026-06-15",
         zones: [],
         ftp: null,
+        trainingStressScore: null,
         thresholdEvidence: {
           ...evidence,
           value: null,
@@ -124,12 +126,38 @@ describe("activity power zones contract", () => {
       })?.zones,
     ).toEqual([]);
   });
+  it("requires a nullable trainingStressScore field", () => {
+    expect(
+      activityPowerZonesSchema.safeParse({
+        activityDate: "2026-06-15",
+        zones: [zone],
+        ftp: 250,
+        thresholdEvidence: evidence,
+      }).success,
+    ).toBe(false);
+    expect(
+      activityPowerZonesSchema.parse({
+        activityDate: "2026-06-15",
+        zones: [zone],
+        ftp: 250,
+        trainingStressScore: 0,
+        thresholdEvidence: evidence,
+      })?.trainingStressScore,
+    ).toBe(0);
+  });
   it.each([
-    { activityDate: "2026-06-15", zones: [zone], ftp: 240, thresholdEvidence: evidence },
+    {
+      activityDate: "2026-06-15",
+      zones: [zone],
+      ftp: 240,
+      trainingStressScore: null,
+      thresholdEvidence: evidence,
+    },
     {
       activityDate: "2026-06-15",
       zones: [zone],
       ftp: null,
+      trainingStressScore: null,
       thresholdEvidence: {
         ...evidence,
         value: null,

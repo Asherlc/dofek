@@ -1,4 +1,3 @@
-import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { routeMapPreview } from "../lib/map-preview.ts";
 import {
@@ -7,32 +6,12 @@ import {
   makeSensorStore,
   normalizeSql,
 } from "./activity-calendar-test-helpers.ts";
-import type { CyclingActivityPowerMetrics } from "./cycling-threshold-repository.ts";
-import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 import { ProviderAbsentActivitiesCalendarRepository } from "./provider-absent-activities-calendar-repository.ts";
-
-const dialect = new PgDialect();
 
 describe("ProviderAbsentActivitiesCalendarRepository", () => {
   it("includes provider-absent activities from ClickHouse when requested", async () => {
     const database = makeDatabase([]);
     const hiddenId = "00000000-0000-4000-8000-000000000010";
-    vi.mocked(database.execute).mockImplementation(async (query) => {
-      expect(normalizeSql(dialect.sqlToQuery(query).sql)).toContain("WITH requested AS");
-      return [
-        {
-          requested_id: hiddenId,
-          activity_id: hiddenId,
-          started_at: "2026-03-18T07:00:00.000Z",
-          ended_at: "2026-03-18T08:00:00.000Z",
-          activity_date: "2026-03-18",
-          canonical_type: "cycling",
-          ftp: null,
-          threshold_effective_from: null,
-          threshold_source_record_id: null,
-        },
-      ];
-    });
     const sensorStore = makeSensorStore([
       [
         {
@@ -42,9 +21,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -121,14 +97,11 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         windowStart: "2026-03-13",
       }),
     );
-    expect(database.execute).toHaveBeenCalledExactlyOnceWith(expect.anything());
-    const thresholdQuery = dialect.sqlToQuery(database.execute.mock.calls[0]?.[0]);
-    expect(normalizeSql(thresholdQuery.sql)).toContain("FROM fitness.activity AS absent_activity");
-    expect(normalizeSql(thresholdQuery.sql)).toContain(
-      "absent_activity.provider_absent_at IS NOT NULL",
-    );
-    expect(thresholdQuery.params).toContain(hiddenId);
-    expect(result[0]?.activities[0]).toMatchObject({ isProviderAbsent: true, tss: null });
+    expect(result[0]?.activities[0]).toMatchObject({
+      isProviderAbsent: true,
+      tss: null,
+      stats: [],
+    });
   });
 
   it("enriches hidden activities with summary metrics and route previews", async () => {
@@ -148,9 +121,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -163,9 +133,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
       [
         {
           id: "hidden-outdoor",
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: 5000,
           elevation_gain_m: 125,
           centroid_lat: 37.8,
@@ -207,119 +174,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
     });
   });
 
-  it("preserves positive stress and missing stress in hidden cycling cards", async () => {
-    const poweredId = "00000000-0000-4000-8000-000000000031";
-    const missingId = "00000000-0000-4000-8000-000000000032";
-    vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockResolvedValue(
-      new Map<string, CyclingActivityPowerMetrics>([
-        [
-          poweredId,
-          {
-            activity_id: poweredId,
-            started_at: "2026-03-18T07:00:00.000Z",
-            ended_at: "2026-03-18T08:00:00.000Z",
-            activity_date: "2026-03-18",
-            canonical_type: "cycling",
-            normalized_power: 250,
-            power_sample_count: 3600,
-            ftp: 250,
-            power_tss: 100,
-            intensity_factor: 1,
-            threshold: {
-              value: 250,
-              unit: "watt",
-              effective_from: "2026-01-01",
-              source_record_id: "00000000-0000-4000-8000-000000000033",
-              kind: "configured",
-            },
-          },
-        ],
-      ]),
-    );
-    const database = makeDatabase([]);
-    const sensorStore = makeSensorStore([
-      [
-        {
-          id: poweredId,
-          name: "Hidden powered ride",
-          canonical_type: "cycling",
-          started_at: "2026-03-18T07:00:00.000Z",
-          ended_at: "2026-03-18T08:00:00.000Z",
-          duration_min: 60,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
-          total_distance: null,
-          elevation_gain_m: null,
-          centroid_lat: 37.8,
-          centroid_lng: -122.4,
-          local_date: "2026-03-18",
-          provider_id: "strava",
-          provider_absent_at: "2026-03-05T14:30:00.000Z",
-        },
-        {
-          id: missingId,
-          name: "Hidden ride without NP",
-          canonical_type: "cycling",
-          started_at: "2026-03-18T09:00:00.000Z",
-          ended_at: "2026-03-18T10:00:00.000Z",
-          duration_min: 60,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
-          total_distance: null,
-          elevation_gain_m: null,
-          centroid_lat: 37.81,
-          centroid_lng: -122.41,
-          local_date: "2026-03-18",
-          provider_id: "strava",
-          provider_absent_at: "2026-03-05T14:30:00.000Z",
-        },
-      ],
-      [
-        {
-          id: poweredId,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: 250,
-          total_distance: 10000,
-          elevation_gain_m: 50,
-          centroid_lat: 37.8,
-          centroid_lng: -122.4,
-        },
-        {
-          id: missingId,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
-          total_distance: 8000,
-          elevation_gain_m: 25,
-          centroid_lat: 37.81,
-          centroid_lng: -122.41,
-        },
-      ],
-      [],
-      [],
-    ]);
-    const repository = new ProviderAbsentActivitiesCalendarRepository(
-      database,
-      "user-1",
-      "UTC",
-      sensorStore,
-    );
-
-    const result = await repository.getWeekList({
-      weeks: 1,
-      endDate: "2026-03-20",
-      includeProviderAbsent: true,
-    });
-
-    expect(result[0]?.activities.map((activity) => [activity.id, activity.tss])).toEqual([
-      [poweredId, 100],
-      [missingId, null],
-    ]);
-  });
-
   it("passes the user id to hidden activity summary queries", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
@@ -331,9 +185,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -378,9 +229,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -432,9 +280,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 45,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -485,9 +330,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -624,9 +466,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         }),
       ),
       coordinates.map((row) => ({
-        avg_hr: null,
-        max_hr: null,
-        avg_power: null,
         total_distance: null,
         elevation_gain_m: null,
         ...row,

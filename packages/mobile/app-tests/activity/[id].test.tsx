@@ -693,6 +693,26 @@ describe("ActivityDetailScreen", () => {
     expect(screen.queryByText("Partial power data")).toBeNull();
   });
 
+  it.each([
+    { trainingStressScore: 0, expected: "0.0" },
+    { trainingStressScore: 82.4, expected: "82.4" },
+    { trainingStressScore: null, expected: null },
+  ])("shows stored training stress when present ($trainingStressScore)", async (row) => {
+    mocks.powerZonesQuery.mockReturnValue(
+      defaultObserver({
+        ...configuredPowerZones,
+        trainingStressScore: row.trainingStressScore,
+      }),
+    );
+    renderActivityDetail();
+    if (row.expected) {
+      expect(screen.getByText("Training Stress Score")).toBeTruthy();
+      expect(screen.getByText(row.expected)).toBeTruthy();
+    } else {
+      expect(screen.queryByText("Training Stress Score")).toBeNull();
+    }
+  });
+
   it("keeps recorded output visible and shows the refresh status only while fetching in Performance", async () => {
     mocks.metricSourcesQuery.mockReturnValue(
       defaultObserver(activityDetailMetricSources.filter((source) => source.key === "power")),

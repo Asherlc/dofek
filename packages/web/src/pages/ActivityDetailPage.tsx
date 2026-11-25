@@ -217,6 +217,7 @@ export function ActivityDetailPage() {
         }}
         powerWork={isCycling ? powerWork.data : undefined}
         powerWorkSourceHint={metrics.attributionHints.powerWork}
+        trainingStressScore={isCycling ? powerZones.data?.trainingStressScore : undefined}
         units={units}
         hardware={hardware.data}
         hardwareLoading={hardware.isLoading}

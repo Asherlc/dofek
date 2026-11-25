@@ -2031,13 +2031,34 @@ describe("activityRouter", () => {
       findByIdSpy.mockRestore();
     });
 
-    it.each([undefined, "wahoo"])(
-      "returns zones and ftp for cycling activities using power source %s",
-      async (powerSourceId) => {
-        const zones = [
+    it.each([
+      {
+        powerSourceId: undefined,
+        powerTss: 82,
+        normalizedPower: 240,
+        zones: [
           { zone: 1, label: "Active Recovery", minPct: 0, maxPct: 55, seconds: 60, percent: 33.3 },
           { zone: 2, label: "Endurance", minPct: 55, maxPct: 75, seconds: 120, percent: 66.7 },
-        ];
+        ],
+      },
+      {
+        powerSourceId: "wahoo",
+        powerTss: 82,
+        normalizedPower: 240,
+        zones: [
+          { zone: 1, label: "Active Recovery", minPct: 0, maxPct: 55, seconds: 60, percent: 33.3 },
+          { zone: 2, label: "Endurance", minPct: 55, maxPct: 75, seconds: 120, percent: 66.7 },
+        ],
+      },
+      {
+        powerSourceId: undefined,
+        powerTss: 0,
+        normalizedPower: 0,
+        zones: [],
+      },
+    ])(
+      "returns zones ftp and training stress $powerTss for power source $powerSourceId",
+      async ({ powerSourceId, powerTss, normalizedPower, zones }) => {
         const findByIdSpy = vi
           .spyOn(ActivityRepository.prototype, "findById")
           .mockResolvedValue(
@@ -2049,17 +2070,17 @@ describe("activityRouter", () => {
           activity_date: "2026-01-01",
           canonical_type: "cycling",
           ended_at: "2026-01-01T13:00:00.000000Z",
-          normalized_power: 240,
+          normalized_power: normalizedPower,
           power_sample_count: 60,
           ftp: 265,
-          intensity_factor: 240 / 265,
-          power_tss: 82,
+          intensity_factor: normalizedPower / 265,
+          power_tss: powerTss,
           threshold: {
             value: 265,
-            unit: "watt",
+            unit: "watt" as const,
             effective_from: "2025-12-01",
             source_record_id: "00000000-0000-4000-8000-000000000002",
-            kind: "configured",
+            kind: "configured" as const,
           },
         };
         const powerMetricsSpy = vi
@@ -2088,6 +2109,7 @@ describe("activityRouter", () => {
           activityDate: "2026-01-01",
           zones,
           ftp: 265,
+          trainingStressScore: powerTss,
           thresholdEvidence: cyclingThresholdEvidenceFromMetrics(metrics),
         });
 
@@ -2115,6 +2137,7 @@ describe("activityRouter", () => {
         activityDate: "2026-04-01",
         zones: [],
         ftp: null,
+        trainingStressScore: null,
         thresholdEvidence: cyclingThresholdEvidenceFromMetrics(null),
       });
       expect(result?.thresholdEvidence.unavailable_reason).toBeTruthy();

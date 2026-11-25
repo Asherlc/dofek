@@ -541,6 +541,12 @@ function ActivityDetailScreen({ id }: { id: string }) {
       attribution: metrics.attributionHints.powerWork,
     });
   }
+  if (isCycling && powerZones.data?.trainingStressScore != null) {
+    stats.push({
+      label: "Training Stress Score",
+      value: formatNumber(powerZones.data.trainingStressScore, 1),
+    });
+  }
   stats.push(
     formatActivityMetric(
       avgPaceSecondsPerKm != null ? "Avg Pace" : "Avg Speed",

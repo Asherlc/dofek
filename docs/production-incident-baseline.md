@@ -40442,13 +40442,15 @@ Local qualification and CI are separate from production throughput acceptance. T
   [Calendar repository](../packages/server/src/repositories/activities-calendar-repository.ts)
   · [Cycling threshold repository](../packages/server/src/repositories/cycling-threshold-repository.ts)
   · [Climbing log repository](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts).
-- **Remaining work.** Production is still exposed to slow cache misses.
-  The proposed fix would fetch FTP only for displayed cycling
-  activities through the existing activity-group view, and narrow the
-  calendar's climbing lookup to the data its cards need for map locations.
-  Verify pagination, date and access-window rules, training stress, and
-  climbing locations in focused database tests. Compare signed-in,
-  uncached list timings after release.
+- **Fix.** The Activities list and search results now load without FTP
+  or normalized-power enrichment. The ride detail summary on web and
+  iOS displays the existing cycling score from the power-zones request.
+  iOS refreshes its persisted query cache once on update.
+  A paginated-list regression first failed when the dated FTP lookup
+  threw and then passed after its removal.
+- **Remaining work.** The climbing-log query was a separate source of
+  delay in both samples. Compare signed-in, uncached list timings after
+  release and use fresh evidence to assess the remaining query cost.
 - **Retrospective.** Axiom identified the slow batch. The two current trace
   IDs were available only in Axiom's log dataset. PostgreSQL logs and
   ClickHouse query history supplied the individual query timings. Adding

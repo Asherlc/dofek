@@ -443,11 +443,11 @@ describe("calendarRouter", () => {
   it("versions the activity state cache contract", () => {
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-power-stress-v13",
+      keyVersion: "activity-calendar-list-v14",
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-page-power-stress-v5",
+      keyVersion: "activity-calendar-page-v6",
       scopeByAccessWindow: true,
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({

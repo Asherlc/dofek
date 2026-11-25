@@ -93,10 +93,6 @@ export const activityRowSchema = z.object({
   end_utc_offset_minutes: z.coerce.number().nullable(),
   local_time_source: localTimeSourceSchema,
   duration_min: z.coerce.number().nullable(),
-  avg_hr: z.coerce.number().nullable(),
-  max_hr: z.coerce.number().nullable(),
-  avg_power: z.coerce.number().nullable(),
-  power_tss: z.coerce.number().nullable(),
   total_distance: z.coerce.number().nullable(),
   elevation_gain_m: z.coerce.number().nullable(),
   centroid_lat: z.coerce.number().nullable(),
@@ -244,14 +240,6 @@ function projectCalendarEntry(
   source: ActivityListSourceDetail,
   sourceLocation: ActivityLocation | null,
 ): CalendarActivityEntry {
-  const trainingStress = computeActivityTrainingStress({
-    activityType: row.canonical_type,
-    durationMin: row.duration_min,
-    avgPower: row.avg_power,
-    powerTss: row.power_tss,
-  });
-  const tss = trainingStress.status === "available" ? trainingStress.score : null;
-
   return {
     id: row.id,
     name: row.name,
@@ -279,75 +267,8 @@ function projectCalendarEntry(
               routeMapPreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
           }
         : sourceLocation,
-    tss: tss != null ? Math.round(tss * 10) / 10 : null,
-    stats: formatActivityStats(trainingStress),
+    // Released clients still expect these fields. List cards no longer enrich training stress.
+    tss: null,
+    stats: [],
   };
-}
-
-interface TssInput {
-  activityType: string;
-  durationMin: number | null;
-  avgPower: number | null;
-  powerTss: number | null;
-}
-
-type ActivityTrainingStress =
-  | { status: "not_applicable" }
-  | {
-      status: "available";
-      score: number;
-    }
-  | {
-      status: "missing";
-      reason: string;
-    };
-
-function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress {
-  if (input.activityType !== "cycling") {
-    return { status: "not_applicable" };
-  }
-  if (input.avgPower === null && input.powerTss === null) {
-    return { status: "not_applicable" };
-  }
-  if (input.durationMin === null || input.durationMin <= 0) {
-    return {
-      status: "missing",
-      reason: "Record an activity duration greater than zero.",
-    };
-  }
-  if (input.powerTss != null) {
-    return {
-      status: "available",
-      score: input.powerTss,
-    };
-  }
-  return {
-    status: "missing",
-    reason: "Set a dated cycling FTP and record normalized power to calculate training stress.",
-  };
-}
-
-function formatActivityStats(trainingStress: ActivityTrainingStress): ActivityStat[] {
-  if (trainingStress.status === "not_applicable") return [];
-  if (trainingStress.status === "missing") {
-    return [
-      {
-        status: "missing",
-        label: "Training Stress Score",
-        reason: trainingStress.reason,
-      },
-    ];
-  }
-  const roundedTss = Math.round(trainingStress.score * 10) / 10;
-  return [
-    {
-      status: "available",
-      label: "Training Stress Score",
-      value: formatStatNumber(roundedTss),
-    },
-  ];
-}
-
-function formatStatNumber(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }

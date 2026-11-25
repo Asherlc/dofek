@@ -218,6 +218,7 @@ export const unconfiguredCyclingPowerZones = {
   ftp: null,
   activityDate: "2026-05-15",
   zones: [],
+  trainingStressScore: null,
   thresholdEvidence: {
     value: null,
     unit: "watt" as const,
@@ -442,6 +443,7 @@ export const configuredThresholdEvidence = {
 export const configuredPowerZones = {
   ftp: 250,
   activityDate: "2026-05-15",
+  trainingStressScore: 82.4,
   thresholdEvidence: configuredThresholdEvidence,
   zones: [{ zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 100 }],
 };

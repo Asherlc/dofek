@@ -1145,6 +1145,8 @@ describe("ActivityDetailPage", () => {
         expect(screen.getByText("Heart-rate zones refresh failed")).toBeTruthy();
         expect(screen.getByText("Power zones refresh failed")).toBeTruthy();
         expect(screen.getByText("Applied FTP: 250 W")).toBeTruthy();
+        expect(screen.getByText("Training Stress Score")).toBeTruthy();
+        expect(screen.getByText("82.4")).toBeTruthy();
         expect(screen.queryByRole("link", { name: "Set FTP" })).toBeNull();
       });
     });
