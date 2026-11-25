@@ -40407,3 +40407,25 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Follow-up.** Sentry recorded one occurrence. If it recurs, compare the
   mobile breadcrumb timestamp with Traefik's error access log, then check
   whether the web process recorded the same request.
+
+## 2026-11-25 — Stryker found a gap in upload status coverage
+
+- **Impact and evidence.** PR #3514 failed `Run Stryker` in
+  `Check Server / Stryker (2)`. Its first fatal line was
+  `Final mutation score 0.00 under breaking threshold 75`. The only mutant
+  removed the throw for a failed upload part response. The existing mock 503
+  also lacked an ETag, so the later ETag check forced a retry even with the
+  HTTP status check removed. [Mutation job](https://github.com/Asherlc/dofek/actions/runs/45648749828/job/139328015570).
+- **Fix and verification.** The existing retry fixture now gives the 503 its
+  own ETag and checks that completion receives only successful parts. With
+  the throw removed, the test observed two authorizations instead of three.
+  All 35 focused tests passed with the production code present. The CI command
+  passed locally with a 100% mutation score and killed the reported mutant.
+- **Other failed jobs.** CodeQL reached SARIF upload after analysis. The
+  Storybook and mobile preview jobs published their artifacts, then failed
+  while posting PR comments. The complete logs and annotations contain no
+  error response for these three operations, leaving the remote cause
+  unresolved. Recheck those operations on the updated PR revision.
+  [CodeQL](https://github.com/Asherlc/dofek/actions/runs/45648749559/job/139327002639)
+  · [Storybook](https://github.com/Asherlc/dofek/actions/runs/45648749828/job/139328072227)
+  · [Mobile preview](https://github.com/Asherlc/dofek/actions/runs/45648749569/job/139327002736).
