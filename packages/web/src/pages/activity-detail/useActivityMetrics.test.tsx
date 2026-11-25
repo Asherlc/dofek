@@ -76,7 +76,11 @@ describe("useActivityMetrics", () => {
 
   it("keeps picker selection immediate and preserves request gates, raw inputs and placeholder scope", () => {
     const { result } = renderHook(() =>
-      useActivityMetrics("activity-a", { isCycling: true, isClimbing: true }),
+      useActivityMetrics("activity-a", {
+        isCycling: true,
+        isClimbing: true,
+        hasRecordedPower: false,
+      }),
     );
     expect(dependencies.metricSources).toHaveBeenLastCalledWith({
       id: "activity-a",
@@ -128,7 +132,11 @@ describe("useActivityMetrics", () => {
 
   it("forwards independent source selections to streams, HR zones, and power queries", () => {
     const { result } = renderHook(() =>
-      useActivityMetrics("activity-a", { isCycling: true, isClimbing: false }),
+      useActivityMetrics("activity-a", {
+        isCycling: true,
+        isClimbing: false,
+        hasRecordedPower: false,
+      }),
     );
     const heartRate = result.current.sourceControls.find((source) => source.key === "heartRate");
     const power = result.current.sourceControls.find((source) => source.key === "power");
@@ -243,7 +251,11 @@ describe("useActivityMetrics", () => {
     dependencies.metricSources.mockImplementation(() => sourceResponse);
     dependencies.stream.mockImplementation(() => streamResponse);
     const { result, rerender } = renderHook(() =>
-      useActivityMetrics("activity-a", { isCycling: true, isClimbing: false }),
+      useActivityMetrics("activity-a", {
+        isCycling: true,
+        isClimbing: false,
+        hasRecordedPower: false,
+      }),
     );
     expect(result.current.attributionHints.stream.power).toBeUndefined();
     sourceResponse = query(metricSources);
@@ -263,7 +275,11 @@ describe("useActivityMetrics", () => {
     dependencies.powerWork.mockReturnValue(query(undefined));
 
     const { result, rerender } = renderHook(() =>
-      useActivityMetrics("activity-a", { isCycling: true, isClimbing: true }),
+      useActivityMetrics("activity-a", {
+        isCycling: true,
+        isClimbing: true,
+        hasRecordedPower: false,
+      }),
     );
 
     expect(result.current.sourceControls).toEqual([]);
@@ -303,7 +319,11 @@ describe("useActivityMetrics", () => {
     dependencies.useAuth.mockReturnValue({ user: null, accountSessionOwnerNonce: null });
 
     const { result } = renderHook(() =>
-      useActivityMetrics("activity-a", { isCycling: true, isClimbing: true }),
+      useActivityMetrics("activity-a", {
+        isCycling: true,
+        isClimbing: true,
+        hasRecordedPower: false,
+      }),
     );
 
     expect(result.current.sources).toEqual({
@@ -349,7 +369,11 @@ describe("useActivityMetrics", () => {
     dependencies.powerWork.mockImplementation(() => powerWorkResponse);
 
     const { result, rerender } = renderHook(() =>
-      useActivityMetrics("activity-a", { isCycling: true, isClimbing: true }),
+      useActivityMetrics("activity-a", {
+        isCycling: true,
+        isClimbing: true,
+        hasRecordedPower: false,
+      }),
     );
     act(() => {
       streamResponse = query(streamA, { isFetching: true, isPlaceholderData: true });
@@ -430,7 +454,11 @@ describe("useActivityMetrics", () => {
 
   it("does not carry requested picker state into another authenticated session", () => {
     const { result, rerender } = renderHook(() =>
-      useActivityMetrics("activity-a", { isCycling: true, isClimbing: false }),
+      useActivityMetrics("activity-a", {
+        isCycling: true,
+        isClimbing: false,
+        hasRecordedPower: false,
+      }),
     );
     act(() => result.current.sourceControls[0]?.onChange("hr-b"));
     expect(result.current.sourceControls[0]?.selectedId).toBe("hr-b");
@@ -443,9 +471,33 @@ describe("useActivityMetrics", () => {
   });
 
   it("gates cycling-only power queries while preserving HR context for climbing", () => {
-    renderHook(() => useActivityMetrics("activity-a", { isCycling: false, isClimbing: true }));
+    renderHook(() =>
+      useActivityMetrics("activity-a", {
+        isCycling: false,
+        isClimbing: true,
+        hasRecordedPower: false,
+      }),
+    );
     expect(dependencies.powerZones.mock.calls.at(-1)?.[1]).toMatchObject({ enabled: false });
     expect(dependencies.powerWork.mock.calls.at(-1)?.[1]).toMatchObject({ enabled: false });
     expect(dependencies.heartRateContext.mock.calls.at(-1)?.[1]).toMatchObject({ enabled: true });
   });
+
+  it.each([true, false])(
+    "enables powerZones from summary power when the stream has no power points (hasRecordedPower=%s)",
+    (hasRecordedPower) => {
+      dependencies.stream.mockReturnValue(query([{ heartRate: 140 }]));
+      const { result } = renderHook(() =>
+        useActivityMetrics("activity-a", {
+          isCycling: true,
+          isClimbing: false,
+          hasRecordedPower,
+        }),
+      );
+      expect(result.current.hasPower).toBe(false);
+      expect(dependencies.powerZones.mock.calls.at(-1)?.[1]).toMatchObject({
+        enabled: hasRecordedPower,
+      });
+    },
+  );
 });

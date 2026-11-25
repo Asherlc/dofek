@@ -527,6 +527,31 @@ describe("ActivityDetailPage", () => {
     expect(screen.queryByRole("link", { name: "Set FTP" })).toBeNull();
   });
 
+  it("enables powerZones from summary power and surfaces the initial error near the summary when the stream lacks power", async () => {
+    setCyclingPowerZoneResult(undefined, {
+      error: new Error("Power zones are unavailable."),
+      isError: true,
+    });
+    Object.assign(mockActivity, {
+      activityType: "cycling",
+      avgPower: 0,
+      avgPowerState: { status: "available" },
+      maxPower: null,
+      maxPowerState: { status: "missing", reason: "Maximum power not recorded" },
+    });
+    mockStreamPoints.splice(
+      0,
+      mockStreamPoints.length,
+      ...mockStreamPoints.map((point) => ({ ...point, power: null })),
+    );
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(getQueryEnabledFlag(mockPowerZonesUseQuery.mock.calls.at(-1)?.[1])).toBe(true);
+    expect(screen.getByText("Power zones are unavailable.")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Power Zones" })).toBeNull();
+  });
+
   it("shows Set FTP for a power activity with no applicable FTP", async () => {
     setCyclingPowerZoneResult(detailPageUnavailablePowerZones);
     renderWithUnits(<ActivityDetailPage />);

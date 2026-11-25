@@ -713,6 +713,36 @@ describe("ActivityDetailScreen", () => {
     }
   });
 
+  it("enables powerZones from summary power and shows an overview error without cached zones", async () => {
+    mocks.streamQuery.mockReturnValue(defaultObserver(noPowerStreamPoints));
+    mocks.powerZonesQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      error: new Error("Power zones are unavailable."),
+    });
+    renderActivityDetail();
+    expect(getQueryEnabledFlag(mocks.powerZonesQuery.mock.calls.at(-1)?.[1])).toBe(true);
+    expect(screen.getByText("Power zones are unavailable.")).toBeTruthy();
+    expect(screen.queryByText("Training Stress Score")).toBeNull();
+  });
+
+  it("keeps the overview training stress score during a powerZones refresh error", async () => {
+    mocks.powerZonesQuery.mockReturnValue({
+      ...defaultObserver({
+        ...configuredPowerZones,
+        trainingStressScore: 82.4,
+      }),
+      error: new Error("Power zones failed to refresh"),
+    });
+    renderActivityDetail();
+    expect(screen.getByText("Training Stress Score")).toBeTruthy();
+    expect(screen.getByText("82.4")).toBeTruthy();
+    expect(screen.queryByText("Power zones failed to refresh")).toBeNull();
+    openPerformance("Power");
+    expect(screen.getByText("Power zones failed to refresh")).toBeTruthy();
+  });
+
   it("keeps recorded output visible and shows the refresh status only while fetching in Performance", async () => {
     mocks.metricSourcesQuery.mockReturnValue(
       defaultObserver(activityDetailMetricSources.filter((source) => source.key === "power")),
