@@ -352,7 +352,14 @@ function setupRoutes(
       },
     }),
   );
-  app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
+  app.use(
+    "/api/webhooks",
+    createWebhookRouter({
+      db,
+      syncQueue,
+      intervalsIcuWebhookSecret: process.env.INTERVALS_ICU_WEBHOOK_SECRET,
+    }),
+  );
   app.use("/api/export", createExportRouter({ db, exportQueue }));
   app.use(
     "/api/developer/clients",

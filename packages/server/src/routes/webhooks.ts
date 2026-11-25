@@ -28,6 +28,7 @@ import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { WebhookSubscriptionRepository } from "../repositories/webhook-subscription-repository.ts";
+import { createIntervalsIcuWebhookHandler } from "./intervals-icu-webhooks.ts";
 
 const providerUserRow = z.object({
   provider_id: z.string(),
@@ -37,6 +38,7 @@ const providerUserRow = z.object({
 interface WebhookRouterDeps {
   db: import("dofek/db").Database;
   syncQueue: import("bullmq").Queue;
+  intervalsIcuWebhookSecret?: string;
 }
 
 type WebhookFailurePhase = "event-processing" | "request-processing" | "validation-challenge";
@@ -85,7 +87,11 @@ async function reconcileExpiredPendingSubscriptions(
   }
 }
 
-export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouterDeps): Router {
+export function createWebhookRouter({
+  db,
+  syncQueue: _syncQueue,
+  intervalsIcuWebhookSecret,
+}: WebhookRouterDeps): Router {
   const router = Router();
   const webhookSubscriptionRepository = new WebhookSubscriptionRepository(db);
 
@@ -103,6 +109,12 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
   // Use raw body parser for all webhook routes — needed for HMAC signature verification.
   // Must come before any json() middleware.
   router.use(raw({ type: "*/*", limit: "1mb" }));
+
+  // Vendor-specific Intervals.icu receiver (shared secret in JSON body).
+  router.post(
+    "/intervals.icu",
+    createIntervalsIcuWebhookHandler({ db, webhookSecret: intervalsIcuWebhookSecret }),
+  );
 
   /**
    * GET /api/webhooks/:providerName
