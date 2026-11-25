@@ -819,8 +819,8 @@ importers:
         specifier: 3.1.0
         version: 3.1.0(encoding@0.1.13)
       '@bull-board/api':
-        specifier: 9.10.1
-        version: 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.7.7)(typescript@6.0.3)
+        specifier: 9.13.2
+        version: 9.13.2(@bull-board/ui@9.13.2)(bullmq@6.7.7)(typescript@6.0.3)
       '@bull-board/express':
         specifier: 9.10.1
         version: 9.10.1(bullmq@6.7.7)(supports-color@11.0.0)(typescript@6.0.3)
@@ -2505,11 +2505,26 @@ packages:
       bullmq:
         optional: true
 
+  '@bull-board/api@9.13.2':
+    resolution: {integrity: sha512-sirRus3gpnq3rpf3Be/7UHpI6FD/1X0928zWSLeaf0d8nB4cODzCcTz3lwbhEFwvXOvd1hO3wnicsVVnE5udKA==}
+    peerDependencies:
+      '@bull-board/ui': 9.13.2
+      bull: ^4.16.5
+      bullmq: ^5.56.0 || ^6.0.0
+    peerDependenciesMeta:
+      bull:
+        optional: true
+      bullmq:
+        optional: true
+
   '@bull-board/express@9.10.1':
     resolution: {integrity: sha512-sUXrFAwbllDNGyieB51Xr7bFa+f7uPdWWPMcArROYlAXsZqrG0HyRPf81bpCX8ZnBGTUcbsEq9jSdRpEfbqm7g==}
 
   '@bull-board/ui@9.10.1':
     resolution: {integrity: sha512-1E0zbLaljf+Zhx3nDUotzsG2Dz7/4i72nWCxKkFwxfz65MKXfObo2mXWMuIDoXAeWSa3sm7hlPj3h3scts4DaQ==}
+
+  '@bull-board/ui@9.13.2':
+    resolution: {integrity: sha512-p6hFBN4K6Ja2IChe12hAqBscJq4/ax1F4/tA7fcQS3GaX5M2BzLWN3VoOs7Ucy7hleazYxxx+sGnVyf5ppthYw==}
 
   '@cacheable/memory@2.2.0':
     resolution: {integrity: sha512-CTLKqLItRCEixEAewD3/j9DB3/o96gpTPD4eJ1v+DGOlxZRZncRQkGYqqnAGCscYd6RNeXfGeiuCphsPtqyIfQ==}
@@ -19631,6 +19646,16 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
+  '@bull-board/api@9.13.2(@bull-board/ui@9.13.2)(bullmq@6.7.7)(typescript@6.0.3)':
+    dependencies:
+      '@bull-board/ui': 9.13.2(bullmq@6.7.7)(typescript@6.0.3)
+      redis-info: 3.1.0
+      valibot: 1.5.0(typescript@6.0.3)
+    optionalDependencies:
+      bullmq: 6.7.7(ioredis@6.0.0)(pg@8.23.1)
+    transitivePeerDependencies:
+      - typescript
+
   '@bull-board/express@9.10.1(bullmq@6.7.7)(supports-color@11.0.0)(typescript@6.0.3)':
     dependencies:
       '@bull-board/api': 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.7.7)(typescript@6.0.3)
@@ -19646,6 +19671,14 @@ snapshots:
   '@bull-board/ui@9.10.1(bullmq@6.7.7)(typescript@6.0.3)':
     dependencies:
       '@bull-board/api': 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.7.7)(typescript@6.0.3)
+    transitivePeerDependencies:
+      - bull
+      - bullmq
+      - typescript
+
+  '@bull-board/ui@9.13.2(bullmq@6.7.7)(typescript@6.0.3)':
+    dependencies:
+      '@bull-board/api': 9.13.2(@bull-board/ui@9.13.2)(bullmq@6.7.7)(typescript@6.0.3)
     transitivePeerDependencies:
       - bull
       - bullmq
