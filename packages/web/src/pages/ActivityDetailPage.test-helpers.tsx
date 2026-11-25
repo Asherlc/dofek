@@ -139,6 +139,7 @@ export const mockActivityByIdUseQuery = vi.fn<
   isError: false,
   isLoading: false,
 }));
+export const mockGhostSessionsGet = vi.fn(() => ({ data: { availability: "unavailable" } }));
 export const mockStrengthExercisesUseQuery = vi.fn(
   (_input?: unknown, _options?: { enabled?: boolean }): MockQueryResult<unknown[]> => ({
     data: [],
@@ -374,6 +375,9 @@ export const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
+    ghostSessions: {
+      get: { useQuery: mockGhostSessionsGet },
+    },
     intervals: { plannedByActivity: { useQuery: mockPlannedIntervalsUseQuery } },
     trainingProgression: { cycling: { useQuery: mockTrainingProgressionCyclingUseQuery } },
     activity: {
@@ -485,6 +489,7 @@ export function resetActivityDetailPageMocks() {
   activityRouteParams.id = "test-123";
   Object.assign(mockActivity, structuredClone(detailPageActivity));
   mockRestoreProviderAbsentMutate.mockClear();
+  mockGhostSessionsGet.mockClear();
   mockRestoreResult.mockReturnValue(undefined);
   mockRestoreStatus.mockReturnValue({ data: undefined, error: null });
   mockHardwareUseQuery.mockReset();

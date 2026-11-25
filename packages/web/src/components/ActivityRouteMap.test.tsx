@@ -31,6 +31,93 @@ const exact = {
 };
 
 describe("ActivityRouteMap", () => {
+  it("fits the known Ghost replay even when recorded context extends far past it", async () => {
+    render(
+      <ActivityRouteMap
+        points={[]}
+        contextChunks={[
+          [
+            { lat: 37, lng: -123 },
+            { lat: 39, lng: -121 },
+          ],
+        ]}
+        replayBounds={[
+          { lat: 37.5, lng: -122.5 },
+          { lat: 37.51, lng: -122.49 },
+        ]}
+      />,
+    );
+    await waitFor(() => expect(maps[0]?.fitBounds).toHaveBeenCalledOnce());
+    expect(maps[0]?.fitBounds).toHaveBeenCalledWith(
+      [
+        [-122.5, 37.5],
+        [-122.49, 37.51],
+      ],
+      expect.any(Object),
+    );
+    act(() => maps[0]?.fire("load"));
+    expect(maps[0]?.addSource).toHaveBeenCalledWith("recorded-route-context", expect.any(Object));
+  });
+  it("draws separate recorded chunks and moves both replay markers on the existing map", async () => {
+    const points: { lat: number; lng: number }[] = [];
+    const chunks = [
+      [
+        { lat: 37, lng: -122 },
+        { lat: 37.1, lng: -122 },
+      ],
+      [
+        { lat: 37.2, lng: -122 },
+        { lat: 37.3, lng: -122 },
+      ],
+    ];
+    const view = render(
+      <ActivityRouteMap
+        points={points}
+        routeChunks={chunks}
+        replayPositions={{ anchor: { lat: 37, lng: -122 }, candidate: { lat: 37.1, lng: -122 } }}
+      />,
+    );
+    await waitFor(() => expect(maps).toHaveLength(1));
+    act(() => maps[0]?.fire("load"));
+    expect(maps[0]?.addSource).toHaveBeenCalledWith(
+      "activity-route",
+      expect.objectContaining({
+        data: expect.objectContaining({
+          geometry: {
+            type: "MultiLineString",
+            coordinates: [
+              [
+                [-122, 37],
+                [-122, 37.1],
+              ],
+              [
+                [-122, 37.2],
+                [-122, 37.3],
+              ],
+            ],
+          },
+        }),
+      }),
+    );
+    view.rerender(
+      <ActivityRouteMap
+        points={points}
+        routeChunks={chunks}
+        replayPositions={{
+          anchor: { lat: 37.21, lng: -122 },
+          candidate: { lat: 37.22, lng: -122 },
+        }}
+      />,
+    );
+    expect(markers.slice(-2).map((marker) => marker.coordinates)).toEqual([
+      [-122, 37.21],
+      [-122, 37.22],
+    ]);
+    expect(maps).toHaveLength(1);
+    expect(maps[0]?.fitBounds).toHaveBeenCalledOnce();
+    expect(maps[0]?.addSource).toHaveBeenCalledOnce();
+    expect(maps[0]?.remove).not.toHaveBeenCalled();
+  });
   it("does not refocus an unchanged selection when marker data refreshes", async () => {
     const points: { lat: number; lng: number }[] = [];
     const climbMarkers = [exact];

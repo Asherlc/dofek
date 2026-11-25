@@ -94,6 +94,9 @@ vi.mock("../components/CyclingFtpSettings.tsx", () => ({
 vi.mock("../components/ExportPanel.tsx", () => ({
   ExportPanel: () => <div>ExportPanel</div>,
 }));
+vi.mock("../components/GhostMapLabelsSetting.tsx", () => ({
+  GhostMapLabelsSetting: () => <div>GhostMapLabelsSetting</div>,
+}));
 vi.mock("../components/LinkedAccountsPanel.tsx", () => ({
   LinkedAccountsPanel: () => <div>LinkedAccountsPanel</div>,
 }));
@@ -207,6 +210,16 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SettingsPage categories", () => {
+  it("places route-label consent in Privacy/Export", async () => {
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+    mockSearch = { tab: "privacy-export" };
+    render(<SettingsPage />);
+    expect(
+      within(screen.getByRole("region", { name: "Ghost Sessions map labels" })).getByText(
+        "GhostMapLabelsSetting",
+      ),
+    ).toBeVisible();
+  });
   it("renders the complete settings category contract in order", async () => {
     const { SettingsPage } = await import("./SettingsPage.tsx");
 
