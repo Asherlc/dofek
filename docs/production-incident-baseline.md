@@ -40454,3 +40454,32 @@ Local qualification and CI are separate from production throughput acceptance. T
   [CodeQL](https://github.com/Asherlc/dofek/actions/runs/45648749559/job/139327002639)
   · [Storybook](https://github.com/Asherlc/dofek/actions/runs/45648749828/job/139328072227)
   · [Mobile preview](https://github.com/Asherlc/dofek/actions/runs/45648749569/job/139327002736).
+
+## 2026-11-25 (UTC) — Fly handoff triggered an Oracle worker readiness alert
+
+- **Impact and evidence.** At 23:18:20 UTC, Oracle's worker `GET /readyz`
+  returned HTTP 503 and reported `BullMQ worker is not running: sync-tension`.
+  Sentry grouped one occurrence. Axiom recorded the Tension Board sync
+  starting at 23:18:20.043 UTC and the Fly processor returning at
+  23:18:20.801 UTC. Other sync attempts continued around the alert. Customer
+  impact was unconfirmed.
+  [Sentry event](https://east-bay-software.sentry.io/issues/7867911710/events/6f824126969e4780938e6099bf3e3af0/)
+  · [Axiom query for sync execution sites](../deploy/fly-runner/README.md#see-which-host-ran-sync-jobs).
+- **Cause.** Oracle intentionally pauses its local provider worker for three
+  seconds when it yields a job to Fly. The paused BullMQ run loop exits once
+  its active work drains, and `isRunning()` returns false until resume. The
+  readiness check treats that temporary state as a worker failure and reports
+  it to Sentry.
+  [Oracle handoff](../src/jobs/portable-sync-slot.ts#L73)
+  · [Readiness check](../src/jobs/worker-readiness.ts#L81)
+  · [BullMQ 6.7.7 worker](https://github.com/taskforcesh/bullmq/blob/v6.7.7/src/classes/worker.ts).
+- **Recovery and validation.** The same Oracle container was healthy with
+  zero restarts, and its local readiness endpoint reported 51 workers.
+  Recovery required no operator action. A local reproduction with real Redis,
+  the handoff function, and the readiness server returned 200 before the
+  pause, 503 during it, and 200 after the `resumed` event.
+- **Remaining risk and follow-up.** A health check can still coincide with
+  an intentional handoff pause. A readiness change should distinguish the
+  active handoff from a stopped worker and keep checking Redis. For a
+  recurrence, correlate the alert timestamp with the Fly sync completion
+  event and the Oracle task's health and restart count before intervening.
