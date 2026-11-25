@@ -1113,3 +1113,48 @@ describe("analytics refresh resource lifecycle", () => {
     await closeAllQueueResources();
   });
 });
+
+it("validates Ghost labels and local climbs when a fresh queue module loads", async () => {
+  // Reload after the queue lifecycle tests so those tests share the original queue handles.
+  vi.resetModules();
+  const { ghostRouteLabelsJobDataSchema, ghostRouteClimbsJobDataSchema } = await import(
+    "./queues.ts"
+  );
+  const identity = {
+    userId: "00000000-0000-4000-8000-000000000001",
+    activityId: "00000000-0000-4000-8000-000000000002",
+    sourceVersion: "a".repeat(64),
+  };
+  const label = {
+    type: "ghost-route-labels",
+    ...identity,
+    consentRevision: "2026-11-24T12:00:00.123456Z",
+  };
+  expect(ghostRouteLabelsJobDataSchema.parse(label)).toEqual(label);
+  for (const sourceVersion of [
+    "a",
+    "A".repeat(64),
+    `g${identity.sourceVersion}`,
+    `${identity.sourceVersion}g`,
+  ]) {
+    expect(ghostRouteLabelsJobDataSchema.safeParse({ ...label, sourceVersion }).success).toBe(
+      false,
+    );
+  }
+  expect(
+    ghostRouteLabelsJobDataSchema.safeParse({
+      ...label,
+      consentRevision: "2026-11-24T12:00:00.123Z",
+    }).success,
+  ).toBe(false);
+
+  const climb = { type: "ghost-route-climbs", ...identity };
+  expect(ghostRouteClimbsJobDataSchema.parse(climb)).toEqual(climb);
+  expect(
+    ghostRouteClimbsJobDataSchema.safeParse({ ...climb, consentRevision: label.consentRevision })
+      .success,
+  ).toBe(false);
+  expect(ghostRouteClimbsJobDataSchema.safeParse({ ...climb, prepareOnly: true }).success).toBe(
+    false,
+  );
+});

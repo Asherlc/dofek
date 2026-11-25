@@ -5,8 +5,9 @@ import { readGhostMapLabelConsent } from "dofek/db/ghost-map-label-consent";
 import {
   getGhostTrackEvidence,
   ghostRouteLabelsSourceVersion,
+  readGhostTrackEvidence,
 } from "dofek/db/ghost-track-evidence";
-import { enqueueGhostRouteClimbs } from "dofek/jobs/queues";
+import { getPostSyncQueue } from "dofek/jobs/queues";
 import { queryCache } from "dofek/lib/cache";
 import { ghostRouteClimbsCacheKey } from "dofek/lib/ghost-route-climbs-cache";
 import { ghostRouteLabelsCacheKey } from "dofek/lib/ghost-route-labels-cache";
@@ -39,12 +40,6 @@ import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activi
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { appRouter } from "../router.ts";
 
-vi.mock("dofek/jobs/queues", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("dofek/jobs/queues")>()),
-  enqueueGhostRouteClimbs: vi.fn(),
-  enqueueGhostRouteLabels: vi.fn(),
-}));
-
 const ownerId = randomUUID();
 const otherOwnerId = randomUUID();
 const aliasId = randomUUID();
@@ -59,6 +54,10 @@ function recording(day: string, secondsBetweenPositions: number) {
   return { activityId: randomUUID(), memberId: randomUUID(), day, secondsBetweenPositions };
 }
 type Recording = ReturnType<typeof recording>;
+
+function climbJobId(activityId: string, sourceVersion: string) {
+  return `ghost-route-climbs-${ownerId}-${activityId}-${sourceVersion}`;
+}
 
 function time({ day }: Recording, seconds: number) {
   return new Date(Date.parse(`${day}T10:00:00Z`) + seconds * 1_000)
@@ -82,6 +81,7 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
   const scope = (query: string) => query.replaceAll(/(?:analytics|ingest)\./g, `${database}.`);
   let postgres: TestContext;
   let clickhouse: ReturnType<typeof createClient>;
+  const climbJobIds: string[] = [];
 
   const nativeClient: AnalyticsQueryOwner["client"] = {
     query: (options) => clickhouse.query({ ...options, query: scope(options.query) }),
@@ -167,6 +167,7 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
     id = randomUUID(),
     version = 1,
     channel = "heart_rate",
+    scalar = version === 1 ? 130 : 150,
   ) {
     return clickhouse.insert({
       table: `${database}.sensor_scalar_sample`,
@@ -184,7 +185,7 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
           recorded_at: time(fixture, second),
           channel,
           measurement_kind: "unknown",
-          scalar: version === 1 ? 130 : 150,
+          scalar,
           provider_priority: 20,
           _peerdb_version: version,
           _peerdb_is_deleted: 0,
@@ -195,6 +196,8 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
   }
 
   const changedHeartRateId = randomUUID();
+  const altitudeId = randomUUID();
+  let altitudeVersion = 0;
 
   beforeAll(async () => {
     postgres = await setupTestDatabase();
@@ -258,17 +261,36 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
     for (let tick = 0; tick < 3; tick++) {
       await runGhostSessionHistory({ client: nativeClient, assertActive: async () => {} });
     }
+    const activityIds = [anchor.activityId, older.activityId];
+    const sensorStore = new ClickHouseActivitySensorStore(nativeClient);
+    const tracks = await readGhostTrackEvidence(sensorStore.query.bind(sensorStore), {
+      userId: ownerId,
+      activityIds,
+    });
+    for (const activityId of activityIds) {
+      const track = tracks.get(activityId);
+      if (track?.status !== "ready")
+        throw new Error(`Expected a ready fixture track: ${activityId}`);
+      climbJobIds.push(climbJobId(activityId, ghostRouteLabelsSourceVersion(track)));
+    }
   });
 
   afterAll(async () => {
-    if (clickhouse) {
-      try {
-        await clickhouse.command({ query: `DROP DATABASE IF EXISTS ${database}` });
-      } finally {
-        await clickhouse.close();
+    try {
+      if (climbJobIds.length > 0) {
+        const queue = getPostSyncQueue();
+        await Promise.all(climbJobIds.map((id) => queue.remove(id)));
       }
+    } finally {
+      if (clickhouse) {
+        try {
+          await clickhouse.command({ query: `DROP DATABASE IF EXISTS ${database}` });
+        } finally {
+          await clickhouse.close();
+        }
+      }
+      await postgres?.cleanup();
     }
-    await postgres?.cleanup();
   });
 
   it("keeps prepared names and climbs scoped to current consent, member, and altitude", async () => {
@@ -340,6 +362,8 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
       ...activity,
       sourceVersion: ghostRouteLabelsSourceVersion(evidence),
     };
+    const queue = getPostSyncQueue();
+    const jobId = climbJobId(sourceIdentity.activityId, sourceIdentity.sourceVersion);
     const cacheKey = ghostRouteLabelsCacheKey({
       ...sourceIdentity,
       consentRevision: consent.revision,
@@ -440,20 +464,21 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
         sections: detail.sections.filter(({ kind }) => kind !== "named-road"),
       });
 
-      const altitudeId = randomUUID();
-      await writeFixtureScalar(anchor, 6, altitudeId, 1, "altitude");
+      // A retry starts from one original sample even when the previous attempt corrected it.
+      await writeFixtureScalar(anchor, 6, altitudeId, ++altitudeVersion, "altitude", 130);
       const gateway = new ClickHouseActivitySensorStore(nativeClient);
+      const altitudeWindow = {
+        activityId: evidence.activityId,
+        memberActivityId: evidence.memberActivityId,
+        providerId: evidence.providerId,
+        deviceId: evidence.deviceId,
+        startedAt: evidence.startedAt,
+        endedAt: evidence.endedAt ?? time(anchor, 40),
+      };
       const altitudeProof = await readGhostAltitudeWindowProof(
         gateway.query.bind(gateway),
         ownerId,
-        {
-          activityId: evidence.activityId,
-          memberActivityId: evidence.memberActivityId,
-          providerId: evidence.providerId,
-          deviceId: evidence.deviceId,
-          startedAt: evidence.startedAt,
-          endedAt: evidence.endedAt ?? time(anchor, 40),
-        },
+        altitudeWindow,
       );
       expect(altitudeProof?.count).toBe(1);
       const rawClimbId = ghostRecordedSectionId(
@@ -490,16 +515,27 @@ describe("protected Ghost Sessions with native visibility and evidence", () => {
         anchor: currentInterval,
       });
       await expect(owner.compare({ ...climbScope, passId })).resolves.toEqual(comparison);
-      const enqueue = vi.mocked(enqueueGhostRouteClimbs).mockClear();
-      await writeFixtureScalar(anchor, 6, altitudeId, 2, "altitude");
+      await writeFixtureScalar(anchor, 6, altitudeId, ++altitudeVersion, "altitude", 150);
+      const correctedProof = await readGhostAltitudeWindowProof(
+        gateway.query.bind(gateway),
+        ownerId,
+        altitudeWindow,
+      );
+      expect(correctedProof?.count).toBe(1);
+      expect(correctedProof?.digest).not.toBe(altitudeProof?.digest);
+      await queue.remove(jobId);
       await expect(owner.compare({ ...climbScope, passId })).rejects.toMatchObject({
         code: "NOT_FOUND",
       });
-      expect(enqueue).not.toHaveBeenCalled();
+      expect(await queue.getJob(jobId)).toBeUndefined();
       const corrected = await owner.get({ activityId: aliasId });
+      expect(corrected.availability).toBe("ready");
       expect(corrected.sections.some(({ kind }) => kind === "unnamed-climb")).toBe(false);
-      expect(enqueue).toHaveBeenCalledExactlyOnceWith(sourceIdentity);
+      const queued = await queue.getJob(jobId);
+      expect(queued?.name).toBe("ghost-route-climbs");
+      expect(queued?.data).toEqual({ type: "ghost-route-climbs", ...sourceIdentity });
     } finally {
+      await queue.remove(jobId);
       await queryCache.invalidate(cacheKey);
       await queryCache.invalidate(climbKey);
       await settings.set("ghostMapLabels", false);

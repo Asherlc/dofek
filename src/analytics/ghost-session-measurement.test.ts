@@ -4,6 +4,7 @@ import { type GhostTrackPoint, matchGhostRoutes } from "./ghost-route-matching.t
 import {
   type GhostSessionScalarObservation,
   measureGhostSession,
+  measureGhostSessionScalars,
 } from "./ghost-session-measurement.ts";
 
 const degreePerMeter = 180 / (Math.PI * 6_371_000);
@@ -45,6 +46,98 @@ function pausedRide() {
 }
 
 describe("measureGhostSession", () => {
+  it("measures whole-second UTC timestamps and treats invalid native sensor values as barriers", () => {
+    const match = pausedRide();
+    const nativeSeconds = samples(anchorEpochMs, 20, 120).map(({ recordedAt, value }) => ({
+      recordedAt: recordedAt.replace(".000Z", "Z"),
+      value,
+    }));
+    const power = samples(candidateEpochMs, 30, 200);
+    const invalidObservations = [null, -8, Number.NaN, Number.POSITIVE_INFINITY];
+    for (const value of invalidObservations) {
+      const invalidPower = power.map((reading, index) => ({
+        ...reading,
+        value: index >= 10 && index <= 14 ? value : reading.value,
+      }));
+      expect(
+        measureGhostSessionScalars(
+          match,
+          { heartRateBpm: nativeSeconds, powerWatts: samples(anchorEpochMs, 20, 180) },
+          { heartRateBpm: samples(candidateEpochMs, 30, 140), powerWatts: invalidPower },
+        ),
+      ).toEqual({ heartRateBpm: { anchor: 120, candidate: 140 }, powerWatts: null });
+    }
+    expect(
+      measureGhostSessionScalars(
+        match,
+        { heartRateBpm: samples(anchorEpochMs, 20, 0), powerWatts: samples(anchorEpochMs, 20, 0) },
+        { heartRateBpm: samples(candidateEpochMs, 30, 140), powerWatts: power },
+      ),
+    ).toEqual({ heartRateBpm: null, powerWatts: { anchor: 0, candidate: 200 } });
+  });
+
+  it("keeps agreeing duplicate readings and treats conflicting readings as lost coverage", () => {
+    const match = pausedRide();
+    const candidate = { powerWatts: samples(candidateEpochMs, 30, 200) };
+    const earlier = samples(anchorEpochMs, 20, 120);
+    const duplicates = (value: number) =>
+      earlier.flatMap((reading, index) =>
+        index >= 8 && index <= 11 ? [reading, { ...reading, value }] : [reading],
+      );
+    expect(measureGhostSessionScalars(match, { powerWatts: duplicates(120) }, candidate)).toEqual({
+      heartRateBpm: null,
+      powerWatts: { anchor: 120, candidate: 200 },
+    });
+    expect(measureGhostSessionScalars(match, { powerWatts: duplicates(121) }, candidate)).toEqual({
+      heartRateBpm: null,
+      powerWatts: null,
+    });
+  });
+
+  it("keeps an in-bounds zero-power ride well past the first minute", () => {
+    const hourTrack = (firstMs: number) =>
+      Array.from({ length: 3_601 }, (_, index) => ({
+        lng: index * 8 * degreePerMeter,
+        lat: 0,
+        timestampMs: firstMs + index * 1_000,
+      }));
+    const match = verifiedMatch(hourTrack(anchorEpochMs), hourTrack(candidateEpochMs));
+    expect(match.anchor.elapsedMs).toBe(3_600_000);
+    expect(
+      measureGhostSessionScalars(
+        match,
+        { powerWatts: samples(anchorEpochMs, 3_600, 0) },
+        { powerWatts: samples(candidateEpochMs, 3_600, 190) },
+      ),
+    ).toEqual({ heartRateBpm: null, powerWatts: { anchor: 0, candidate: 190 } });
+  });
+
+  it("requires at least one complete second and accepts a channel at the observation limit", () => {
+    const { anchor, candidate } = pausedRide();
+    const oneSecond = (interval: typeof anchor, elapsedMs: number) => ({
+      ...interval,
+      end: { ...interval.end, timestampMs: interval.start.timestampMs + elapsedMs },
+      elapsedMs,
+    });
+    const observations = {
+      heartRateBpm: Array.from({ length: 50_000 }, () => sample(anchorEpochMs, 125)),
+    };
+    expect(
+      measureGhostSessionScalars(
+        { anchor: oneSecond(anchor, 1_000), candidate: oneSecond(candidate, 1_000) },
+        observations,
+        { heartRateBpm: [sample(candidateEpochMs, 130)] },
+      ).heartRateBpm,
+    ).toEqual({ anchor: 125, candidate: 130 });
+    expect(
+      measureGhostSessionScalars(
+        { anchor: oneSecond(anchor, 999), candidate: oneSecond(candidate, 1_000) },
+        { heartRateBpm: [sample(anchorEpochMs, 125)] },
+        { heartRateBpm: [sample(candidateEpochMs, 130)] },
+      ).heartRateBpm,
+    ).toBeNull();
+  });
+
   it("preserves a real match's shared-portion timing, coordinates, and signed run comparison", () => {
     const match = verifiedMatch(track(anchorEpochMs), track(candidateEpochMs, 10, 2_000));
     const result = measureGhostSession({
@@ -86,6 +179,19 @@ describe("measureGhostSession", () => {
     });
     expect(result.metrics.paceSecondsPerKm?.anchor).toBeCloseTo(50, 10);
     expect(result.metrics.paceSecondsPerKm?.candidate).toBeCloseTo(100, 10);
+  });
+
+  it("subtracts the earlier pass's approach distance before computing shared running pace", () => {
+    const match = verifiedMatch(track(anchorEpochMs, 10, 2_000), track(candidateEpochMs));
+    expect(match.candidate.start.distanceMeters).toBeCloseTo(10, 10);
+    const result = measureGhostSession({
+      match,
+      sport: "running",
+      anchorObservations: {},
+      candidateObservations: {},
+    });
+    expect(result.metrics.paceSecondsPerKm?.anchor).toBeCloseTo(100, 10);
+    expect(result.metrics.paceSecondsPerKm?.candidate).toBeCloseTo(50, 10);
   });
 
   it("preserves a recorded ride stop and computes clipped time-weighted sensor means with zero power", () => {

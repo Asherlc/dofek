@@ -190,6 +190,112 @@ describe("preparedGhostSectionsSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("rejects duplicate source, section and pass identities independently", () => {
+    const { payload, section, pass } = fixture();
+    for (const duplicate of [
+      { ...payload, candidateStamps: [payload.anchorStamp, ...payload.candidateStamps] },
+      { ...payload, sections: [section, section] },
+      { ...payload, sections: [{ ...section, passes: [pass, pass] }] },
+    ]) {
+      expect(preparedGhostSectionsSchema.safeParse(duplicate).success).toBe(false);
+    }
+  });
+
+  it("requires named geometry to retain both recorded endpoints", () => {
+    const { payload, section } = fixture();
+    const start = { lat: section.anchor.start.lat, lng: section.anchor.start.lng };
+    const end = { lat: section.anchor.end.lat, lng: section.anchor.end.lng };
+    const interior = { lat: 0.0001, lng: 0.001 };
+    const trail = {
+      ...section,
+      kind: "named-trail",
+      name: "Ridge Trail",
+      attribution: "OpenStreetMap contributors",
+      geometry: [[start, interior, end]],
+    };
+    const named = { ...payload, sections: [trail] };
+    expect(preparedGhostSectionsSchema.parse(named)).toEqual(named);
+    for (const geometry of [
+      [[{ ...start, lat: 0.0001 }, interior, end]],
+      [[{ ...start, lng: 0.0001 }, interior, end]],
+      [[start, interior, { ...end, lat: 0.0001 }]],
+      [[start, interior, { ...end, lng: 0.0021 }]],
+      [[start]],
+    ]) {
+      expect(
+        preparedGhostSectionsSchema.safeParse({ ...payload, sections: [{ ...trail, geometry }] })
+          .success,
+      ).toBe(false);
+    }
+  });
+
+  it("requires the pass to name a current stamped source and its actual workout date", () => {
+    const { payload, section, pass } = fixture();
+    expect(preparedGhostSectionsSchema.safeParse({ ...payload, candidateStamps: [] }).success).toBe(
+      false,
+    );
+    expect(
+      preparedGhostSectionsSchema.safeParse({
+        ...payload,
+        candidateStamps: payload.candidateStamps.map((stamp) => ({ ...stamp, sport: "running" })),
+      }).success,
+    ).toBe(false);
+    expect(
+      preparedGhostSectionsSchema.safeParse({
+        ...payload,
+        sections: [{ ...section, passes: [{ ...pass, startedAt: payload.anchorStamp.startedAt }] }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps only recorded prior passes whose anchor interval fits the section", () => {
+    const { payload, section, pass } = fixture();
+    const comparison = {
+      ...pass.comparison,
+      metrics: { ...pass.comparison.metrics, powerWatts: null },
+    };
+    const check = (match: typeof comparison) =>
+      preparedGhostSectionsSchema.safeParse({
+        ...payload,
+        sections: [{ ...section, passes: [{ ...pass, comparison: match, scalarProof: [] }] }],
+      }).success;
+    expect(check({ ...comparison, candidate: interval(anchorClock - 7_000, 7_000) })).toBe(true);
+    expect(check({ ...comparison, candidate: interval(anchorClock - 6_999, 7_000) })).toBe(false);
+    expect(check({ ...comparison, candidate: interval(-9_000_000_000_001_000, 7_000) })).toBe(
+      false,
+    );
+    expect(check({ ...comparison, anchor: interval(anchorClock - 1, 6_000) })).toBe(false);
+    expect(check({ ...comparison, anchor: interval(anchorClock + 1, 6_000) })).toBe(false);
+  });
+
+  it("checks every field in a scalar proof against its exact window even without metrics", () => {
+    const { payload, section, pass } = fixture();
+    const [anchorProof, candidateProof] = pass.scalarProof;
+    if (!anchorProof || !candidateProof) throw new Error("Expected both scalar window fixtures");
+    const timing = {
+      ...pass,
+      comparison: { ...pass.comparison, metrics: { ...pass.comparison.metrics, powerWatts: null } },
+    };
+    const check = (scalarProof: typeof pass.scalarProof) =>
+      preparedGhostSectionsSchema.safeParse({
+        ...payload,
+        sections: [{ ...section, passes: [{ ...timing, scalarProof }] }],
+      }).success;
+    expect(check([])).toBe(true);
+    expect(check([anchorProof])).toBe(true);
+    expect(check([candidateProof])).toBe(true);
+    for (const changed of [
+      { ...anchorProof, activityId: candidateId },
+      { ...anchorProof, memberActivityId: candidateMember },
+      { ...anchorProof, startedAt: "2026-11-24T08:00:00.000126Z" },
+      { ...anchorProof, endedAt: "2026-11-24T08:00:06.000126Z" },
+    ]) {
+      expect(check([changed])).toBe(false);
+      expect(check([changed, candidateProof])).toBe(false);
+    }
+    expect(check([anchorProof, { ...candidateProof, memberActivityId: anchorMember }])).toBe(false);
+  });
 });
 
 it("keeps the recorded section hash stable for names-only and prepared results", () => {

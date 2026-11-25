@@ -1,4 +1,5 @@
 import type { GhostSessionsCompareResponse } from "@dofek/training/ghost-sessions";
+import { readGhostHistoryEvidence } from "dofek/analytics/ghost-history-evidence";
 import { createDatabase } from "dofek/db";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { readGhostMapLabelConsent } from "dofek/db/ghost-map-label-consent";
@@ -22,6 +23,10 @@ import {
   GhostSessionsRepository,
 } from "./ghost-sessions-repository.ts";
 
+vi.mock("dofek/analytics/ghost-history-evidence", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("dofek/analytics/ghost-history-evidence")>()),
+  readGhostHistoryEvidence: vi.fn(),
+}));
 vi.mock("dofek/db/account-erasure", async (importOriginal) => ({
   ...(await importOriginal<typeof import("dofek/db/account-erasure")>()),
   withAccountErasureUserWriteFence: vi.fn(),
@@ -124,6 +129,9 @@ function fixture(
     ownerId?: string;
     historyCoverage?: "partial" | "complete";
     generation?: string;
+    gpsCoverage?: ReadyAnchor["gpsCoverage"];
+    withoutAnchor?: boolean;
+    withoutGeometry?: boolean;
   } = {},
 ) {
   const hidden = options.hidden ?? new Set<string>();
@@ -155,9 +163,9 @@ function fixture(
     readAnchor: vi.fn<Dependencies["reads"]["readAnchor"]>().mockResolvedValue({
       status: "ready",
       sport: "running",
-      gpsCoverage: "complete",
-      anchor: wholeRoute,
-      geometry,
+      gpsCoverage: options.gpsCoverage ?? "complete",
+      anchor: options.withoutAnchor ? null : wholeRoute,
+      geometry: options.withoutGeometry ? undefined : geometry,
       source: {
         ...track(anchorId, aliasId, new Date(anchorStart).toISOString()),
         status: "ready",
@@ -203,6 +211,14 @@ function track(groupId: string, memberId: string, startedAt: string) {
   };
 }
 
+interface CompactPageFixture {
+  requestCursor: string;
+  nextCursor: string | null;
+  anchorStamp?: string;
+  bounded?: number;
+  empty?: boolean;
+}
+
 function publicationFixture() {
   const anchor = track(anchorId, aliasId, new Date(anchorStart).toISOString());
   const candidates = Array.from({ length: 22 }, (_, index) =>
@@ -211,6 +227,12 @@ function publicationFixture() {
   const tracks = [anchor, ...candidates];
   const state: {
     historyGeneration: string;
+    anchorGeneration: string | null;
+    progressStatus: "ready" | "pending" | undefined;
+    sourceCoverage: ReadyAnchor["historyCoverage"];
+    historyCoverage: ReadyAnchor["historyCoverage"];
+    comparisonLimited: number;
+    pages?: CompactPageFixture[];
     frontier: string | null;
     version: string;
     digest: string;
@@ -218,18 +240,28 @@ function publicationFixture() {
     scalarCurrent: boolean;
     scalarDigests?: readonly string[];
     staleTrack?: string;
+    missingTrack?: string;
+    unavailableAnchor: boolean;
+    anchorMemberVisible: boolean;
     activeAnchor: boolean;
     inactiveCandidate?: string;
     markerSignature: string;
     altitudeDigest: string;
   } = {
     historyGeneration: "history",
+    anchorGeneration: "anchor",
+    progressStatus: "ready",
+    sourceCoverage: "partial",
+    historyCoverage: "partial",
+    comparisonLimited: 0,
     frontier: null,
     version: "7",
     digest: "original",
     beforeReplay: () => {},
     scalarCurrent: true,
     activeAnchor: true,
+    unavailableAnchor: false,
+    anchorMemberVisible: true,
     markerSignature: "current-marker",
     altitudeDigest,
   };
@@ -264,31 +296,44 @@ function publicationFixture() {
   ]);
   const sensorStore: ActivitySensorQueryStore = {
     async query(schema, _query, params = {}) {
-      if (params.activityIds)
+      const activityIds = params.activityIds;
+      if (Array.isArray(activityIds))
         return schema.array().parse(
-          tracks.map((record) => ({
-            ...record,
-            markerSignature: state.markerSignature,
-            status: record.activityId === state.staleTrack ? "pending" : "ready",
-          })),
+          tracks
+            .filter(
+              ({ activityId }) =>
+                activityIds.includes(activityId) && activityId !== state.missingTrack,
+            )
+            .map((record) => ({
+              ...record,
+              markerSignature: state.markerSignature,
+              status:
+                record.activityId === anchorId && state.unavailableAnchor
+                  ? "unavailable"
+                  : record.activityId === state.staleTrack
+                    ? "pending"
+                    : "ready",
+            })),
         );
       if (params.pointerVersion)
-        return schema.array().parse([
-          {
-            requestCursor: "",
-            nextCursor: state.frontier,
-            anchorStamp: JSON.stringify(anchor),
-            anchorSummary: JSON.stringify({
-              gpsCoverage: "complete",
-              anchor: wholeRoute,
-              geometry,
+        return schema.array().parse(
+          (state.pages ?? [{ requestCursor: "", nextCursor: state.frontier }]).map(
+            (page: CompactPageFixture) => ({
+              requestCursor: page.requestCursor,
+              nextCursor: page.nextCursor,
+              anchorStamp: page.anchorStamp ?? JSON.stringify(anchor),
+              anchorSummary: JSON.stringify({
+                gpsCoverage: "complete",
+                anchor: wholeRoute,
+                geometry,
+              }),
+              bounded: page.bounded ?? 0,
+              matches: page.empty ? [] : compactMatches,
+              digest: state.digest,
+              version: state.version,
             }),
-            bounded: 0,
-            matches: compactMatches,
-            digest: state.digest,
-            version: state.version,
-          },
-        ]);
+          ),
+        );
       if (params.passId) {
         state.beforeReplay();
         const selected = candidates[0];
@@ -336,15 +381,16 @@ function publicationFixture() {
         );
       if (params.ghostScalarFetchLimit === 20_001)
         return schema.array().parse([{ raw_count: 8, digest: state.altitudeDigest }]);
+      if (!state.progressStatus) return [];
       return schema.array().parse([
         {
-          anchorGeneration: "anchor",
+          anchorGeneration: state.anchorGeneration,
           historyGeneration: state.historyGeneration,
           nextCursor: state.frontier,
-          status: "ready",
-          sourceCoverage: "partial",
-          historyCoverage: "partial",
-          comparisonLimited: 0,
+          status: state.progressStatus,
+          sourceCoverage: state.sourceCoverage,
+          historyCoverage: state.historyCoverage,
+          comparisonLimited: state.comparisonLimited,
           version: "9",
         },
       ]);
@@ -352,9 +398,10 @@ function publicationFixture() {
   };
   const hidden = new Set<string>();
   const { activity } = fixture([], { hidden });
-  vi.spyOn(ActivityRepository.prototype, "findSensorWindow").mockImplementation(
-    activity.findSensorWindow,
-  );
+  vi.spyOn(ActivityRepository.prototype, "findSensorWindow").mockImplementation(async (id) => {
+    const window = await activity.findSensorWindow(id);
+    return !window || state.anchorMemberVisible ? window : { ...window, memberActivityIds: [] };
+  });
   vi.spyOn(ActivityRepository.prototype, "resolveVisibleActivityIds").mockImplementation(
     activity.resolveVisibleActivityIds,
   );
@@ -373,6 +420,9 @@ function publicationFixture() {
       .filter(({ activityId }) => statement.params.includes(activityId) && !hidden.has(activityId))
       .map(({ activityId }) => ({ id: activityId }));
   });
+  vi.mocked(withAccountErasureUserWriteFence).mockImplementation(async (_db, _owner, operation) =>
+    operation(fencedDatabase),
+  );
   const repository = createGhostSessionsRepository({
     db: database,
     userId: owner,
@@ -393,6 +443,31 @@ function publicationFixture() {
   };
 }
 
+function completePublicationFixture() {
+  const publication = publicationFixture();
+  publication.state.historyCoverage = "complete";
+  publication.state.sourceCoverage = "complete";
+  const history = {
+    anchorStatus: "ready" as const,
+    historyCoverage: "complete" as const,
+    historyGeneration: publication.state.historyGeneration,
+    checkedGroups: 1,
+    checkedActivityIds: [activityId(90)],
+    incompleteGroups: 0,
+    cutoffReached: false,
+  };
+  vi.mocked(readGhostHistoryEvidence).mockResolvedValue(history);
+  return { ...publication, history };
+}
+
+function publishedPages(count: number): CompactPageFixture[] {
+  return Array.from({ length: count }, (_, index) => ({
+    requestCursor: index === 0 ? "" : `page-${index}`,
+    nextCursor: index + 1 < count ? `page-${index + 1}` : null,
+    empty: index > 0,
+  }));
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
@@ -401,6 +476,7 @@ afterEach(() => {
   vi.mocked(enqueueGhostRouteLabels).mockReset();
   vi.mocked(enqueueGhostRouteClimbs).mockReset();
   vi.mocked(captureException).mockReset();
+  vi.mocked(readGhostHistoryEvidence).mockReset();
 });
 afterAll(async () => {
   await Promise.all([database.$client.end(), fencedDatabase.$client.end()]);
@@ -413,9 +489,7 @@ function labelFixture() {
   const consent = vi
     .mocked(readGhostMapLabelConsent)
     .mockResolvedValue({ revision: consentRevision });
-  const fence = vi
-    .mocked(withAccountErasureUserWriteFence)
-    .mockImplementation(async (_db, _owner, operation) => operation(fencedDatabase));
+  const fence = vi.mocked(withAccountErasureUserWriteFence);
   const cache = vi.spyOn(queryCache, "get").mockResolvedValue(undefined);
   vi.stubEnv("GHOST_MAP_LABELS_REGION", "eu");
   const readyEvidence = {
@@ -560,6 +634,171 @@ function preparedLabelFixture() {
 }
 
 describe("GhostSessionsRepository", () => {
+  it("confirms complete published history at the page limit after checking current visibility", async () => {
+    const { repository, state, hidden } = completePublicationFixture();
+    state.pages = publishedPages(11);
+    await expect(repository.get({ activityId: aliasId })).resolves.toMatchObject({
+      availability: "ready",
+      historyCoverage: "complete",
+      sections: [{ kind: "route", suggestedGhost: { reason: "previous-best" } }],
+    });
+    expect(readGhostHistoryEvidence).toHaveBeenCalledExactlyOnceWith(expect.any(Function), {
+      userId: owner,
+      activityId: anchorId,
+    });
+    hidden.add(activityId(90));
+    await expect(repository.get({ activityId: aliasId })).resolves.toMatchObject({
+      historyCoverage: "partial",
+      sections: [{ suggestedGhost: { reason: "most-recent" } }],
+    });
+  });
+
+  it.each([
+    ["source history is incomplete", { sourceCoverage: "partial" }],
+    ["published history is incomplete", { historyCoverage: "partial" }],
+    ["comparison coverage was limited", { comparisonLimited: 1 }],
+    ["a page reached its bound", { pages: [{ requestCursor: "", nextCursor: null, bounded: 1 }] }],
+    [
+      "a published continuation is missing",
+      { pages: [{ requestCursor: "", nextCursor: "missing" }] },
+    ],
+    ["the publication frontier is unfinished", { frontier: "next" }],
+    ["more pages exist than the protection bound", { pages: publishedPages(12) }],
+    [
+      "continuation uses a different anchor stamp",
+      {
+        pages: [
+          { requestCursor: "", nextCursor: "next" },
+          { requestCursor: "next", nextCursor: null, anchorStamp: "old-anchor", empty: true },
+        ],
+      },
+    ],
+    ["one candidate recording is stale", { staleTrack: activityId(10) }],
+  ] as const)("keeps ready timing with partial history when %s", async (_reason, patch) => {
+    const { repository, state } = completePublicationFixture();
+    Object.assign(state, patch);
+    await expect(repository.get({ activityId: anchorId })).resolves.toMatchObject({
+      availability: "ready",
+      historyCoverage: "partial",
+      sections: [{ kind: "route", anchor: wholeRoute, suggestedGhost: { reason: "most-recent" } }],
+    });
+    expect(readGhostHistoryEvidence).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["pending", "processing"],
+    ["over-limit", "unavailable"],
+    ["unavailable", "unavailable"],
+  ] as const)(
+    "withholds published timing when live history marks the anchor %s",
+    async (anchorStatus, availability) => {
+      const { repository, history } = completePublicationFixture();
+      vi.mocked(readGhostHistoryEvidence).mockResolvedValue({ ...history, anchorStatus });
+      await expect(repository.get({ activityId: anchorId })).resolves.toMatchObject({
+        availability,
+        sections: [],
+        historyCoverage: "partial",
+      });
+    },
+  );
+
+  it("keeps usable timing when fresh history belongs to a different generation", async () => {
+    const { repository, history } = completePublicationFixture();
+    vi.mocked(readGhostHistoryEvidence).mockResolvedValue({
+      ...history,
+      historyGeneration: "different",
+    });
+    await expect(repository.get({ activityId: anchorId })).resolves.toMatchObject({
+      availability: "ready",
+      sections: [{ anchor: wholeRoute, suggestedGhost: { reason: "most-recent" } }],
+      historyCoverage: "partial",
+    });
+  });
+
+  it.each([
+    ["no pointer", { progressStatus: undefined }, "processing"],
+    ["a pending pointer", { progressStatus: "pending" }, "processing"],
+    ["a pointer missing its anchor generation", { anchorGeneration: null }, "processing"],
+    ["an unpublished first page", { pages: [] }, "processing"],
+    ["a missing selected member on the window", { anchorMemberVisible: false }, "processing"],
+    ["missing normalized evidence", { missingTrack: anchorId }, "unavailable"],
+    ["unavailable normalized evidence", { unavailableAnchor: true }, "unavailable"],
+    ["pending normalized evidence", { staleTrack: anchorId }, "processing"],
+  ] as const)("withholds saved route when there is %s", async (_reason, patch, availability) => {
+    const { repository, state, scope } = publicationFixture();
+    Object.assign(state, patch);
+    await expect(repository.get({ activityId: aliasId })).resolves.toMatchObject({
+      availability,
+      sections: [],
+    });
+    await expect(repository.passes(scope)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      repository.passes({ activityId: aliasId, sectionId: "named:prior" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("uses the saved route and exact pair for passes and compare without rechecking absence over history", async () => {
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_BASE64", Buffer.alloc(32, 4).toString("base64"));
+    const { repository, comparison, scope } = completePublicationFixture();
+    await expect(repository.passes(scope)).resolves.toMatchObject({
+      passes: [{ passId: "pass-00" }, ...Array.from({ length: 19 }, () => expect.anything())],
+    });
+    await expect(repository.compare({ ...scope, passId: "pass-00" })).resolves.toEqual(comparison);
+    expect(readGhostHistoryEvidence).not.toHaveBeenCalled();
+  });
+
+  it("does not open prepared cache for unusable GPS, including bookmarked named sections", async () => {
+    const { repository, reads } = fixture([], { gpsCoverage: "unusable" });
+    await expect(repository.get({ activityId: aliasId })).resolves.toMatchObject({
+      availability: "ready",
+      gpsCoverage: "unusable",
+      nameStatus: "disabled",
+      historyCoverage: "partial",
+    });
+    await expect(
+      repository.passes({ activityId: aliasId, sectionId: "named:recorded" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(reads.readLabels).not.toHaveBeenCalled();
+    expect(reads.readClimbs).not.toHaveBeenCalled();
+  });
+
+  it("omits map coverage when the ready label source has no rendered names", async () => {
+    const { repository, reads } = fixture();
+    reads.readLabels.mockResolvedValue({ status: "ready", sections: [], mapCoverage: "partial" });
+    const detail = await repository.get({ activityId: aliasId });
+    expect(detail.nameStatus).toBe("unavailable");
+    expect(detail).not.toHaveProperty("mapCoverage");
+  });
+
+  it("rejects pagination cursors for prepared sections before reading the cache", async () => {
+    const { repository, reads } = fixture();
+    await expect(
+      repository.passes({ activityId: aliasId, sectionId: "named:recorded", cursor: "old" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(reads.readLabels).not.toHaveBeenCalled();
+  });
+
+  it("only summarizes recorded stretches when the full route has no interval, geometry, or pass", async () => {
+    const sectionId = "shared";
+    const stretch = match({ kind: "shared-stretch", sectionId });
+    const withoutRoute = fixture([stretch], { withoutAnchor: true, withoutGeometry: true });
+    await expect(withoutRoute.repository.get({ activityId: aliasId })).resolves.toMatchObject({
+      sections: [{ sectionId, kind: "shared-stretch" }],
+    });
+    const withPass = fixture([match(), stretch], { withoutAnchor: true, withoutGeometry: true });
+    await expect(withPass.repository.get({ activityId: aliasId })).resolves.toMatchObject({
+      sections: [
+        {
+          kind: "route",
+          anchor: null,
+          firstVisit: false,
+          suggestedGhost: { reason: "most-recent" },
+        },
+        { sectionId, kind: "shared-stretch" },
+      ],
+    });
+  });
+
   it("keeps a named interval selected when prepared passes and replay arrive", async () => {
     const {
       repository,

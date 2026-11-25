@@ -50,6 +50,7 @@ function recording(
   index: number,
   points: GhostTrackPoint[],
   startedAt = "2026-11-24T07:55:00.000111Z",
+  sport: "cycling" | "running" = "cycling",
 ) {
   const stamp = {
     status: "ready" as const,
@@ -57,7 +58,7 @@ function recording(
     memberActivityId: id(index + 200),
     providerId: "direct",
     deviceId: "recording-device",
-    sport: "cycling" as const,
+    sport,
     modality: "outdoor",
     startedAt,
     endedAt: null,
@@ -381,5 +382,141 @@ describe("prepareGhostSectionComparisons", () => {
     });
     expect(await prepareGhostSectionComparisons(context, input)).toEqual({ status: "stale" });
     expect(getGhostTrack).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects detached section bounds without discovering candidates and keeps two real vertices", async () => {
+    const anchor = recording(2, line(anchorEpoch, 0, 400));
+    const source = named(anchor.track.points, 1, 2);
+    seedSourceReads(anchor);
+    const forgedStarts = [
+      { ...source.start, originalIndex: 0 },
+      { ...source.start, timestampMs: source.start.timestampMs + 0.125 },
+      { ...source.start, lat: 0.00001 },
+      { ...source.start, lng: source.start.lng + 0.00001 },
+      { ...source.start, distanceMeters: source.start.distanceMeters + 0.1 },
+    ];
+    expect(
+      await prepareGhostSectionComparisons(context, {
+        userId,
+        anchor,
+        sections: forgedStarts.map((start) => ({ ...source, start })),
+      }),
+    ).toMatchObject({ status: "ready", sections: [], candidateStamps: [], bounded: false });
+    expect(listGhostTrackCandidates).not.toHaveBeenCalled();
+
+    const selected = await prepareGhostSectionComparisons(context, {
+      userId,
+      anchor,
+      sections: [source],
+    });
+    expect(selected).toMatchObject({
+      status: "ready",
+      sections: [
+        {
+          geometry: [
+            [
+              { lat: source.start.lat, lng: source.start.lng },
+              { lat: source.end.lat, lng: source.end.lng },
+            ],
+          ],
+          passes: [],
+        },
+      ],
+    });
+    expect(listGhostTrackCandidates).toHaveBeenCalledWith(context.clickhouse, {
+      userId,
+      anchorActivityId: anchor.stamp.activityId,
+    });
+  });
+
+  it("orders equal-start sections by finish, kind and name and chooses one label per recorded interval", async () => {
+    const anchor = recording(2, line(anchorEpoch, 0, 400));
+    const longer = named(anchor.track.points, 0, 12);
+    const shorter = named(anchor.track.points, 0, 10);
+    seedSourceReads(anchor);
+    const output = preparedGhostSectionsSchema.parse(
+      await prepareGhostSectionComparisons(context, {
+        userId,
+        anchor,
+        sections: [
+          { ...longer, name: "Long Road" },
+          { ...shorter, name: "Ridge Trail", kind: "named-trail" },
+          { ...shorter, name: "Zebra Road" },
+          { ...shorter, name: "Alder Road" },
+        ],
+      }),
+    );
+    expect(
+      output.sections.map(({ anchor, ...section }) => ({
+        ...section,
+        elapsedMs: anchor.elapsedMs,
+      })),
+    ).toMatchObject([
+      { kind: "named-road", name: "Alder Road", elapsedMs: 10_000 },
+      { kind: "named-trail", name: "Ridge Trail", elapsedMs: 10_000 },
+      { kind: "named-road", name: "Long Road", elapsedMs: 12_000 },
+    ]);
+  });
+
+  it("drops missing, mismatched and wrong-sport compact candidates before loading routes", async () => {
+    const anchor = recording(2, line(anchorEpoch, 0, 400));
+    const missing = recording(3, line(candidateEpoch, 0, 400));
+    const stale = recording(4, line(candidateEpoch, 0, 400));
+    const runner = recording(
+      5,
+      line(candidateEpoch, 0, 400),
+      "2026-11-23T07:55:00.000111Z",
+      "running",
+    );
+    const { evidence } = seedSourceReads(anchor, [missing, stale, runner, anchor]);
+    evidence.delete(missing.stamp.activityId);
+    evidence.set(stale.stamp.activityId, { ...stale.stamp, refreshVersion: "102" });
+    const result = await prepareGhostSectionComparisons(context, {
+      userId,
+      anchor,
+      sections: [named(anchor.track.points, 0, 10)],
+    });
+    expect(result).toMatchObject({
+      status: "ready",
+      sections: [{ passes: [] }],
+      candidateStamps: [],
+      bounded: true,
+    });
+    expect(getGhostTrack).not.toHaveBeenCalled();
+  });
+
+  it("treats an undiscovered next page as bounded even when the current page is empty", async () => {
+    const anchor = recording(2, line(anchorEpoch, 0, 400));
+    seedSourceReads(anchor);
+    vi.mocked(listGhostTrackCandidates).mockResolvedValue({
+      candidates: [],
+      historyCoverage: "unverified",
+      nextCursor: { startedAt: "2026-11-23T07:52:00.000456Z", activityId: id(3) },
+    });
+    expect(
+      await prepareGhostSectionComparisons(context, {
+        userId,
+        anchor,
+        sections: [named(anchor.track.points, 0, 10)],
+      }),
+    ).toMatchObject({
+      status: "ready",
+      bounded: true,
+      sections: [{ historyCoverage: "partial", passes: [] }],
+    });
+  });
+
+  it("withholds preparation when live anchor sport or modality differs", async () => {
+    const anchor = recording(2, line(anchorEpoch, 0, 400));
+    const { active } = seedSourceReads(anchor);
+    for (const changed of [
+      { ...anchor.stamp, sport: "running" as const },
+      { ...anchor.stamp, modality: "indoor" },
+    ]) {
+      active.set(anchor.stamp.memberActivityId, changed);
+      expect(
+        await prepareGhostSectionComparisons(context, { userId, anchor, sections: [] }),
+      ).toEqual({ status: "stale" });
+    }
   });
 });

@@ -289,6 +289,137 @@ function climb(sampleCount = 41) {
 }
 
 describe("findUnnamedGhostClimbs", () => {
+  it("accepts the exact four-block, 120 m and 12 m rise thresholds", () => {
+    const points = Array.from({ length: 5 }, (_, index) => point(index * 30, index * 2_000));
+    const altitude = points.map(({ timestampMs }, index) => ({
+      timestampMs,
+      altitudeMeters: index * 3,
+    }));
+    expect(findUnnamedGhostClimbs(points, altitude)).toEqual({
+      sections: [bounds(points, 0, 4)],
+      bounded: false,
+    });
+    expect(findUnnamedGhostClimbs(points, altitude.slice(0, 4))).toEqual({
+      sections: [],
+      bounded: false,
+    });
+    const below = altitude.map((sample, index) => ({
+      ...sample,
+      altitudeMeters: index * 2.99,
+    }));
+    expect(findUnnamedGhostClimbs(points, below)).toEqual({ sections: [], bounded: false });
+  });
+
+  it("requires a sustained three percent grade even when a ride gains more than twelve meters", () => {
+    const points = Array.from({ length: 9 }, (_, index) => point(index * 50, index * 2_000));
+    const elevations = (risePerSample: number) =>
+      points.map(({ timestampMs }, index) => ({
+        timestampMs,
+        altitudeMeters: index * risePerSample,
+      }));
+    expect(findUnnamedGhostClimbs(points, elevations(1.5))).toEqual({
+      sections: [bounds(points, 0, 8)],
+      bounded: false,
+    });
+    expect(findUnnamedGhostClimbs(points, elevations(1.49))).toEqual({
+      sections: [],
+      bounded: false,
+    });
+    expect(findUnnamedGhostClimbs(points, elevations(1.01))).toEqual({
+      sections: [],
+      bounded: false,
+    });
+  });
+
+  it("includes only altitude times within one second of both recorded GPS brackets", () => {
+    const points = Array.from({ length: 11 }, (_, index) => point(index * 20, index * 2_000));
+    const altitude = points.slice(0, -1).map(({ timestampMs }, index) => ({
+      timestampMs: timestampMs + 1_000,
+      altitudeMeters: index * 2,
+    }));
+    expect(findUnnamedGhostClimbs(points, altitude)).toEqual({
+      sections: [bounds(points, 0, 9)],
+      bounded: false,
+    });
+    for (const drift of [-0.125, 0.125]) {
+      expect(
+        findUnnamedGhostClimbs(
+          points,
+          altitude.map((sample) => ({ ...sample, timestampMs: sample.timestampMs + drift })),
+        ),
+      ).toEqual({ sections: [], bounded: false });
+    }
+  });
+
+  it("never starts a climb from excess sensor observations before the first GPS sample", () => {
+    const { points, altitude } = climb();
+    expect(
+      findUnnamedGhostClimbs(points, [
+        { timestampMs: -2_000, altitudeMeters: -1_000 },
+        { timestampMs: -1_000, altitudeMeters: -500 },
+        ...altitude,
+        { timestampMs: 42_000, altitudeMeters: 1_000 },
+      ]),
+    ).toEqual({ sections: [bounds(points, 0, 40)], bounded: false });
+  });
+
+  it("allows a three-second altitude gap at 1 Hz and splits a four-second gap", () => {
+    const { points, altitude } = climb();
+    const skipMiddle = (lastSkipped: number) =>
+      altitude.filter((_sample, index) => index < 19 || index > lastSkipped);
+    expect(findUnnamedGhostClimbs(points, skipMiddle(20))).toEqual({
+      sections: [bounds(points, 0, 40)],
+      bounded: false,
+    });
+    expect(findUnnamedGhostClimbs(points, skipMiddle(21))).toEqual({
+      sections: [],
+      bounded: false,
+    });
+  });
+
+  it("keeps an ascent when its five-second altitude cadence allows a seven-second interval", () => {
+    const { points, altitude } = climb(81);
+    const observed = altitude.filter((_sample, index) =>
+      index <= 20 ? index % 5 === 0 : index >= 27 && (index - 27) % 5 === 0,
+    );
+    const result = findUnnamedGhostClimbs(points, observed);
+    expect(result.sections).toHaveLength(1);
+    expect(result.sections[0]?.start).toEqual(bounds(points, 0, 77).start);
+    expect(result.sections[0]?.end.timestampMs).toBeGreaterThan(65_000);
+    expect(result.bounded).toBe(false);
+  });
+
+  it("includes the first block at the two-percent grade boundary in a sustained ascent", () => {
+    const points = Array.from({ length: 5 }, (_, index) => point(index * 30, index * 2_000));
+    const measured = [0, 0.6, 4.6, 8.6, 12.6];
+    const altitude = points.map(({ timestampMs }, index) => ({
+      timestampMs,
+      altitudeMeters: measured[index] ?? null,
+    }));
+    expect(findUnnamedGhostClimbs(points, altitude)).toEqual({
+      sections: [bounds(points, 0, 4)],
+      bounded: false,
+    });
+  });
+
+  it("discards a broken altitude clock and treats a nonfinite elevation as a gap", () => {
+    const { points, altitude } = climb();
+    expect(
+      findUnnamedGhostClimbs(points, [
+        { timestampMs: Number.NaN, altitudeMeters: 100 },
+        ...altitude,
+      ]),
+    ).toEqual({ sections: [], bounded: false });
+    const brokenElevation = altitude.map((sample, index) => ({
+      ...sample,
+      altitudeMeters: index === 20 ? Number.POSITIVE_INFINITY : sample.altitudeMeters,
+    }));
+    expect(findUnnamedGhostClimbs(points, brokenElevation)).toEqual({
+      sections: [],
+      bounded: false,
+    });
+  });
+
   it("finds a sustained ascent below sea level with exact recorded bounds", () => {
     const { points, altitude } = climb();
     const result = findUnnamedGhostClimbs(

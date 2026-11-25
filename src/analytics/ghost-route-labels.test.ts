@@ -518,6 +518,50 @@ it("reports Retry-After without retrying a rate-limited response", async () => {
   expect(calls).toHaveLength(1);
 });
 
+it.each([
+  [undefined, undefined],
+  ["+7", undefined],
+  ["7.5", undefined],
+  ["3601", undefined],
+  ["3600", 3_600],
+] as const)("bounds provider retry delay %s", async (header, retryAfterSeconds) => {
+  const calls = intercept(
+    () =>
+      new HttpResponse(null, {
+        status: 429,
+        headers: header === undefined ? {} : { "Retry-After": header },
+      }),
+  );
+  expect(await labelGhostRoute({ ...request, canDispatch }, config)).toStrictEqual({
+    status: "error",
+    reason: "rate-limited",
+    ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+  });
+  expect(calls).toHaveLength(1);
+});
+
+it("trims provider names and withholds names beyond the display limit", async () => {
+  const maximumName = "a".repeat(256);
+  const names = [`  ${maximumName}  `, "b".repeat(257)];
+  for (const name of names) {
+    intercept((coordinates) =>
+      HttpResponse.json(providerResponse(coordinates, [step(0, coordinates.length - 1, name)])),
+    );
+    if (name.trim() === maximumName) {
+      expect(await labelGhostRoute({ ...request, canDispatch }, config)).toMatchObject({
+        status: "ready",
+        sections: [{ kind: "named-road", name: maximumName }],
+      });
+    } else {
+      expect(await labelGhostRoute({ ...request, canDispatch }, config)).toMatchObject({
+        status: "unavailable",
+        sections: [],
+      });
+    }
+    server.resetHandlers();
+  }
+});
+
 it("reports an empty collection as unavailable after dispatch", async () => {
   const calls = intercept(() => HttpResponse.json({ type: "FeatureCollection", features: [] }));
   expect(await labelGhostRoute({ ...request, canDispatch }, config)).toMatchObject({
@@ -569,6 +613,24 @@ it("discards earlier results when eligibility changes before a second request", 
   ).toEqual({ status: "cancelled" });
   expect(calls).toHaveLength(1);
   expect(revalidate).toHaveBeenCalledTimes(2);
+});
+
+it("aborts the provider request and withholds its response if cancellation happens in flight", async () => {
+  const controller = new AbortController();
+  const requestAborted = vi.fn();
+  server.use(
+    http.post(endpoint, async ({ request: pending }) => {
+      const body = requestBody.parse(await pending.json());
+      const coordinates = body.waypoints.map(({ location }) => location);
+      pending.signal.addEventListener("abort", requestAborted, { once: true });
+      controller.abort();
+      return HttpResponse.json(providerResponse(coordinates));
+    }),
+  );
+  expect(
+    await labelGhostRoute({ ...request, canDispatch, signal: controller.signal }, config),
+  ).toEqual({ status: "cancelled" });
+  expect(requestAborted).toHaveBeenCalledTimes(1);
 });
 
 it("blocks a provider redirect before forwarding the request body", async () => {
