@@ -3,6 +3,7 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
   HttpResponseError,
   isHttpServerErrorJsonParseFailure,
+  isHttpServerErrorStatus,
 } from "@dofek/telemetry/handled-failure";
 import { File as ExpoFile } from "expo-file-system";
 import * as Sharing from "expo-sharing";
@@ -169,6 +170,11 @@ export function DataExportSection({ serverUrl, sessionToken }: DataExportSection
 
       if (!triggerRes.ok) {
         const message = await getResponseErrorMessage(triggerRes, "Failed to start export");
+        if (isHttpServerErrorStatus(triggerRes.status)) {
+          captureException(new HttpResponseError(message, triggerRes.status), {
+            context: "data-export-start",
+          });
+        }
         if (!isMounted.current) return;
         setExportState("error");
         setExportMessage(message);

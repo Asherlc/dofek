@@ -4,6 +4,7 @@ import {
   guardTrpcHttpResponse,
   HttpResponseError,
   isHttpServerErrorJsonParseFailure,
+  isHttpServerErrorStatus,
 } from "./handled-failure.ts";
 
 describe("HttpResponseError", () => {
@@ -14,6 +15,16 @@ describe("HttpResponseError", () => {
     expect(error.message).toBe("Server unavailable");
     expect(error.status).toBe(503);
     expect(error.name).toBe("HttpResponseError");
+  });
+});
+
+describe("isHttpServerErrorStatus", () => {
+  it.each([500, 502, 599])("accepts %i", (status) => {
+    expect(isHttpServerErrorStatus(status)).toBe(true);
+  });
+
+  it.each([499, 400, 200, 600])("rejects %i", (status) => {
+    expect(isHttpServerErrorStatus(status)).toBe(false);
   });
 });
 

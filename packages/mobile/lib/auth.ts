@@ -7,6 +7,7 @@ import {
 import {
   HttpResponseError,
   isHttpServerErrorJsonParseFailure,
+  isHttpServerErrorStatus,
 } from "@dofek/telemetry/handled-failure";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as WebBrowser from "expo-web-browser";
@@ -320,7 +321,16 @@ export async function startNativeAppleSignIn(serverUrl: string): Promise<AuthRes
   });
 
   if (!response.ok) {
-    const text = await response.text();
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (error: unknown) {
+      if (!isHttpServerErrorStatus(response.status)) {
+        throw error;
+      }
+      captureException(error, { source: "apple-native-response-text" });
+      throw new HttpResponseError(`Apple Sign In failed: ${response.status}`, response.status);
+    }
     throw new HttpResponseError(
       text || `Apple Sign In failed: ${response.status}`,
       response.status,

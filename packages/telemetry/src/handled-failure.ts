@@ -18,7 +18,7 @@ export class HttpResponseError extends Error {
 }
 
 /** True for HTTP statuses 500–599 inclusive. */
-function isHttpServerErrorStatus(status: number): boolean {
+export function isHttpServerErrorStatus(status: number): boolean {
   return status >= 500 && status <= 599;
 }
 

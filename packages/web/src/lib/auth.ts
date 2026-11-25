@@ -1,5 +1,8 @@
 import { type AuthUser, AuthUserSchema, type ConfiguredProviders } from "@dofek/auth/auth";
-import { HttpResponseError } from "@dofek/telemetry/handled-failure";
+import {
+  HttpResponseError,
+  isHttpServerErrorJsonParseFailure,
+} from "@dofek/telemetry/handled-failure";
 import { z } from "zod";
 import { captureException } from "./telemetry.ts";
 import { withWebAccountStateLockWhenAvailable } from "./web-account-state-lock.ts";
@@ -17,8 +20,19 @@ const errorResponseSchema = z.object({ error: z.string().min(1) });
 const invalidSessionResponseMessage =
   "The server returned an invalid session response. Please try again.";
 
+async function readAuthJsonBody(response: Response, source: string): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch (error: unknown) {
+    if (!isHttpServerErrorJsonParseFailure(error, response.status)) {
+      captureException(error, { source });
+    }
+    return null;
+  }
+}
+
 async function getErrorMessage(response: Response, fallback: string): Promise<string> {
-  const data: unknown = await response.json().catch(() => null);
+  const data: unknown = await readAuthJsonBody(response, "auth-error-response-json");
   const parsed = errorResponseSchema.safeParse(data);
   return parsed.success ? parsed.data.error : fallback;
 }
@@ -45,7 +59,7 @@ async function submitPasswordAuth(
       body: JSON.stringify(body),
     });
 
-    const data: unknown = await res.json().catch(() => null);
+    const data: unknown = await readAuthJsonBody(res, "password-auth-response-json");
     const parsed = passwordAuthResponseSchema.safeParse(data);
     if (!res.ok) {
       throw new HttpResponseError(
@@ -131,7 +145,7 @@ export async function requestPasswordReset(email: string): Promise<{ message: st
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ email }),
   });
-  const data: unknown = await response.json().catch(() => null);
+  const data: unknown = await readAuthJsonBody(response, "password-reset-response-json");
   const parsed = resetRequestResponseSchema.safeParse(data);
   if (!response.ok) {
     throw new HttpResponseError(
@@ -151,7 +165,7 @@ export async function confirmPasswordReset(token: string, password: string): Pro
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ token, password }),
   });
-  const data: unknown = await response.json().catch(() => null);
+  const data: unknown = await readAuthJsonBody(response, "password-reset-confirm-json");
   const parsed = resetConfirmResponseSchema.safeParse(data);
   if (!response.ok) {
     throw new HttpResponseError(

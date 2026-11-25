@@ -366,6 +366,65 @@ describe("startNativeAppleSignIn", () => {
     await expect(startNativeAppleSignIn("https://srv")).rejects.toThrow("Apple Sign In failed");
   });
 
+  it("keeps the typed 5xx failure when reading the error body fails", async () => {
+    mockSignInAsync.mockResolvedValueOnce({
+      user: "apple-user-123",
+      authorizationCode: "code",
+      identityToken: "token",
+      fullName: null,
+      email: null,
+      state: null,
+      realUserStatus: 1,
+      authorizedScopes: [],
+    });
+    const bodyReadError = new TypeError("Body stream already read");
+    const failingBody = new Response(null, { status: 502 });
+    vi.spyOn(failingBody, "text").mockRejectedValue(bodyReadError);
+    vi.mocked(fetch).mockResolvedValueOnce(failingBody);
+    mockCaptureException.mockClear();
+
+    const { HttpResponseError, classifyHandledFailure } = await import(
+      "@dofek/telemetry/handled-failure"
+    );
+    let thrown: unknown;
+    try {
+      await startNativeAppleSignIn("https://srv");
+    } catch (error: unknown) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(HttpResponseError);
+    expect(thrown).toMatchObject({
+      message: "Apple Sign In failed: 502",
+      status: 502,
+    });
+    expect(classifyHandledFailure(thrown)).toBe("http_5xx");
+    expect(mockCaptureException).toHaveBeenCalledWith(bodyReadError, {
+      source: "apple-native-response-text",
+    });
+  });
+
+  it("rethrows the original body-read error for non-5xx Apple Sign In failures", async () => {
+    mockSignInAsync.mockResolvedValueOnce({
+      user: "apple-user-123",
+      authorizationCode: "code",
+      identityToken: "token",
+      fullName: null,
+      email: null,
+      state: null,
+      realUserStatus: 1,
+      authorizedScopes: [],
+    });
+    const bodyReadError = new TypeError("Body stream already read");
+    const failingBody = new Response(null, { status: 401 });
+    vi.spyOn(failingBody, "text").mockRejectedValue(bodyReadError);
+    vi.mocked(fetch).mockResolvedValueOnce(failingBody);
+    mockCaptureException.mockClear();
+
+    await expect(startNativeAppleSignIn("https://srv")).rejects.toBe(bodyReadError);
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
   it("throws when server response omits isNewUser", async () => {
     mockSignInAsync.mockResolvedValueOnce({
       user: "apple-user-123",
