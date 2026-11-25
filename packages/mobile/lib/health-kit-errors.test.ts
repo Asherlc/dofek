@@ -1,11 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
   isBackgroundHealthKitTransientNetworkError,
+  isHealthKitAuthorizationNotDetermined,
   isTransientNetworkErrorMessage,
   shouldSuppressBackgroundTransientNetworkError,
 } from "./health-kit-errors";
 
 describe("health-kit-errors", () => {
+  it("matches only the typed HealthKit authorization-not-determined code", () => {
+    expect(
+      isHealthKitAuthorizationNotDetermined({
+        code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+      }),
+    ).toBe(true);
+    expect(
+      isHealthKitAuthorizationNotDetermined(
+        Object.assign(new Error("localized system message"), {
+          code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+        }),
+      ),
+    ).toBe(true);
+    expect(isHealthKitAuthorizationNotDetermined({ code: "HEALTHKIT_DATABASE_INACCESSIBLE" })).toBe(
+      false,
+    );
+    expect(isHealthKitAuthorizationNotDetermined(new Error("Authorization not determined"))).toBe(
+      false,
+    );
+    expect(isHealthKitAuthorizationNotDetermined(null)).toBe(false);
+  });
+
   it("keeps an underlying storage failure reportable under a cancellation wrapper", () => {
     const error = new Error("fetch failed: cancelled", {
       cause: new Error("Failed to write value."),

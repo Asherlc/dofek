@@ -63,7 +63,7 @@ function createStageTelemetry() {
       }
     | undefined;
 
-  function complete(outcome: "completed" | "failed"): void {
+  function complete(outcome: "completed" | "deferred" | "failed"): void {
     if (!active) {
       return;
     }
@@ -135,10 +135,17 @@ async function performHealthKitSync(
     return false;
   }
 
+  const authorizationPending = result.runningStepAuthorizationPending === true;
+  if (authorizationPending) {
+    stageTelemetry.complete("deferred");
+  }
+
   try {
     if (
       onSyncComplete &&
-      (result.errors.length === 0 || result.inserted > 0 || result.deleted > 0)
+      ((!authorizationPending && result.errors.length === 0) ||
+        result.inserted > 0 ||
+        result.deleted > 0)
     ) {
       stageTelemetry.start({ operation: "postSyncCallback" });
       await onSyncComplete();
@@ -169,6 +176,18 @@ async function performHealthKitSync(
       errorCount: actionableErrors.length,
       source: TAG,
     });
+    return false;
+  }
+
+  if (authorizationPending) {
+    logger.info(
+      TAG,
+      "Running step authorization not determined; deferring catch-up until the next delivery",
+      {
+        deleted: result.deleted,
+        inserted: result.inserted,
+      },
+    );
     return false;
   }
 

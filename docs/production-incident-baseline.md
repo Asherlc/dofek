@@ -40408,8 +40408,8 @@ Local qualification and CI are separate from production throughput acceptance. T
   individual read that returned code 5.
   [Apple error definition](https://developer.apple.com/documentation/healthkit/hkerror/code/errorauthorizationnotdetermined)
   · [Native query](../packages/mobile/modules/health-kit/ios/HealthKitModule.swift#L381)
-  · [Running-step sync](../packages/mobile/lib/health-kit-running-steps-sync.ts#L72).
-- **Remaining risk and follow-up.** The failure remains open. Reproduce with
-  a pending HealthKit permission and confirm which read fails before changing
-  the observer's handling. Verify that the running-step anchor stays eligible
-  for catch-up and that unexpected failures still surface.
+  · [Running-step sync](../packages/mobile/lib/health-kit-running-steps-sync.ts#L84).
+- **Remaining risk and follow-up.** TypeScript now defers both running-step
+  native queries on `HEALTHKIT_AUTHORIZATION_NOT_DETERMINED`, preserves
+  committed uploads, and retries on the next observer delivery or startup.
+  Device and release validation of that deferral remain pending.

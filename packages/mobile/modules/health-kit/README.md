@@ -147,9 +147,14 @@ through `completeObserverUpdates`. Startup schedules a full catch-up. After
 a failed attempt, the next delivery includes the unfinished types. A type
 counts as complete after its query, uploads, and any required anchor commits
 succeed. Step count, workouts, and workout routes also depend on the shared
-running-step sync. Updates received during an attempt stay queued for the next
-serialized sync. Re-registration, JavaScript teardown, and Expo module
-destruction stop the queries and complete every callback still pending.
+running-step sync. When that shared read returns Apple's
+[`errorAuthorizationNotDetermined`](https://developer.apple.com/documentation/healthkit/hkerror/code/errorauthorizationnotdetermined)
+(`HEALTHKIT_AUTHORIZATION_NOT_DETERMINED`), those dependent types stay
+incomplete for the next observer delivery or startup catch-up; prior uploads
+remain counted and the current callback still completes once. Updates received
+during an attempt stay queued for the next serialized sync. Re-registration,
+JavaScript teardown, and Expo module destruction stop the queries and complete
+every callback still pending.
 
 A native 25-second expiration completes an update exactly once and records the
 expired update ID, HealthKit sample type, and monotonic callback age as a Sentry

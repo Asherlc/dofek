@@ -1,4 +1,15 @@
+const HEALTHKIT_AUTHORIZATION_NOT_DETERMINED_CODE = "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED";
 const HEALTHKIT_DATABASE_INACCESSIBLE_CODE = "HEALTHKIT_DATABASE_INACCESSIBLE";
+
+/** Matches the native bridge code for Apple's errorAuthorizationNotDetermined. */
+export function isHealthKitAuthorizationNotDetermined(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === HEALTHKIT_AUTHORIZATION_NOT_DETERMINED_CODE
+  );
+}
 
 export function isHealthKitDatabaseInaccessible(error: unknown): boolean {
   return (

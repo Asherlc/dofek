@@ -7,6 +7,7 @@ import type {
 import { isAfterDeviceErasureCutoff } from "./device-erasure-cutoff";
 import {
   isBackgroundHealthKitTransientNetworkError,
+  isHealthKitAuthorizationNotDetermined,
   isHealthKitDatabaseInaccessible,
 } from "./health-kit-errors";
 import { syncRunningSteps } from "./health-kit-running-steps-sync";
@@ -195,13 +196,6 @@ function handleWorkoutRouteError(
   context.errors.push(`${context.errorLabel}: ${message}`);
 }
 
-function isAuthorizationNotDetermined(error: unknown): boolean {
-  if (typeof error !== "object" || error === null || !("code" in error)) {
-    return false;
-  }
-  return error.code === "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED";
-}
-
 async function pushQuantitySampleBatches(
   trpcClient: SyncTrpcClient,
   samples: HealthKitSample[],
@@ -305,7 +299,7 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
       try {
         dailyStats = await healthKit.queryDailyStatistics(typeId, startDate, endDate);
       } catch (error) {
-        if (!isAuthorizationNotDetermined(error)) {
+        if (!isHealthKitAuthorizationNotDetermined(error)) {
           throw error;
         }
         dailyStats = [];
@@ -341,7 +335,7 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
         endDate,
       );
     } catch (error) {
-      if (!isAuthorizationNotDetermined(error)) {
+      if (!isHealthKitAuthorizationNotDetermined(error)) {
         if (!isHealthKitDatabaseInaccessible(error)) {
           captureException(error, {
             source: "health-kit-category-query",
@@ -534,7 +528,7 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
       try {
         clinicalRecords = await healthKit.queryClinicalRecords(typeIdentifier, startDate, endDate);
       } catch (error) {
-        if (!isAuthorizationNotDetermined(error)) {
+        if (!isHealthKitAuthorizationNotDetermined(error)) {
           throw error;
         }
         clinicalRecords = [];
@@ -573,6 +567,11 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     );
     totalInserted += runningSteps.inserted;
     totalDeleted = runningSteps.deleted;
+    if (runningSteps.runningStepAuthorizationPending) {
+      errors.push(
+        "Review Dofek's permissions in Apple Health, then resume sync to import running steps.",
+      );
+    }
   });
 
   return { deleted: totalDeleted, inserted: totalInserted, errors };
@@ -605,7 +604,7 @@ async function syncAnchoredSampleType(
   const changes = await healthKit
     .queryAnchoredSamples(typeIdentifier, initialStartDate)
     .catch((error: unknown) => {
-      if (!isAuthorizationNotDetermined(error)) {
+      if (!isHealthKitAuthorizationNotDetermined(error)) {
         throw error;
       }
       return null;
@@ -812,7 +811,7 @@ export async function syncHealthKitObserverChanges(
     try {
       statistics = await healthKit.queryDailyStatistics(typeIdentifier, startDate, endDate);
     } catch (error) {
-      if (!isAuthorizationNotDetermined(error)) {
+      if (!isHealthKitAuthorizationNotDetermined(error)) {
         throw error;
       }
       statistics = [];
@@ -903,6 +902,14 @@ export async function syncHealthKitObserverChanges(
     await options.assertCanContinue?.();
     const result = await syncRunningSteps(options, startDate, endDate);
     accumulate(result);
+    if (result.runningStepAuthorizationPending) {
+      return {
+        deleted,
+        inserted,
+        errors,
+        runningStepAuthorizationPending: true,
+      };
+    }
     if (result.errors.length === 0) {
       for (const typeIdentifier of completedBeforeRunningSteps) {
         onTypeComplete?.(typeIdentifier);
