@@ -272,11 +272,28 @@ describe("PlannedWorkoutRepository (integration)", () => {
           SET scopes = ' ACTIVITY:READ , WELLNESS:READ , CALENDAR:READ '
           WHERE user_id = ${USER}::uuid AND provider_id = ${PROVIDER}`,
     );
-    const live = await repo().upcoming({
+    const liveRead = await repo().upcoming({
       dateRange: { startDate: "2026-03-12", endDate: "2026-03-12" },
     });
-    expect(live[0]?.workouts[0]).toEqual(expect.objectContaining({ title: "Snapshot candidate" }));
-    expect(live[0]?.workouts[0]).not.toHaveProperty("snapshotImportedAt");
+    expect(liveRead[0]?.workouts[0]).toEqual(
+      expect.objectContaining({ title: "Snapshot candidate" }),
+    );
+    expect(liveRead[0]?.workouts[0]).not.toHaveProperty("snapshotImportedAt");
+
+    // Intervals.icu Update grants return WRITE, which implies the same-category READ.
+    // https://forum.intervals.icu/t/intervals-icu-oauth-support/2759
+    await ctx.db.execute(
+      sql`UPDATE fitness.oauth_token
+          SET scopes = ' ACTIVITY:WRITE , WELLNESS:WRITE , CALENDAR:WRITE '
+          WHERE user_id = ${USER}::uuid AND provider_id = ${PROVIDER}`,
+    );
+    const liveWrite = await repo().upcoming({
+      dateRange: { startDate: "2026-03-12", endDate: "2026-03-12" },
+    });
+    expect(liveWrite[0]?.workouts[0]).toEqual(
+      expect.objectContaining({ title: "Snapshot candidate" }),
+    );
+    expect(liveWrite[0]?.workouts[0]).not.toHaveProperty("snapshotImportedAt");
 
     await ctx.db.execute(
       sql`DELETE FROM fitness.oauth_token
