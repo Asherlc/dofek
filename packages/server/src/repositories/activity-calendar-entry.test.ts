@@ -8,36 +8,18 @@ import {
 import { makeActivityRow } from "./activity-calendar-test-helpers.ts";
 
 describe("activity calendar entries", () => {
-  it("retains unknown duration through SQL row parsing, calendar output and training stress", () => {
+  it("retains unknown duration through SQL row parsing and calendar output", () => {
     const row = activityRowSchema.parse({
       ...makeActivityRow(),
       duration_min: null,
       ended_at: null,
-      power_tss: 88,
     });
     expect(row.duration_min).toBeNull();
     const entry = createActiveCalendarEntry(row, {});
     expect(entry.durationMin).toBeNull();
     expect(entry.tss).toBeNull();
-    expect(entry.stats).toEqual([
-      {
-        status: "missing",
-        label: "Training Stress Score",
-        reason: "Record an activity duration greater than zero.",
-      },
-    ]);
+    expect(entry.stats).toEqual([]);
   });
-
-  it.each([50, null])(
-    "uses canonical power stress without heart rate and average power %s",
-    (avgPower) => {
-      const row = activityRowSchema.parse({
-        ...makeActivityRow({ avg_hr: null, max_hr: null, avg_power: avgPower }),
-        power_tss: 83.25,
-      });
-      expect(createActiveCalendarEntry(row, {}).tss).toBe(83.3);
-    },
-  );
 
   it("keeps the primary source type separate from the representative classification", () => {
     const row = activityRowSchema.parse(
@@ -133,7 +115,6 @@ describe("activity calendar entries", () => {
         elevation_gain_m: 125,
         centroid_lat: 90,
         centroid_lng: 180,
-        avg_power: null,
         local_date: "2026-03-19",
       }),
     ];
@@ -164,7 +145,6 @@ describe("activity calendar entries", () => {
         elevation_gain_m: 125,
         centroid_lat: 37.7749,
         centroid_lng: -122.4194,
-        avg_power: null,
       }),
     ];
     const routeRows = [
@@ -280,64 +260,6 @@ describe("activity calendar entries", () => {
     );
   });
 
-  it.each([60, 0, null])("omits TSS without recorded power for duration %s", (durationMin) => {
-    const row = activityRowSchema.parse(
-      makeActivityRow({ avg_power: null, power_tss: null, duration_min: durationMin }),
-    );
-
-    expect(createActiveCalendarEntry(row, {})).toMatchObject({ tss: null, stats: [] });
-    expect(
-      createProviderAbsentCalendarEntry({ ...row, provider_absent_at: "2026-11-01T00:00:00Z" }, {}),
-    ).toMatchObject({ tss: null, stats: [] });
-  });
-
-  it.each([250, 0])(
-    "explains prerequisites when recorded power %s has no stress score",
-    (avgPower) => {
-      const rows = [makeActivityRow({ avg_power: avgPower, avg_hr: null })];
-
-      const entries = rows.map((row) =>
-        createActiveCalendarEntry(activityRowSchema.parse(row), {}),
-      );
-      expect(entries[0]).toEqual(
-        expect.objectContaining({
-          tss: null,
-          stats: [
-            {
-              status: "missing",
-              label: "Training Stress Score",
-              reason:
-                "Set a dated cycling FTP and record normalized power to calculate training stress.",
-            },
-          ],
-        }),
-      );
-    },
-  );
-
-  it("does not compute stress for zero-duration activities", () => {
-    const rows = [makeActivityRow({ duration_min: 0 })];
-
-    const entries = rows.map((row) => createActiveCalendarEntry(activityRowSchema.parse(row), {}));
-    expect(entries[0]).toEqual(
-      expect.objectContaining({
-        tss: null,
-        stats: [
-          {
-            status: "missing",
-            label: "Training Stress Score",
-            reason: "Record an activity duration greater than zero.",
-          },
-        ],
-      }),
-    );
-  });
-
-  it("retains canonical zero stress even when heart rate is available", () => {
-    const row = activityRowSchema.parse(makeActivityRow({ power_tss: 0, avg_hr: 150 }));
-    expect(createActiveCalendarEntry(row, {}).tss).toBe(0);
-  });
-
   it("includes partial absence summaries for canonical activities with absent source links", () => {
     const rows = [
       makeActivityRow({
@@ -368,19 +290,15 @@ describe("activity calendar entries", () => {
     ]);
   });
 
-  it("builds complete hidden activity entries with stress, stats, and tombstone metadata", () => {
+  it("builds complete hidden activity entries with tombstone metadata", () => {
     const rows = [
       makeActivityRow({
         id: "hidden-power",
-        power_tss: 100,
         name: "Hidden Ride",
         canonical_type: "cycling",
         started_at: "2026-03-18T07:00:00.000Z",
         ended_at: "2026-03-18T08:00:00.000Z",
         duration_min: 60,
-        avg_hr: null,
-        max_hr: null,
-        avg_power: 250,
         total_distance: null,
         elevation_gain_m: null,
         centroid_lat: null,
@@ -442,8 +360,8 @@ describe("activity calendar entries", () => {
       elevationGainM: null,
       elevationState: { status: "missing", reason: "Elevation gain not recorded" },
       location: null,
-      tss: 100,
-      stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
+      tss: null,
+      stats: [],
       isProviderAbsent: true,
       providerId: "strava",
       providerAbsentAt: "2026-03-05T14:30:00.000Z",
@@ -459,9 +377,6 @@ describe("activity calendar entries", () => {
         started_at: "2026-03-18T07:00:00.000Z",
         ended_at: "2026-03-18T08:00:00.000Z",
         duration_min: 60,
-        avg_hr: null,
-        max_hr: null,
-        avg_power: null,
         total_distance: 5000,
         elevation_gain_m: 125,
         centroid_lat: null,
@@ -500,9 +415,6 @@ describe("activity calendar entries", () => {
         started_at: "2026-03-18T07:00:00.000Z",
         ended_at: "2026-03-18T08:00:00.000Z",
         duration_min: 60,
-        avg_hr: null,
-        max_hr: null,
-        avg_power: null,
         total_distance: 5000,
         elevation_gain_m: 125,
         centroid_lat: 37.7749,
@@ -555,9 +467,6 @@ describe("activity calendar entries", () => {
         started_at: "2026-03-18T07:00:00.000Z",
         ended_at: "2026-03-18T08:00:00.000Z",
         duration_min: 60,
-        avg_hr: null,
-        max_hr: null,
-        avg_power: null,
         total_distance: 5000,
         elevation_gain_m: 125,
         centroid_lat: 37.8,
@@ -603,9 +512,6 @@ describe("activity calendar entries", () => {
         started_at: "2026-03-18T07:00:00.000Z",
         ended_at: "2026-03-18T08:00:00.000Z",
         duration_min: 60,
-        avg_hr: null,
-        max_hr: null,
-        avg_power: null,
         total_distance: 5000,
         elevation_gain_m: 125,
         centroid_lat: 37.8,

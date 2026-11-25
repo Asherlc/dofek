@@ -59,8 +59,8 @@ with incomplete power coverage withheld from weekly totals.
 
 ## Architecture
 
-Activity cards and training-load consumers resolve the user's dated manual
-cycling FTP in Postgres and combine it in bulk with normalized power from the
+Ride detail and training-load consumers resolve the user's dated manual cycling
+FTP in Postgres and combine it with normalized power from the
 [cycling power analytics](../../src/analytics/README.md). Missing FTP or NP
 keeps cycling stress unavailable while preserving the ride in load totals;
 FTP remains available to power zones when NP is missing. `power.ftpSuggestions`
@@ -337,17 +337,14 @@ MapLibre documents its [camera coordinate and zoom conventions](https://maplibre
 
 ### Activity training-stress availability contract
 
-`calendar.weekList` owns both Training Stress Score calculation and availability explanations.
-Each activity stat is discriminated by `status`: an `available` stat contains its display-ready
-`value`, while a `missing` stat contains an actionable `reason` naming the missing duration
-or cycling power/eFTP prerequisite. Web and mobile
-render this contract without deriving metric availability. The numeric activity `tss` field remains
-nullable for consumers that need the score rather than its compact-card presentation.
+Ride detail shows the ride-wide power Training Stress Score, including zero,
+from [`activity.powerZones`](src/routers/activity.ts). All power-zone sources for
+the same ride return its canonical score. [Activity list responses](src/routers/calendar.ts)
+retain `tss: null` and `stats: []` for released clients.
 
-The retirement advances the [activity-list](src/routers/calendar.ts) and
-[personalization-status](src/routers/personalization.ts) server cache versions,
-plus the [mobile persisted-query contract](../mobile/lib/mobile-query-persistence.ts),
-so pre-retirement responses cannot restore HR-derived scores or calibration cards.
+The retirement of heart-rate-derived scores and calibration cards advanced the
+[personalization-status](src/routers/personalization.ts) cache version and the
+[mobile persisted-query contract](../mobile/lib/mobile-query-persistence.ts).
 
 ### Exercise-volume trend evidence contract
 

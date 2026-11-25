@@ -304,7 +304,13 @@ function ActivityDetailScreen({ id }: { id: string }) {
   const isRunning = detail.data?.activityType === "running";
   const isClimbingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
-  const metrics = useActivityMetrics(id, { isCycling, isClimbing: isClimbingActivity });
+  const hasRecordedPower =
+    detail.data != null && (detail.data.avgPower != null || detail.data.maxPower != null);
+  const metrics = useActivityMetrics(id, {
+    isCycling,
+    isClimbing: isClimbingActivity,
+    hasRecordedPower,
+  });
   const {
     metricSources,
     sourceControls,
@@ -541,6 +547,12 @@ function ActivityDetailScreen({ id }: { id: string }) {
       attribution: metrics.attributionHints.powerWork,
     });
   }
+  if (isCycling && powerZones.data?.trainingStressScore != null) {
+    stats.push({
+      label: "Training Stress Score",
+      value: formatNumber(powerZones.data.trainingStressScore, 1),
+    });
+  }
   stats.push(
     formatActivityMetric(
       avgPaceSecondsPerKm != null ? "Avg Pace" : "Avg Speed",
@@ -662,6 +674,9 @@ function ActivityDetailScreen({ id }: { id: string }) {
           ) : null}
           {isCycling && powerWork.error && (
             <QueryStatePanel variant="error" message={powerWork.error.message} />
+          )}
+          {isCycling && powerZones.error && (
+            <QueryStatePanel variant="error" message={powerZones.error.message} />
           )}
           {isCycling && plannedIntervals.error && !plannedIntervals.data && (
             <QueryStatePanel variant="error" message={plannedIntervals.error.message} />

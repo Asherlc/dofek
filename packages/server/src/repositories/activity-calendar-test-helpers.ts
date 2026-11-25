@@ -84,7 +84,6 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
           schema.parse(
             ("canonical_type" in row || "activity_type" in row) && "started_at" in row
               ? {
-                  power_tss: null,
                   timezone: null,
                   start_utc_offset_minutes: null,
                   end_utc_offset_minutes: null,
@@ -105,7 +104,7 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
                   last_processed_at: null,
                   ...row,
                 }
-              : { power_tss: null, ...row },
+              : row,
           ),
         ),
       ),
@@ -160,10 +159,6 @@ export function makeActivityRow<T extends Record<string, unknown>>(overrides?: T
     absent_source_external_ids: [],
     last_processed_at: "2026-03-18T08:05:00.000Z",
     duration_min: 60,
-    avg_hr: null,
-    max_hr: null,
-    power_tss: null,
-    avg_power: 250,
     total_distance: null,
     elevation_gain_m: null,
     centroid_lat: null,

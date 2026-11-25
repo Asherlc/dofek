@@ -217,6 +217,7 @@ interface MockPowerZone {
 interface MockPowerZonesResult {
   activityDate: string;
   ftp: number | null;
+  trainingStressScore: number | null;
   thresholdEvidence: CyclingThresholdEvidence;
   zones: MockPowerZone[];
 }

@@ -152,6 +152,45 @@ describe("mobile query persistence", () => {
     await expect(AsyncStorage.getItem(`dofek-query-cache:${userId}`)).resolves.toBeNull();
   });
 
+  it("discards v30 caches with Activities list TSS and powerZones without detail score", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const userId = "activities-index-ftp-owner";
+    const weekListKey = [["calendar", "weekListV2"], { input: { weeks: 4 }, type: "query" }];
+    const zonesKey = [["activity", "powerZones"], { input: { id: "ride-1" }, type: "query" }];
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(weekListKey, [
+      {
+        date: "2026-03-18",
+        activities: [
+          {
+            id: "ride-1",
+            tss: 100,
+            stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
+          },
+        ],
+      },
+    ]);
+    seedClient.setQueryData(zonesKey, { ftp: 250, zones: [] });
+    await AsyncStorage.setItem(
+      `dofek-query-cache:${userId}`,
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: `${userId}:v30`,
+        clientState: dehydrate(seedClient),
+      }),
+    );
+    const restoredClient = createQueryClient();
+    await persistQueryClientRestore({
+      queryClient: restoredClient,
+      persister: createMobileQueryPersister(userId),
+      maxAge: QUERY_CACHE_MAX_AGE_MS,
+      buster: mobileQueryCacheBuster(userId),
+    });
+    expect(restoredClient.getQueryData(weekListKey)).toBeUndefined();
+    expect(restoredClient.getQueryData(zonesKey)).toBeUndefined();
+    await expect(AsyncStorage.getItem(`dofek-query-cache:${userId}`)).resolves.toBeNull();
+  });
+
   it.each([21, 22, 23, 25])(
     "discards an independently produced v%s cache before restoring the combined contract",
     async (version) => {

@@ -293,6 +293,7 @@ export const detailPageConfiguredThresholdEvidence = {
 export const detailPageCachedPowerZones = {
   activityDate: "2026-03-18",
   ftp: 250,
+  trainingStressScore: 82.4,
   thresholdEvidence: detailPageConfiguredThresholdEvidence,
   zones: [{ zone: 1, label: "Endurance", minPct: 56, maxPct: 75, seconds: 240, percent: 100 }],
 };
@@ -300,6 +301,7 @@ export const detailPageCachedPowerZones = {
 export const detailPageUnavailablePowerZones = {
   activityDate: "2026-03-18",
   ftp: null,
+  trainingStressScore: null,
   zones: [],
   thresholdEvidence: {
     ...detailPageConfiguredThresholdEvidence,

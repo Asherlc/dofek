@@ -16,6 +16,8 @@ export const activityPowerZonesSchema = z
       }),
     ),
     ftp: z.number().positive().nullable(),
+    /** Canonical ride-wide power TSS. Independent of selected zone power source. */
+    trainingStressScore: z.number().nullable(),
     thresholdEvidence: cyclingThresholdEvidenceSchema,
   })
   .refine(

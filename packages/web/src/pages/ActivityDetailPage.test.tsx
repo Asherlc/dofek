@@ -527,6 +527,58 @@ describe("ActivityDetailPage", () => {
     expect(screen.queryByRole("link", { name: "Set FTP" })).toBeNull();
   });
 
+  it.each([
+    {
+      label: "initial failure",
+      powerZones: undefined,
+      error: "Power zones are unavailable.",
+      score: null,
+    },
+    {
+      label: "cached score refresh failure",
+      powerZones: detailPageCachedPowerZones,
+      error: "Power zones failed to refresh",
+      score: "82.4",
+    },
+  ] satisfies ReadonlyArray<{
+    label: string;
+    powerZones: typeof detailPageCachedPowerZones | undefined;
+    error: string;
+    score: string | null;
+  }>)(
+    "enables powerZones from summary power and surfaces $label near the summary when the stream lacks power",
+    async ({ powerZones, error, score }) => {
+      setCyclingPowerZoneResult(powerZones, {
+        error: new Error(error),
+        isError: true,
+      });
+      Object.assign(mockActivity, {
+        activityType: "cycling",
+        avgPower: 0,
+        avgPowerState: { status: "available" },
+        maxPower: null,
+        maxPowerState: { status: "missing", reason: "Maximum power not recorded" },
+      });
+      mockStreamPoints.splice(
+        0,
+        mockStreamPoints.length,
+        ...mockStreamPoints.map((point) => ({ ...point, power: null })),
+      );
+
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(getQueryEnabledFlag(mockPowerZonesUseQuery.mock.calls.at(-1)?.[1])).toBe(true);
+      expect(screen.getByText(error)).toBeTruthy();
+      expect(screen.queryByRole("heading", { name: "Power Zones" })).toBeNull();
+      if (score) {
+        expect(screen.getByText("Training Stress Score")).toBeTruthy();
+        expect(screen.getByText(score)).toBeTruthy();
+      } else {
+        expect(screen.queryByText("Training Stress Score")).toBeNull();
+      }
+    },
+  );
+
   it("shows Set FTP for a power activity with no applicable FTP", async () => {
     setCyclingPowerZoneResult(detailPageUnavailablePowerZones);
     renderWithUnits(<ActivityDetailPage />);
@@ -1145,6 +1197,8 @@ describe("ActivityDetailPage", () => {
         expect(screen.getByText("Heart-rate zones refresh failed")).toBeTruthy();
         expect(screen.getByText("Power zones refresh failed")).toBeTruthy();
         expect(screen.getByText("Applied FTP: 250 W")).toBeTruthy();
+        expect(screen.getByText("Training Stress Score")).toBeTruthy();
+        expect(screen.getByText("82.4")).toBeTruthy();
         expect(screen.queryByRole("link", { name: "Set FTP" })).toBeNull();
       });
     });

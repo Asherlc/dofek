@@ -12,10 +12,7 @@ import {
 } from "./activity-calendar-test-helpers.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 import { climbingClimbFixture, climbingLogEntryFixture } from "./climbing-test-helpers.ts";
-import {
-  type CyclingActivityPowerMetrics,
-  CyclingThresholdRepository,
-} from "./cycling-threshold-repository.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 import { ProviderAbsentActivitiesCalendarRepository } from "./provider-absent-activities-calendar-repository.ts";
 
 const dialect = new PgDialect();
@@ -56,6 +53,52 @@ describe("ActivitiesCalendarRepository", () => {
   });
 
   afterEach(() => vi.restoreAllMocks());
+
+  it("paginates cycling activities without executing a dated FTP query", async () => {
+    vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockRejectedValue(
+      new Error("dated FTP lookup unavailable"),
+    );
+    const repository = new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "user-1",
+      "UTC",
+      makeSensorStore([
+        [
+          makeActivityRow({
+            id: "ride-1",
+            canonical_type: "cycling",
+            local_date: "2026-03-18",
+          }),
+        ],
+        [],
+      ]),
+    );
+
+    const result = await repository.getPage({
+      weeks: 1,
+      endDate: "2026-03-20",
+      page: 0,
+      pageSize: 20,
+    });
+
+    expect(result).toMatchObject({
+      totalCount: 1,
+      page: 0,
+      pageSize: 20,
+      days: [
+        {
+          date: "2026-03-18",
+          activities: [
+            expect.objectContaining({
+              id: "ride-1",
+              tss: null,
+              stats: [],
+            }),
+          ],
+        },
+      ],
+    });
+  });
 
   it("orders page boundaries by local date, start time, then stable activity identity", async () => {
     const rows = [
@@ -439,34 +482,11 @@ describe("ActivitiesCalendarRepository", () => {
     );
   });
 
-  it("groups activities by normalized local date and returns display-ready indoor stats", async () => {
+  it("groups activities by normalized local date without training-stress enrichment", async () => {
     const database = makeDatabase([]);
-    const resolvedPower: CyclingActivityPowerMetrics = {
-      activity_id: "activity-1",
-      started_at: "2026-03-18T07:00:00.000Z",
-      ended_at: "2026-03-18T08:00:00.000Z",
-      activity_date: "2026-03-18",
-      canonical_type: "cycling",
-      normalized_power: 251,
-      power_sample_count: 3600,
-      ftp: 250,
-      intensity_factor: 1.004,
-      power_tss: 100.8,
-      threshold: {
-        value: 250,
-        unit: "watt",
-        effective_from: "2026-03-01",
-        source_record_id: "00000000-0000-4000-8000-000000000250",
-        kind: "configured",
-      },
-    };
-    const resolved = vi
-      .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
-      .mockResolvedValue(new Map([["activity-1", resolvedPower]]));
     const sensorStore = makeSensorStore([
       [
         makeActivityRow({
-          avg_power: 251,
           timezone: "America/Los_Angeles",
           start_utc_offset_minutes: -480,
           end_utc_offset_minutes: -420,
@@ -492,14 +512,13 @@ describe("ActivitiesCalendarRepository", () => {
               endUtcOffsetMinutes: -420,
               source: "provider_timezone",
             },
-            tss: 100.8,
+            tss: null,
             location: null,
-            stats: [{ status: "available", label: "Training Stress Score", value: "100.8" }],
+            stats: [],
           }),
         ],
       },
     ]);
-    expect(resolved).toHaveBeenCalledExactlyOnceWith(["activity-1"]);
   });
 
   it("omits locations when only one centroid coordinate is present", async () => {
@@ -546,7 +565,6 @@ describe("ActivitiesCalendarRepository", () => {
           canonical_type: "cardio",
           primary_canonical_type: "running",
           local_date: "2026-03-19",
-          avg_power: null,
         }),
       ],
       [],
@@ -855,9 +873,6 @@ describe("ActivitiesCalendarRepository", () => {
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -877,9 +892,6 @@ describe("ActivitiesCalendarRepository", () => {
           started_at: "2026-03-17T07:00:00.000Z",
           ended_at: "2026-03-17T08:00:00.000Z",
           duration_min: 45,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -930,9 +942,6 @@ describe("ActivitiesCalendarRepository", () => {
           started_at: "2026-03-17T07:00:00.000Z",
           ended_at: "2026-03-17T08:00:00.000Z",
           duration_min: 45,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -948,9 +957,6 @@ describe("ActivitiesCalendarRepository", () => {
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -986,9 +992,6 @@ describe("ActivitiesCalendarRepository", () => {
           started_at: "2026-03-18T07:00:00.000Z",
           ended_at: "2026-03-18T08:00:00.000Z",
           duration_min: 60,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -1004,9 +1007,6 @@ describe("ActivitiesCalendarRepository", () => {
           started_at: "2026-03-18T10:00:00.000Z",
           ended_at: "2026-03-18T11:00:00.000Z",
           duration_min: 60,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
@@ -1053,9 +1053,6 @@ describe("ActivitiesCalendarRepository", () => {
           started_at: "2026-03-18T10:00:00.000Z",
           ended_at: "2026-03-18T11:00:00.000Z",
           duration_min: 60,
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
           total_distance: null,
           elevation_gain_m: null,
           centroid_lat: null,
