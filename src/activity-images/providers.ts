@@ -264,9 +264,8 @@ export async function fetchStravaActivityImages(
   return {
     ...stravaImageDiscovery(photos, expectedCount, finished),
     ...(failure
-      ? { retryable: failure.retryable, retryAfterSeconds: failure.retryAfterSeconds }
+      ? { retryable: failure.retryable, retryAfterSeconds: failure.retryAfterSeconds, cause }
       : {}),
-    ...(cause !== undefined ? { cause } : {}),
   };
 }
 

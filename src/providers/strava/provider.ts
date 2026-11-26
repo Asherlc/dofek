@@ -873,12 +873,13 @@ export class StravaProvider implements WebhookProvider {
                 discovery,
               });
               if (discovery.retryable) {
+                const cause = new Error(discovery.reason ?? "Strava photo discovery incomplete", {
+                  cause: discovery.cause,
+                });
                 errors.push({
                   message: "Photos could not be fully discovered; retry this activity.",
                   externalId: act.externalId,
-                  cause: new Error(discovery.reason ?? "Strava photo discovery incomplete", {
-                    cause: discovery.cause,
-                  }),
+                  cause,
                 });
               }
             } catch (error) {
