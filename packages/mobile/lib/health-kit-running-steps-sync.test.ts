@@ -26,13 +26,11 @@ function options() {
       queryDailyStatistics: vi.fn(),
       queryQuantitySamples: vi.fn(),
       queryCategorySamples: vi.fn(),
-      queryClinicalRecords: vi.fn(),
       queryWorkouts: vi.fn(),
       querySleepSamples: vi.fn(),
       queryWorkoutRoutes: vi.fn(),
     },
     trpcClient: {
-      clinicalRecords: { push: { mutate: vi.fn() } },
       healthKitSync: {
         pushRunningStepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
         deleteQuantitySamples: { mutate: vi.fn().mockResolvedValue({ deleted: 1 }) },

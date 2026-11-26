@@ -1,5 +1,16 @@
 # Apple Health Provider
 
+Dofek supports Apple Health on iOS and on the web.
+
+- **Native iOS HealthKit sync** reads ordinary HealthKit sample types for
+  workouts, heart rate, sleep, body metrics, running steps, and related
+  quantities. See Apple's
+  [Setting up HealthKit](https://developer.apple.com/documentation/healthkit/setting-up-healthkit)
+  for authorization and Health Records access as a distinct capability.
+- **Web ZIP import** ingests Apple Health export archives, including FHIR
+  clinical records under `clinical-records/`. Historical clinical rows already
+  stored in Dofek remain available on web.
+
 ## Export Format
 
 Apple Health exports as a zip file containing:
@@ -239,9 +250,10 @@ The SAX parser reads much faster than the DB can write. We implement backpressur
 
 metric_stream rows are collected into batches (500 rows) and inserted with `onConflictDoNothing()` for deduplication.
 
-### Clinical Records Import
+### Clinical Records Import (web ZIP only)
 
-The clinical records import runs after the XML import:
+The web ZIP import processes clinical records after the XML import.
+
 1. Read FHIR JSON files from `clinical-records/` directory in the zip (via yauzl)
 2. Separate Observations from DiagnosticReports
 3. Build panel map from DiagnosticReports (maps Observation IDs → panel names)

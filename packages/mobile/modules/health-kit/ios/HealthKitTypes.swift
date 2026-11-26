@@ -1,41 +1,5 @@
 import HealthKit
 
-private let clinicalNoteRecordIdentifier = "HKClinicalTypeIdentifierClinicalNoteRecord"
-
-private let clinicalRecordTypesByIdentifier: [String: String] = [
-    "HKClinicalTypeIdentifierAllergyRecord": "allergy",
-    "HKClinicalTypeIdentifierConditionRecord": "condition",
-    "HKClinicalTypeIdentifierCoverageRecord": "coverage",
-    "HKClinicalTypeIdentifierImmunizationRecord": "immunization",
-    "HKClinicalTypeIdentifierLabResultRecord": "labResult",
-    "HKClinicalTypeIdentifierMedicationRecord": "medication",
-    "HKClinicalTypeIdentifierProcedureRecord": "procedure",
-    "HKClinicalTypeIdentifierVitalSignRecord": "vitalSign",
-    clinicalNoteRecordIdentifier: "clinicalNote",
-]
-
-let clinicalRecordTypeIdentifiers = Array(clinicalRecordTypesByIdentifier.keys)
-
-func clinicalRecordType(for identifier: String) -> String? {
-    return clinicalRecordTypesByIdentifier[identifier]
-}
-
-#if os(iOS)
-func healthKitClinicalType(for identifier: String) -> HKClinicalType? {
-    guard clinicalRecordType(for: identifier) != nil else {
-        return nil
-    }
-    if identifier == clinicalNoteRecordIdentifier {
-        guard #available(iOS 16.4, *) else {
-            return nil
-        }
-    }
-    return HKClinicalType.clinicalType(
-        forIdentifier: HKClinicalTypeIdentifier(rawValue: identifier)
-    )
-}
-#endif
-
 /// All HealthKit types we want to read
 let readTypes: Set<HKObjectType> = {
     var types = Set<HKObjectType>()
@@ -123,15 +87,6 @@ let readTypes: Set<HKObjectType> = {
     types.insert(HKWorkoutType.workoutType())
     // Workout route (GPS data associated with workouts)
     types.insert(HKSeriesType.workoutRoute())
-
-    // Clinical Records (FHIR data) — iOS only; not available on macOS
-    #if os(iOS)
-    for identifier in clinicalRecordTypeIdentifiers {
-        if let type = healthKitClinicalType(for: identifier) {
-            types.insert(type)
-        }
-    }
-    #endif
 
     return types
 }()

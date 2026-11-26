@@ -41,10 +41,7 @@ export function ClinicalRecordsPage() {
   const records = recordsQuery.data?.records;
 
   return (
-    <PageLayout
-      title="Clinical Records"
-      subtitle="Read-only records synced explicitly from Apple Health"
-    >
+    <PageLayout title="Clinical Records" subtitle="Read-only records from Apple Health">
       {recordsQuery.isLoading && records === undefined ? (
         <QueryStatePanel
           variant="loading"

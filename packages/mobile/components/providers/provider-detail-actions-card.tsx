@@ -20,12 +20,9 @@ export function ProviderDetailActionsCard({
   syncDateRange,
   shouldShowFullSync,
   shouldShowAppleHealthPermissionBanner,
-  shouldShowAppleHealthClinicalRecords,
-  shouldShowClinicalRecordsLink,
   onPrimaryAction,
   onReviewPermissions,
   onFullSync,
-  onOpenClinicalRecords,
 }: {
   primaryActionLabel: "Sync" | "Connect" | "Reconnect" | "Resume";
   isSyncing: boolean;
@@ -36,12 +33,9 @@ export function ProviderDetailActionsCard({
   syncDateRange: ProviderSyncDateRange | null;
   shouldShowFullSync: boolean;
   shouldShowAppleHealthPermissionBanner: boolean;
-  shouldShowAppleHealthClinicalRecords: boolean;
-  shouldShowClinicalRecordsLink: boolean;
   onPrimaryAction: () => void;
   onReviewPermissions: () => void;
   onFullSync: () => void;
-  onOpenClinicalRecords: () => void;
 }) {
   const isBusy = isSyncing || isRequestingPermissions;
   return (
@@ -134,23 +128,6 @@ export function ProviderDetailActionsCard({
         </TouchableOpacity>
       )}
       {permissionMessage ? <Text style={styles.syncMessageText}>{permissionMessage}</Text> : null}
-      {shouldShowAppleHealthClinicalRecords ? (
-        <View style={styles.clinicalRecordsSection}>
-          <Text style={styles.clinicalRecordsDescription}>
-            Clinical records are optional, read-only, and sync only during an explicit sync.
-          </Text>
-          {shouldShowClinicalRecordsLink ? (
-            <TouchableOpacity
-              accessibilityLabel="View clinical records"
-              accessibilityRole="link"
-              activeOpacity={0.7}
-              onPress={onOpenClinicalRecords}
-            >
-              <Text style={styles.clinicalRecordsLink}>View clinical records</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -217,17 +194,5 @@ const styles = StyleSheet.create({
   permissionBannerText: {
     fontSize: 12,
     color: colors.warning,
-  },
-  clinicalRecordsSection: {
-    gap: 6,
-  },
-  clinicalRecordsDescription: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  clinicalRecordsLink: {
-    color: colors.accent,
-    fontSize: 12,
-    fontWeight: "600",
   },
 });

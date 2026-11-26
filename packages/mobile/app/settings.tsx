@@ -28,6 +28,12 @@ import {
   View,
 } from "react-native";
 import { AccountErasurePanel } from "../components/AccountErasurePanel";
+import {
+  BillingPurchaseLegalLinks,
+  BillingPurchaseProductSummary,
+  BillingSubscribeButton,
+  DOFEK_PREMIUM_MONTHLY_TITLE,
+} from "../components/BillingPurchaseLegalLinks";
 import { ClimbingGradeSystemSettings } from "../components/ClimbingGradeSystemSettings";
 import { CyclingFtpSettings } from "../components/CyclingFtpSettings";
 import { DataExportSection } from "../components/DataExportSection";
@@ -266,7 +272,9 @@ export default function SettingsScreen() {
   );
   const [appStoreBillingError, setAppStoreBillingError] = useState<string | null>(null);
   const [appStoreBillingMessage, setAppStoreBillingMessage] = useState<string | null>(null);
-  const [appStoreProduct, setAppStoreProduct] = useState<AppStoreProduct | null>(null);
+  const [appStoreProduct, setAppStoreProduct] = useState<AppStoreProduct | null | undefined>(
+    undefined,
+  );
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
@@ -326,7 +334,9 @@ export default function SettingsScreen() {
       (product) => {
         if (active) setAppStoreProduct(product);
       },
-      () => undefined,
+      () => {
+        if (active) setAppStoreProduct(null);
+      },
     );
     return () => {
       active = false;
@@ -775,33 +785,23 @@ export default function SettingsScreen() {
                 {appStoreBillingMessage ? (
                   <Text style={styles.billingDetailText}>{appStoreBillingMessage}</Text>
                 ) : null}
+                {!billingStatus.data.hasFullAccess ? (
+                  <BillingPurchaseProductSummary
+                    productTitle={appStoreProduct?.displayName ?? DOFEK_PREMIUM_MONTHLY_TITLE}
+                    productLoading={appStoreProduct === undefined}
+                    priceUnavailable={
+                      appStoreProduct !== undefined && !appStoreProduct?.displayPrice
+                    }
+                  />
+                ) : null}
                 <View style={styles.billingActionRow}>
                   {!billingStatus.data.hasFullAccess && (
-                    <TouchableOpacity
-                      style={[
-                        styles.billingPrimaryButton,
-                        appStoreBillingAction && styles.buttonDisabled,
-                      ]}
+                    <BillingSubscribeButton
+                      displayPrice={appStoreProduct?.displayPrice}
+                      isSubscribing={appStoreBillingAction === "subscribe"}
+                      disabled={appStoreBillingAction !== null || !appStoreProduct?.displayPrice}
                       onPress={subscribeWithAppStore}
-                      activeOpacity={0.7}
-                      disabled={appStoreBillingAction !== null}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        appStoreBillingAction === "subscribe"
-                          ? "Subscribing..."
-                          : `Subscribe for ${appStoreProduct?.displayPrice ?? "Premium"}/month`
-                      }
-                      accessibilityState={{
-                        busy: appStoreBillingAction === "subscribe",
-                        disabled: appStoreBillingAction !== null,
-                      }}
-                    >
-                      <Text style={styles.billingButtonText}>
-                        {appStoreBillingAction === "subscribe"
-                          ? "Subscribing..."
-                          : `Subscribe for ${appStoreProduct?.displayPrice ?? "Premium"}/month`}
-                      </Text>
-                    </TouchableOpacity>
+                    />
                   )}
                   <TouchableOpacity
                     style={[
@@ -852,6 +852,10 @@ export default function SettingsScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
+                <BillingPurchaseLegalLinks
+                  privacyPolicyUrl={`${auth.serverUrl}/privacy`}
+                  onError={(message) => setAppStoreBillingError(message)}
+                />
               </>
             ) : null}
           </View>

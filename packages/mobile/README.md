@@ -568,6 +568,14 @@ Validate SDK-managed versions with
 The native dependency set also includes ExpoNetwork, the pnpm patch to
 `expo-apple-authentication@58.0.3`, and [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/setup/expo/).
 
+The [Haptics patch](../../patches/expo-haptics@58.0.8.patch) declares
+`HapticsModule` for Apple autolinking. The
+[Modules Core patch](../../patches/expo-modules-core@58.1.0.patch) declares an
+empty list because Expo initializes its internal `CoreModule` directly.
+These declarations let Expo generate the iOS provider when its source scan
+times out. [Expo module configuration](https://docs.expo.dev/modules/module-config/)
+· [Expo app context](https://github.com/expo/expo/blob/expo-modules-core%4058.1.0/packages/expo-modules-core/ios/Core/AppContext.swift).
+
 The `@expo/plist` 0.10.1 and 0.10.2 consumers share the existing
 [XML parser patch](../../patches/@expo__plist@0.10.1.patch), selected by the
 exact version mappings in [pnpm-workspace.yaml](../../pnpm-workspace.yaml).
@@ -746,6 +754,19 @@ These signals do not include event-level process memory or replace an Apple
 [8.34.0 JavaScript-hang release notes](https://github.com/getsentry/sentry-react-native/releases/tag/8.34.0)
 and the
 [8.35.0 watchdog tracker release notes](https://github.com/getsentry/sentry-react-native/releases/tag/8.35.0).
+
+MetricKit reports foreground terminations as
+`metrickit.exit.fg.memory_resource_limit` and `metrickit.exit.fg.watchdog`.
+Sentry sends positive counts timestamped at the midpoint of Apple's reporting
+interval. Query the sums by `app.build` when MetricKit supplies a build number.
+The options take effect with a new native build.
+[Apple MetricKit](https://developer.apple.com/documentation/metrickit)
+· [Sentry metric recorder](https://github.com/getsentry/sentry-cocoa/blob/9.34.0/Sources/Swift/Core/MetricKit/SentryMXMetricRecorder.swift).
+
+Individual iOS 27 memory-exception diagnostics require Sentry Cocoa compiled
+with Xcode 27 or later. The pinned Cocoa 9.34.0 binary was built with Swift
+6.1.2 and uses the legacy MetricKit API.
+[Sentry MetricKit integration](https://github.com/getsentry/sentry-cocoa/blob/9.34.0/Sources/Swift/Core/MetricKit/SentryMetricKitIntegration.swift).
 
 Release startup tracing samples the `Mobile Startup` lifecycle and Sentry's
 native `App Start` span. The lifecycle attributes time to the Expo

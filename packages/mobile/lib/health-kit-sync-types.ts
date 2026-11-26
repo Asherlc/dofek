@@ -1,5 +1,4 @@
 import type {
-  ClinicalRecordSample,
   DailyStatistic,
   HealthKitSample,
   RouteLocation,
@@ -38,11 +37,6 @@ export interface HealthKitAdapter {
     startDate: string,
     endDate: string,
   ): Promise<HealthKitSample[]>;
-  queryClinicalRecords(
-    typeId: string,
-    startDate: string,
-    endDate: string,
-  ): Promise<ClinicalRecordSample[]>;
   queryWorkouts(startDate: string, endDate: string): Promise<WorkoutSample[]>;
   querySleepSamples(startDate: string, endDate: string): Promise<SleepSample[]>;
   queryWorkoutRoutes(workoutUuid: string): Promise<RouteLocation[]>;
@@ -57,13 +51,6 @@ export interface WorkoutRoutePayload {
 
 /** Abstraction over tRPC client for testability */
 export interface SyncTrpcClient {
-  clinicalRecords: {
-    push: {
-      mutate(input: {
-        records: Array<Omit<ClinicalRecordSample, "uuid"> & { externalId: string }>;
-      }): Promise<{ upserted: number }>;
-    };
-  };
   healthKitSync: {
     recordSync: {
       mutate(input: {
@@ -129,7 +116,6 @@ export type ManualHealthKitSyncStage =
   | `raw:${string}`
   | "workouts"
   | "sleep"
-  | `clinical:${string}`
   | "running-steps";
 
 export interface ManualHealthKitSyncStageCompletion {
@@ -207,9 +193,7 @@ export interface HealthKitSyncStage {
     | "queryWorkoutRoutes"
     | "pushWorkoutRoutes"
     | "querySleepSamples"
-    | "pushSleepSamples"
-    | "queryClinicalRecords"
-    | "pushClinicalRecords";
+    | "pushSleepSamples";
   typeIdentifier?: string;
   batchIndex?: number;
   batchCount?: number;
