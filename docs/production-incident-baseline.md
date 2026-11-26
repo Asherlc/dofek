@@ -40602,6 +40602,8 @@ Local qualification and CI are separate from production throughput acceptance. T
   operator action. If this recurs, correlate Sentry's HTTP breadcrumbs with
   Axiom response statuses and verify stored photo counts before intervening.
   Replace `<activity-id>` with the external ID from the Sentry HTTP breadcrumb.
+  For a recurrence, use the new incident's UTC time window in both Axiom
+  queries.
   [Axiom query guide](axiom-observability-runbook.md#queries) ·
   [Discovery storage](../src/db/activity-images.ts#L77).
 
