@@ -24,7 +24,11 @@ type PowerWorkInput = ActivityInputs["powerWork"];
 
 export function useActivityMetrics(
   id: string,
-  { isCycling, isClimbing }: { isCycling: boolean; isClimbing: boolean },
+  {
+    isCycling,
+    isClimbing,
+    hasRecordedPower,
+  }: { isCycling: boolean; isClimbing: boolean; hasRecordedPower: boolean },
 ) {
   const { user, accountSessionOwnerNonce } = useAuth();
   const scopeKey = user && id ? hashKey([user.id, accountSessionOwnerNonce, id]) : null;
@@ -68,7 +72,7 @@ export function useActivityMetrics(
     placeholderData: activityQueryPlaceholder(id),
   });
   const powerZones = trpc.activity.powerZones.useQuery(powerZonesInput, {
-    enabled: isCycling && hasPower,
+    enabled: isCycling && (hasRecordedPower || hasPower),
     placeholderData: activityQueryPlaceholder(id),
   });
   const heartRateContext = trpc.activity.heartRateContext.useQuery(contextInput, {

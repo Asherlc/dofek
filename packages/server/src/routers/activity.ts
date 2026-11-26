@@ -138,6 +138,7 @@ export interface ActivityPowerZonesResult {
   activityDate: string;
   zones: import("@dofek/zones/zones").ActivityPowerZone[];
   ftp: number | null;
+  trainingStressScore: number | null;
   thresholdEvidence: CyclingThresholdEvidence;
 }
 
@@ -378,7 +379,7 @@ export const activityRouter = router({
       return repo.getHrZones(input.id, input.heartRateSourceId);
     }),
 
-  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM, keyVersion: "manual-ftp-zones-v2" })
+  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM, keyVersion: "manual-ftp-zones-v3" })
     .input(z.object({ id: z.guid(), powerSourceId: z.string().min(1).max(4096).optional() }))
     .output(activityPowerZonesSchema)
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
@@ -419,6 +420,7 @@ export const activityRouter = router({
         activityDate: metrics?.activity_date ?? activity.displayed_date,
         zones,
         ftp,
+        trainingStressScore: metrics?.power_tss ?? null,
         thresholdEvidence,
       };
     }),

@@ -25,6 +25,7 @@ export function ActivityHeader({
   activity,
   powerWork,
   powerWorkSourceHint,
+  trainingStressScore,
   units,
   photos,
   ...sourceDetails
@@ -32,6 +33,7 @@ export function ActivityHeader({
   activity: ActivityDetail;
   powerWork?: ActivityPowerWork;
   powerWorkSourceHint?: string;
+  trainingStressScore?: number | null;
   units: UnitConverter;
   photos?: Omit<ComponentProps<typeof ActivityPhotos>, "heading">;
 } & Omit<ComponentProps<typeof ActivitySourceDisclosure>, "tree">) {
@@ -106,6 +108,14 @@ export function ActivityHeader({
             value: `${formatNumber(powerWork.workKilojoules, 0)} kJ`,
             description: powerWork.coverage.coveragePct < 99 ? "Partial power data" : undefined,
             attribution: powerWorkSourceHint,
+          },
+        ]
+      : []),
+    ...(isCyclingActivity(activity.activityType) && trainingStressScore != null
+      ? [
+          {
+            label: "Training Stress Score",
+            value: formatNumber(trainingStressScore, 1),
           },
         ]
       : []),

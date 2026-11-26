@@ -13,7 +13,6 @@ import {
 import { clickHouseActivityCalendarDate } from "./activity-local-date.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { getActivityMapReadiness, getActivityRoutePreviews } from "./activity-route-preview.ts";
-import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 
 const providerAbsentActivityRowSchema = activityRowSchema.extend({
   route_activity_id: z.string(),
@@ -23,10 +22,6 @@ const providerAbsentActivityRowSchema = activityRowSchema.extend({
 
 const activitySummaryMetricsRowSchema = z.object({
   id: z.string(),
-  avg_hr: z.coerce.number().nullable(),
-  max_hr: z.coerce.number().nullable(),
-  avg_power: z.coerce.number().nullable(),
-  power_tss: z.coerce.number().nullable(),
   total_distance: z.coerce.number().nullable(),
   elevation_gain_m: z.coerce.number().nullable(),
   centroid_lat: z.coerce.number().nullable(),
@@ -98,10 +93,6 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           activity.end_utc_offset_minutes AS end_utc_offset_minutes,
           activity.local_time_source AS local_time_source,
           dateDiff('second', activity.started_at, activity.ended_at) / 60.0 AS duration_min,
-          NULL AS avg_hr,
-          NULL AS max_hr,
-          NULL AS avg_power,
-          NULL AS power_tss,
           NULL AS total_distance,
           NULL AS elevation_gain_m,
           NULL AS centroid_lat,
@@ -132,16 +123,9 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
     }
 
     const activityIds = activityRows.map((row) => row.id);
-    const [summaryRows, routePreviewByActivityId, powerMetrics] = await Promise.all([
+    const [summaryRows, routePreviewByActivityId] = await Promise.all([
       this.#fetchSummaryMetricsByActivityId(activityIds),
       getActivityRoutePreviews(this.#sensorStore, this.userId, activityIds),
-      new CyclingThresholdRepository(
-        this.db,
-        this.#sensorStore,
-        this.userId,
-        this.timezone,
-        this.accessWindow,
-      ).getForActivities(activityIds),
     ]);
 
     const summaryByActivityId = new Map(summaryRows.map((row) => [row.id, row] as const));
@@ -150,10 +134,6 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
       if (!summary) return row;
       return {
         ...row,
-        avg_hr: summary.avg_hr,
-        max_hr: summary.max_hr,
-        avg_power: summary.avg_power,
-        power_tss: powerMetrics.get(row.id)?.power_tss ?? null,
         total_distance: summary.total_distance,
         elevation_gain_m: summary.elevation_gain_m,
         centroid_lat: summary.centroid_lat,
@@ -209,10 +189,6 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
       activitySummaryMetricsRowSchema,
       `SELECT
           toString(summary.activity_id) AS id,
-          NULL AS power_tss,
-          avg_hr,
-          max_hr,
-          avg_power,
           total_distance,
           elevation_gain_m,
           centroid_lat,

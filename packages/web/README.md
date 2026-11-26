@@ -122,9 +122,10 @@ It follows the Training date range and links each eligible effort and its suppor
 body-weight observations to the underlying records. Configured FTP carries its
 effective date. See [server profile semantics](../server/README.md#architecture).
 
-Activity-list cards use the stored cycling modality to show training stats instead
-of distance and elevation for indoor and virtual rides, including reported zeros.
-See [the card](src/components/ActivityCardContent.tsx) and the
+Activity-list cards use the stored cycling modality for indoor and virtual
+rides, which display duration on the list. The ride detail summary displays
+Training Stress Score when available. See
+[the card](src/components/ActivityCardContent.tsx) and the
 [shared cycling classification](../training/src/endurance-types.ts).
 
 On Activities, choose **Location** and submit a gym or crag name to search

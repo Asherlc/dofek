@@ -172,6 +172,30 @@ it.each([
 });
 
 it.each([
+  { trainingStressScore: 82.4, expected: "82.4" },
+  { trainingStressScore: 0, expected: "0.0" },
+  { trainingStressScore: null, expected: null },
+  { trainingStressScore: undefined, expected: null },
+])(
+  "shows stored training stress when present ($trainingStressScore)",
+  ({ trainingStressScore, expected }) => {
+    render(
+      <ActivityHeader
+        activity={{ ...baseActivity, activityType: "cycling" }}
+        trainingStressScore={trainingStressScore}
+        units={new UnitConverter("metric")}
+      />,
+    );
+    if (expected) {
+      expect(screen.getByText("Training Stress Score")).toBeVisible();
+      expect(screen.getByText(expected)).toBeVisible();
+    } else {
+      expect(screen.queryByText("Training Stress Score")).toBeNull();
+    }
+  },
+);
+
+it.each([
   { coveragePct: 98.9, partial: true },
   { coveragePct: 99, partial: false },
 ])("qualifies power work at the 99 percent boundary ($coveragePct)", ({ coveragePct, partial }) => {

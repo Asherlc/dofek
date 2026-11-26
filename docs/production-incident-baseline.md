@@ -40455,6 +40455,48 @@ Local qualification and CI are separate from production throughput acceptance. T
   · [Storybook](https://github.com/Asherlc/dofek/actions/runs/45648749828/job/139328072227)
   · [Mobile preview](https://github.com/Asherlc/dofek/actions/runs/45648749569/job/139327002736).
 
+## 2026-11-25 (UTC) — Uncached Activities loads blocked by PostgreSQL enrichment
+
+- **Impact.** Signed-in web requests for the Activities list returned HTTP
+  200 after 18,661 ms at 17:30:37 UTC and 16,660 ms at 17:31:18 UTC.
+  Both `calendar.weekListV2` calls missed the query cache and held up their
+  tRPC batches. The user reported a long wait for Activities. The production
+  logs do not identify the selected date range or filters.
+- **Evidence.** Axiom `dofek-logs` traces
+  `a9ed3561ef2a7c038b5acf72b6d1a015` and
+  `022158a9d0d4b7819f2ad720c346899a` record the list procedure at
+  18,650 ms and 16,645 ms. The earliest of the two slow-list records is
+  `procedure=calendar.weekListV2` with `db_duration_ms=18641` and
+  `cache_hit=false` at 17:30:37.638 UTC. PostgreSQL slow-statement logs
+  from 17:30:18 to 17:31:21 UTC show the dated cycling FTP lookup taking
+  10,987 ms and 10,094 ms, followed by climbing-log hydration at 6,222 ms
+  and 5,760 ms. ClickHouse `system.query_log` shows the corresponding initial
+  list reads at 241 ms and 191 ms. Axiom trace
+  `c1d15986f535f0b4a55c1d2b9266d344` shows the same two PostgreSQL queries
+  taking 7,393 ms and 4,132 ms on November 24 at 18:21 UTC, before the
+  [combined Activities agenda](https://github.com/Asherlc/dofek/pull/3484)
+  reached production.
+- **Cause.** On a cache miss, the Activities list waits for a PostgreSQL
+  cycling FTP lookup through the full activity view before pagination,
+  then waits for PostgreSQL to hydrate climbing-log details for map
+  locations on the displayed page.
+  [Calendar repository](../packages/server/src/repositories/activities-calendar-repository.ts)
+  · [Cycling threshold repository](../packages/server/src/repositories/cycling-threshold-repository.ts)
+  · [Climbing log repository](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts).
+- **Fix.** The Activities list and search results now load without FTP
+  or normalized-power enrichment. The ride detail summary on web and
+  iOS displays the existing cycling score from the power-zones request.
+  iOS refreshes its persisted query cache once on update.
+  A paginated-list regression first failed when the dated FTP lookup
+  threw and then passed after its removal.
+- **Remaining work.** The climbing-log query was a separate source of
+  delay in both samples. Compare signed-in, uncached list timings after
+  release and use fresh evidence to assess the remaining query cost.
+- **Retrospective.** Axiom identified the slow batch. The two current trace
+  IDs were available only in Axiom's log dataset. PostgreSQL logs and
+  ClickHouse query history supplied the individual query timings. Adding
+  this fallback to the loading runbook would help on the next recurrence.
+
 ## 2026-11-25 (UTC) — Fly handoff triggered an Oracle worker readiness alert
 
 - **Impact and evidence.** At 23:18:20 UTC, Oracle's worker `GET /readyz`

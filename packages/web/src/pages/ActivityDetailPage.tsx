@@ -51,7 +51,13 @@ export function ActivityDetailPage() {
   const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
   const isClimbingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
-  const metrics = useActivityMetrics(id, { isCycling, isClimbing: isClimbingActivity });
+  const hasRecordedPower =
+    detail.data != null && (detail.data.avgPower != null || detail.data.maxPower != null);
+  const metrics = useActivityMetrics(id, {
+    isCycling,
+    isClimbing: isClimbingActivity,
+    hasRecordedPower,
+  });
   const {
     metricSources,
     sources,
@@ -217,6 +223,7 @@ export function ActivityDetailPage() {
         }}
         powerWork={isCycling ? powerWork.data : undefined}
         powerWorkSourceHint={metrics.attributionHints.powerWork}
+        trainingStressScore={isCycling ? powerZones.data?.trainingStressScore : undefined}
         units={units}
         hardware={hardware.data}
         hardwareLoading={hardware.isLoading}
@@ -225,6 +232,9 @@ export function ActivityDetailPage() {
       />
       {isCycling && powerWork.error ? (
         <QueryStatePanel error={powerWork.error} height={72} />
+      ) : null}
+      {isCycling && !hasPower && powerZonesError ? (
+        <QueryStatePanel error={powerZonesError} height={72} />
       ) : null}
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
       {isCycling && cyclingProgression.error ? (
