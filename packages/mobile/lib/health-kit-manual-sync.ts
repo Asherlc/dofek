@@ -102,9 +102,7 @@ function describeManualStage(stage: string): string {
     "running-steps": "Synced running steps",
   };
   if (labels[stage]) return labels[stage];
-  const name = stage
-    .replace(/^(?:raw|clinical):/, "")
-    .replace(/^HK(?:Clinical|Quantity|Category)TypeIdentifier/, "");
+  const name = stage.replace(/^raw:/, "").replace(/^HK(?:Quantity|Category)TypeIdentifier/, "");
   const readable = name
     .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")

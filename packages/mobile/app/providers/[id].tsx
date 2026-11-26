@@ -536,7 +536,6 @@ export default function ProviderDetailScreen() {
       providerId={providerId}
       providerActions={providerActions}
       displayProvider={providerActions.displayProvider}
-      onOpenClinicalRecords={() => router.push("/clinical-records")}
     />
   );
 }
@@ -570,12 +569,10 @@ function ProviderDetailContent({
   providerId,
   providerActions,
   displayProvider,
-  onOpenClinicalRecords,
 }: {
   providerId: string;
   providerActions: ProviderDetailActionsResult;
   displayProvider: NonNullable<ProviderDetailActionsResult["displayProvider"]>;
-  onOpenClinicalRecords: () => void;
 }) {
   const { serverUrl } = useAuth();
   const trpcUtils = trpc.useUtils();
@@ -776,14 +773,9 @@ function ProviderDetailContent({
           syncDateRange={syncDateRange}
           shouldShowFullSync={shouldShowFullSync}
           shouldShowAppleHealthPermissionBanner={shouldShowAppleHealthPermissionBanner}
-          shouldShowAppleHealthClinicalRecords={providerId === "apple_health"}
-          shouldShowClinicalRecordsLink={
-            providerId === "apple_health" && (providerStats?.clinicalRecords ?? 0) > 0
-          }
           onPrimaryAction={() => void handlePrimaryAction()}
           onReviewPermissions={() => void handleReviewPermissions()}
           onFullSync={() => void handleFullSync()}
-          onOpenClinicalRecords={onOpenClinicalRecords}
         />
       )}
 

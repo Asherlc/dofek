@@ -16,12 +16,9 @@ const meta = {
     syncDateRange: null,
     shouldShowFullSync: true,
     shouldShowAppleHealthPermissionBanner: false,
-    shouldShowAppleHealthClinicalRecords: false,
-    shouldShowClinicalRecordsLink: false,
     onPrimaryAction: () => {},
     onReviewPermissions: () => {},
     onFullSync: () => {},
-    onOpenClinicalRecords: () => {},
   },
   decorators: [
     (Story) => (

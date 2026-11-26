@@ -1,9 +1,4 @@
-import type {
-  ClinicalRecordSample,
-  DailyStatistic,
-  HealthKitSample,
-  WorkoutSample,
-} from "../modules/health-kit";
+import type { DailyStatistic, HealthKitSample, WorkoutSample } from "../modules/health-kit";
 import { isAfterDeviceErasureCutoff } from "./device-erasure-cutoff";
 import {
   isBackgroundHealthKitTransientNetworkError,
@@ -63,18 +58,6 @@ export const MENSTRUAL_FLOW_TYPE_IDENTIFIER = "HKCategoryTypeIdentifierMenstrual
 export const WORKOUT_TYPE_IDENTIFIER = "HKWorkoutTypeIdentifier";
 export const WORKOUT_ROUTE_TYPE_IDENTIFIER = "HKWorkoutRouteTypeIdentifier";
 
-const CLINICAL_RECORD_TYPES = [
-  ["HKClinicalTypeIdentifierAllergyRecord", "Allergy"],
-  ["HKClinicalTypeIdentifierConditionRecord", "Condition"],
-  ["HKClinicalTypeIdentifierCoverageRecord", "Coverage"],
-  ["HKClinicalTypeIdentifierImmunizationRecord", "Immunization"],
-  ["HKClinicalTypeIdentifierLabResultRecord", "Lab Result"],
-  ["HKClinicalTypeIdentifierMedicationRecord", "Medication"],
-  ["HKClinicalTypeIdentifierProcedureRecord", "Procedure"],
-  ["HKClinicalTypeIdentifierVitalSignRecord", "Vital Sign"],
-  ["HKClinicalTypeIdentifierClinicalNoteRecord", "Clinical Note"],
-] as const;
-
 const ANCHORED_SAMPLE_TYPES = new Set([
   "HKQuantityTypeIdentifierBodyMass",
   "HKQuantityTypeIdentifierBodyFatPercentage",
@@ -103,9 +86,6 @@ const MANUAL_STAGE_IDS: readonly ManualHealthKitSyncStage[] = [
   ),
   "workouts",
   "sleep",
-  ...CLINICAL_RECORD_TYPES.map(
-    ([typeIdentifier]): ManualHealthKitSyncStage => `clinical:${typeIdentifier}`,
-  ),
   "running-steps",
 ];
 
@@ -129,7 +109,6 @@ export const BACKGROUND_HEALTH_KIT_TYPES = [
 ];
 
 const BATCH_SIZE = 500;
-const CLINICAL_RECORD_BATCH_SIZE = 100;
 
 function syncWindowStart(syncRangeDays: number | null, minimumSampleDate: string | null): string {
   let rangeStart: string;
@@ -517,46 +496,6 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
       totalInserted += result.inserted;
     }
   });
-
-  for (const [typeIdentifier, typeLabel] of CLINICAL_RECORD_TYPES) {
-    const stageIdentifier: ManualHealthKitSyncStage = `clinical:${typeIdentifier}`;
-    await runStage(stageIdentifier, async () => {
-      onProgress?.(`Querying clinical ${typeLabel} records...`);
-      onStage?.({ operation: "queryClinicalRecords", typeIdentifier });
-      await manualExecution?.assertCanContinue();
-      let clinicalRecords: ClinicalRecordSample[];
-      try {
-        clinicalRecords = await healthKit.queryClinicalRecords(typeIdentifier, startDate, endDate);
-      } catch (error) {
-        if (!isHealthKitAuthorizationNotDetermined(error)) {
-          throw error;
-        }
-        clinicalRecords = [];
-      }
-      const batchCount = Math.ceil(clinicalRecords.length / CLINICAL_RECORD_BATCH_SIZE);
-      for (
-        let batchOffset = 0;
-        batchOffset < clinicalRecords.length;
-        batchOffset += CLINICAL_RECORD_BATCH_SIZE
-      ) {
-        const batch = clinicalRecords.slice(batchOffset, batchOffset + CLINICAL_RECORD_BATCH_SIZE);
-        const recordLabel = batch.length === 1 ? "record" : "records";
-        onProgress?.(`Pushing ${batch.length} clinical ${typeLabel} ${recordLabel}...`);
-        await manualExecution?.assertCanContinue();
-        onStage?.({
-          operation: "pushClinicalRecords",
-          typeIdentifier,
-          batchIndex: batchOffset / CLINICAL_RECORD_BATCH_SIZE + 1,
-          batchCount,
-          itemCount: batch.length,
-        });
-        const result = await trpcClient.clinicalRecords.push.mutate({
-          records: batch.map(({ uuid, ...record }) => ({ ...record, externalId: uuid })),
-        });
-        totalInserted += result.upserted;
-      }
-    });
-  }
 
   await runStage("running-steps", async () => {
     const runningSteps = await syncRunningSteps(

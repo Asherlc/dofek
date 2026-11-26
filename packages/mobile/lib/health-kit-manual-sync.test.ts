@@ -39,7 +39,6 @@ vi.mock("./apple-health-provider", () => ({
 }));
 
 const unusedTestClient = {
-  clinicalRecords: { push: { mutate: async () => ({ upserted: 0 }) } },
   healthKitSync: {
     recordSync: { mutate: async (): Promise<{ recorded: true }> => ({ recorded: true }) },
     deleteQuantitySamples: { mutate: async () => ({ deleted: 0 }) },
@@ -325,7 +324,7 @@ describe("HealthKitManualSyncController", () => {
       totalStageCount: expect.any(Number),
     });
     expect(harness.controller.getSnapshot().completedStageCount).toBeGreaterThan(0);
-    expect(harness.controller.getSnapshot().totalStageCount).toBe(32);
+    expect(harness.controller.getSnapshot().totalStageCount).toBe(23);
     await harness.controller.resume();
     expect(harness.starts).toEqual(["id-1"]);
     expect(harness.deps.runSync.mock.calls[0]?.[0].manualExecution?.startDate).toBe(
@@ -523,7 +522,7 @@ describe("HealthKitManualSyncController", () => {
       await manualExecution?.onStageComplete({
         stage: "additive-and-category",
         completedStageCount: 1,
-        totalStageCount: 32,
+        totalStageCount: 23,
       });
       return success;
     });
@@ -778,25 +777,22 @@ describe("HealthKitManualSyncController", () => {
     expect(harness.starts).toEqual(["id-2"]);
   });
 
-  it("keeps storage cursors semantic while reporting readable raw and clinical progress", async () => {
+  it("keeps storage cursors semantic while reporting readable raw progress", async () => {
     const harness = makeHarness();
     const stages = [
       ["additive-and-category", 1, "Synced health metrics and categories"],
-      ["raw:HKQuantityTypeIdentifierBodyMass", 11, "Synced body mass"],
-      ["raw:HKQuantityTypeIdentifierWalkingSpeed", 12, "Synced walking speed"],
-      ["clinical:HKClinicalTypeIdentifierAllergyRecord", 20, "Synced allergy records"],
-      ["clinical:HKClinicalTypeIdentifierConditionRecord", 21, "Synced condition records"],
-      ["clinical:HKClinicalTypeIdentifierMedicationRecord", 28, "Synced medication records"],
-      ["workouts", 29, "Synced workouts"],
-      ["sleep", 30, "Synced sleep"],
-      ["running-steps", 31, "Synced running steps"],
+      ["raw:HKQuantityTypeIdentifierBodyMass", 2, "Synced body mass"],
+      ["raw:HKQuantityTypeIdentifierWalkingSpeed", 3, "Synced walking speed"],
+      ["workouts", 21, "Synced workouts"],
+      ["sleep", 22, "Synced sleep"],
+      ["running-steps", 23, "Synced running steps"],
     ] as const;
     harness.deps.runSync.mockImplementation(async ({ manualExecution }) => {
       for (const [stage, completedStageCount] of stages) {
         await manualExecution?.onStageComplete({
           stage,
           completedStageCount,
-          totalStageCount: 32,
+          totalStageCount: 23,
         });
       }
       return success;
@@ -805,7 +801,7 @@ describe("HealthKitManualSyncController", () => {
     await harness.controller.start(7);
 
     expect(harness.deps.updateProgress.mock.calls).toEqual(
-      stages.map(([, completedStageCount, message]) => ["id-2", completedStageCount, 32, message]),
+      stages.map(([, completedStageCount, message]) => ["id-2", completedStageCount, 23, message]),
     );
     expect(harness.saved()).toBeNull();
   });

@@ -6,7 +6,6 @@ import {
   isAvailable,
   queryAnchoredSamples,
   queryCategorySamples,
-  queryClinicalRecords,
   queryDailyStatistics,
   queryQuantitySamples,
   queryRunningStepChanges,
@@ -442,8 +441,6 @@ export const defaultAppleHealthAdapter: HealthKitAdapter = {
   completeAnchoredQuery,
   queryAnchoredSamples,
   queryCategorySamples,
-  queryClinicalRecords: (typeIdentifier, startDate, endDate) =>
-    queryClinicalRecords(typeIdentifier, startDate, endDate),
   queryDailyStatistics,
   queryQuantitySamples,
   queryWorkouts,
