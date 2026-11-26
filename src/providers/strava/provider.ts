@@ -876,7 +876,9 @@ export class StravaProvider implements WebhookProvider {
                 errors.push({
                   message: "Photos could not be fully discovered; retry this activity.",
                   externalId: act.externalId,
-                  cause: new Error(discovery.reason ?? "Strava photo discovery incomplete"),
+                  cause: new Error(discovery.reason ?? "Strava photo discovery incomplete", {
+                    cause: discovery.cause,
+                  }),
                 });
               }
             } catch (error) {

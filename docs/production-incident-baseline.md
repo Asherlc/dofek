@@ -40557,3 +40557,9 @@ Local qualification and CI are separate from production throughput acceptance. T
   Axiom response statuses and verify stored photo counts before intervening.
   [Axiom query guide](axiom-observability-runbook.md#queries) ·
   [Discovery storage](../src/db/activity-images.ts#L77).
+- **Follow-up fix.** Strava keeps the original HTTP 5xx in the error's cause
+  chain so the existing Sentry filter recognizes it. A regression test sends
+  HTTP 597 through the Strava client and checks that the filter suppresses
+  the alert and the next sync retries discovery.
+  [Sentry filter](../src/lib/provider-error-reporting.ts#L37) ·
+  [Strava regression test](../src/providers/strava/provider.test.ts#L2440).
