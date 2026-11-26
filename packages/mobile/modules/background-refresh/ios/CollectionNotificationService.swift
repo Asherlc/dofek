@@ -1,13 +1,15 @@
 import Foundation
 import UserNotifications
 
-/// App-owned notification lifecycle, serialized on the main queue.
+/// App-owned notification lifecycle. State stays on the main queue; Apple
+/// pending/delivered lookup and removal run on a private serial cleanup queue.
 final class CollectionNotificationService {
     private let center: CollectionNotificationCenter
     private let notifications: NotificationCenter
     private let isAppActive: () -> Bool
     private let isCollectionActive: () -> Bool
     private let reportError: (Error, String) -> Void
+    private let cleanupQueue: DispatchQueue
     private var connectionObserver: NSObjectProtocol?
     private var permissionGeneration: UInt64 = 0
     private var enabled = false
@@ -23,13 +25,15 @@ final class CollectionNotificationService {
         notifications: NotificationCenter,
         isAppActive: @escaping () -> Bool,
         isCollectionActive: @escaping () -> Bool,
-        reportError: @escaping (Error, String) -> Void
+        reportError: @escaping (Error, String) -> Void,
+        cleanupQueue: DispatchQueue = DispatchQueue(label: "com.dofek.collection-notification-cleanup")
     ) {
         self.center = center
         self.notifications = notifications
         self.isAppActive = isAppActive
         self.isCollectionActive = isCollectionActive
         self.reportError = reportError
+        self.cleanupQueue = cleanupQueue
     }
 
     deinit {
@@ -172,7 +176,7 @@ final class CollectionNotificationService {
 
     private func cancel(_ identifiers: [String]) {
         let current = identifiers.compactMap { requestIdentifiers.removeValue(forKey: $0) }
-        remove(identifiers + current)
+        let known = identifiers + current
         // Find warnings persisted by previous processes. A delayed lookup must preserve any
         // new request scheduled since cancellation, while stale add callbacks remove only themselves.
         let removeCancelled: ([String]) -> Void = { [weak self] savedIdentifiers in
@@ -186,11 +190,21 @@ final class CollectionNotificationService {
                 })
             }
         }
-        center.getPendingIdentifiers(completion: removeCancelled)
-        center.getDeliveredIdentifiers(completion: removeCancelled)
+        cleanupQueue.async { [weak self] in
+            guard let self else { return }
+            self.performRemovals(known)
+            self.center.getPendingIdentifiers(completion: removeCancelled)
+            self.center.getDeliveredIdentifiers(completion: removeCancelled)
+        }
     }
 
     private func remove(_ identifiers: [String]) {
+        cleanupQueue.async { [weak self] in
+            self?.performRemovals(identifiers)
+        }
+    }
+
+    private func performRemovals(_ identifiers: [String]) {
         center.removePendingNotificationRequests(withIdentifiers: identifiers)
         center.removeDeliveredNotifications(withIdentifiers: identifiers)
     }

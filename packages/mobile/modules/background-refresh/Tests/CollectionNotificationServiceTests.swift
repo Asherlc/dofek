@@ -131,7 +131,7 @@ final class CollectionNotificationServiceTests: XCTestCase {
 
         harness.connection("connected")
         harness.center.completeAdd(0)
-        drainCallbacks()
+        settle(harness)
 
         XCTAssertTrue(harness.center.pending.isEmpty)
     }
@@ -147,9 +147,9 @@ final class CollectionNotificationServiceTests: XCTestCase {
         let second = harness.center.adds[1].request
 
         harness.center.completeAdd(1)
-        drainCallbacks()
+        settle(harness)
         harness.center.completeAdd(0)
-        drainCallbacks()
+        settle(harness)
 
         XCTAssertNotEqual(first.identifier, second.identifier)
         XCTAssertEqual(Set(harness.center.pending.keys), [second.identifier])
@@ -167,10 +167,10 @@ final class CollectionNotificationServiceTests: XCTestCase {
         let second = harness.center.adds[1].request
 
         harness.center.completeAdd(0)
-        drainCallbacks()
+        settle(harness)
         XCTAssertTrue(harness.center.pending.isEmpty)
         harness.center.completeAdd(1)
-        drainCallbacks()
+        settle(harness)
 
         XCTAssertEqual(Set(harness.center.pending.keys), [second.identifier])
     }
@@ -185,8 +185,7 @@ final class CollectionNotificationServiceTests: XCTestCase {
         center.delivered = [whoop, closed, "unrelated"]
 
         let harness = CollectionNotificationServiceHarness(center: center)
-        center.completeLookups()
-        drainCallbacks()
+        completePersistedLookups(harness)
 
         XCTAssertEqual(Set(harness.center.pending.keys), [whoop, "unrelated"])
         XCTAssertEqual(center.delivered, [whoop, "unrelated"])
@@ -196,16 +195,15 @@ final class CollectionNotificationServiceTests: XCTestCase {
         let harness = CollectionNotificationServiceHarness()
         let oldIdentifier = "\(CollectionNotification.whoopDisconnected.identifier).previous-process"
         harness.center.seed(oldIdentifier)
-        harness.center.delivered.insert(oldIdentifier)
+        harness.center.markDelivered(oldIdentifier)
         enable(harness)
         harness.connection("connected")
         harness.connection("disconnected")
         let latest = harness.center.adds[0].request
         harness.center.completeAdd(0)
-        drainCallbacks()
+        settle(harness)
 
-        harness.center.completeLookups()
-        drainCallbacks()
+        completePersistedLookups(harness)
 
         XCTAssertEqual(Set(harness.center.pending.keys), [latest.identifier])
         XCTAssertFalse(harness.center.delivered.contains(oldIdentifier))
@@ -220,8 +218,7 @@ final class CollectionNotificationServiceTests: XCTestCase {
         let harness = CollectionNotificationServiceHarness(center: center)
 
         harness.connection("connected")
-        center.completeLookups()
-        drainCallbacks()
+        completePersistedLookups(harness)
 
         XCTAssertEqual(Set(center.pending.keys), ["unrelated"])
         XCTAssertEqual(center.delivered, ["unrelated"])
@@ -239,11 +236,47 @@ final class CollectionNotificationServiceTests: XCTestCase {
         harness.center.delivered = [oldWhoop, oldClosed, "unrelated"]
 
         harness.service.disable()
-        harness.center.completeLookups()
-        drainCallbacks()
+        completePersistedLookups(harness)
 
         XCTAssertEqual(Set(harness.center.pending.keys), ["unrelated"])
         XCTAssertEqual(harness.center.delivered, ["unrelated"])
+    }
+
+    func testForegroundCancellationDoesNotWaitOnNotificationRemoval() {
+        let harness = CollectionNotificationServiceHarness()
+        // Drain startup appBecameActive lookups before seeding so only the explicit
+        // foreground trigger below can clear the previous-process warning.
+        // Sign-out cancellation remains covered by testDisableRemovesPersistedWarningsForBothKinds.
+        completePersistedLookups(harness)
+        let oldIdentifier = "\(CollectionNotification.appClosed.identifier).previous-process"
+        harness.center.seed(oldIdentifier)
+        harness.center.markDelivered(oldIdentifier)
+
+        let removalStarted = expectation(description: "blocked pending removal started")
+        let allowRemoval = DispatchSemaphore(value: 0)
+        defer { allowRemoval.signal() }
+        harness.center.onRemovePending = {
+            XCTAssertFalse(Thread.isMainThread, "pending removal must not run on the main queue")
+            removalStarted.fulfill()
+            // Hold only off the main queue; a main-thread wait would deadlock this test.
+            if !Thread.isMainThread {
+                XCTAssertEqual(allowRemoval.wait(timeout: .now() + 2), .success)
+            }
+        }
+
+        harness.service.appBecameActive()
+
+        wait(for: [removalStarted], timeout: 1)
+
+        let mainProgressed = expectation(description: "main queue progressed while removal blocked")
+        DispatchQueue.main.async { mainProgressed.fulfill() }
+        wait(for: [mainProgressed], timeout: 1)
+
+        allowRemoval.signal()
+        completePersistedLookups(harness)
+
+        XCTAssertEqual(Set(harness.center.pending.keys), [])
+        XCTAssertTrue(harness.center.delivered.isEmpty)
     }
 
     func testAddFailureIsReported() {
@@ -254,7 +287,7 @@ final class CollectionNotificationServiceTests: XCTestCase {
         let error = NSError(domain: "notifications", code: 43)
 
         harness.center.completeAdd(0, error: error)
-        drainCallbacks()
+        settle(harness)
 
         XCTAssertEqual(harness.reportedErrors.first?.0 as NSError?, error)
         XCTAssertTrue(harness.center.pending.isEmpty)
@@ -265,6 +298,19 @@ final class CollectionNotificationServiceTests: XCTestCase {
             XCTAssertEqual(try? result.get(), true)
         }
         harness.center.settingsCallbacks.last?(.authorized)
+        settle(harness)
+    }
+
+    private func completePersistedLookups(_ harness: CollectionNotificationServiceHarness) {
+        harness.flushCleanup()
+        harness.center.completeLookups()
+        settle(harness)
+    }
+
+    private func settle(_ harness: CollectionNotificationServiceHarness) {
+        harness.flushCleanup()
+        drainCallbacks()
+        harness.flushCleanup()
         drainCallbacks()
     }
 
@@ -280,6 +326,7 @@ final class CollectionNotificationServiceTests: XCTestCase {
 
 private final class CollectionNotificationServiceHarness {
     let center: ControlledCollectionNotificationCenter
+    let cleanupQueue = DispatchQueue(label: "notification-test.cleanup")
     private let notifications = NotificationCenter()
     var reportedErrors: [(Error, String)] = []
     var collectionIsActive = true
@@ -292,9 +339,17 @@ private final class CollectionNotificationServiceHarness {
             notifications: notifications,
             isAppActive: { isAppActive },
             isCollectionActive: { [weak self] in self?.collectionIsActive == true },
-            reportError: { [weak self] error, identifier in self?.reportedErrors.append((error, identifier)) }
+            reportError: { [weak self] error, identifier in self?.reportedErrors.append((error, identifier)) },
+            cleanupQueue: cleanupQueue
         )
         service.start()
+        flushCleanup()
+    }
+
+    func flushCleanup() {
+        let flushed = XCTestExpectation(description: "cleanup queue flushed")
+        cleanupQueue.async { flushed.fulfill() }
+        XCTAssertEqual(XCTWaiter.wait(for: [flushed], timeout: 1), .completed)
     }
 
     func connection(_ state: String) {
@@ -308,10 +363,27 @@ private final class ControlledCollectionNotificationCenter: CollectionNotificati
     var settingsCallbacks: [(CollectionNotificationAuthorizationStatus) -> Void] = []
     var authorizationCallbacks: [(Bool, Error?) -> Void] = []
     var adds: [(request: UNNotificationRequest, completion: (Error?) -> Void)] = []
-    var pending: [String: UNNotificationRequest] = [:]
-    var delivered: Set<String> = []
+    private let lock = NSLock()
+    private var pendingStorage: [String: UNNotificationRequest] = [:]
+    private var deliveredStorage: Set<String> = []
+    private var onRemovePendingHook: (() -> Void)?
     private var pendingLookups: [([String]) -> Void] = []
     private var deliveredLookups: [([String]) -> Void] = []
+
+    var pending: [String: UNNotificationRequest] {
+        lock.withLock { pendingStorage }
+    }
+
+    var delivered: Set<String> {
+        get { lock.withLock { deliveredStorage } }
+        set { lock.withLock { deliveredStorage = newValue } }
+    }
+
+    /// One-shot hook; taken and cleared under the lock before invocation.
+    var onRemovePending: (() -> Void)? {
+        get { lock.withLock { onRemovePendingHook } }
+        set { lock.withLock { onRemovePendingHook = newValue } }
+    }
 
     func getAuthorizationStatus(completion: @escaping (CollectionNotificationAuthorizationStatus) -> Void) {
         settingsCallbacks.append(completion)
@@ -326,39 +398,59 @@ private final class ControlledCollectionNotificationCenter: CollectionNotificati
     }
 
     func getPendingIdentifiers(completion: @escaping ([String]) -> Void) {
-        pendingLookups.append(completion)
+        lock.withLock { pendingLookups.append(completion) }
     }
 
     func getDeliveredIdentifiers(completion: @escaping ([String]) -> Void) {
-        deliveredLookups.append(completion)
+        lock.withLock { deliveredLookups.append(completion) }
     }
 
     func removePendingNotificationRequests(withIdentifiers identifiers: [String]) {
-        for identifier in identifiers { pending.removeValue(forKey: identifier) }
+        let hook = lock.withLock { () -> (() -> Void)? in
+            let hook = onRemovePendingHook
+            onRemovePendingHook = nil
+            return hook
+        }
+        // Never hold the lock across the test gate or any other callback.
+        hook?()
+        lock.withLock {
+            for identifier in identifiers { pendingStorage.removeValue(forKey: identifier) }
+        }
     }
 
     func removeDeliveredNotifications(withIdentifiers identifiers: [String]) {
-        delivered.subtract(identifiers)
+        lock.withLock { deliveredStorage.subtract(identifiers) }
     }
 
     func seed(_ identifier: String) {
-        pending[identifier] = UNNotificationRequest(
-            identifier: identifier, content: UNMutableNotificationContent(), trigger: nil
-        )
+        lock.withLock {
+            pendingStorage[identifier] = UNNotificationRequest(
+                identifier: identifier, content: UNMutableNotificationContent(), trigger: nil
+            )
+        }
+    }
+
+    func markDelivered(_ identifier: String) {
+        lock.withLock { _ = deliveredStorage.insert(identifier) }
     }
 
     func completeAdd(_ index: Int, error: Error? = nil) {
         let add = adds[index]
-        if error == nil { pending[add.request.identifier] = add.request }
+        if error == nil {
+            lock.withLock { pendingStorage[add.request.identifier] = add.request }
+        }
         add.completion(error)
     }
 
     func completeLookups() {
-        let pendingCallbacks = pendingLookups
-        let deliveredCallbacks = deliveredLookups
-        pendingLookups.removeAll()
-        deliveredLookups.removeAll()
-        for completion in pendingCallbacks { completion(Array(pending.keys)) }
-        for completion in deliveredCallbacks { completion(Array(delivered)) }
+        let snapshot = lock.withLock { () -> (pending: [([String]) -> Void], delivered: [([String]) -> Void], pendingIds: [String], deliveredIds: [String]) in
+            let pending = pendingLookups
+            let delivered = deliveredLookups
+            pendingLookups.removeAll()
+            deliveredLookups.removeAll()
+            return (pending, delivered, Array(pendingStorage.keys), Array(deliveredStorage))
+        }
+        for completion in snapshot.pending { completion(snapshot.pendingIds) }
+        for completion in snapshot.delivered { completion(snapshot.deliveredIds) }
     }
 }

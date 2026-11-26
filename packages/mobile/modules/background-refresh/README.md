@@ -285,6 +285,12 @@ Each scheduled request has its own identifier under its alert's logical prefix.
 Late save callbacks remove only their own obsolete request, preserving a newer
 disconnect's five-minute grace period. Cancellation also enumerates prior-process
 requests through Apple's [pending-notification API](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter/getpendingnotificationrequests(completionhandler:)).
+Lifecycle state, active-identifier selection, and permission handling stay on the
+main queue. Pending and delivered lookup initiation and Apple removal calls run on
+one private serial cleanup queue so a slow XPC reply cannot stall the main thread.
+`center.add` keeps its existing timing, including `applicationWillTerminate`.
+Apple documents that [`UNUserNotificationCenter`](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter)
+may be used from any app thread.
 
 The closure warning is **best effort**. iOS can terminate a suspended app
 without calling `applicationWillTerminate`, and scheduling a notification is
@@ -299,9 +305,10 @@ Both alerts require notification permission; iOS controls their final delivery.
 reconnection, deliberate disconnect, independent cancellation, and disabled
 sessions. `CollectionNotificationServiceTests` controls settings, authorization,
 notification-save, and persisted-request callbacks to cover sign-out and reconnection
-races. The Apple delivery adapter and Expo callbacks additionally require an iOS
-build. Validate real BLE loss, permission changes, reconnect-before-delivery,
-and app termination on a physical iPhone; the
+races, including a regression that keeps the main queue responsive while a fake
+pending removal is held off-main. The Apple delivery adapter and Expo callbacks
+additionally require an iOS build. Validate real BLE loss, permission changes,
+reconnect-before-delivery, and app termination on a physical iPhone; the
 [iOS Simulator does not provide Bluetooth hardware](https://docs.expo.dev/workflow/ios-simulator/#limitations).
 
 ## Native configuration

@@ -40597,13 +40597,16 @@ Local qualification and CI are separate from production throughput acceptance. T
   event and the reason Apple's service took that long remain unknown.
   [Cancellation service](../packages/mobile/modules/background-refresh/ios/CollectionNotificationService.swift#L173)
   · [Apple adapter](../packages/mobile/modules/background-refresh/ios/AppleCollectionNotificationCenter.swift#L59).
-- **Mitigation and follow-up.** The affected build still has this main-thread
-  exposure. The proposed native fix moves notification lookups and removals to a
-  serial background queue and preserves the existing termination-time scheduling
-  path. Apple documents that the shared notification center can be called from
-  any app thread. A rebuilt iOS app is needed to validate the Swift change. Exercise
-  cancellation with a blocked fake notification center, then verify alert cleanup
-  on iPhone and watch for the same stack by build in Sentry.
+- **Mitigation and follow-up.** `CollectionNotificationService` now initiates
+  pending/delivered lookups and Apple removals on one private serial cleanup
+  queue while keeping lifecycle state, active-identifier filtering, and
+  `center.add` (including termination scheduling) on their existing paths. A
+  focused service test fails when removal runs on main and passes while a fake
+  pending removal is held off-main without blocking main-queue progress; full
+  background-refresh Swift tests cover late adds, reconnect, old-process cleanup,
+  ordering, and sign-out. Physical-iPhone validation of alert cleanup and watching
+  Sentry for the same stack by build remain pending. Apple documents that the
+  shared notification center can be called from any app thread.
   [Apple notification center documentation](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter).
 - **Retrospective.** The native stack identified the blocking API directly. If
   the hang recurs, correlating its timestamp with the lifecycle events that request
