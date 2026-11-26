@@ -3,6 +3,7 @@ import {
   recordActivityImageDiscovery,
   recordClimbingImageDiscovery,
 } from "../db/activity-images.ts";
+import { isKnownProviderHttp5xxError } from "../lib/provider-error-reporting.ts";
 import { getProvider } from "../providers/index.ts";
 import type { SyncRun } from "../providers/sync-run.ts";
 import { isSyncProvider } from "../providers/types.ts";
@@ -239,6 +240,7 @@ export async function fetchStravaActivityImages(
   const seen = new Set<string>();
   let finished = false;
   let failure: ReturnType<typeof imageDiscoveryFailure> | undefined;
+  let cause: unknown;
   for (let page = 1; page <= 100; page++) {
     try {
       const batch = stravaPhotoListSchema.parse(await fetchPage(page));
@@ -254,6 +256,7 @@ export async function fetchStravaActivityImages(
       }
     } catch (error) {
       failure = imageDiscoveryFailure(error);
+      if (isKnownProviderHttp5xxError(error)) cause = error;
       break;
     }
   }
@@ -261,7 +264,7 @@ export async function fetchStravaActivityImages(
   return {
     ...stravaImageDiscovery(photos, expectedCount, finished),
     ...(failure
-      ? { retryable: failure.retryable, retryAfterSeconds: failure.retryAfterSeconds }
+      ? { retryable: failure.retryable, retryAfterSeconds: failure.retryAfterSeconds, cause }
       : {}),
   };
 }

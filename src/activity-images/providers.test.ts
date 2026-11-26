@@ -73,21 +73,21 @@ it("preserves evidenced Zwift primary images and reports unknown snapshot struct
 });
 
 it("paginates full Strava galleries and preserves the primary when a later page fails", async () => {
+  const { ProviderRequestTimeoutError } = await import("@dofek/provider-http/rate-limit");
   const { fetchStravaActivityImages } = await import("./providers.ts");
   const first = Array.from({ length: 200 }, (_, position) => ({
     unique_id: String(position),
     urls: { 4096: `https://cdn.test/${position}` },
   }));
-  const fetchPage = vi
-    .fn()
-    .mockResolvedValueOnce(first)
-    .mockRejectedValueOnce(Error("rate limited"));
+  const timeout = new ProviderRequestTimeoutError({ providerId: "strava", timeoutMs: 120_000 });
+  const fetchPage = vi.fn().mockResolvedValueOnce(first).mockRejectedValueOnce(timeout);
   const result = await fetchStravaActivityImages(fetchPage, 201, {
     unique_id: "last",
     urls: { 100: "https://cdn.test/last" },
   });
   expect(result.coverage).toBe("partial");
   expect(result.images).toHaveLength(201);
+  expect(result.cause).toBeUndefined();
   expect(fetchPage).toHaveBeenCalledTimes(2);
 });
 it("merges gallery and primary variants without replacing high resolution copies", async () => {

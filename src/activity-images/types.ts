@@ -17,6 +17,8 @@ export interface ProviderImageCandidate {
 export interface ImageDiscovery {
   retryable?: boolean;
   retryAfterSeconds?: number;
+  /** Original request error for in-memory classification. */
+  cause?: unknown;
   coverage: "complete" | "partial" | "unavailable" | "failed";
   expectedCount: number | null;
   reason: string | null;
