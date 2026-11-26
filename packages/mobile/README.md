@@ -747,6 +747,19 @@ These signals do not include event-level process memory or replace an Apple
 and the
 [8.35.0 watchdog tracker release notes](https://github.com/getsentry/sentry-react-native/releases/tag/8.35.0).
 
+MetricKit reports foreground terminations as
+`metrickit.exit.fg.memory_resource_limit` and `metrickit.exit.fg.watchdog`.
+Sentry sends positive counts timestamped at the midpoint of Apple's reporting
+interval. Query the sums by `app.build` when MetricKit supplies a build number.
+The options take effect with a new native build.
+[Apple MetricKit](https://developer.apple.com/documentation/metrickit)
+· [Sentry metric recorder](https://github.com/getsentry/sentry-cocoa/blob/9.34.0/Sources/Swift/Core/MetricKit/SentryMXMetricRecorder.swift).
+
+Individual iOS 27 memory-exception diagnostics require Sentry Cocoa compiled
+with Xcode 27 or later. The pinned Cocoa 9.34.0 binary was built with Swift
+6.1.2 and uses the legacy MetricKit API.
+[Sentry MetricKit integration](https://github.com/getsentry/sentry-cocoa/blob/9.34.0/Sources/Swift/Core/MetricKit/SentryMetricKitIntegration.swift).
+
 Release startup tracing samples the `Mobile Startup` lifecycle and Sentry's
 native `App Start` span. The lifecycle attributes time to the Expo
 Updates launch, JavaScript bootstrap, authentication restore, splash dismissal,

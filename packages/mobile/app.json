@@ -91,6 +91,12 @@
             "enableMetricKitRawPayload": true,
             "_experiments": {
               "enableWatchdogTerminationsV2": true
+            },
+            "metrickit": {
+              "enabledMetricReports": [
+                "exitForegroundMemoryResourceLimit",
+                "exitForegroundWatchdog"
+              ]
             }
           }
         }
