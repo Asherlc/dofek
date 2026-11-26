@@ -40478,8 +40478,9 @@ Local qualification and CI are separate from production throughput acceptance. T
   Recovery required no operator action. A local reproduction with real Redis,
   the handoff function, and the readiness server returned 200 before the
   pause, 503 during it, and 200 after the `resumed` event.
-- **Remaining risk and follow-up.** A health check can still coincide with
-  an intentional handoff pause. A readiness change should distinguish the
-  active handoff from a stopped worker and keep checking Redis. For a
-  recurrence, correlate the alert timestamp with the Fly sync completion
-  event and the Oracle task's health and restart count before intervening.
+- **Fix and remaining risk.** `/readyz` now accepts the intentional Fly handoff
+  pause while still probing Redis. A different worker, a closing worker, an
+  expired window, or a Redis failure during the mark still returns 503. Focused
+  unit and Redis integration coverage exercise those branches. For a recurrence,
+  correlate the alert timestamp with the Fly sync completion event and the
+  Oracle task's health and restart count before intervening.
