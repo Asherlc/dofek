@@ -40526,3 +40526,11 @@ Local qualification and CI are separate from production throughput acceptance. T
   unit and Redis integration coverage exercise those branches. For a recurrence,
   correlate the alert timestamp with the Fly sync completion event and the
   Oracle task's health and restart count before intervening.
+- **CI follow-up (2026-11-26 UTC).** Codecov failed PR #3516 at 86.95% patch
+  coverage against its 90% target. The server coverage job identified two
+  unexecuted lines in the handoff cleanup and error reporting. Regression
+  tests now cover a failed pause before the worker pauses, a rejected resume,
+  and a closing worker when the resume timer fires. Local V8 coverage
+  confirmed both lines and both outcomes of the closing check executed.
+  [Codecov report](https://github.com/Asherlc/dofek/pull/3516#issuecomment-7178801041)
+  · [Server coverage job](https://github.com/Asherlc/dofek/actions/runs/45727494074/job/139607856098).

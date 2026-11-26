@@ -233,6 +233,77 @@ describe("yieldSyncToPortableWorker handoff mark", () => {
     expect(worker.resume).toHaveBeenCalledOnce();
   });
 
+  it("propagates a pause failure before the worker pauses and schedules no fallback", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+    });
+    const worker = makeYieldWorker();
+    worker.pause.mockRejectedValueOnce(new Error("pause failed before pause"));
+    worker.isPaused.mockReturnValue(false);
+
+    await expect(
+      yieldSyncToPortableWorker(
+        async () => makeSlot(true),
+        worker,
+        "garmin",
+        makeYieldJob(),
+        "token-1",
+      ),
+    ).rejects.toThrow("pause failed before pause");
+
+    expect(isPortableSyncHandoffActive(worker)).toBe(false);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(worker.resume).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("captures a resume rejection with the portable-sync-fallback tag", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+    });
+    const worker = makeYieldWorker();
+    const resumeError = new Error("resume failed");
+    worker.resume.mockRejectedValueOnce(resumeError);
+
+    await expect(
+      yieldSyncToPortableWorker(
+        async () => makeSlot(true),
+        worker,
+        "tension",
+        makeYieldJob(),
+        "token-1",
+      ),
+    ).rejects.toBeInstanceOf(WaitingError);
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(worker.resume).toHaveBeenCalledOnce();
+    expect(captureException).toHaveBeenCalledWith(resumeError, {
+      tags: { source: "portable-sync-fallback" },
+    });
+  });
+
+  it("skips resume when the worker is closing before the fallback timer fires", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+    });
+    const worker = makeYieldWorker();
+
+    await expect(
+      yieldSyncToPortableWorker(
+        async () => makeSlot(true),
+        worker,
+        "tension",
+        makeYieldJob(),
+        "token-1",
+      ),
+    ).rejects.toBeInstanceOf(WaitingError);
+
+    worker.closing = Promise.resolve();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(worker.resume).not.toHaveBeenCalled();
+    expect(isPortableSyncHandoffActive(worker)).toBe(false);
+  });
+
   it("does not mark a handoff when the reservation offer fails", async () => {
     const worker = makeYieldWorker();
     const job = makeYieldJob();
