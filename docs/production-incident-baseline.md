@@ -40534,3 +40534,29 @@ Local qualification and CI are separate from production throughput acceptance. T
   confirmed both lines and both outcomes of the closing check executed.
   [Codecov report](https://github.com/Asherlc/dofek/pull/3516#issuecomment-7178801041)
   · [Server coverage job](https://github.com/Asherlc/dofek/actions/runs/45727494074/job/139607856098).
+
+## 2026-11-26 — WHOOP Bluetooth service discovery failed on iPad
+
+- **Impact and evidence.** Sentry recorded one handled foreground sync error,
+  `WHOOP service not found`, for one production user on iPad build `1795546204`.
+  Axiom logs for the same app runtime recorded three native `NO_SERVICE`
+  aborts at 14:21:26, 14:24:43, and 14:26:37 UTC across two Bluetooth
+  peripheral identifiers. All nine capture snapshots showed zero Bluetooth
+  data notifications. The last snapshot at 14:27:16 UTC still showed `idle`.
+  [Sentry event](https://east-bay-software.sentry.io/issues/7869017196/events/1e94da4c78fe4630b8100c9f8dc88ee2/)
+  · [Axiom query guide](axiom-observability-runbook.md#queries).
+- **Failure path and recovery.** Core Bluetooth connected and called back
+  without a discovery error. The discovery result contained none of
+  the WHOOP service UUIDs Dofek supports, so the native handshake cancelled
+  the connection, cleared automatic reconnect intent, and returned to idle.
+  Later foreground attempts reached the same failure. Recovery remains
+  unverified, and the investigation made no production changes.
+  [Service discovery callback](https://developer.apple.com/documentation/corebluetooth/cbperipheraldelegate/peripheral%28_%3Adiddiscoverservices%3A%29)
+  · [Dofek service check](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager%2BCoreBluetooth.swift#L146)
+  · [Handshake cleanup](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager%2BHandshake.swift#L33).
+- **Remaining evidence.** The reason the expected services were absent is
+  unresolved. The exported native journal records the abort reason and state,
+  while the discovered UUIDs are available only in the local device log.
+  For a recurrence, correlate Sentry and Axiom by app runtime and use
+  `nativeOccurredAt` for the handshake sequence. Capture the advertised and
+  returned service UUIDs on a physical device to investigate the mismatch.
