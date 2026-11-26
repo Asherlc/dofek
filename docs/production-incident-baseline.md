@@ -40627,3 +40627,12 @@ Local qualification and CI are separate from production throughput acceptance. T
   installed Core and Haptics config files contain their expected Apple
   module declarations. Check compatibility metadata and package release age
   separately on the next recurrence.
+- **CI follow-up.** The hosted Metro job passed. The repository's
+  `pnpm exec sherif` check then reported `Dependency expo has multiple
+  versions defined in the workspace` because the Oura BLE development
+  dependency still pinned `58.0.26`. Updating it to `58.1.0` cleared the
+  local check and removed the old Expo Modules Core patch's last consumer.
+  The Oura typecheck and all six unit tests passed. Align the workspace
+  Expo pins together on the next SDK compatibility update.
+  [Passing Metro job](https://github.com/Asherlc/dofek/actions/runs/45872324515/job/140091567020)
+  · [Failed Sherif job](https://github.com/Asherlc/dofek/actions/runs/45872324515/job/140091081972).
