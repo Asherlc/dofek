@@ -40670,7 +40670,12 @@ Local qualification and CI are separate from production throughput acceptance. T
   --check` with `expo@58.0.26 - expected version: ~58.1.0` and `Found outdated
   dependencies`. Nine package pins fell outside Expo's published compatibility
   ranges. Those pins, the lockfile, and the Modules Core `modules: []` patch on
-  58.2.0 (keeping 58.1.0 while still resolved) restore the check. Local frozen
-  install, `expo install --check`, and an iOS Metro export succeeded after the
-  update.
+  58.2.0 restore the check. Local frozen install, `expo install --check`, and
+  an iOS Metro export succeeded after the update.
   [Failed Metro job](https://github.com/Asherlc/dofek/actions/runs/45870232959/job/140083997903).
+  Sherif then failed `multiple-dependency-versions` for Expo because mobile used
+  58.1.0 while the Oura BLE package still pinned Expo 58.0.26 as a
+  `devDependency`. Aligning the development pin at 58.1.0 satisfies Sherif
+  and preserves the public peer range of `>=58.0.0`. Both workspace consumers
+  now resolve Modules Core 58.2.0 with the existing patch.
+  [Failed Sherif job](https://github.com/Asherlc/dofek/actions/runs/45872621027/job/140092018057).

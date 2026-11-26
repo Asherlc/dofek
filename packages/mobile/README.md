@@ -570,11 +570,11 @@ The native dependency set also includes ExpoNetwork, the pnpm patch to
 
 The [Haptics patch](../../patches/expo-haptics@58.0.8.patch) declares
 `HapticsModule` for Apple autolinking. The
-[Modules Core patch](../../patches/expo-modules-core@58.1.0.patch) declares an
-empty list because Expo initializes its internal `CoreModule` directly. Both
-resolved Modules Core versions, 58.2.0 from Expo 58.1.0 and 58.1.0 from the
-still-pinned Expo 58.0.26 consumer, map to that same patch file. These
-declarations let Expo generate the iOS provider when its source scan times out.
+[Modules Core 58.2.0 patch](../../patches/expo-modules-core@58.2.0.patch)
+declares an empty list because Expo initializes its internal `CoreModule`
+directly. Workspace consumers share Expo 58.1.0, so only Modules Core 58.2.0
+remains resolved and patched. These declarations let Expo generate the iOS
+provider when its source scan times out.
 [Expo module configuration](https://docs.expo.dev/modules/module-config/)
 · [Expo app context](https://github.com/expo/expo/blob/expo-modules-core%4058.2.0/packages/expo-modules-core/ios/Core/AppContext.swift).
 
