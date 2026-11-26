@@ -1,6 +1,7 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
+import { isPortableSyncHandoffActive } from "./portable-sync-slot.ts";
 
 interface WorkerReadinessClient {
   readonly status: string;
@@ -15,6 +16,8 @@ interface WorkerReadinessBackend {
 
 interface ReadinessWorker {
   readonly name: string;
+  /** Present while BullMQ is draining a close; `isRunning()` can still be true. */
+  readonly closing?: Promise<void>;
   isRunning(): boolean;
   waitUntilReady(): Promise<void>;
   getBackend(): WorkerReadinessBackend;
@@ -78,12 +81,16 @@ async function waitForReadyClient(
   throw lastError ?? new WorkerReadinessError(label);
 }
 
-async function checkWorkerReadiness(workers: readonly ReadinessWorker[]): Promise<void> {
+function assertWorkersRunning(workers: readonly ReadinessWorker[]): void {
   for (const worker of workers) {
-    if (!worker.isRunning()) {
+    if (worker.closing || (!worker.isRunning() && !isPortableSyncHandoffActive(worker))) {
       throw new Error(`BullMQ worker is not running: ${worker.name}`);
     }
   }
+}
+
+async function checkWorkerReadiness(workers: readonly ReadinessWorker[]): Promise<void> {
+  assertWorkersRunning(workers);
 
   await Promise.all(
     workers.map(async (worker) => {
@@ -97,6 +104,8 @@ async function checkWorkerReadiness(workers: readonly ReadinessWorker[]): Promis
       await client.llen(backend.toKey("wait"));
     }),
   );
+
+  assertWorkersRunning(workers);
 }
 
 async function checkWorkerReadinessWithTimeout(readinessCheck: Promise<void>): Promise<void> {

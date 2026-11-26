@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { Queue, RedisConnection, Worker } from "bullmq";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createPortableSyncSlot, yieldSyncToPortableWorker } from "./portable-sync-slot.ts";
 import { getRedisConnection, type SyncJobData } from "./queues.ts";
+import { createWorkerReadinessServer } from "./worker-readiness.ts";
 
 const connection = getRedisConnection();
 const redisConnection = new RedisConnection(connection, { blocking: false });
@@ -81,6 +82,53 @@ describe("portable sync preference with Redis", () => {
     const completed = await queue.getJob(job.id ?? "");
     expect(completed?.attemptsMade).toBe(1);
   });
+
+  it("keeps /readyz available during the handoff pause and still yields to Fly", async () => {
+    const { queue, slot, oracle, fly, processed, finished } = await fixture();
+    const readinessServer = createWorkerReadinessServer([oracle]);
+    resources.push(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          readinessServer.closeAllConnections();
+          readinessServer.close((error) => (error ? reject(error) : resolve()));
+        }),
+    );
+    await new Promise<void>((resolve) => readinessServer.listen(0, "127.0.0.1", resolve));
+    const address = readinessServer.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Worker readiness server did not bind a TCP port");
+    }
+    const serverUrl = `http://127.0.0.1:${address.port}`;
+
+    const backend = oracle.getBackend();
+    const client = await backend.client;
+    const llen = vi.spyOn(client, "llen");
+
+    await slot.renew();
+    let offered: () => void = () => {};
+    const offer = new Promise<void>((resolve) => {
+      offered = resolve;
+    });
+    oracle.once("paused", offered);
+    const job = await queue.add("sync", { userId: "fixture-user" }, { attempts: 2 });
+    const oracleRun = oracle.run();
+    await offer;
+    expect(await slot.renew()).toBe("test-provider");
+    expect(await slot.take("test-provider")).toBe(true);
+    await oracleRun;
+
+    expect(oracle.isRunning()).toBe(false);
+    const duringHandoff = await fetch(`${serverUrl}/readyz`);
+    expect(duringHandoff.status).toBe(200);
+    await expect(duringHandoff.json()).resolves.toEqual({ status: "ok", workers: 1 });
+    expect(llen).toHaveBeenCalledWith(backend.toKey("wait"));
+
+    void fly.run();
+    await finished;
+    expect(processed).toEqual(["fly"]);
+    const completed = await queue.getJob(job.id ?? "");
+    expect(completed?.attemptsMade).toBe(1);
+  }, 10_000);
 
   it("falls back to Oracle if Fly exits after advertising its slot", async () => {
     const { queue, slot, oracle, processed, finished } = await fixture();

@@ -1,6 +1,9 @@
+import { WaitingError, type Worker } from "bullmq";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
+import { yieldSyncToPortableWorker } from "./portable-sync-slot.ts";
+import type { SyncJobData } from "./queues.ts";
 import { createWorkerReadinessServer } from "./worker-readiness.ts";
 
 vi.mock("../lib/error-reporting.ts", () => ({
@@ -14,7 +17,9 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
-interface TestWorker {
+type HandoffWorker = Pick<Worker<SyncJobData>, "pause" | "resume" | "closing" | "isPaused">;
+
+interface TestWorker extends HandoffWorker {
   name: string;
   isRunning(): boolean;
   waitUntilReady(): Promise<void>;
@@ -71,8 +76,17 @@ function makeWorker(
     }
     return Promise.resolve();
   };
+  let paused = false;
   return {
     name,
+    closing: undefined,
+    isPaused: () => paused,
+    async pause(_doNotWaitActive?: boolean) {
+      paused = true;
+    },
+    async resume() {
+      paused = false;
+    },
     isRunning: () => options.running ?? true,
     waitUntilReady: () => resolveReady(options.blockingReady, true),
     getBackend: () => ({
@@ -82,7 +96,38 @@ function makeWorker(
         return Promise.resolve(commandClient);
       },
     }),
-  };
+  } satisfies TestWorker;
+}
+
+async function markWorkerForHandoff(worker: TestWorker): Promise<void> {
+  await expect(
+    yieldSyncToPortableWorker(
+      async () => ({
+        renew: async () => null,
+        offer: async () => true,
+        take: async () => true,
+      }),
+      worker,
+      "tension",
+      {
+        attemptsStarted: 1,
+        moveToWait: vi.fn().mockResolvedValue(0),
+      },
+      "token-1",
+    ),
+  ).rejects.toBeInstanceOf(WaitingError);
+}
+
+/** Equivalent to Promise.withResolvers() but compatible with ES2022 lib target. */
+function deferred<Value>() {
+  let resolvePromise: ((value: Value) => void) | undefined;
+  const promise = new Promise<Value>((resolve) => {
+    resolvePromise = resolve;
+  });
+  if (!resolvePromise) {
+    throw new Error("Deferred promise resolver was not initialized");
+  }
+  return { promise, resolve: resolvePromise };
 }
 
 afterEach(async () => {
@@ -149,6 +194,102 @@ describe("createWorkerReadinessServer", () => {
     expect(listLength).not.toHaveBeenCalled();
     expect(captureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "BullMQ worker is not running: sync" }),
+    );
+  });
+
+  it("reports ready while a paused worker is marked for an active Fly handoff", async () => {
+    const listLength = vi.fn(() => Promise.resolve(0));
+    const worker = makeWorker("sync-tension", { running: false, listLength });
+    await markWorkerForHandoff(worker);
+
+    const response = await requestReadiness([worker]);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: "ok", workers: 1 });
+    expect(listLength).toHaveBeenCalledWith("bull:sync-tension:wait");
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("reports unavailable when Redis fails while a worker is marked for handoff", async () => {
+    const redisError = new Error("redis offline during handoff");
+    const worker = makeWorker("sync-tension", {
+      running: false,
+      listLength: () => Promise.reject(redisError),
+    });
+    await markWorkerForHandoff(worker);
+
+    const response = await requestReadiness([worker]);
+
+    expect(response.status).toBe(503);
+    expect(captureException).toHaveBeenCalledWith(redisError);
+    expect(logger.error).toHaveBeenCalledWith(
+      "[worker] Readiness check failed: redis offline during handoff",
+    );
+  });
+
+  it("reports unavailable for a closing worker that is still running", async () => {
+    const listLength = vi.fn(() => Promise.resolve(0));
+    const worker = makeWorker("sync-garmin", { running: true, listLength });
+    worker.closing = Promise.resolve();
+
+    const response = await requestReadiness([worker]);
+
+    expect(response.status).toBe(503);
+    expect(listLength).not.toHaveBeenCalled();
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "BullMQ worker is not running: sync-garmin" }),
+    );
+  });
+
+  it("reports unavailable when a worker closes while Redis readiness is in flight", async () => {
+    const llenStarted = deferred<void>();
+    const llenResult = deferred<number>();
+    const worker = makeWorker("sync-garmin", {
+      running: true,
+      listLength: () => {
+        llenStarted.resolve();
+        return llenResult.promise;
+      },
+    });
+    const serverUrl = await startReadinessServer([worker]);
+    const responsePromise = fetch(`${serverUrl}/readyz`);
+    await llenStarted.promise;
+    worker.closing = Promise.resolve();
+    llenResult.resolve(0);
+
+    const response = await responsePromise;
+    expect(response.status).toBe(503);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "BullMQ worker is not running: sync-garmin" }),
+    );
+  });
+
+  it("reports unavailable when a handoff expires while Redis readiness is in flight", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+    });
+    let currentMs = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => currentMs);
+    const llenStarted = deferred<void>();
+    const llenResult = deferred<number>();
+    const worker = makeWorker("sync-tension", {
+      running: false,
+      listLength: () => {
+        llenStarted.resolve();
+        return llenResult.promise;
+      },
+    });
+    await markWorkerForHandoff(worker);
+    const serverUrl = await startReadinessServer([worker]);
+    const responsePromise = fetch(`${serverUrl}/readyz`);
+    await llenStarted.promise;
+    currentMs = 4_000;
+    llenResult.resolve(0);
+
+    const response = await responsePromise;
+    expect(response.status).toBe(503);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "BullMQ worker is not running: sync-tension" }),
     );
   });
 

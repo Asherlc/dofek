@@ -6,6 +6,18 @@ const SLOT_KEY = "dofek:portable-sync:slot";
 const IDLE = "idle";
 const SLOT_TTL_MS = 3_000;
 
+/**
+ * In-process ownership so readiness can treat an intentional Fly handoff pause
+ * as healthy. `until` is set only when that owner schedules the resume timer.
+ */
+type PortableSyncHandoffMark = { until?: number };
+const handoffMarkByWorker = new WeakMap<object, PortableSyncHandoffMark>();
+
+export function isPortableSyncHandoffActive(worker: object): boolean {
+  const mark = handoffMarkByWorker.get(worker);
+  return mark?.until !== undefined && performance.now() < mark.until;
+}
+
 export function createPortableSyncSlot(
   redis: Pick<Awaited<RedisConnection["client"]>, "eval">,
   key = SLOT_KEY,
@@ -54,9 +66,9 @@ export function createPortableSyncSlot(
 
 export async function yieldSyncToPortableWorker(
   getSlot: () => Promise<ReturnType<typeof createPortableSyncSlot>>,
-  worker: Pick<Worker<SyncJobData>, "pause" | "resume" | "closing">,
+  worker: Pick<Worker<SyncJobData>, "pause" | "resume" | "closing" | "isPaused">,
   providerId: string,
-  job: Job<SyncJobData>,
+  job: Pick<Job<SyncJobData>, "attemptsStarted" | "moveToWait">,
   token?: string,
 ): Promise<void> {
   if (!token || job.attemptsStarted !== 1) return;
@@ -70,19 +82,37 @@ export async function yieldSyncToPortableWorker(
     return;
   }
 
+  // Claim ownership immediately after a successful offer so an earlier resume
+  // timer cannot clear a newer handoff that is still blocked on moveToWait.
+  const mark: PortableSyncHandoffMark = {};
+  handoffMarkByWorker.set(worker, mark);
+
   // BullMQ keeps the same job and retry budget. The local pause gives the
   // portable worker time to claim it before Oracle resumes the queue.
-  await worker.pause(true);
   try {
+    await worker.pause(true);
     await job.moveToWait(token);
   } finally {
-    setTimeout(() => {
-      if (!worker.closing) {
-        void worker.resume().catch((error: unknown) => {
-          captureException(error, { tags: { source: "portable-sync-fallback" } });
-        });
+    // Only the current owner prepares the resume timer. A later accepted offer
+    // already replaced this mark; leave that owner alone.
+    if (handoffMarkByWorker.get(worker) === mark) {
+      if (worker.isPaused()) {
+        // Align the readiness deadline with this owner's resume timer. Also
+        // covers pause failures that leave the worker paused from a prior offer.
+        mark.until = performance.now() + SLOT_TTL_MS;
+        setTimeout(() => {
+          if (handoffMarkByWorker.get(worker) !== mark) return;
+          handoffMarkByWorker.delete(worker);
+          if (!worker.closing) {
+            void worker.resume().catch((error: unknown) => {
+              captureException(error, { tags: { source: "portable-sync-fallback" } });
+            });
+          }
+        }, SLOT_TTL_MS).unref();
+      } else {
+        handoffMarkByWorker.delete(worker);
       }
-    }, SLOT_TTL_MS).unref();
+    }
   }
   throw new WaitingError();
 }
