@@ -248,15 +248,17 @@ final class CollectionNotificationServiceTests: XCTestCase {
         // foreground trigger below can clear the previous-process warning.
         // Sign-out cancellation remains covered by testDisableRemovesPersistedWarningsForBothKinds.
         completePersistedLookups(harness)
-        let oldIdentifier = "\(CollectionNotification.appClosed.identifier).previous-process"
+        let oldIdentifier = "\(CollectionNotification.appClosed.identifier).\(UUID().uuidString)"
         harness.center.seed(oldIdentifier)
         harness.center.markDelivered(oldIdentifier)
 
-        let removalStarted = expectation(description: "blocked pending removal started")
+        let removalStarted = expectation(description: "blocked lookup-derived pending removal started")
         let allowRemoval = DispatchSemaphore(value: 0)
         defer { allowRemoval.signal() }
-        harness.center.onRemovePending = {
-            XCTAssertFalse(Thread.isMainThread, "pending removal must not run on the main queue")
+        // Gate only the seeded persisted identifier so the initial base-identifier
+        // cleanup cannot consume the one-shot hook before lookup-derived removal.
+        harness.center.onRemovePending(matching: oldIdentifier) {
+            XCTAssertFalse(Thread.isMainThread, "lookup-derived pending removal must not run on the main queue")
             removalStarted.fulfill()
             // Hold only off the main queue; a main-thread wait would deadlock this test.
             if !Thread.isMainThread {
@@ -265,6 +267,9 @@ final class CollectionNotificationServiceTests: XCTestCase {
         }
 
         harness.service.appBecameActive()
+        harness.flushCleanup()
+        harness.center.completeLookups()
+        // wait(for:) pumps main so lookup-derived removal is scheduled while we block.
 
         wait(for: [removalStarted], timeout: 1)
 
@@ -273,7 +278,7 @@ final class CollectionNotificationServiceTests: XCTestCase {
         wait(for: [mainProgressed], timeout: 1)
 
         allowRemoval.signal()
-        completePersistedLookups(harness)
+        settle(harness)
 
         XCTAssertEqual(Set(harness.center.pending.keys), [])
         XCTAssertTrue(harness.center.delivered.isEmpty)
@@ -366,7 +371,7 @@ private final class ControlledCollectionNotificationCenter: CollectionNotificati
     private let lock = NSLock()
     private var pendingStorage: [String: UNNotificationRequest] = [:]
     private var deliveredStorage: Set<String> = []
-    private var onRemovePendingHook: (() -> Void)?
+    private var onRemovePendingGate: (identifier: String, hook: () -> Void)?
     private var pendingLookups: [([String]) -> Void] = []
     private var deliveredLookups: [([String]) -> Void] = []
 
@@ -379,10 +384,9 @@ private final class ControlledCollectionNotificationCenter: CollectionNotificati
         set { lock.withLock { deliveredStorage = newValue } }
     }
 
-    /// One-shot hook; taken and cleared under the lock before invocation.
-    var onRemovePending: (() -> Void)? {
-        get { lock.withLock { onRemovePendingHook } }
-        set { lock.withLock { onRemovePendingHook = newValue } }
+    /// Arms a one-shot gate for one pending identifier. Other removals leave it armed.
+    func onRemovePending(matching identifier: String, _ hook: @escaping () -> Void) {
+        lock.withLock { onRemovePendingGate = (identifier: identifier, hook: hook) }
     }
 
     func getAuthorizationStatus(completion: @escaping (CollectionNotificationAuthorizationStatus) -> Void) {
@@ -407,9 +411,9 @@ private final class ControlledCollectionNotificationCenter: CollectionNotificati
 
     func removePendingNotificationRequests(withIdentifiers identifiers: [String]) {
         let hook = lock.withLock { () -> (() -> Void)? in
-            let hook = onRemovePendingHook
-            onRemovePendingHook = nil
-            return hook
+            guard let gate = onRemovePendingGate, identifiers.contains(gate.identifier) else { return nil }
+            onRemovePendingGate = nil
+            return gate.hook
         }
         // Never hold the lock across the test gate or any other callback.
         hook?()
@@ -443,12 +447,17 @@ private final class ControlledCollectionNotificationCenter: CollectionNotificati
     }
 
     func completeLookups() {
-        let snapshot = lock.withLock { () -> (pending: [([String]) -> Void], delivered: [([String]) -> Void], pendingIds: [String], deliveredIds: [String]) in
+        let snapshot = lock.withLock {
             let pending = pendingLookups
             let delivered = deliveredLookups
             pendingLookups.removeAll()
             deliveredLookups.removeAll()
-            return (pending, delivered, Array(pendingStorage.keys), Array(deliveredStorage))
+            return (
+                pending: pending,
+                delivered: delivered,
+                pendingIds: Array(pendingStorage.keys),
+                deliveredIds: Array(deliveredStorage)
+            )
         }
         for completion in snapshot.pending { completion(snapshot.pendingIds) }
         for completion in snapshot.delivered { completion(snapshot.deliveredIds) }
