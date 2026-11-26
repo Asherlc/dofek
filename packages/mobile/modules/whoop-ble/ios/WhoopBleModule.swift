@@ -392,8 +392,16 @@ public class WhoopBleModule: Module {
     private func deviceSummaryPayload() throws -> [String: Any] {
         try connectionManager.syncOnBleQueue {
             let connectedPeripheral = connectionManager.connectedPeripheral
-            let peripheralId = connectedPeripheral?.identifier.uuidString ?? lastKnownDeviceId
-            let peripheralName = connectedPeripheral?.name ?? lastKnownDeviceName
+            let rejected = connectionManager.rejectedUnsupportedPeripheral
+            let peripheralId: String?
+            let peripheralName: String?
+            if let rejected {
+                peripheralId = rejected.id.uuidString
+                peripheralName = rejected.name
+            } else {
+                peripheralId = connectedPeripheral?.identifier.uuidString ?? lastKnownDeviceId
+                peripheralName = connectedPeripheral?.name ?? lastKnownDeviceName
+            }
             let battery = connectionManager.batteryStatus
             var summary: [String: Any] = [
                 "id": (peripheralId as Any?) ?? NSNull(),
@@ -405,6 +413,7 @@ public class WhoopBleModule: Module {
                     "percentage": (battery.percentage as Any?) ?? NSNull(),
                     "isCharging": (battery.isCharging as Any?) ?? NSNull(),
                 ],
+                "unsupportedDevice": connectionManager.unsupportedDevice,
             ]
             if lastKnownHistorySupported, let peripheralId, peripheralId == lastKnownDeviceId,
                let identifier = UUID(uuidString: peripheralId) {

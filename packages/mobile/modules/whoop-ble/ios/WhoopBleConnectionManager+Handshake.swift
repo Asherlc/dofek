@@ -49,9 +49,26 @@ extension WhoopBleConnectionManager {
             cancelPeripheral()
             return
         }
+        // Snapshot before cleanup so the rejected strap is not replaced by a prior
+        // successful lastKnown identity when the module publishes device state.
+        let rejectedUnsupported: (id: UUID, name: String?)?
+        if case .serviceNotFound = error, let peripheral = connectedPeripheral {
+            rejectedUnsupported = (id: peripheral.identifier, name: peripheral.name)
+        } else {
+            rejectedUnsupported = nil
+        }
         autoReconnect = false
         cancelPeripheral()
         cleanup()
+        // Publish after cleanup so device-state listeners see idle with no selected
+        // peripheral. Passive NO_SERVICE paths have no connect promise to correct a
+        // stale discoveringServices summary.
+        if let rejectedUnsupported {
+            retainRejectedUnsupportedPeripheral(
+                id: rejectedUnsupported.id,
+                name: rejectedUnsupported.name
+            )
+        }
         finishConnect(.failure(error))
     }
 

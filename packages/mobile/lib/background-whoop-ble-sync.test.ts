@@ -162,6 +162,47 @@ describe("native WHOOP lifecycle", () => {
     await initBackgroundWhoopBleSync(context, native);
     expect(native.flushUploads).toHaveBeenCalled();
   });
+  it("treats NO_SERVICE during startup as an unsupported device without Sentry or IMU", async () => {
+    const native = deps();
+    const unsupported = Object.assign(new Error("WHOOP service not found"), { code: "NO_SERVICE" });
+    native.connect.mockRejectedValueOnce(unsupported);
+    await initBackgroundWhoopBleSync(context, native);
+    expect(native.startImuStreaming).not.toHaveBeenCalled();
+    expect(telemetry.captureException).not.toHaveBeenCalledWith(
+      unsupported,
+      expect.objectContaining({ source: "whoop-ble-init-sync" }),
+    );
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+  it("treats NO_SERVICE during foreground activation without Sentry or IMU", async () => {
+    AppState.currentState = "background";
+    const native = deps();
+    native.findWhoop.mockResolvedValue(null);
+    await initBackgroundWhoopBleSync(context, native);
+    vi.mocked(telemetry.captureException).mockClear();
+    const unsupported = Object.assign(new Error("WHOOP service not found"), { code: "NO_SERVICE" });
+    native.findWhoop.mockResolvedValue({ id: "strap", name: "WHOOP" });
+    native.connect.mockRejectedValueOnce(unsupported);
+    AppState.currentState = "active";
+    await stateChanged("active");
+    expect(native.startImuStreaming).not.toHaveBeenCalled();
+    expect(telemetry.captureException).not.toHaveBeenCalledWith(
+      unsupported,
+      expect.objectContaining({ source: "whoop-ble-foreground-sync" }),
+    );
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+  it("still reports unrelated WHOOP connect failures to Sentry", async () => {
+    const native = deps();
+    const failure = Object.assign(new Error("Connection timed out"), { code: "TIMEOUT" });
+    native.connect.mockRejectedValueOnce(failure);
+    await initBackgroundWhoopBleSync(context, native);
+    expect(telemetry.captureException).toHaveBeenCalledWith(failure, {
+      source: "whoop-ble-init-sync",
+      retiredLifetime: false,
+    });
+    expect(native.startImuStreaming).not.toHaveBeenCalled();
+  });
   it("background refresh flushes without requiring a connection", async () => {
     AppState.currentState = "background";
     const native = deps();

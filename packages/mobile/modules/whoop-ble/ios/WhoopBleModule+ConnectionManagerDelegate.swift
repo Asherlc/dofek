@@ -102,6 +102,10 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         emitDeviceState()
     }
 
+    func connectionManager(_: WhoopBleConnectionManager, didUpdateUnsupportedDevice _: Bool) {
+        emitDeviceState()
+    }
+
     func connectionManager(
         _ manager: WhoopBleConnectionManager,
         didReceiveData data: Data

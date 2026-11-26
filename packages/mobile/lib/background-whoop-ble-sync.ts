@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/react-native";
 import { Alert, AppState } from "react-native";
 import { captureException, logger } from "./telemetry";
 import { WhoopBleDiagnostics, type WhoopSyncTrigger } from "./whoop-ble-diagnostics";
+import { isUnsupportedWhoopDevice } from "./whoop-ble-errors";
 import type { WhoopBleSyncDeps, WhoopUploadContext } from "./whoop-ble-sync-types";
 
 const LOG_CATEGORY = "whoop-ble";
@@ -85,6 +86,7 @@ export async function initBackgroundWhoopBleSync(
       session.syncing = true;
       await connectWhoop(session)
         .catch((error: unknown) => {
+          if (isUnsupportedWhoopDevice(error)) return;
           captureException(error, {
             source: "whoop-ble-foreground-sync",
             retiredLifetime: !session.active,
@@ -100,7 +102,12 @@ export async function initBackgroundWhoopBleSync(
     try {
       await connectWhoop(session);
     } catch (error: unknown) {
-      captureException(error, { source: "whoop-ble-init-sync", retiredLifetime: !session.active });
+      if (!isUnsupportedWhoopDevice(error)) {
+        captureException(error, {
+          source: "whoop-ble-init-sync",
+          retiredLifetime: !session.active,
+        });
+      }
     } finally {
       session.syncing = false;
     }

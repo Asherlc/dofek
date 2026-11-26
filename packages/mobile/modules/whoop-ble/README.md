@@ -406,6 +406,11 @@ Explicit connection requests still reject with their typed error; explicit
 Disconnect and structurally incompatible services remain terminal. Stop prevents
 IMU restoration during recovery.
 
+If discovery finds none of the supported WHOOP services, Bluetooth Devices
+shows **Unsupported device** after an automatic or manual connection attempt.
+The app handles the native `NO_SERVICE` result without a Sentry exception.
+The native connection journal retains the abort reason for diagnosis.
+
 Queue counts use the sample store's existing transactional lifecycle counters.
 Oldest and newest sample times use separate lookups through the stream/time
 covering index, following SQLite's [covering-index](https://sqlite.org/queryplanner.html#covering_indexes)

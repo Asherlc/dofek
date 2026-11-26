@@ -94,6 +94,21 @@ export const BatteryDisconnected: Story = {
   args: { devices: batteryDevices(57, true, "disconnected") },
 };
 
+export const UnsupportedWhoop: Story = {
+  args: {
+    devices: [
+      {
+        ...whoop,
+        name: "WHOOP MG",
+        connectionState: "idle",
+        unsupportedDevice: true,
+        diagnostics: { imuBufferedSamples: 0, realtimeBufferedSamples: 0 },
+      },
+      polar,
+    ],
+  },
+};
+
 export const Loading: Story = {
   args: { devices: [], loading: true },
 };

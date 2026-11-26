@@ -22,6 +22,8 @@ export const WhoopDeviceSummarySchema = z.object({
     })
     .default({ percentage: null, isCharging: null }),
   managedHistoryEnabled: z.boolean().optional(),
+  /** Present on current native builds; older payloads omit the field. */
+  unsupportedDevice: z.boolean().optional(),
 });
 
 export type WhoopDeviceSummary = z.infer<typeof WhoopDeviceSummarySchema>;

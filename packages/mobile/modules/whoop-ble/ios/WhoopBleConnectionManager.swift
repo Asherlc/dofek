@@ -38,6 +38,11 @@ final class WhoopBleConnectionManager {
     var notificationSubscriptionTracker: WhoopBleNotificationSubscriptionTracker?
     var autoReconnect = false
     var wasStreaming = false
+    /// Identity of a strap rejected with NO_SERVICE; cleared on the next real attempt
+    /// or intentional disconnect. Survives cleanup so summaries do not fall back to
+    /// a previously successful strap.
+    private(set) var rejectedUnsupportedPeripheral: (id: UUID, name: String?)?
+    var unsupportedDevice: Bool { rejectedUnsupportedPeripheral != nil }
     var deviceInfo: [String: String] = [:]
 
     @discardableResult
@@ -305,6 +310,7 @@ final class WhoopBleConnectionManager {
                 peripheral.cancelConnection()
             }
             self.cleanup()
+            self.clearRejectedUnsupportedPeripheral()
             self.finishConnect(.failure(.disconnected(nil)))
             WhoopBleConnectionEvent.intentionallyDisconnected.post()
             completion?()
@@ -399,7 +405,21 @@ final class WhoopBleConnectionManager {
             finishConnect(.failure(.disconnected(nil)))
         }
         connectedPeripheral = peripheral
-        if peripheral != nil { delegate?.connectionManagerDidSelectPeripheral(self) }
+        if peripheral != nil {
+            clearRejectedUnsupportedPeripheral()
+            delegate?.connectionManagerDidSelectPeripheral(self)
+        }
+    }
+
+    func retainRejectedUnsupportedPeripheral(id: UUID, name: String?) {
+        rejectedUnsupportedPeripheral = (id: id, name: name)
+        delegate?.connectionManager(self, didUpdateUnsupportedDevice: true)
+    }
+
+    private func clearRejectedUnsupportedPeripheral() {
+        guard rejectedUnsupportedPeripheral != nil else { return }
+        rejectedUnsupportedPeripheral = nil
+        delegate?.connectionManager(self, didUpdateUnsupportedDevice: false)
     }
 
     func setBatteryStatus(_ status: WhoopBleBatteryStatus) {
