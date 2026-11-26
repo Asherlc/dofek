@@ -1,5 +1,33 @@
 # Production Incident Baseline
 
+## 2026-11-26 — Signed Archive (Release) hit the 30m job cap
+
+- **Impact.** Two signed iOS Archive (Release, signed) jobs were cancelled
+  before producing or uploading a signed `.xcarchive`. Both CI Gates passed.
+  On the latest related run, TestFlight publication was skipped and OTA
+  succeeded.
+  [run 45898582399](https://github.com/Asherlc/dofek/actions/runs/45898582399)
+- **Evidence.** Both failing steps ran `xcodebuild archive` on Xcode 27.2.
+  Job annotations reported `The job has exceeded the maximum execution time of 30m0s`.
+  The first fatal log line was `The operation was canceled.`
+  The earlier signed job spent 7m04s in setup and was still compiling when
+  cancelled. The latest signed job spent 6m19s in setup and reached the
+  Sentry debug-symbol phase. On the same commit, the unsigned iOS job
+  restored the CocoaPods cache (restore + `pod install` ~1m47s, signed
+  `pod install` ~2m45s). The cause of the compilation cache misses remains
+  unconfirmed. A local C probe reused a ccache 4.14.3 entry with 4.14.2.
+  [`timeout-minutes`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idtimeout-minutes)
+  [earlier signed job](https://github.com/Asherlc/dofek/actions/runs/45881143014/job/140121514895)
+  [latest signed job](https://github.com/Asherlc/dofek/actions/runs/45894752390/job/140166536130)
+  [unsigned iOS job](https://github.com/Asherlc/dofek/actions/runs/45894752390/job/140166215387)
+- **Root cause / status.** The job-level 30m cap cancelled in-progress
+  archives. Proposed reuse of the existing CocoaPods cache.
+  Archive-specific timeout change awaits approval.
+- **Follow-up.** Cold and cached signed-archive verification after any
+  approved timeout change. Treat “maximum execution time” annotations and
+  `The operation was canceled.` as a job cap before chasing cache or
+  compiler hypotheses.
+
 ## 2026-11-24 — Fly drain blocked the dbt telemetry rollout
 
 - **Impact.** The server release for `11957a1` stopped before migrations at
