@@ -40567,3 +40567,16 @@ Local qualification and CI are separate from production throughput acceptance. T
   capabilities.
   [Mobile telemetry](../packages/mobile/README.md)
   · [Sentry MetricKit integration](https://github.com/getsentry/sentry-cocoa/blob/9.34.0/Sources/Swift/Core/MetricKit/SentryMetricKitIntegration.swift).
+
+- **CI follow-up.** The unsigned Release archive failed with exit 65 after
+  `[Expo] Configure project` reported `ExpoModulesMacros scan-modules` timing
+  out after 5000 ms. Expo could not generate a complete provider because
+  Haptics and Modules Core lacked declared Apple module lists. This blocked
+  the telemetry PR's native build gate. The version-pinned pnpm patches now
+  declare `HapticsModule` and an empty list for Modules Core, which initializes
+  its internal module itself. The same forced scanner failure reproduced the
+  CI error before the patches and generated the expected registrations after
+  them. A successful scan produced the same provider as before. Compare both
+  generation paths when updating these dependency patches.
+  [Failed archive](https://github.com/Asherlc/dofek/actions/runs/45842609730/job/139988572646)
+  · [Expo module configuration](https://docs.expo.dev/modules/module-config/).

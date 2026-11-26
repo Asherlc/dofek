@@ -568,6 +568,14 @@ Validate SDK-managed versions with
 The native dependency set also includes ExpoNetwork, the pnpm patch to
 `expo-apple-authentication@58.0.3`, and [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/setup/expo/).
 
+The [Haptics patch](../../patches/expo-haptics@58.0.8.patch) declares
+`HapticsModule` for Apple autolinking. The
+[Modules Core patch](../../patches/expo-modules-core@58.1.0.patch) declares an
+empty list because Expo initializes its internal `CoreModule` directly.
+These declarations let Expo generate the iOS provider when its source scan
+times out. [Expo module configuration](https://docs.expo.dev/modules/module-config/)
+· [Expo app context](https://github.com/expo/expo/blob/expo-modules-core%4058.1.0/packages/expo-modules-core/ios/Core/AppContext.swift).
+
 The `@expo/plist` 0.10.1 and 0.10.2 consumers share the existing
 [XML parser patch](../../patches/@expo__plist@0.10.1.patch), selected by the
 exact version mappings in [pnpm-workspace.yaml](../../pnpm-workspace.yaml).
