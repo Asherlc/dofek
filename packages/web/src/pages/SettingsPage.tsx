@@ -175,7 +175,7 @@ export function SettingsPage() {
                     </p>
                   ) : null}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {!billingStatus.data.hasFullAccess && (
                     <button
                       type="button"
@@ -200,6 +200,20 @@ export function SettingsPage() {
                         : "Manage Billing"}
                     </button>
                   )}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Link
+                    to="/terms"
+                    className="text-sm text-accent hover:text-accent-secondary underline"
+                  >
+                    Terms of Service
+                  </Link>
+                  <Link
+                    to="/privacy"
+                    className="text-sm text-accent hover:text-accent-secondary underline"
+                  >
+                    Privacy Policy
+                  </Link>
                 </div>
                 {checkoutSessionMutation.error ? (
                   <p className="text-sm text-red-400">

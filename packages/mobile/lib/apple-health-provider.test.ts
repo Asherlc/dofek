@@ -34,7 +34,6 @@ vi.mock("../modules/health-kit", () => ({
   })),
   queryDailyStatistics: vi.fn(async () => []),
   queryCategorySamples: vi.fn(async () => []),
-  queryClinicalRecords: vi.fn(async () => []),
   queryQuantitySamples: vi.fn(async () => []),
   querySleepSamples: vi.fn(async () => []),
   queryWorkoutRoutes: vi.fn(async () => []),
@@ -51,7 +50,6 @@ vi.mock("../modules/health-kit", () => ({
 }));
 
 import {
-  queryClinicalRecords,
   queryDailyStatistics,
   queryRunningStepSamples,
   querySleepSamples,
@@ -85,11 +83,6 @@ function createNative(overrides: Partial<AppleHealthAuthorizationNative> = {}) {
 
 function createTrpcClient(): AppleHealthTrpcClient {
   return {
-    clinicalRecords: {
-      push: {
-        mutate: vi.fn(async () => ({ inserted: 0 })),
-      },
-    },
     healthKitSync: {
       recordSync: {
         mutate: vi.fn(async () => ({ recorded: true })),
@@ -565,47 +558,6 @@ describe("AppleHealthSyncService", () => {
     expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
-  it("forwards clinical-record queries through the default native adapter", async () => {
-    const records = [
-      {
-        uuid: "659ee585-b399-4c21-841f-97fe49fdc465",
-        clinicalType: "condition" as const,
-        displayName: "Migraine",
-        sourceName: "Example Health System",
-        fhirVersion: "4.0.1",
-        fhir: { resourceType: "Condition" },
-        downloadedAt: "2026-04-25T17:15:30.000Z",
-      },
-    ];
-    vi.mocked(queryClinicalRecords).mockResolvedValueOnce(records);
-    const syncFunction = vi.fn<AppleHealthSyncFunction>(async ({ healthKit }) => {
-      const queriedRecords = await healthKit.queryClinicalRecords(
-        "HKClinicalTypeIdentifierConditionRecord",
-        "2026-04-01T00:00:00.000Z",
-        "2026-05-01T00:00:00.000Z",
-      );
-      return { deleted: 0, inserted: queriedRecords.length, errors: [] };
-    });
-    const service = new AppleHealthSyncService({
-      trpcClient: createTrpcClient(),
-      loadDeviceErasureCutoff: vi.fn(async () => null),
-      syncFunction,
-    });
-
-    await expect(
-      service.syncManualCheckpointed({ syncRangeDays: 7, manualExecution }),
-    ).resolves.toEqual({
-      deleted: 0,
-      inserted: 1,
-      errors: [],
-    });
-    expect(queryClinicalRecords).toHaveBeenCalledWith(
-      "HKClinicalTypeIdentifierConditionRecord",
-      "2026-04-01T00:00:00.000Z",
-      "2026-05-01T00:00:00.000Z",
-    );
-  });
-
   it("delegates a resumable sync with the shared native adapter and tRPC client", async () => {
     const trpcClient = createTrpcClient();
     const syncResult: SyncResult = { deleted: 0, inserted: 2, errors: [] };
@@ -614,7 +566,6 @@ describe("AppleHealthSyncService", () => {
       loadDeviceErasureCutoff: vi.fn(async () => "2026-07-26T12:00:00.000Z"),
       trpcClient,
       healthKit: {
-        queryClinicalRecords: vi.fn(async () => []),
         queryDailyStatistics: vi.fn(async () => []),
         queryCategorySamples: vi.fn(async () => []),
         queryQuantitySamples: vi.fn(async () => []),

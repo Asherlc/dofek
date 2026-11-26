@@ -58,17 +58,25 @@ export interface ManualHealthKitCheckpoint {
 
 const TimestampSchema = z.string().datetime({ offset: true });
 
+const ManualHealthKitSyncStageSchema = z.custom<ManualHealthKitSyncStage>(
+  (value) =>
+    typeof value === "string" &&
+    MANUAL_HEALTH_KIT_SYNC_STAGES.some((stageIdentifier) => stageIdentifier === value),
+  { message: "Apple Health sync checkpoint stage is invalid." },
+);
+
 const ManualHealthKitCheckpointSchema = z
   .object({
     requestId: z.string().min(1),
     userId: z.string().min(1),
     startDate: TimestampSchema,
     endDate: TimestampSchema,
-    nextStage: z.custom<ManualHealthKitSyncStage>(
+    // Former clinical:* cursors resume at running-steps, the first retained stage
+    // after that removed block, while keeping the request window and account.
+    nextStage: z.preprocess(
       (value) =>
-        typeof value === "string" &&
-        MANUAL_HEALTH_KIT_SYNC_STAGES.some((stageIdentifier) => stageIdentifier === value),
-      { message: "Apple Health sync checkpoint stage is invalid." },
+        typeof value === "string" && value.startsWith("clinical:") ? "running-steps" : value,
+      ManualHealthKitSyncStageSchema,
     ),
     requiresResume: z.boolean(),
   })

@@ -17,25 +17,6 @@ final class HealthKitTypesTests: XCTestCase {
         }
     }
 
-    func testClinicalRecordIdentifiersMapEverySupportedType() {
-        let expectedTypes = [
-            "HKClinicalTypeIdentifierAllergyRecord": "allergy",
-            "HKClinicalTypeIdentifierConditionRecord": "condition",
-            "HKClinicalTypeIdentifierCoverageRecord": "coverage",
-            "HKClinicalTypeIdentifierImmunizationRecord": "immunization",
-            "HKClinicalTypeIdentifierLabResultRecord": "labResult",
-            "HKClinicalTypeIdentifierMedicationRecord": "medication",
-            "HKClinicalTypeIdentifierProcedureRecord": "procedure",
-            "HKClinicalTypeIdentifierVitalSignRecord": "vitalSign",
-            "HKClinicalTypeIdentifierClinicalNoteRecord": "clinicalNote",
-        ]
-
-        XCTAssertEqual(Set(clinicalRecordTypeIdentifiers), Set(expectedTypes.keys))
-        for (identifier, expectedType) in expectedTypes {
-            XCTAssertEqual(clinicalRecordType(for: identifier), expectedType)
-        }
-    }
-
     // MARK: - readTypes
 
     func testReadTypesContainsQuantityTypes() {
@@ -115,41 +96,9 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertTrue(readTypes.contains(HKSeriesType.workoutRoute()))
     }
 
-    func testReadTypesContainsClinicalTypes() {
-        #if os(iOS)
-        let clinicalIdentifiers: [HKClinicalTypeIdentifier] = [
-            .allergyRecord,
-            .conditionRecord,
-            .immunizationRecord,
-            .labResultRecord,
-            .medicationRecord,
-            .procedureRecord,
-            .vitalSignRecord,
-        ]
-
-        for identifier in clinicalIdentifiers {
-            let type = HKClinicalType.clinicalType(forIdentifier: identifier)!
-            XCTAssertTrue(readTypes.contains(type), "readTypes should contain \(identifier.rawValue)")
-        }
-
-        if #available(iOS 16.4, *) {
-            XCTAssertTrue(readTypes.contains(HKClinicalType.clinicalType(forIdentifier: .clinicalNoteRecord)!))
-        }
-        if #available(iOS 15.0, *) {
-            XCTAssertTrue(readTypes.contains(HKClinicalType.clinicalType(forIdentifier: .coverageRecord)!))
-        }
-        #endif
-    }
-
     func testReadTypesTotalCount() {
         // 54 quantity types + 5 category types + 1 workout type + 1 workout route = 61
-        var expectedCount = 61
-        #if os(iOS)
-        expectedCount += 7 // allergy, condition, immunization, lab, medication, procedure, vital
-        if #available(iOS 16.4, *) { expectedCount += 1 } // clinicalNote
-        if #available(iOS 15.0, *) { expectedCount += 1 } // coverage
-        #endif
-        XCTAssertEqual(readTypes.count, expectedCount)
+        XCTAssertEqual(readTypes.count, 61)
     }
 
     // MARK: - backgroundDeliveryTypes
@@ -174,17 +123,6 @@ final class HealthKitTypesTests: XCTestCase {
                 HKCategoryType.categoryType(forIdentifier: .mindfulSession)!
             )
         )
-    }
-
-    func testBackgroundDeliveryTypesExcludeAllClinicalRecords() {
-        let backgroundIdentifiers = Set(backgroundDeliveryTypes.map(\.identifier))
-
-        for identifier in clinicalRecordTypeIdentifiers {
-            XCTAssertFalse(
-                backgroundIdentifiers.contains(identifier),
-                "Clinical type \(identifier) must remain explicit-sync only"
-            )
-        }
     }
 
     func testBackgroundDeliveryTypesTotalCount() {

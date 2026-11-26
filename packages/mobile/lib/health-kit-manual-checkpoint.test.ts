@@ -180,6 +180,27 @@ describe("manual HealthKit checkpoint storage", () => {
     );
   });
 
+  it("continues a paused clinical-stage checkpoint at running-steps", async () => {
+    const legacy = {
+      ...checkpoint({
+        startDate: "2026-01-10T08:00:00.000Z",
+        endDate: "2026-01-17T08:00:00.000Z",
+        requiresResume: true,
+      }),
+      nextStage: "clinical:HKClinicalTypeIdentifierLabResultRecord",
+    };
+    await SecureStore.setItemAsync(checkpointKey(FIRST_USER), JSON.stringify(legacy));
+
+    await expect(loadManualHealthKitCheckpoint(FIRST_USER)).resolves.toEqual({
+      requestId: FIRST_REQUEST,
+      userId: FIRST_USER,
+      startDate: legacy.startDate,
+      endDate: legacy.endDate,
+      nextStage: "running-steps",
+      requiresResume: true,
+    });
+  });
+
   it.each([
     ["an unknown stage", JSON.stringify({ ...checkpoint(), nextStage: "raw:not-a-stage" })],
     ["a missing resume flag", JSON.stringify({ ...checkpoint(), requiresResume: undefined })],

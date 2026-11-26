@@ -265,9 +265,6 @@ function AuthGate() {
 
   const healthKitSyncClient: SyncTrpcClient = useMemo(
     () => ({
-      clinicalRecords: {
-        push: { mutate: (input) => trpcClient.clinicalRecords.push.mutate(input) },
-      },
       healthKitSync: {
         recordSync: { mutate: (input) => trpcClient.healthKitSync.recordSync.mutate(input) },
         deleteQuantitySamples: {

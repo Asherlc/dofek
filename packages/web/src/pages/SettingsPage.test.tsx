@@ -54,7 +54,9 @@ function applySearch(
 }
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: ReactNode }) => <a href="/support">{children}</a>,
+  Link: ({ children, to }: { children: ReactNode; to?: string }) => (
+    <a href={to ?? "/support"}>{children}</a>
+  ),
   useNavigate: () => mockNavigate,
   useSearch: () => mockSearch,
 }));
@@ -493,6 +495,12 @@ describe("SettingsPage categories", () => {
 
     expect(screen.getByText(/Your access is limited to your most recent 7 days/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Subscribe to Full Access" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Terms of Service" }).getAttribute("href")).toBe(
+      "/terms",
+    );
+    expect(screen.getByRole("link", { name: "Privacy Policy" }).getAttribute("href")).toBe(
+      "/privacy",
+    );
     expect(screen.queryByRole("button", { name: "Manage Billing" })).toBeNull();
   });
 
@@ -515,6 +523,12 @@ describe("SettingsPage categories", () => {
     expect(screen.getByText("Stripe subscription status: past_due")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Manage Billing" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Subscribe to Full Access" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Terms of Service" }).getAttribute("href")).toBe(
+      "/terms",
+    );
+    expect(screen.getByRole("link", { name: "Privacy Policy" }).getAttribute("href")).toBe(
+      "/privacy",
+    );
   });
 
   it("shows generic full-access copy without Stripe controls for an App Store subscription", async () => {

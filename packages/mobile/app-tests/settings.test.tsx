@@ -965,8 +965,47 @@ describe("SettingsScreen billing", () => {
 
     expect(screen.getAllByText("Billing").length).toBeGreaterThan(1);
     expect(screen.getByText(/Access limited to your most recent 7 days/)).toBeTruthy();
-    expect(screen.getByText("Subscribe for Premium/month")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Subscribe for $4.99/month" })).toBeTruthy(),
+    );
     expect(screen.getByText("Restore Purchases")).toBeTruthy();
+  });
+
+  it("shows StoreKit purchase disclosures and opens legal destinations", async () => {
+    const WebBrowser = await import("expo-web-browser");
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    await waitFor(() => expect(screen.getByText("Dofek Premium")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Subscribe for $4.99/month" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Terms of Use (EULA)" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Privacy Policy" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("link", { name: "Terms of Use (EULA)" }));
+    await waitFor(() =>
+      expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+        "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/",
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "Privacy Policy" }));
+    await waitFor(() =>
+      expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith("https://test.example.com/privacy"),
+    );
+  });
+
+  it("keeps Subscribe disabled when StoreKit price is unavailable", async () => {
+    mockAppStoreBilling.loadProduct.mockResolvedValueOnce(null);
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByText("App Store price is unavailable. Try again later.")).toBeTruthy(),
+    );
+    expect(screen.getByRole("button", { name: "Subscribe" })).toHaveProperty("disabled", true);
+    expect(mockAppStoreBilling.subscribe).not.toHaveBeenCalled();
   });
 
   it("starts a StoreKit subscription instead of opening Stripe Checkout on iOS", async () => {
@@ -974,7 +1013,10 @@ describe("SettingsScreen billing", () => {
 
     render(<SettingsScreen />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Subscribe for Premium/month" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Subscribe for $4.99/month" })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe for $4.99/month" }));
 
     await waitFor(() => expect(mockAppStoreBilling.subscribe).toHaveBeenCalledOnce());
     expect(Linking.openURL).not.toHaveBeenCalled();
@@ -1013,6 +1055,29 @@ describe("SettingsScreen billing", () => {
     await waitFor(() => expect(mockAppStoreBilling.showManageSubscriptions).toHaveBeenCalledOnce());
   });
 
+  it("keeps Terms of Use and Privacy Policy visible for a full-access account", async () => {
+    mockBillingStatus = {
+      hasFullAccess: true,
+      access: {
+        kind: "full",
+        paid: true,
+        reason: "app_store_subscription",
+      },
+      stripeSubscriptionStatus: null,
+      canManageBilling: false,
+      appStoreSubscriptionStatus: "active",
+      canManageAppStoreSubscription: true,
+    };
+
+    const { default: SettingsScreen } = await import("../app/settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByRole("link", { name: "Terms of Use (EULA)" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Privacy Policy" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Subscribe/ })).toBeNull();
+  });
+
   it("shows the specific App Store error and restores the action controls", async () => {
     mockAppStoreBilling.subscribe.mockRejectedValueOnce(
       new Error("Transaction belongs to another Dofek account."),
@@ -1020,7 +1085,10 @@ describe("SettingsScreen billing", () => {
     const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "Subscribe for Premium/month" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Subscribe for $4.99/month" })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe for $4.99/month" }));
 
     await waitFor(() =>
       expect(screen.getByText("Transaction belongs to another Dofek account.")).toBeTruthy(),
@@ -1036,7 +1104,10 @@ describe("SettingsScreen billing", () => {
     const { default: SettingsScreen } = await import("../app/settings");
 
     render(<SettingsScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "Subscribe for Premium/month" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Subscribe for $4.99/month" })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe for $4.99/month" }));
 
     expect(screen.getByRole("button", { name: "Subscribing..." })).toHaveProperty("disabled", true);
     expect(screen.getByRole("button", { name: "Restore Purchases" })).toHaveProperty(
