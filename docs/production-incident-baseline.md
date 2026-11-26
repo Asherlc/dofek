@@ -40580,3 +40580,31 @@ Local qualification and CI are separate from production throughput acceptance. T
   generation paths when updating these dependency patches.
   [Failed archive](https://github.com/Asherlc/dofek/actions/runs/45842609730/job/139988572646)
   · [Expo module configuration](https://docs.expo.dev/modules/module-config/).
+
+## 2026-11-26 (UTC) — iOS collection-alert cleanup stalls the main thread
+
+- **Impact and evidence.** At 18:46:20 UTC, Sentry recorded a 2.2–3.0 second
+  foreground hang on one iPhone running Dofek build `1795711332` on iOS
+  `27.2.1`, about eight seconds after app start. A 90-day search of production
+  app hangs found one occurrence in this issue. The trace contains the error
+  and zero spans. [Sentry event](https://east-bay-software.sentry.io/issues/7869392668/events/837b20850328449d979ca9935157b8e0/)
+  · [Sentry trace](https://east-bay-software.sentry.io/explore/traces/trace/85eb0bd845224f1aac11c53fec9ddef9).
+- **Cause.** The main-queue cancellation callback called
+  `removePendingNotificationRequests(withIdentifiers:)` and waited for a
+  synchronous XPC reply from Apple's notification service. Launch, foregrounding,
+  WHOOP connection changes, and session cleanup can all request cancellation.
+  The captured stack identifies the removal callback. The initiating lifecycle
+  event and the reason Apple's service took that long remain unknown.
+  [Cancellation service](../packages/mobile/modules/background-refresh/ios/CollectionNotificationService.swift#L173)
+  · [Apple adapter](../packages/mobile/modules/background-refresh/ios/AppleCollectionNotificationCenter.swift#L59).
+- **Mitigation and follow-up.** The affected build still has this main-thread
+  exposure. The proposed native fix moves notification lookups and removals to a
+  serial background queue and preserves the existing termination-time scheduling
+  path. Apple documents that the shared notification center can be called from
+  any app thread. A rebuilt iOS app is needed to validate the Swift change. Exercise
+  cancellation with a blocked fake notification center, then verify alert cleanup
+  on iPhone and watch for the same stack by build in Sentry.
+  [Apple notification center documentation](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter).
+- **Retrospective.** The native stack identified the blocking API directly. If
+  the hang recurs, correlating its timestamp with the lifecycle events that request
+  cancellation would help identify the initiating path.
