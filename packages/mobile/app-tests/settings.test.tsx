@@ -205,24 +205,27 @@ const mockProvidersQuery: {
   isLoading: false,
 };
 
+// Stable identity matches createTRPCReact useUtils memoization for the same context.
+const mockTrpcUtils = {
+  invalidate: vi.fn(),
+  client: {},
+  auth: { passwordCredentialStatus: { invalidate: vi.fn() } },
+  billing: { status: { invalidate: mockBillingStatusInvalidate } },
+  bodyAnalytics: { weightPrediction: { invalidate: vi.fn() } },
+  ghostSessions: { invalidate: mockGhostInvalidate, get: { cancel: mockGhostCancel } },
+  settings: {
+    get: {
+      getData: mockSettingsGetData,
+      setData: mockSettingsSetData,
+      invalidate: mockSettingsInvalidate,
+    },
+  },
+};
+
 vi.mock("../lib/trpc", () => ({
   trpc: {
     ghostSessions: { get: { _def: () => ({ path: ["ghostSessions", "get"] }) } },
-    useUtils: () => ({
-      invalidate: vi.fn(),
-      client: {},
-      auth: { passwordCredentialStatus: { invalidate: vi.fn() } },
-      billing: { status: { invalidate: mockBillingStatusInvalidate } },
-      bodyAnalytics: { weightPrediction: { invalidate: vi.fn() } },
-      ghostSessions: { invalidate: mockGhostInvalidate, get: { cancel: mockGhostCancel } },
-      settings: {
-        get: {
-          getData: mockSettingsGetData,
-          setData: mockSettingsSetData,
-          invalidate: mockSettingsInvalidate,
-        },
-      },
-    }),
+    useUtils: () => mockTrpcUtils,
     sync: {
       providers: {
         useQuery: () => mockProvidersQuery,
@@ -999,11 +1002,20 @@ describe("SettingsScreen billing", () => {
     mockAppStoreBilling.loadProduct.mockResolvedValueOnce(null);
     const { default: SettingsScreen } = await import("../app/settings");
 
-    render(<SettingsScreen />);
+    const view = render(<SettingsScreen />);
 
     await waitFor(() =>
       expect(screen.getByText("App Store price is unavailable. Try again later.")).toBeTruthy(),
     );
+    expect(screen.getByRole("button", { name: "Subscribe" })).toHaveProperty("disabled", true);
+    expect(mockAppStoreBilling.subscribe).not.toHaveBeenCalled();
+
+    view.rerender(<SettingsScreen />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockAppStoreBilling.loadProduct).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Subscribe" })).toHaveProperty("disabled", true);
     expect(mockAppStoreBilling.subscribe).not.toHaveBeenCalled();
   });
