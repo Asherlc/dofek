@@ -40606,3 +40606,24 @@ Local qualification and CI are separate from production throughput acceptance. T
   For a recurrence, correlate Sentry and Axiom by app runtime and use
   `nativeOccurredAt` for the handshake sequence. Capture the advertised and
   returned service UUIDs on a physical device to investigate the mismatch.
+
+## 2026-11-26 — Expo compatibility update blocked the WHOOP PR's Metro build
+
+- **Impact and evidence.** PR #3520's `Build Mobile / Metro Bundle` job failed
+  before exporting an iOS bundle. `Verify dependencies match Expo SDK` ran
+  `pnpm expo install --check` and exited 1 with `Found outdated dependencies`.
+  The same command reproduced the mismatch locally.
+  [Failed Metro job](https://github.com/Asherlc/dofek/actions/runs/45870197728/job/140083795705).
+- **Cause and fix.** Expo's SDK 58 compatibility metadata now expects
+  `expo@58.1.0` and eight newer companion package versions. Updated those
+  exact pins and regenerated the lockfile with the approved exact-version
+  release-age exceptions. The existing native scanner fallback also applies
+  to `expo-modules-core@58.2.0`, whose published module config still lacks
+  an explicit Apple module list.
+  [Expo dependency validation](https://docs.expo.dev/more/expo-cli/#version-validation)
+  · [pnpm release-age exceptions](https://pnpm.io/settings/dependency-resolution#minimumreleaseageexclude).
+- **Validation and follow-up.** The frozen install, online Expo compatibility
+  check, both iOS exports, and all 2,715 mobile tests passed locally. The
+  installed Core and Haptics config files contain their expected Apple
+  module declarations. Check compatibility metadata and package release age
+  separately on the next recurrence.
