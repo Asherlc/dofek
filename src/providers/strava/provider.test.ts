@@ -65,6 +65,7 @@ vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
 
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import type { SyncDatabase } from "../../db/index.ts";
+import { shouldReportProviderError } from "../../lib/provider-error-reporting.ts";
 import { logger } from "../../logger.ts";
 import { ProviderAuthorizationFailedError } from "../auth-errors.ts";
 import { SyncRun } from "../sync-run.ts";
@@ -2453,7 +2454,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       const id = Number(url.pathname.split("/")[4]);
       if (url.pathname.endsWith("/photos")) {
         photoReads++;
-        if (photoReads === 1) return new Response("Unavailable", { status: 500 });
+        if (photoReads === 1) return new Response("Unavailable", { status: 597 });
         return Response.json([
           { unique_id: "photo", urls: { 600: "https://cdn.example.test/photo.jpg" } },
         ]);
@@ -2470,10 +2471,13 @@ describe("StravaProvider.sync — additional coverage", () => {
     const first = await new StravaProvider(fetch).sync(
       new SyncRun({ db, window, checkpoint, userId }),
     );
-    expect(first.errors.some((error) => error.message.includes("Photos"))).toBe(true);
-    expect(first.errors.find((error) => error.message.includes("Photos"))?.cause).toMatchObject({
+    const photoSyncError = first.errors.find((error) => error.message.includes("Photos"));
+    expect(photoSyncError).toBeDefined();
+    expect(photoSyncError?.cause).toMatchObject({
       message: "gallery_incomplete",
+      cause: { name: "ProviderServiceUnavailableError", statusCode: 597 },
     });
+    expect(shouldReportProviderError(photoSyncError?.cause ?? photoSyncError)).toBe(false);
     expect(getImages).toHaveBeenNthCalledWith(1, 1, 1, undefined);
     expect(publishedMetricStreamBatches).toHaveLength(1);
     const resumed = await new StravaProvider(fetch).sync(

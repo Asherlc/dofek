@@ -40581,6 +40581,105 @@ Local qualification and CI are separate from production throughput acceptance. T
   [Failed archive](https://github.com/Asherlc/dofek/actions/runs/45842609730/job/139988572646)
   · [Expo module configuration](https://docs.expo.dev/modules/module-config/).
 
+## 2026-11-26 (UTC) — Strava photo discovery failed for one activity
+
+- **Impact and evidence.** At 08:00:37 UTC, the request to the Strava photos
+  endpoint returned HTTP 597. The activity detail and streams requests both
+  returned HTTP 200, and the worker wrote 2,700 metric stream rows. The
+  gallery could be incomplete until the next scheduled sync. Sentry recorded
+  one handled `gallery_incomplete` event at 08:01:05 UTC.
+  [Sentry issue](https://east-bay-software.sentry.io/issues/7868520221/?environment=production).
+- **Cause.** The failed first page left discovery incomplete. The provider
+  recorded partial coverage and kept the activity eligible for retry. It
+  reported the discovery reason as the exception, which dropped the HTTP
+  status from the alert. The source of the HTTP 597 response remains unknown.
+  [Gallery discovery](../src/activity-images/providers.ts#L233) ·
+  [Strava sync](../src/providers/strava/provider.ts#L862).
+- **Recovery and remaining risk.** Axiom recorded HTTP 200 for the same photos
+  endpoint at 08:30:36 UTC and no further Strava sync errors through the
+  14:00 UTC run. A read-only Postgres check confirmed complete coverage and
+  one stored photo out of one expected. The scheduled sync recovered without
+  operator action. If this recurs, correlate Sentry's HTTP breadcrumbs with
+  Axiom response statuses and verify stored photo counts before intervening.
+  Replace `<activity-id>` with the external ID from the Sentry HTTP breadcrumb.
+  For a recurrence, use the new incident's UTC time window in both Axiom
+  queries.
+  [Axiom query guide](axiom-observability-runbook.md#queries) ·
+  [Discovery storage](../src/db/activity-images.ts#L77).
+
+  ```apl
+  ['dofek-traces']
+  | where _time between (datetime(2026-11-26T07:55:00Z) .. datetime(2026-11-26T14:30:00Z))
+  | where ['attributes.url.full'] contains '/activities/<activity-id>/photos'
+      or ['attributes.url.path'] == '/api/v3/activities/<activity-id>/photos'
+  | project _time, ['attributes.http.response.status_code']
+  ```
+
+  Sampled redacted rows were `08:00:37.272Z` `597`, `08:30:36.728Z` `200`, and
+  `10:30:37.483Z` `200`.
+
+  ```apl
+  ['dofek-logs']
+  | where _time between (datetime(2026-11-26T07:55:00Z) .. datetime(2026-11-26T14:30:00Z))
+  | where body startswith '[worker] Strava sync error'
+  | project _time
+  ```
+
+  That query returned one error at `08:01:05.280Z`.
+
+  ```sql
+  SELECT
+    d.coverage,
+    d.expected_count,
+    d.checked_at,
+    count(i.object_id) FILTER (WHERE i.retired_at IS NULL) AS stored_count
+  FROM fitness.activity a
+  JOIN fitness.activity_image_discovery d
+    ON d.activity_id = a.id
+   AND d.user_id = a.user_id
+   AND d.provider_id = a.provider_id
+  LEFT JOIN fitness.activity_image i
+    ON i.activity_id = a.id
+   AND i.user_id = a.user_id
+   AND i.provider_id = a.provider_id
+  WHERE a.provider_id = 'strava'
+    AND a.external_id = '<activity-id>'
+  GROUP BY d.coverage, d.expected_count, d.checked_at;
+  ```
+
+  The redacted result was `coverage = complete`, `expected_count = 1`,
+  `stored_count = 1`, and `checked_at = 2026-11-26 14:00:38.864224+00`.
+- **Follow-up fix.** Strava keeps the original HTTP 5xx in the error's cause
+  chain so the existing Sentry filter recognizes it. A regression test sends
+  HTTP 597 through the Strava client and checks that the filter suppresses
+  the alert and the next sync retries discovery.
+  [Sentry filter](../src/lib/provider-error-reporting.ts#L37) ·
+  [Strava regression test](../src/providers/strava/provider.test.ts#L2440).
+- **CI follow-up (2026-11-26 UTC).** Stryker (0) failed PR #3517 at 66.67%
+  against break threshold 75. Two unconditional-true mutants survived in the
+  new photo-cause path. The regression now asserts a non-5xx timeout is not
+  retained as cause, and the failure metadata spread carries cause without a
+  separate branch.
+  [Failed Stryker job](https://github.com/Asherlc/dofek/actions/runs/45842259526/job/139987818458).
+  Diff-cover also failed at 66% against its 80% threshold. V8 reported the
+  inline error creation as branch coverage. Constructing the error in a
+  separate statement gave the executed line a statement coverage record.
+  Local mutation and diff-coverage checks reached 100% on the affected lines.
+  [Failed coverage job](https://github.com/Asherlc/dofek/actions/runs/45842259526/job/139996674744).
+  The PR's Metro job later failed `cd packages/mobile && pnpm expo install
+  --check` with `expo@58.0.26 - expected version: ~58.1.0` and `Found outdated
+  dependencies`. Nine package pins fell outside Expo's published compatibility
+  ranges. Those pins, the lockfile, and the Modules Core `modules: []` patch on
+  58.2.0 restore the check. Local frozen install, `expo install --check`, and
+  an iOS Metro export succeeded after the update.
+  [Failed Metro job](https://github.com/Asherlc/dofek/actions/runs/45870232959/job/140083997903).
+  Sherif then failed `multiple-dependency-versions` for Expo because mobile used
+  58.1.0 while the Oura BLE package still pinned Expo 58.0.26 as a
+  `devDependency`. Aligning the development pin at 58.1.0 satisfies Sherif
+  and preserves the public peer range of `>=58.0.0`. Both workspace consumers
+  now resolve Modules Core 58.2.0 with the existing patch.
+  [Failed Sherif job](https://github.com/Asherlc/dofek/actions/runs/45872621027/job/140092018057).
+
 ## 2026-11-26 (UTC) — iOS collection-alert cleanup stalls the main thread
 
 - **Impact and evidence.** At 18:46:20 UTC, Sentry recorded a 2.2–3.0 second
