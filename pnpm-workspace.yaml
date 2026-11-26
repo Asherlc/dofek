@@ -112,6 +112,8 @@ patchedDependencies:
   braces@3.0.3: patches/braces@3.0.3.patch
   eoas@3.2.7: patches/eoas@3.2.7.patch
   expo-apple-authentication@58.0.3: patches/expo-apple-authentication@58.0.3.patch
+  expo-haptics@58.0.8: patches/expo-haptics@58.0.8.patch
+  expo-modules-core@58.1.0: patches/expo-modules-core@58.1.0.patch
   react-native-svg@15.16.0: patches/react-native-svg@15.16.0.patch
   react-native@0.88.1: patches/react-native@0.88.1.patch
 

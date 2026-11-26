@@ -1,0 +1,13 @@
+diff --git a/expo-module.config.json b/expo-module.config.json
+index 11d6397c582c07d1b8d0d37a6a45a90493dca9c8..8da91ea1bec73f3d33fc7855e15a64daaa9d6a44 100644
+--- a/expo-module.config.json
++++ b/expo-module.config.json
+@@ -1,5 +1,8 @@
+ {
+   "platforms": ["apple", "android"],
++  "apple": {
++    "modules": ["HapticsModule"]
++  },
+   "android": {
+     "publication": {
+       "groupId": "host.exp.exponent",

@@ -40535,6 +40535,52 @@ Local qualification and CI are separate from production throughput acceptance. T
   [Codecov report](https://github.com/Asherlc/dofek/pull/3516#issuecomment-7178801041)
   · [Server coverage job](https://github.com/Asherlc/dofek/actions/runs/45727494074/job/139607856098).
 
+## 2026-11-26 (UTC) — Dofek foreground termination reported on iPad
+
+- **Impact and evidence.** Sentry grouped three inferred foreground
+  terminations across two users. In the November 26 event for build
+  `1795546204`, startup completed at 14:16:47 UTC and Expo finished
+  downloading an update at 14:16:50. The last breadcrumb was a successful
+  analytics request at 14:16:57. The November 16 event on build `1792449826`
+  also recorded startup completing, with an update check and no download
+  breadcrumb. Neither event trace supplied spans or a stack. A targeted
+  Axiom search around the latest event found no mobile logs tagged with its
+  build. [Sentry issue](https://east-bay-software.sentry.io/issues/7739732316/)
+  · [November 26 event](https://east-bay-software.sentry.io/issues/7739732316/events/4383be58c06c4c5ea02df94d651e0cb0/).
+- **Cause.** Unresolved. Sentry infers the termination on a later launch and
+  uses the last persisted breadcrumb as the event timestamp. App Store
+  Connect returned no TestFlight crash submissions, diagnostic signatures,
+  or performance data for build `1795546204`. Its TestFlight usage
+  aggregates also returned zero sessions. The investigation has no matching
+  device termination report to identify why iOS ended the process.
+  [Sentry watchdog tracker](https://github.com/getsentry/sentry-cocoa/blob/9.34.0/Sources/Swift/Integrations/WatchdogTerminations/SentryWatchdogTerminationTracker.swift)
+  · [Apple device diagnostics](https://developer.apple.com/documentation/xcode/acquiring-crash-reports-and-diagnostic-logs).
+- **Telemetry and follow-up.** The native Sentry configuration now selects
+  Apple's foreground memory-limit and watchdog exit counters. Expo prebuild
+  and Sentry's Xcode copy script placed both options in a test app bundle.
+  After a native build ships, compare the counts by build in Sentry Metrics.
+  The SDK records positive counts over Apple's reporting interval. A device
+  `.ips` or `JetsamEvent` report remains necessary to qualify an individual
+  recurrence. The pinned Cocoa xcframework was compiled with Swift 6.1.2,
+  which excludes the newer iOS 27 memory-exception reporter. Verify the
+  compiler of the shipped binary before relying on compiler-gated MetricKit
+  capabilities.
+  [Mobile telemetry](../packages/mobile/README.md)
+  · [Sentry MetricKit integration](https://github.com/getsentry/sentry-cocoa/blob/9.34.0/Sources/Swift/Core/MetricKit/SentryMetricKitIntegration.swift).
+
+- **CI follow-up.** The unsigned Release archive failed with exit 65 after
+  `[Expo] Configure project` reported `ExpoModulesMacros scan-modules` timing
+  out after 5000 ms. Expo could not generate a complete provider because
+  Haptics and Modules Core lacked declared Apple module lists. This blocked
+  the telemetry PR's native build gate. The version-pinned pnpm patches now
+  declare `HapticsModule` and an empty list for Modules Core, which initializes
+  its internal module itself. The same forced scanner failure reproduced the
+  CI error before the patches and generated the expected registrations after
+  them. A successful scan produced the same provider as before. Compare both
+  generation paths when updating these dependency patches.
+  [Failed archive](https://github.com/Asherlc/dofek/actions/runs/45842609730/job/139988572646)
+  · [Expo module configuration](https://docs.expo.dev/modules/module-config/).
+
 ## 2026-11-26 (UTC) — Strava photo discovery failed for one activity
 
 - **Impact and evidence.** At 08:00:37 UTC, the request to the Strava photos
