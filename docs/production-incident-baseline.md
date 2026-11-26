@@ -40666,3 +40666,11 @@ Local qualification and CI are separate from production throughput acceptance. T
   separate statement gave the executed line a statement coverage record.
   Local mutation and diff-coverage checks reached 100% on the affected lines.
   [Failed coverage job](https://github.com/Asherlc/dofek/actions/runs/45842259526/job/139996674744).
+  The PR's Metro job later failed `cd packages/mobile && pnpm expo install
+  --check` with `expo@58.0.26 - expected version: ~58.1.0` and `Found outdated
+  dependencies`. Nine package pins fell outside Expo's published compatibility
+  ranges. Those pins, the lockfile, and the Modules Core `modules: []` patch on
+  58.2.0 (keeping 58.1.0 while still resolved) restore the check. Local frozen
+  install, `expo install --check`, and an iOS Metro export succeeded after the
+  update.
+  [Failed Metro job](https://github.com/Asherlc/dofek/actions/runs/45870232959/job/140083997903).

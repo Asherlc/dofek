@@ -556,13 +556,13 @@ require a new binary with the resulting runtime, following Expo's
 [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/).
 
 The current stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set uses Expo 58.0.24, Expo Router 58.0.31, Expo Updates
-58.0.22, React Native 0.88.1, and React Native SVG 15.16.0, pinned in
-[package.json](./package.json). The
-[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.24/packages/expo/bundledNativeModules.json)
-and the [lockfile](../../pnpm-lock.yaml) define the corresponding SDK-managed
-versions, including the updated native Modules Core and JSI packages.
-Validate SDK-managed versions with
+native dependency set uses Expo 58.1.0, Expo Router 58.0.33, Expo Updates
+58.0.23, React Native 0.88.1, and React Native SVG 15.16.0, pinned in
+[package.json](./package.json). The published
+[`expo@58.1.0` npm matrix](https://www.npmjs.com/package/expo/v/58.1.0)
+(`bundledNativeModules.json`) and the [lockfile](../../pnpm-lock.yaml) define
+the corresponding SDK-managed versions, including Modules Core 58.2.0 and the
+matching JSI packages. Validate SDK-managed versions with
 `pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
@@ -571,10 +571,12 @@ The native dependency set also includes ExpoNetwork, the pnpm patch to
 The [Haptics patch](../../patches/expo-haptics@58.0.8.patch) declares
 `HapticsModule` for Apple autolinking. The
 [Modules Core patch](../../patches/expo-modules-core@58.1.0.patch) declares an
-empty list because Expo initializes its internal `CoreModule` directly.
-These declarations let Expo generate the iOS provider when its source scan
-times out. [Expo module configuration](https://docs.expo.dev/modules/module-config/)
-· [Expo app context](https://github.com/expo/expo/blob/expo-modules-core%4058.1.0/packages/expo-modules-core/ios/Core/AppContext.swift).
+empty list because Expo initializes its internal `CoreModule` directly. Both
+resolved Modules Core versions, 58.2.0 from Expo 58.1.0 and 58.1.0 from the
+still-pinned Expo 58.0.26 consumer, map to that same patch file. These
+declarations let Expo generate the iOS provider when its source scan times out.
+[Expo module configuration](https://docs.expo.dev/modules/module-config/)
+· [Expo app context](https://github.com/expo/expo/blob/expo-modules-core%4058.2.0/packages/expo-modules-core/ios/Core/AppContext.swift).
 
 The `@expo/plist` 0.10.1 and 0.10.2 consumers share the existing
 [XML parser patch](../../patches/@expo__plist@0.10.1.patch), selected by the
