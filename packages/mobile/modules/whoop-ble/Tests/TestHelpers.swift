@@ -162,7 +162,7 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
 
 final class TestWhoopPeripheralConnection: WhoopBlePeripheralConnection {
     let identifier: UUID
-    let name: String? = "WHOOP test peripheral"
+    let name: String?
     var state: CBPeripheralState = .connected
     weak var delegate: CBPeripheralDelegate?
     var services: [CBService]?
@@ -177,8 +177,13 @@ final class TestWhoopPeripheralConnection: WhoopBlePeripheralConnection {
     private(set) var reads: [CBCharacteristic] = []
     private(set) var writes: [(Data, CBCharacteristic, CBCharacteristicWriteType)] = []
 
-    init(identifier: UUID = UUID(), notificationSource: AnyObject? = nil) {
+    init(
+        identifier: UUID = UUID(),
+        name: String? = "WHOOP test peripheral",
+        notificationSource: AnyObject? = nil
+    ) {
         self.identifier = identifier
+        self.name = name
         nativeSource = notificationSource
     }
 

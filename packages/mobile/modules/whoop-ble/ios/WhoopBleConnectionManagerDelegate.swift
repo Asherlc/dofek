@@ -28,10 +28,17 @@ protocol WhoopBleConnectionManagerDelegate: AnyObject {
 
     /// Called on the BLE queue when either observed battery fact changes or clears.
     func connectionManager(_: WhoopBleConnectionManager, didUpdateBatteryStatus: WhoopBleBatteryStatus)
+
+    /// Called on the BLE queue when a strap is marked unsupported (NO_SERVICE) or cleared.
+    func connectionManager(_: WhoopBleConnectionManager, didUpdateUnsupportedDevice: Bool)
 }
 
 extension WhoopBleConnectionManagerDelegate {
     func connectionManager(_: WhoopBleConnectionManager, didUpdateBatteryStatus _: WhoopBleBatteryStatus) {}
+}
+
+extension WhoopBleConnectionManagerDelegate {
+    func connectionManager(_: WhoopBleConnectionManager, didUpdateUnsupportedDevice _: Bool) {}
 }
 
 extension WhoopBleConnectionManagerDelegate {

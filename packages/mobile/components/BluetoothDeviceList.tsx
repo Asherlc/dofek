@@ -1,5 +1,6 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import type { BluetoothDevice } from "../lib/bluetooth-device-catalog";
+import { bluetoothDeviceStatusLabel } from "../lib/bluetooth-device-status-label";
 import { colors, fontSize, fontWeight, radius, spacing } from "../theme";
 import { QueryStatePanel } from "./QueryStatePanel";
 import { WhoopBatteryStatus, whoopBatteryLabels } from "./WhoopBatteryStatus";
@@ -130,7 +131,8 @@ function DeviceRow({
         ? device.battery
         : { percentage: null, isCharging: null }
       : undefined;
-  const deviceLabel = `${device.name}, ${device.connectionState}`;
+  const statusLabel = bluetoothDeviceStatusLabel(device);
+  const deviceLabel = `${device.name}, ${statusLabel}`;
 
   return (
     <Pressable
@@ -143,7 +145,7 @@ function DeviceRow({
     >
       <View style={styles.deviceText}>
         <Text style={styles.deviceName}>{device.name}</Text>
-        <Text style={styles.connectionState}>{device.connectionState}</Text>
+        <Text style={styles.connectionState}>{statusLabel}</Text>
         <Text style={styles.diagnostics}>{diagnosticSummary(device)}</Text>
       </View>
       {battery ? <WhoopBatteryStatus {...battery} style={styles.battery} /> : null}

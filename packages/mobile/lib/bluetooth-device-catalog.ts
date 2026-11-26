@@ -31,6 +31,8 @@ export type BluetoothDevice =
       peripheralId: string | null;
       connectionState: string;
       managedHistoryEnabled?: boolean;
+      /** Present only when native reports an unsupported WHOOP strap. */
+      unsupportedDevice?: true;
       diagnostics: WhoopDiagnostics;
       battery?: WhoopDeviceSummary["battery"];
     }
@@ -61,6 +63,7 @@ function toWhoopDevice(summary: WhoopDeviceSummary): BluetoothDevice {
     ...(summary.managedHistoryEnabled !== undefined
       ? { managedHistoryEnabled: summary.managedHistoryEnabled }
       : {}),
+    ...(summary.unsupportedDevice === true ? { unsupportedDevice: true as const } : {}),
     diagnostics: {
       imuBufferedSamples: summary.imuBufferedSamples,
       realtimeBufferedSamples: summary.realtimeBufferedSamples,

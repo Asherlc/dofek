@@ -51,6 +51,19 @@ describe("BluetoothDeviceList", () => {
     ]);
   });
 
+  it("renders an unsupported WHOOP status from the catalog", () => {
+    render(
+      <BluetoothDeviceList
+        {...baseProps}
+        devices={[{ ...whoop, connectionState: "idle", unsupportedDevice: true }, polar]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "WHOOP, Unsupported device" })).toBeTruthy();
+    expect(screen.getByText("Unsupported device")).toBeTruthy();
+    expect(screen.queryByText("idle")).toBeNull();
+  });
+
   it.each([
     ["streaming", 57, true, "57%", "Charging"],
     ["ready", 57, false, "57%", "Not charging"],

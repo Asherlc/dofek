@@ -158,6 +158,95 @@ describe("bluetooth-device-catalog", () => {
     );
   });
 
+  it("surfaces unsupported WHOOP devices with machine connectionState and an optional flag", async () => {
+    mockWhoop.getDeviceSummary.mockResolvedValue({
+      id: "whoop-legacy",
+      name: "WHOOP MG",
+      connectionState: "idle",
+      imuBufferedSamples: 0,
+      realtimeBufferedSamples: 0,
+      battery: { percentage: null, isCharging: null },
+      unsupportedDevice: true,
+    });
+
+    const { getBluetoothDevices } = await import("./bluetooth-device-catalog.ts");
+
+    await expect(getBluetoothDevices()).resolves.toEqual([
+      expect.objectContaining({
+        id: "whoop",
+        kind: "whoop",
+        name: "WHOOP MG",
+        peripheralId: "whoop-legacy",
+        connectionState: "idle",
+        unsupportedDevice: true,
+      }),
+    ]);
+  });
+
+  it("publishes unsupportedDevice from a WHOOP device-state event and clears it on ready", async () => {
+    const { subscribeBluetoothDevices } = await import("./bluetooth-device-catalog.ts");
+    const listener = vi.fn();
+    subscribeBluetoothDevices(listener);
+
+    const unsupported = {
+      id: "whoop-legacy",
+      name: "WHOOP MG",
+      connectionState: "idle",
+      imuBufferedSamples: 0,
+      realtimeBufferedSamples: 0,
+      battery: { percentage: null, isCharging: null },
+      unsupportedDevice: true,
+    } satisfies WhoopDeviceSummary;
+    mockWhoop.getDeviceSummary.mockResolvedValue(unsupported);
+    mockWhoop.emitDeviceStateChanged(unsupported);
+
+    await vi.waitFor(() =>
+      expect(listener).toHaveBeenLastCalledWith({
+        state: "ready",
+        devices: [
+          expect.objectContaining({
+            id: "whoop",
+            name: "WHOOP MG",
+            peripheralId: "whoop-legacy",
+            connectionState: "idle",
+            unsupportedDevice: true,
+          }),
+        ],
+        error: null,
+      }),
+    );
+
+    const ready = {
+      id: "whoop-legacy",
+      name: "WHOOP MG",
+      connectionState: "ready",
+      imuBufferedSamples: 0,
+      realtimeBufferedSamples: 0,
+      battery: { percentage: 57, isCharging: false },
+    } satisfies WhoopDeviceSummary;
+    mockWhoop.getDeviceSummary.mockResolvedValue(ready);
+    mockWhoop.emitDeviceStateChanged(ready);
+
+    await vi.waitFor(() =>
+      expect(listener).toHaveBeenLastCalledWith({
+        state: "ready",
+        devices: [
+          {
+            id: "whoop",
+            kind: "whoop",
+            name: "WHOOP MG",
+            peripheralId: "whoop-legacy",
+            connectionState: "ready",
+            battery: { percentage: 57, isCharging: false },
+            diagnostics: { imuBufferedSamples: 0, realtimeBufferedSamples: 0 },
+          },
+        ],
+        error: null,
+      }),
+    );
+    expect(listener.mock.lastCall?.[0].devices[0]).not.toHaveProperty("unsupportedDevice");
+  });
+
   it("publishes battery-only updates from the WHOOP native device-state listener", async () => {
     const { subscribeBluetoothDevices } = await import("./bluetooth-device-catalog.ts");
     const listener = vi.fn();

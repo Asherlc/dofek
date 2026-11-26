@@ -278,6 +278,72 @@ describe("BluetoothDeviceDetailScreen", () => {
     await waitFor(() => expect(mocks.whoopConnect).toHaveBeenCalledWith("whoop-native"));
   });
 
+  it("shows Unsupported device from the catalog without a red error panel after NO_SERVICE", async () => {
+    const unsupported = Object.assign(new Error("WHOOP service not found"), { code: "NO_SERVICE" });
+    mocks.params.id = "whoop";
+    mocks.getBluetoothDevices
+      .mockResolvedValueOnce([{ ...whoop, connectionState: "disconnected" }])
+      .mockResolvedValue([
+        {
+          ...whoop,
+          name: "WHOOP",
+          connectionState: "idle",
+          peripheralId: "whoop-rejected-b",
+          unsupportedDevice: true,
+        },
+      ]);
+    mocks.whoopConnect.mockRejectedValueOnce(unsupported);
+    const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
+    render(<BluetoothDeviceDetailScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Connect WHOOP" }));
+
+    expect(await screen.findByText("Unsupported device")).toBeTruthy();
+    expect(screen.queryByText("idle")).toBeNull();
+    expect(screen.queryByText("Bluetooth action failed")).toBeNull();
+    expect(screen.queryByText("WHOOP service not found")).toBeNull();
+    expect(mocks.captureException).not.toHaveBeenCalled();
+  });
+
+  it("rescans with findWhoop when connecting from an unsupported rejected strap", async () => {
+    mocks.params.id = "whoop";
+    mocks.getBluetoothDevices.mockResolvedValue([
+      {
+        ...whoop,
+        connectionState: "idle",
+        peripheralId: "whoop-rejected-b",
+        unsupportedDevice: true,
+      },
+    ]);
+    mocks.whoopFind.mockResolvedValue({ id: "whoop-supported", name: "WHOOP MG" });
+    mocks.whoopConnect.mockResolvedValueOnce(true);
+    const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
+    render(<BluetoothDeviceDetailScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Connect WHOOP" }));
+
+    await waitFor(() => expect(mocks.whoopFind).toHaveBeenCalledOnce());
+    await waitFor(() => expect(mocks.whoopConnect).toHaveBeenCalledWith("whoop-supported"));
+    expect(mocks.whoopConnect).not.toHaveBeenCalledWith("whoop-rejected-b");
+  });
+
+  it("still reports unrelated WHOOP connect failures with the red error panel", async () => {
+    const failure = Object.assign(new Error("Connection timed out"), { code: "TIMEOUT" });
+    mocks.params.id = "whoop";
+    mocks.getBluetoothDevices.mockResolvedValue([{ ...whoop, connectionState: "disconnected" }]);
+    mocks.whoopConnect.mockRejectedValueOnce(failure);
+    const { default: BluetoothDeviceDetailScreen } = await import("../app/bluetooth-devices/[id]");
+    render(<BluetoothDeviceDetailScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Connect WHOOP" }));
+
+    expect(await screen.findByText("Connection timed out")).toBeTruthy();
+    expect(mocks.captureException).toHaveBeenCalledWith(failure, {
+      source: "bluetooth-device-detail-connect",
+      deviceKind: "whoop",
+    });
+  });
+
   it("keeps the WHOOP detail rendered across connect and disconnect catalog refreshes", async () => {
     let publish:
       | ((update: { state: "ready"; devices: (typeof whoop)[]; error: null }) => void)

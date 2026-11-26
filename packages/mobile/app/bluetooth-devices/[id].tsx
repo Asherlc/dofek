@@ -17,7 +17,9 @@ import {
   getBluetoothDevices,
   subscribeBluetoothDevices,
 } from "../../lib/bluetooth-device-catalog";
+import { bluetoothDeviceStatusLabel } from "../../lib/bluetooth-device-status-label";
 import { captureException } from "../../lib/telemetry";
+import { isUnsupportedWhoopDevice } from "../../lib/whoop-ble-errors";
 import {
   connect as connectHeartRate,
   disconnect as disconnectHeartRate,
@@ -133,11 +135,18 @@ export default function BluetoothDeviceDetailScreen() {
             return;
           }
         } else if (action === "connect") {
-          const peripheralId = device.peripheralId ?? (await findWhoop())?.id;
+          // Unsupported NO_SERVICE identity must not be reused; rescan for a supported strap.
+          const peripheralId = device.unsupportedDevice
+            ? (await findWhoop())?.id
+            : (device.peripheralId ?? (await findWhoop())?.id);
           if (!peripheralId) {
             throw new Error("WHOOP strap not found");
           }
-          await connectWhoop(peripheralId);
+          try {
+            await connectWhoop(peripheralId);
+          } catch (connectionError: unknown) {
+            if (!isUnsupportedWhoopDevice(connectionError)) throw connectionError;
+          }
         } else if (action === "disconnect") {
           disconnectWhoop();
         } else if (action === "start-streaming") {
@@ -231,11 +240,12 @@ export default function BluetoothDeviceDetailScreen() {
       : undefined;
   const connectionAction: DeviceAction = connected ? "disconnect" : "connect";
   const connectionLabel = connected ? `Disconnect ${device.name}` : `Connect ${device.name}`;
+  const statusLabel = bluetoothDeviceStatusLabel(device);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>{device.name}</Text>
-      <Text style={styles.connectionState}>{device.connectionState}</Text>
+      <Text style={styles.connectionState}>{statusLabel}</Text>
 
       {battery ? (
         <View style={[styles.card, styles.batteryCard]}>

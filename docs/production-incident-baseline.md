@@ -40581,6 +40581,70 @@ Local qualification and CI are separate from production throughput acceptance. T
   [Failed archive](https://github.com/Asherlc/dofek/actions/runs/45842609730/job/139988572646)
   · [Expo module configuration](https://docs.expo.dev/modules/module-config/).
 
+## 2026-11-26 — WHOOP Bluetooth service discovery failed on iPad
+
+- **Impact and evidence.** Sentry recorded one handled foreground sync error,
+  `WHOOP service not found`, for one production user on iPad build `1795546204`.
+  Axiom logs for the same app runtime recorded three native `NO_SERVICE`
+  aborts at 14:21:26, 14:24:43, and 14:26:37 UTC across two Bluetooth
+  peripheral identifiers. All nine capture snapshots showed zero Bluetooth
+  data notifications. The last snapshot at 14:27:16 UTC still showed `idle`.
+  [Sentry event](https://east-bay-software.sentry.io/issues/7869017196/events/1e94da4c78fe4630b8100c9f8dc88ee2/)
+  · [Axiom query guide](axiom-observability-runbook.md#queries).
+- **Failure path and recovery.** Core Bluetooth connected and called back
+  without a discovery error. The discovery result contained none of
+  the WHOOP service UUIDs Dofek supports, so the native handshake cancelled
+  the connection, cleared automatic reconnect intent, and returned to idle.
+  Later foreground attempts reached the same failure. Recovery remains
+  unverified, and the investigation made no production changes.
+  [Service discovery callback](https://developer.apple.com/documentation/corebluetooth/cbperipheraldelegate/peripheral%28_%3Adiddiscoverservices%3A%29)
+  · [Dofek service check](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager%2BCoreBluetooth.swift#L146)
+  · [Handshake cleanup](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager%2BHandshake.swift#L33).
+- **Remaining evidence.** The reason the expected services were absent is
+  unresolved. The exported native journal records the abort reason and state,
+  while the discovered UUIDs are available only in the local device log.
+  For a recurrence, correlate Sentry and Axiom by app runtime and use
+  `nativeOccurredAt` for the handshake sequence. Capture the advertised and
+  returned service UUIDs on a physical device to investigate the mismatch.
+
+## 2026-11-26 — Expo compatibility update blocked the WHOOP PR's Metro build
+
+- **Impact and evidence.** PR #3520's `Build Mobile / Metro Bundle` job failed
+  before exporting an iOS bundle. `Verify dependencies match Expo SDK` ran
+  `pnpm expo install --check` and exited 1 with `Found outdated dependencies`.
+  The same command reproduced the mismatch locally.
+  [Failed Metro job](https://github.com/Asherlc/dofek/actions/runs/45870197728/job/140083795705).
+- **Cause and fix.** Expo's SDK 58 compatibility metadata now expects
+  `expo@58.1.0` and eight newer companion package versions. Updated those
+  exact pins and regenerated the lockfile with the approved exact-version
+  release-age exceptions. The existing native scanner fallback also applies
+  to `expo-modules-core@58.2.0`, whose published module config still lacks
+  an explicit Apple module list.
+  [Expo dependency validation](https://docs.expo.dev/more/expo-cli/#version-validation)
+  · [pnpm release-age exceptions](https://pnpm.io/settings/dependency-resolution#minimumreleaseageexclude).
+- **Validation and follow-up.** The frozen install, online Expo compatibility
+  check, both iOS exports, and all 2,715 mobile tests passed locally. The
+  installed Core and Haptics config files contain their expected Apple
+  module declarations. Check compatibility metadata and package release age
+  separately on the next recurrence.
+- **CI follow-up.** The hosted Metro job passed. The repository's
+  `pnpm exec sherif` check then reported `Dependency expo has multiple
+  versions defined in the workspace` because the Oura BLE development
+  dependency still pinned `58.0.26`. Updating it to `58.1.0` cleared the
+  local check and removed the old Expo Modules Core patch's last consumer.
+  The Oura typecheck and all six unit tests passed. Align the workspace
+  Expo pins together on the next SDK compatibility update.
+  [Passing Metro job](https://github.com/Asherlc/dofek/actions/runs/45872324515/job/140091567020)
+  · [Failed Sherif job](https://github.com/Asherlc/dofek/actions/runs/45872324515/job/140091081972).
+- **Swift mutation CI follow-up.** The next run passed Metro and Sherif.
+  Three Swift mutation shards were canceled mid-run, so the required CI
+  gate failed and blocked the merge. The handshake shard 2 log reported
+  `The operation was canceled.` while testing six candidates. The run logs
+  did not identify what initiated the cancellation. The PR was updated
+  against the current main branch to resolve its incident log conflict
+  and start CI for the updated revision.
+  [Canceled Swift mutation job](https://github.com/Asherlc/dofek/actions/runs/45873276211/job/140097269843).
+
 ## 2026-11-26 (UTC) — Strava photo discovery failed for one activity
 
 - **Impact and evidence.** At 08:00:37 UTC, the request to the Strava photos

@@ -310,6 +310,26 @@ function subscribeToDeviceStateEvents() {
   return { listener, emit };
 }
 
+describe("native unsupported-device summary", () => {
+  it("omits unsupportedDevice on older native payloads so fixtures stay unchanged", async () => {
+    nativeModule.getDeviceSummary.mockResolvedValue(legacyDeviceSummary);
+    await expect(getDeviceSummary()).resolves.toEqual({
+      ...legacyDeviceSummary,
+      battery: { percentage: null, isCharging: null },
+    });
+  });
+
+  it("preserves an explicit unsupportedDevice flag from native", async () => {
+    const raw = { ...legacyDeviceSummary, unsupportedDevice: true };
+    nativeModule.getDeviceSummary.mockResolvedValue(raw);
+    await expect(getDeviceSummary()).resolves.toEqual({
+      ...legacyDeviceSummary,
+      battery: { percentage: null, isCharging: null },
+      unsupportedDevice: true,
+    });
+  });
+});
+
 describe("native battery readings", () => {
   it.each([
     {
