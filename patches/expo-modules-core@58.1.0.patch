@@ -1,0 +1,14 @@
+diff --git a/expo-module.config.json b/expo-module.config.json
+index 3ec158fc229e3bd705400ca4922fec3e261ff34b..d6dedac8912350e313986af14046b89ed5aea8ca 100644
+--- a/expo-module.config.json
++++ b/expo-module.config.json
+@@ -1,7 +1,8 @@
+ {
+   "platforms": ["apple", "android"],
+   "apple": {
+-    "podspecPath": ["./ExpoModulesCore.podspec", "./ExpoModulesWorklets.podspec"]
++    "podspecPath": ["./ExpoModulesCore.podspec", "./ExpoModulesWorklets.podspec"],
++    "modules": []
+   },
+   "android": {
+     "gradlePlugins": [
