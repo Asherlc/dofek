@@ -40534,3 +40534,26 @@ Local qualification and CI are separate from production throughput acceptance. T
   confirmed both lines and both outcomes of the closing check executed.
   [Codecov report](https://github.com/Asherlc/dofek/pull/3516#issuecomment-7178801041)
   · [Server coverage job](https://github.com/Asherlc/dofek/actions/runs/45727494074/job/139607856098).
+
+## 2026-11-26 (UTC) — Strava photo discovery failed for one activity
+
+- **Impact and evidence.** At 08:00:37 UTC, the request to the Strava photos
+  endpoint returned HTTP 597. The activity detail and streams requests both
+  returned HTTP 200, and the worker wrote 2,700 metric stream rows. The
+  gallery could be incomplete until the next scheduled sync. Sentry recorded
+  one handled `gallery_incomplete` event at 08:01:05 UTC.
+  [Sentry issue](https://east-bay-software.sentry.io/issues/7868520221/?environment=production).
+- **Cause.** The failed first page left discovery incomplete. The provider
+  recorded partial coverage and kept the activity eligible for retry. It
+  reported the discovery reason as the exception, which dropped the HTTP
+  status from the alert. The source of the HTTP 597 response remains unknown.
+  [Gallery discovery](../src/activity-images/providers.ts#L233) ·
+  [Strava sync](../src/providers/strava/provider.ts#L862).
+- **Recovery and remaining risk.** Axiom recorded HTTP 200 for the same photos
+  endpoint at 08:30:36 UTC and no further Strava sync errors through the
+  14:00 UTC run. A read-only Postgres check confirmed complete coverage and
+  one stored photo out of one expected. The scheduled sync recovered without
+  operator action. If this recurs, correlate Sentry's HTTP breadcrumbs with
+  Axiom response statuses and verify stored photo counts before intervening.
+  [Axiom query guide](axiom-observability-runbook.md#queries) ·
+  [Discovery storage](../src/db/activity-images.ts#L77).
