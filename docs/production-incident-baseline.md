@@ -21,12 +21,13 @@
   [latest signed job](https://github.com/Asherlc/dofek/actions/runs/45894752390/job/140166536130)
   [unsigned iOS job](https://github.com/Asherlc/dofek/actions/runs/45894752390/job/140166215387)
 - **Root cause / status.** The job-level 30m cap cancelled in-progress
-  archives. Proposed reuse of the existing CocoaPods cache.
-  Archive-specific timeout change awaits approval.
-- **Follow-up.** Cold and cached signed-archive verification after any
-  approved timeout change. Treat “maximum execution time” annotations and
-  `The operation was canceled.` as a job cap before chasing cache or
-  compiler hypotheses.
+  archives. The 30-minute cap stays. Signed Archive now restores the
+  existing unsigned CocoaPods cache key and path before unconditional
+  `pod install`.
+- **Follow-up.** After this change lands, a signed archive on main still
+  needs to finish within the job cap and upload its artifact. Treat
+  “maximum execution time” annotations and `The operation was canceled.` as
+  a job cap before chasing cache or compiler hypotheses.
 
 ## 2026-11-24 — Fly drain blocked the dbt telemetry rollout
 
