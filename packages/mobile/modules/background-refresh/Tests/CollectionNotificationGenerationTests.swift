@@ -199,6 +199,44 @@ final class CollectionNotificationGenerationTests: XCTestCase {
         XCTAssertTrue(harness.center.adds.isEmpty)
     }
 
+    private func assertReplacementEnableRecovers(
+        _ harness: CollectionNotificationServiceHarness,
+        storeURL: URL
+    ) throws {
+        // Finish ordinary cancellation before introducing an old alert it missed.
+        completePersistedLookups(harness)
+        let retiredIdentifier = "\(CollectionNotification.whoopDisconnected.identifier).\(UUID().uuidString)"
+        harness.center.seed(retiredIdentifier)
+        harness.center.markDelivered(retiredIdentifier)
+
+        let settingsBefore = harness.center.settingsCallbacks.count
+        let superseded = expectation(description: "superseded enable during recovery")
+        harness.service.enable(requestPermission: true) { result in
+            XCTAssertEqual(try? result.get(), false)
+            superseded.fulfill()
+        }
+        let enabled = expectation(description: "enable after retirement storage recovers")
+        harness.service.enable(requestPermission: false) { result in
+            XCTAssertEqual(try? result.get(), true)
+            enabled.fulfill()
+        }
+        XCTAssertEqual(harness.center.settingsCallbacks.count, settingsBefore)
+        harness.flushGeneration()
+        XCTAssertEqual(harness.center.settingsCallbacks.count, settingsBefore + 1)
+        harness.center.settingsCallbacks.last?(.authorized)
+        wait(for: [superseded, enabled], timeout: 1)
+        let storedGeneration = try String(contentsOf: storeURL, encoding: .utf8)
+        let generation = try XCTUnwrap(UUID(uuidString: storedGeneration))
+        completePersistedLookups(harness)
+        XCTAssertNil(harness.center.pending[retiredIdentifier])
+        XCTAssertFalse(harness.center.delivered.contains(retiredIdentifier))
+
+        harness.connection("connected")
+        harness.connection("disconnected")
+        let request = try XCTUnwrap(harness.center.adds.last?.request)
+        XCTAssertTrue(request.identifier.contains(generation.uuidString))
+    }
+
     func testLateAddAfterRetirementRemovesObsoleteRequest() throws {
         let harness = CollectionNotificationServiceHarness()
         enable(harness)
@@ -294,6 +332,9 @@ final class CollectionNotificationGenerationTests: XCTestCase {
         }
         harness.connection("disconnected")
         XCTAssertTrue(harness.center.adds.isEmpty)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        try assertReplacementEnableRecovers(harness, storeURL: storeURL)
     }
 
     private func enable(_ harness: CollectionNotificationServiceHarness) {

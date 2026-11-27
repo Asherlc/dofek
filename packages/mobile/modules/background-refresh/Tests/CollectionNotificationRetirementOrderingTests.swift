@@ -11,11 +11,14 @@ final class CollectionNotificationRetirementOrderingTests: XCTestCase {
         retireAndFlush(harness)
         enable(harness)
         let firstGenerationIdentifier = try scheduleDisconnect(harness)
+        completePersistedLookups(harness)
 
         // Queue a reconciliation snapshot, then rotate before the Apple lookup returns.
+        let pendingLookupsBefore = harness.center.pendingLookupCount
         harness.service.appBecameActive()
         harness.flushCleanup()
-        XCTAssertGreaterThan(harness.center.pendingLookupCount, 0)
+        XCTAssertGreaterThan(harness.center.pendingLookupCount, pendingLookupsBefore)
+        let releaseEarlierLookups = harness.center.holdLookups()
 
         retireAndFlush(harness)
         enable(harness)
@@ -24,10 +27,12 @@ final class CollectionNotificationRetirementOrderingTests: XCTestCase {
 
         harness.center.seed(firstGenerationIdentifier)
         harness.center.markDelivered(firstGenerationIdentifier)
-        completePersistedLookups(harness)
+        releaseEarlierLookups()
+        settle(harness)
 
         XCTAssertEqual(Set(harness.center.pending.keys), [latestIdentifier])
         XCTAssertFalse(harness.center.delivered.contains(firstGenerationIdentifier))
+        completePersistedLookups(harness)
     }
 
     func testRetirementCompletionAppliesStateBeforeCallerSoReentrantRetireWins() throws {

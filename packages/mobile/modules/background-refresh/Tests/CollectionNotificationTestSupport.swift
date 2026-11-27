@@ -170,20 +170,22 @@ final class ControlledCollectionNotificationCenter: CollectionNotificationCenter
         add.completion(error)
     }
 
-    func completeLookups() {
-        let snapshot = lock.withLock {
-            let pending = pendingLookups
-            let delivered = deliveredLookups
+    /// Take the outstanding callbacks so a test can release them separately from later requests.
+    func holdLookups() -> () -> Void {
+        let callbacks = lock.withLock {
+            let snapshot = (pending: pendingLookups, delivered: deliveredLookups)
             pendingLookups.removeAll()
             deliveredLookups.removeAll()
-            return (
-                pending: pending,
-                delivered: delivered,
-                pendingIds: Array(pendingStorage.keys),
-                deliveredIds: Array(deliveredStorage)
-            )
+            return snapshot
         }
-        for completion in snapshot.pending { completion(snapshot.pendingIds) }
-        for completion in snapshot.delivered { completion(snapshot.deliveredIds) }
+        return { [self] in
+            let identifiers = lock.withLock { (pending: Array(pendingStorage.keys), delivered: Array(deliveredStorage)) }
+            for completion in callbacks.pending { completion(identifiers.pending) }
+            for completion in callbacks.delivered { completion(identifiers.delivered) }
+        }
+    }
+
+    func completeLookups() {
+        holdLookups()()
     }
 }

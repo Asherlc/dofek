@@ -19,12 +19,8 @@ final class CollectionNotificationService {
     private var whoopIsConnected = false
     private var requestIdentifiers: [String: String] = [:]
     private var generationState: GenerationState = .loading
-    private var generationLoadGeneration: UInt64 = 0
-    private var retirementOperationGeneration: UInt64 = 0
+    private var generationOperation: UInt64 = 0
     private var generationWaiters: [(Result<Void, Error>) -> Void] = []
-    /// After a failed retirement write, disk still holds the prior generation.
-    /// Block reload/admission until a retirement write succeeds.
-    private var requiresSuccessfulRetirementWrite = false
     private lazy var coordinator = CollectionNotificationCoordinator(
         schedule: { [weak self] in self?.schedule($0) },
         cancel: { [weak self] in self?.cancel($0) }
@@ -32,15 +28,16 @@ final class CollectionNotificationService {
 
     private enum GenerationState {
         case loading
+        case retiring
         case legacy
         case ready(UUID)
-        case failed(Error)
+        case failed(Error, requiresRetirement: Bool)
 
         var currentUUID: UUID? {
             switch self {
             case .ready(let generation):
                 return generation
-            case .loading, .legacy, .failed:
+            case .loading, .retiring, .legacy, .failed:
                 return nil
             }
         }
@@ -49,7 +46,7 @@ final class CollectionNotificationService {
             switch self {
             case .legacy, .ready:
                 return true
-            case .loading, .failed:
+            case .loading, .retiring, .failed:
                 return false
             }
         }
@@ -170,7 +167,7 @@ final class CollectionNotificationService {
                 return
             }
             guard self.generationState.isReadable else {
-                if case .failed(let storageError) = self.generationState {
+                if case .failed(let storageError, _) = self.generationState {
                     completion(.failure(storageError))
                 } else {
                     completion(.success(false))
@@ -198,44 +195,35 @@ final class CollectionNotificationService {
         permissionGeneration &+= 1
         enabled = false
         coordinator.setEnabled(false)
-        // Block enable/reload until this write settles; a failure must not leave the
-        // prior generation readable for re-admission.
-        requiresSuccessfulRetirementWrite = true
-        generationLoadGeneration &+= 1
-        generationState = .loading
-        retirementOperationGeneration &+= 1
-        let operation = retirementOperationGeneration
-        let next = UUID()
+        generationState = .retiring
         // Enqueue the durable write before failing waiters. A synchronous reentrant
         // retire from those callbacks must not invert disk commit order.
+        writeRetirement(completion: completion)
+        finishGenerationWaiters(.failure(CollectionNotificationGenerationError.retirementInProgress))
+    }
+
+    private func writeRetirement(completion: ((Result<Void, Error>) -> Void)? = nil) {
+        generationOperation &+= 1
+        let operation = generationOperation
+        let next = UUID()
         generationStore.write(next) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }
-                let isLatest = operation == self.retirementOperationGeneration
-                switch result {
-                case .success:
-                    if isLatest {
-                        self.generationLoadGeneration &+= 1
-                        self.requiresSuccessfulRetirementWrite = false
+                if operation == self.generationOperation {
+                    switch result {
+                    case .success:
                         self.generationState = .ready(next)
                         self.reconcileRetiredGenerations()
+                    case .failure(let error):
+                        self.generationState = .failed(error, requiresRetirement: true)
                     }
-                    // Settle after applying latest state so immediate enable sees ready
-                    // and a reentrant retire cannot be overwritten by this completion.
-                    completion(.success(()))
-                case .failure(let error):
-                    if isLatest {
-                        self.generationLoadGeneration &+= 1
-                        self.generationState = .failed(error)
-                        self.reportError(error, "generation")
-                        self.finishGenerationWaiters(.failure(error))
-                    }
-                    completion(.failure(error))
+                    self.finishGenerationWaiters(result)
+                    if case .failure(let error) = result { self.reportError(error, "generation") }
                 }
+                // A caller can immediately enable or retire again once its write settles.
+                completion?(result)
             }
         }
-        // Enable attempts queued before this retirement must not re-arm afterward.
-        finishGenerationWaiters(.failure(CollectionNotificationGenerationError.retirementInProgress))
     }
 
     func appBecameActive() {
@@ -244,11 +232,10 @@ final class CollectionNotificationService {
         case .legacy, .ready:
             // Keep the loaded generation; do not re-enter .loading and drop lifecycle events.
             reconcileRetiredGenerations()
-        case .failed where !requiresSuccessfulRetirementWrite:
+        case .failed(_, requiresRetirement: false):
             // Recoverable initial/read failure — retry once from disk.
             loadGeneration()
-        case .loading, .failed:
-            // Pending or failed retirement stays disarmed.
+        case .loading, .retiring, .failed:
             break
         }
     }
@@ -262,10 +249,14 @@ final class CollectionNotificationService {
         switch generationState {
         case .legacy, .ready:
             completion(.success(()))
-        case .failed(let error):
+        case .failed(let error, requiresRetirement: false):
             completion(.failure(error))
-        case .loading where requiresSuccessfulRetirementWrite:
-            // Do not re-arm a session that is retiring or awaiting a successful write.
+        case .failed(_, requiresRetirement: true):
+            // Disk still holds the retired generation. Replace it before checking permission.
+            generationWaiters.append(completion)
+            generationState = .loading
+            writeRetirement()
+        case .retiring:
             completion(.failure(CollectionNotificationGenerationError.retirementInProgress))
         case .loading:
             generationWaiters.append(completion)
@@ -281,34 +272,21 @@ final class CollectionNotificationService {
     }
 
     private func loadGeneration() {
-        if requiresSuccessfulRetirementWrite {
-            // A failed (or in-flight) retirement must not re-admit the prior on-disk generation.
-            if case .failed(let error) = generationState {
-                finishGenerationWaiters(.failure(error))
-            }
-            return
-        }
-        generationLoadGeneration &+= 1
-        let loadGeneration = generationLoadGeneration
+        generationOperation &+= 1
+        let operation = generationOperation
         generationState = .loading
         generationStore.read { [weak self] result in
             DispatchQueue.main.async {
-                guard let self, loadGeneration == self.generationLoadGeneration else { return }
-                if self.requiresSuccessfulRetirementWrite {
-                    if case .failed(let error) = self.generationState {
-                        self.finishGenerationWaiters(.failure(error))
-                    }
-                    return
-                }
+                guard let self, operation == self.generationOperation else { return }
                 switch result {
                 case .success(let generation):
                     self.generationState = generation.map { .ready($0) } ?? .legacy
-                    self.finishGenerationWaiters(.success(()))
                     self.reconcileRetiredGenerations()
+                    self.finishGenerationWaiters(.success(()))
                 case .failure(let error):
-                    self.generationState = .failed(error)
-                    self.reportError(error, "generation")
+                    self.generationState = .failed(error, requiresRetirement: false)
                     self.finishGenerationWaiters(.failure(error))
+                    self.reportError(error, "generation")
                 }
             }
         }

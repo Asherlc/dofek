@@ -40718,7 +40718,10 @@ Local qualification and CI are separate from production throughput acceptance. T
   platform limit: if `UNUserNotificationCenter` is stalled or the app is
   suspended/force-quit before reconciliation runs, an already-due alert can
   still appear until a later successful scan removes it; Apple controls final
-  delivery timing.
+  delivery timing. A failed write can also leave old alerts pending if ordinary
+  cleanup misses them. Generation reconciliation can remove those alerts after
+  a successful retry, and authenticated enable checks wait for that write after
+  a failed retirement.
   [Generation store](../packages/mobile/modules/background-refresh/ios/CollectionNotificationGenerationStore.swift)
   · [Session cleanup](../packages/mobile/lib/auth-session.ts).
 - **Retrospective.** The native stack identified the blocking API directly. If

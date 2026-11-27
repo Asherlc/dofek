@@ -249,7 +249,8 @@ asynchronously on the serial cleanup queue and does not hold the promise.
 Session logout, rejected saved credentials, and current-owner account erasure
 call retirement through `clearSessionToken`, which serializes the write before
 replacement credentials can be adopted and still deletes credentials when the
-write fails. Notification permission uses Apple's
+write fails. After a failed retirement, an authenticated enable retries the
+write before checking notification permission. Notification permission uses Apple's
 [User Notifications authorization API](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications).
 Authentication restoration and deferred service startup preserve native alerts;
 only a confirmed session end or cleanup of the current account retires or disables
@@ -298,10 +299,12 @@ Before the first successful retirement the format remains
 `prefix.requestUUID` (legacy). After a retirement write commits, new IDs are
 `prefix.generationUUID.requestUUID`. Late save callbacks remove only their own
 obsolete request, preserving a newer disconnect's five-minute grace period.
-Cancellation and generation reconciliation enumerate prior-process requests
-through Apple's [pending-notification API](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter/getpendingnotificationrequests(completionhandler:))
-and remove exact IDs that do not belong to the current generation. Lifecycle
-state, active-identifier selection, and permission handling stay on the main
+Ordinary cancellation removes exact IDs under the canceled alert's prefix,
+including alerts from the current generation that the service no longer tracks.
+Generation reconciliation removes exact IDs from retired generations.
+Both enumerate pending and delivered requests through Apple's
+[notification center API](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter).
+Lifecycle state, active-identifier selection, and permission handling stay on the main
 queue. Generation file I/O uses a private store queue independent of Apple
 calls. Pending and delivered lookup initiation and Apple removal calls run on
 one private serial cleanup queue so a slow XPC reply cannot stall the main thread
