@@ -16,6 +16,7 @@ const mockAuthSession = vi.hoisted(() => ({
   getSavedSessionUser: vi.fn(),
   getSessionToken: vi.fn(() => Promise.resolve(null)),
   invalidateSessionPersistence: vi.fn(),
+  retryDurableCollectionNotificationRetirement: vi.fn(() => Promise.resolve()),
   rotateSessionOwnerNonce: vi.fn(() => Promise.resolve("11111111-1111-4111-8111-111111111111")),
   saveSessionToken: vi.fn(() => Promise.resolve()),
   saveSessionUser: vi.fn(() => Promise.resolve()),
@@ -196,6 +197,33 @@ describe("auth-context", () => {
       expect(result.current.user).toBeNull();
       expect(result.current.bootstrapError).toBeNull();
       expect(saveSessionToken).not.toHaveBeenCalled();
+      expect(mockAuthSession.retryDurableCollectionNotificationRetirement).not.toHaveBeenCalled();
+    });
+
+    it("retries durable alert retirement on confirmed foreground signed-out bootstrap", async () => {
+      const { getSessionToken } = await importAuthApis();
+      AppState.currentState = "active";
+      vi.mocked(getSessionToken).mockResolvedValue(null);
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitForAuthLoaded(result);
+
+      expect(result.current.user).toBeNull();
+      expect(mockAuthSession.retryDurableCollectionNotificationRetirement).toHaveBeenCalledOnce();
+    });
+
+    it("does not retry retirement while bootstrap is deferred in the background", async () => {
+      const { getSessionToken } = await importAuthApis();
+      AppState.currentState = "background";
+      vi.mocked(getSessionToken).mockResolvedValue(null);
+
+      renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(getSessionToken).toHaveBeenCalled());
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockAuthSession.retryDurableCollectionNotificationRetirement).not.toHaveBeenCalled();
     });
 
     it("defers bootstrap when SecureStore is inaccessible in the background", async () => {
@@ -695,6 +723,50 @@ describe("auth-context", () => {
       });
 
       expect(mockRemoveMobileQueryCache).toHaveBeenCalledWith("user-1");
+    });
+
+    it("reports logout cleanup rejection while preparation is still pending", async () => {
+      const { getSessionToken, fetchCurrentUser, logout: authLogout } = await importAuthApis();
+      vi.mocked(getSessionToken).mockResolvedValue("test-token");
+      vi.mocked(fetchCurrentUser).mockResolvedValue(defaultUser);
+      const logoutFailure = new Error("Collection notification generation could not be written");
+      let rejectLogout!: (error: Error) => void;
+      vi.mocked(authLogout).mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectLogout = reject;
+          }),
+      );
+      let resolvePreparation!: () => void;
+      mockClearAccountErasurePreparation.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolvePreparation = resolve;
+          }),
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.user).not.toBeNull());
+
+      let logoutPromise!: Promise<void>;
+      act(() => {
+        logoutPromise = result.current.logout();
+      });
+      await waitFor(() => expect(mockClearAccountErasurePreparation).toHaveBeenCalledOnce());
+
+      await act(async () => {
+        rejectLogout(logoutFailure);
+        await Promise.resolve();
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(logoutFailure, {
+        source: "logout",
+        retiredLifetime: true,
+      });
+
+      await act(async () => {
+        resolvePreparation();
+        await logoutPromise;
+      });
     });
 
     it.each(["resolves", "rejects"] as const)(

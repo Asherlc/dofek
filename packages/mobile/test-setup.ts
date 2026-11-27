@@ -663,6 +663,7 @@ vi.mock("./modules/core-motion", () => ({
 vi.mock("./modules/background-refresh", () => ({
   enableCollectionNotifications: vi.fn(() => Promise.resolve(true)),
   disableCollectionNotifications: vi.fn(),
+  retireCollectionNotifications: vi.fn(() => Promise.resolve()),
   getDiagnostics: vi.fn(() => ({ events: [], overflowCount: 0 })),
   clearDiagnostics: vi.fn(),
   scheduleRefresh: vi.fn(),

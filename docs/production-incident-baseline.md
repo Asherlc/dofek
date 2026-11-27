@@ -40772,3 +40772,59 @@ Local qualification and CI are separate from production throughput acceptance. T
   and preserves the public peer range of `>=58.0.0`. Both workspace consumers
   now resolve Modules Core 58.2.0 with the existing patch.
   [Failed Sherif job](https://github.com/Asherlc/dofek/actions/runs/45872621027/job/140092018057).
+
+## 2026-11-26 (UTC) — iOS collection-alert cleanup stalls the main thread
+
+- **Impact and evidence.** At 18:46:20 UTC, Sentry recorded a 2.2–3.0 second
+  foreground hang on one iPhone running Dofek build `1795711332` on iOS
+  `27.2.1`, about eight seconds after app start. A 90-day search of production
+  app hangs found one occurrence in this issue. The trace contains the error
+  and zero spans. [Sentry event](https://east-bay-software.sentry.io/issues/7869392668/events/837b20850328449d979ca9935157b8e0/)
+  · [Sentry trace](https://east-bay-software.sentry.io/explore/traces/trace/85eb0bd845224f1aac11c53fec9ddef9).
+- **Cause.** The main-queue cancellation callback called
+  `removePendingNotificationRequests(withIdentifiers:)` and waited for a
+  synchronous XPC reply from Apple's notification service. Launch, foregrounding,
+  WHOOP connection changes, and session cleanup can all request cancellation.
+  The captured stack identifies the removal callback. The initiating lifecycle
+  event and the reason Apple's service took that long remain unknown.
+  [Cancellation service](../packages/mobile/modules/background-refresh/ios/CollectionNotificationService.swift#L173)
+  · [Apple adapter](../packages/mobile/modules/background-refresh/ios/AppleCollectionNotificationCenter.swift#L59).
+- **Mitigation and follow-up.** `CollectionNotificationService` now initiates
+  pending/delivered lookups and Apple removals on one private serial cleanup
+  queue while keeping lifecycle state, active-identifier filtering, and
+  `center.add` (including termination scheduling) on their existing paths. A
+  focused service test fails when removal runs on main and passes while a fake
+  pending removal is held off-main without blocking main-queue progress; full
+  background-refresh Swift tests cover late adds, reconnect, old-process cleanup,
+  ordering, and sign-out. Physical-iPhone validation of alert cleanup and watching
+  Sentry for the same stack by build remain pending. Apple documents that the
+  shared notification center can be called from any app thread.
+  [Apple notification center documentation](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter).
+- **Durable cancellation follow-up (2026-11-27).** Confirmed session retirement
+  now persists one opaque generation UUID under Application Support and resolves
+  the Expo/bridge promise after that local write, without waiting on Apple
+  enumeration or removal. Logout, rejected saved credentials, and current-owner
+  erasure start retirement from `clearSessionToken`, serialize adoption behind
+  the write, and still delete credentials when the write fails. A process that
+  stops after the write while Apple cleanup is blocked recovers on the next
+  native start or foreground by reconciling retired generations. Remaining
+  platform limit: if `UNUserNotificationCenter` is stalled or the app is
+  suspended/force-quit before reconciliation runs, an already-due alert can
+  still appear until a later successful scan removes it; Apple controls final
+  delivery timing. A failed write can also leave old alerts pending if ordinary
+  cleanup misses them. Generation reconciliation can remove those alerts after
+  a successful retry, and authenticated enable checks wait for that write after
+  a failed retirement.
+  [Generation store](../packages/mobile/modules/background-refresh/ios/CollectionNotificationGenerationStore.swift)
+  · [Session cleanup](../packages/mobile/lib/auth-session.ts).
+- **CI validation (2026-11-27).** The unsigned iOS Release archive and
+  simulator bridge tests passed. The merge was held by
+  `pnpm tsx scripts/run-swift-mutation.ts --merge`, which reported
+  `No finite positive measured mutation denominator`. The sole iOS adapter
+  mutation was marked `notMaterialized` by the macOS Swift package.
+  The shared service initializer now supplies the default store, so the iOS
+  adapter uses the same production wiring through its existing call.
+  [Failed mutation verification](https://github.com/Asherlc/dofek/actions/runs/46028842251/job/140621311884).
+- **Retrospective.** The native stack identified the blocking API directly. If
+  the hang recurs, correlating its timestamp with the lifecycle events that request
+  cancellation would help identify the initiating path.

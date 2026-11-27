@@ -94,6 +94,7 @@ const {
 interface MockAuthStateValue {
   accountErasureCleanupInProgress?: boolean;
   accountSessionOwnerNonce?: string | null;
+  isCurrentSessionOwner?: (nonce: string | null) => boolean;
   user: { id: string; name?: string } | null;
   serverUrl: string;
   isLoading: boolean;
@@ -106,9 +107,11 @@ interface MockAuthStateValue {
 const { mockAuthState, mockLogout, mockRetryBootstrap } = vi.hoisted(() => {
   const logout = vi.fn(async () => undefined);
   const retryBootstrap = vi.fn(async () => undefined);
+  const ownerNonce = "11111111-1111-4111-8111-111111111111";
   const authState: { value: MockAuthStateValue } = {
     value: {
-      accountSessionOwnerNonce: "11111111-1111-4111-8111-111111111111",
+      accountSessionOwnerNonce: ownerNonce,
+      isCurrentSessionOwner: (nonce) => nonce !== null && nonce === ownerNonce,
       user: { id: "user-1" },
       serverUrl: "https://dofek.test",
       isLoading: false,
@@ -165,7 +168,11 @@ vi.mock("expo-splash-screen", () => ({
 
 vi.mock("../lib/auth-context", () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,
-  useAuth: () => mockAuthState.value,
+  useAuth: () => ({
+    isCurrentSessionOwner: (nonce: string | null) =>
+      nonce !== null && nonce === mockAuthState.value.accountSessionOwnerNonce,
+    ...mockAuthState.value,
+  }),
 }));
 
 vi.mock("../lib/account-erasure-storage", () => ({
@@ -393,6 +400,8 @@ describe("RootLayout background cleanup", () => {
     mockRequestPermissions.mockResolvedValue(true);
     mockAuthState.value = {
       accountSessionOwnerNonce: "11111111-1111-4111-8111-111111111111",
+      isCurrentSessionOwner: (nonce) =>
+        nonce !== null && nonce === "11111111-1111-4111-8111-111111111111",
       user: { id: "user-1" },
       serverUrl: "https://dofek.test",
       isLoading: false,
@@ -831,6 +840,28 @@ describe("RootLayout background cleanup", () => {
     expect(mockUseBleHeartRateSync).not.toHaveBeenCalled();
     expect(mockCreateRefreshDiagnostics).not.toHaveBeenCalled();
     expect(disableCollectionNotifications).toHaveBeenCalled();
+    expect(enableCollectionNotifications).not.toHaveBeenCalled();
+  });
+
+  it("preserves native alerts while stale global erasure cleanup retains a replacement user", async () => {
+    const replacementOwner = "22222222-2222-4222-8222-222222222222";
+    mockAuthState.value = {
+      accountErasureCleanupInProgress: true,
+      accountSessionOwnerNonce: replacementOwner,
+      isCurrentSessionOwner: (nonce) => nonce === replacementOwner,
+      user: { id: "user-2" },
+      serverUrl: "https://dofek.test",
+      isLoading: false,
+      sessionToken: "replacement-session",
+      bootstrapError: null,
+      logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
+    };
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+
+    expect(await rendered.findByText("Finishing account deletion cleanup…")).toBeTruthy();
+    expect(disableCollectionNotifications).not.toHaveBeenCalled();
     expect(enableCollectionNotifications).not.toHaveBeenCalled();
   });
 

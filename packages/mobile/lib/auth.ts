@@ -347,7 +347,12 @@ export async function startNativeAppleSignIn(serverUrl: string): Promise<AuthRes
 
 /** Log out: delete session on server and clear local token. */
 export async function logout(serverUrl: string, token: string): Promise<void> {
-  const clearLocalSession = clearSessionToken();
+  // Attach rejection handling immediately so a fast local failure cannot become
+  // an unhandled rejection while the remote logout request is still in flight.
+  const clearLocalSession = clearSessionToken().then(
+    () => ({ status: "fulfilled" as const }),
+    (reason: unknown) => ({ status: "rejected" as const, reason }),
+  );
   try {
     await fetch(`${serverUrl}/auth/logout`, {
       method: "POST",
@@ -356,5 +361,8 @@ export async function logout(serverUrl: string, token: string): Promise<void> {
   } catch (error: unknown) {
     captureException(error, { source: "logout", retiredLifetime: true });
   }
-  await clearLocalSession;
+  const local = await clearLocalSession;
+  if (local.status === "rejected") {
+    throw local.reason;
+  }
 }

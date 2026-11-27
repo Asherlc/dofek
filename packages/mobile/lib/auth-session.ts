@@ -2,6 +2,7 @@ import { type AuthUser, AuthUserSchema } from "@dofek/auth/auth";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { z } from "zod";
+import { retireCollectionNotifications } from "../modules/background-refresh";
 import {
   deleteSecureStoreItem,
   readSecureStoreItem,
@@ -116,10 +117,34 @@ export async function getSavedSessionUser(token: string): Promise<AuthUser | nul
   });
 }
 
+/**
+ * Retry durable alert retirement after a confirmed signed-out bootstrap.
+ * Serializes behind session persistence so a later saveSessionToken waits for the write.
+ */
+export function retryDurableCollectionNotificationRetirement(): Promise<void> {
+  const outcome = serializeSessionPersistence(() => retireCollectionNotifications());
+  void outcome.then(
+    () => undefined,
+    (error: unknown) => {
+      captureException(error, {
+        source: "auth-session-retirement-retry",
+        retiredLifetime: true,
+      });
+    },
+  );
+  return outcome;
+}
+
 /** Clear the session token (logout). */
 export async function clearSessionToken(): Promise<void> {
   invalidateSessionPersistence();
   const nativeOutcome = disableWhoopUploads().then(
+    () => ({ status: "fulfilled" as const }),
+    (reason: unknown) => ({ status: "rejected" as const, reason }),
+  );
+  // Start durable alert retirement immediately; the promise waits only for the
+  // local generation write, never for Apple notification removal.
+  const retirementOutcome = retireCollectionNotifications().then(
     () => ({ status: "fulfilled" as const }),
     (reason: unknown) => ({ status: "rejected" as const, reason }),
   );
@@ -128,6 +153,10 @@ export async function clearSessionToken(): Promise<void> {
     const intentResult: PromiseSettledResult<string> = (
       await Promise.allSettled([persistWhoopCleanupIntent()])
     )[0];
+    // Await the revocation write before deleting credentials so a process death
+    // cannot clear the keychain while the prior generation file is still current.
+    // A rejected write still proceeds to every credential delete below.
+    const retirement = await retirementOutcome;
     const credentialResults = await Promise.allSettled([
       deleteSecureStoreItem(SESSION_TOKEN_KEY),
       SecureStore.deleteItemAsync(SESSION_USER_KEY),
@@ -142,11 +171,11 @@ export async function clearSessionToken(): Promise<void> {
       } else {
         hasSessionAdoptionFailure = false;
       }
-      return { credentialResults, intentResult, native };
+      return { credentialResults, intentResult, native, retirement };
     }
 
     hasSessionAdoptionFailure = false;
-    return { credentialResults, intentResult, native: null };
+    return { credentialResults, intentResult, native: null, retirement };
   });
 
   const native = serializedCleanup.native ?? (await nativeOutcome);
@@ -162,6 +191,9 @@ export async function clearSessionToken(): Promise<void> {
       ? [serializedCleanup.intentResult.reason]
       : []),
     ...(native.status === "rejected" ? [native.reason] : []),
+    ...(serializedCleanup.retirement.status === "rejected"
+      ? [serializedCleanup.retirement.reason]
+      : []),
     ...serializedCleanup.credentialResults.flatMap((result) =>
       result.status === "rejected" ? [result.reason] : [],
     ),

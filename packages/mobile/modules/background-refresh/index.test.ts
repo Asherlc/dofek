@@ -8,6 +8,8 @@ const nativeModule = vi.hoisted(() => ({
   clearDiagnostics: vi.fn(),
   isAvailable: vi.fn(),
   scheduleRefresh: vi.fn(),
+  disableCollectionNotifications: vi.fn(),
+  retireCollectionNotifications: vi.fn(),
   startHealthKitSync: vi.fn(),
   getHealthKitSyncListenerGeneration: vi.fn(),
   updateHealthKitSyncProgress: vi.fn(),
@@ -32,7 +34,9 @@ import {
   addHealthKitSyncExpirationListener,
   clearDiagnostics,
   completeHealthKitSync,
+  disableCollectionNotifications,
   getDiagnostics,
+  retireCollectionNotifications,
   startHealthKitSync,
   updateHealthKitSyncProgress,
 } from "./index";
@@ -168,6 +172,49 @@ describe("addBackgroundRefreshListener", () => {
     const result = addBackgroundRefreshListener(() => Promise.resolve(), vi.fn());
 
     expect(result).toBe(subscription);
+  });
+});
+
+describe("collection notification retirement bridge", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reports a failed best-effort disable", async () => {
+    const error = new Error("Collection notification disable failed");
+    nativeModule.disableCollectionNotifications.mockRejectedValueOnce(error);
+
+    await disableCollectionNotifications();
+
+    expect(captureException).toHaveBeenCalledWith(error, {
+      source: "collection-notifications-disable",
+    });
+  });
+
+  it("forwards retirement to the native promise", async () => {
+    nativeModule.retireCollectionNotifications.mockResolvedValue(undefined);
+
+    await expect(retireCollectionNotifications()).resolves.toBeUndefined();
+
+    expect(nativeModule.retireCollectionNotifications).toHaveBeenCalledOnce();
+  });
+
+  it("propagates native retirement write failures", async () => {
+    nativeModule.retireCollectionNotifications.mockRejectedValueOnce(
+      new Error("Collection notification generation could not be written"),
+    );
+
+    await expect(retireCollectionNotifications()).rejects.toThrow(
+      "Collection notification generation could not be written",
+    );
+  });
+
+  it("collects synchronous native throws as rejected promises", async () => {
+    nativeModule.retireCollectionNotifications.mockImplementationOnce(() => {
+      throw new Error("Native bridge unavailable");
+    });
+
+    await expect(retireCollectionNotifications()).rejects.toThrow("Native bridge unavailable");
   });
 });
 

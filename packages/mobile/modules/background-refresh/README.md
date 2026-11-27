@@ -239,13 +239,26 @@ enables native alerts using existing authorization, including after an
 authenticated background launch. Passing `true` allows requesting alert and
 sound permission while the app is active. It returns `false` when permission
 is denied or a background launch still needs authorization. The app checks permission again
-when returning to the foreground. `disableCollectionNotifications(): void`
-disables both alerts and removes their pending and delivered notifications
-when the session ends. Notification permission uses Apple's
+when returning to the foreground. `disableCollectionNotifications(): Promise<void>`
+is the best-effort UI hook that disarms scheduling and requests removal of
+pending and delivered alerts when restoration confirms a signed-out or failed
+session. `retireCollectionNotifications(): Promise<void>` retires the current
+native generation: it disarms immediately and resolves after the durable
+Application Support generation write. Apple pending/delivered removal continues
+asynchronously on the serial cleanup queue and does not hold the promise.
+Session logout, rejected saved credentials, and current-owner account erasure
+call retirement through `clearSessionToken`, which serializes the write before
+replacement credentials can be adopted and still deletes credentials when the
+write fails. After a failed retirement, an authenticated enable retries the
+write before checking notification permission. Notification permission uses Apple's
 [User Notifications authorization API](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications).
 Authentication restoration and deferred service startup preserve native alerts;
-only a confirmed session end or account cleanup disables them. A denied foreground
-authorization check explains how to enable notifications in iOS Settings.
+only a confirmed session end or cleanup of the current account retires or disables
+them. Foreground permission checks require the session that registered the
+listener to still own the session. Enable, disable, and retirement reach the
+native service in bridge invocation order. A
+denied foreground authorization check explains how to enable notifications in
+iOS Settings.
 
 The two notifications have separate triggers, identifiers, messages, and
 cancellation rules:
@@ -282,9 +295,23 @@ Recording windows expire at Apple's maximum
 [`CMSensorRecorder` duration](https://developer.apple.com/documentation/coremotion/cmsensorrecorder/recordaccelerometer(forduration:)).
 
 Each scheduled request has its own identifier under its alert's logical prefix.
-Late save callbacks remove only their own obsolete request, preserving a newer
-disconnect's five-minute grace period. Cancellation also enumerates prior-process
-requests through Apple's [pending-notification API](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter/getpendingnotificationrequests(completionhandler:)).
+Before the first successful retirement the format remains
+`prefix.requestUUID` (legacy). After a retirement write commits, new IDs are
+`prefix.generationUUID.requestUUID`. Late save callbacks remove only their own
+obsolete request, preserving a newer disconnect's five-minute grace period.
+Ordinary cancellation removes exact IDs under the canceled alert's prefix,
+including alerts from the current generation that the service no longer tracks.
+Generation reconciliation removes exact IDs from retired generations.
+Both enumerate pending and delivered requests through Apple's
+[notification center API](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter).
+Lifecycle state, active-identifier selection, and permission handling stay on the main
+queue. Generation file I/O uses a private store queue independent of Apple
+calls. Pending and delivered lookup initiation and Apple removal calls run on
+one private serial cleanup queue so a slow XPC reply cannot stall the main thread
+or the retirement promise. `center.add` keeps its existing timing, including
+`applicationWillTerminate`. Apple documents that
+[`UNUserNotificationCenter`](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter)
+may be used from any app thread.
 
 The closure warning is **best effort**. iOS can terminate a suspended app
 without calling `applicationWillTerminate`, and scheduling a notification is
@@ -297,12 +324,20 @@ Both alerts require notification permission; iOS controls their final delivery.
 
 `CollectionNotificationCoordinatorTests` exercises active collection, trigger separation,
 reconnection, deliberate disconnect, independent cancellation, and disabled
-sessions. `CollectionNotificationServiceTests` controls settings, authorization,
-notification-save, and persisted-request callbacks to cover sign-out and reconnection
-races. The Apple delivery adapter and Expo callbacks additionally require an iOS
-build. Validate real BLE loss, permission changes, reconnect-before-delivery,
-and app termination on a physical iPhone; the
+sessions. `CollectionNotificationServiceTests` and
+`CollectionNotificationGenerationTests` control settings, authorization,
+notification-save, persisted-request, and generation-store callbacks to cover
+sign-out, reconnection, process restart after a durable retirement write while
+Apple cleanup is blocked, and overlapping retirement. Auth-session tests cover
+serializing adoption behind the retirement write and deleting credentials when
+the write fails. The Apple delivery adapter and Expo callbacks additionally
+require an iOS build. Validate real BLE loss, permission changes,
+reconnect-before-delivery, force-quit after sign-out, and app termination on a
+physical iPhone; the
 [iOS Simulator does not provide Bluetooth hardware](https://docs.expo.dev/workflow/ios-simulator/#limitations).
+If Apple's notification service is stalled, a later launch or foreground
+reconciliation retries with the same durable generation; delivery timing remains
+platform-controlled.
 
 ## Native configuration
 

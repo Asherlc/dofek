@@ -42,7 +42,8 @@ type BackgroundRefreshEvents = {
 
 declare class BackgroundRefreshNativeModule extends NativeModule<BackgroundRefreshEvents> {
   enableCollectionNotifications(requestPermission: boolean): Promise<boolean>;
-  disableCollectionNotifications(): void;
+  disableCollectionNotifications(): Promise<void>;
+  retireCollectionNotifications(): Promise<void>;
   getDiagnostics(): BackgroundRefreshDiagnosticHistory;
   clearDiagnostics(): void;
   recordRefreshReceived(taskId: string): void;
