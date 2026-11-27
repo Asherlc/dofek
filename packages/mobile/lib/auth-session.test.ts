@@ -23,6 +23,7 @@ let getOrCreateSessionOwnerNonce: typeof import("./auth-session")["getOrCreateSe
 let getSavedSessionUser: typeof import("./auth-session")["getSavedSessionUser"];
 let getSessionToken: typeof import("./auth-session")["getSessionToken"];
 let invalidateSessionPersistence: typeof import("./auth-session")["invalidateSessionPersistence"];
+let retryDurableCollectionNotificationRetirement: typeof import("./auth-session")["retryDurableCollectionNotificationRetirement"];
 let rotateSessionOwnerNonce: typeof import("./auth-session")["rotateSessionOwnerNonce"];
 let saveSessionToken: typeof import("./auth-session")["saveSessionToken"];
 let saveSessionUser: typeof import("./auth-session")["saveSessionUser"];
@@ -48,6 +49,8 @@ async function resetSessionModule() {
   getSavedSessionUser = session.getSavedSessionUser;
   getSessionToken = session.getSessionToken;
   invalidateSessionPersistence = session.invalidateSessionPersistence;
+  retryDurableCollectionNotificationRetirement =
+    session.retryDurableCollectionNotificationRetirement;
   rotateSessionOwnerNonce = session.rotateSessionOwnerNonce;
   saveSessionToken = session.saveSessionToken;
   saveSessionUser = session.saveSessionUser;
@@ -464,7 +467,110 @@ describe("native upload signout boundary", () => {
     await resetSessionModule();
     const native = await import("../modules/whoop-ble");
     vi.mocked(native.disableUploads).mockReset().mockResolvedValue(undefined);
+    const notifications = await import("../modules/background-refresh");
+    vi.mocked(notifications.retireCollectionNotifications).mockReset().mockResolvedValue(undefined);
   });
+
+  it("holds credential adoption until collection-alert retirement write settles", async () => {
+    const notifications = await import("../modules/background-refresh");
+    storage.set("dofek_session_token", "previous-session");
+    let finishRetirement!: () => void;
+    const pendingRetirement = new Promise<void>((resolve) => {
+      finishRetirement = resolve;
+    });
+    vi.mocked(notifications.retireCollectionNotifications).mockImplementationOnce(
+      () => pendingRetirement,
+    );
+
+    let cleanupSettled = false;
+    const clearing = clearSessionToken().finally(() => {
+      cleanupSettled = true;
+    });
+    const saving = saveSessionToken("replacement-session");
+    try {
+      await vi.waitFor(() => {
+        expect(notifications.retireCollectionNotifications).toHaveBeenCalledOnce();
+      });
+      // Old credentials must remain until the revocation write settles.
+      expect(storage.has("dofek_session_token")).toBe(true);
+      expect(storage.get("dofek_session_token")).toBe("previous-session");
+      expect(SecureStore.deleteItemAsync).not.toHaveBeenCalled();
+      expect(cleanupSettled).toBe(false);
+      expect(SecureStore.setItemAsync).not.toHaveBeenCalledWith(
+        "dofek_session_token",
+        "replacement-session",
+        expect.any(Object),
+      );
+    } finally {
+      finishRetirement();
+      await Promise.allSettled([clearing, saving]);
+    }
+    expect(cleanupSettled).toBe(true);
+    expect(storage.get("dofek_session_token")).toBe("replacement-session");
+  });
+
+  it("deletes credentials when collection-alert retirement write fails", async () => {
+    const notifications = await import("../modules/background-refresh");
+    storage.set("dofek_session_token", "token");
+    storage.set("dofek_session_user_v1", JSON.stringify({ id: "user", name: "User", email: null }));
+    storage.set("dofek_session_owner_nonce_v1", "owner");
+    const retirementFailure = new Error("Collection notification generation could not be written");
+    vi.mocked(notifications.retireCollectionNotifications).mockRejectedValueOnce(retirementFailure);
+
+    await expect(clearSessionToken()).rejects.toThrow(
+      "Collection notification generation could not be written",
+    );
+    expect(storage.has("dofek_session_token")).toBe(false);
+    expect(storage.has("dofek_session_user_v1")).toBe(false);
+    expect(storage.has("dofek_session_owner_nonce_v1")).toBe(false);
+    expect(mockCaptureException).toHaveBeenCalledWith(retirementFailure, {
+      source: "auth-session-cleanup",
+      retiredLifetime: true,
+    });
+  });
+
+  it("serializes signed-out retirement retry behind session persistence", async () => {
+    const notifications = await import("../modules/background-refresh");
+    let finishRetirement!: () => void;
+    const pendingRetirement = new Promise<void>((resolve) => {
+      finishRetirement = resolve;
+    });
+    vi.mocked(notifications.retireCollectionNotifications).mockImplementationOnce(
+      () => pendingRetirement,
+    );
+
+    const retrying = retryDurableCollectionNotificationRetirement();
+    const saving = saveSessionToken("replacement-session");
+    try {
+      await vi.waitFor(() => {
+        expect(notifications.retireCollectionNotifications).toHaveBeenCalledOnce();
+      });
+      expect(SecureStore.setItemAsync).not.toHaveBeenCalledWith(
+        "dofek_session_token",
+        "replacement-session",
+        expect.any(Object),
+      );
+    } finally {
+      finishRetirement();
+      await Promise.allSettled([retrying, saving]);
+    }
+    expect(storage.get("dofek_session_token")).toBe("replacement-session");
+  });
+
+  it("reports signed-out retirement retry failures without blocking callers that ignore the promise", async () => {
+    const notifications = await import("../modules/background-refresh");
+    const retirementFailure = new Error("Collection notification generation could not be written");
+    vi.mocked(notifications.retireCollectionNotifications).mockRejectedValueOnce(retirementFailure);
+
+    await expect(retryDurableCollectionNotificationRetirement()).rejects.toThrow(
+      "Collection notification generation could not be written",
+    );
+    expect(mockCaptureException).toHaveBeenCalledWith(retirementFailure, {
+      source: "auth-session-retirement-retry",
+      retiredLifetime: true,
+    });
+  });
+
   it("persists replacement credentials while native cleanup is pending and preserves them after completion", async () => {
     const native = await import("../modules/whoop-ble");
     const storage = await import("expo-secure-store");

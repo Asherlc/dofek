@@ -812,4 +812,32 @@ describe("logout", () => {
       retiredLifetime: true,
     });
   });
+
+  it("propagates local cleanup failure after a delayed remote logout settles", async () => {
+    const notifications = await import("../modules/background-refresh");
+    const retirementFailure = new Error("Collection notification generation could not be written");
+    let rejectRetirement!: (error: Error) => void;
+    vi.mocked(notifications.retireCollectionNotifications).mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectRetirement = reject;
+        }),
+    );
+    let resolveFetch!: () => void;
+    vi.mocked(fetch).mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = () => resolve(new Response(JSON.stringify({ ok: true })));
+        }),
+    );
+
+    const logoutPromise = logout("https://srv", "my-token");
+    await Promise.resolve();
+    rejectRetirement(retirementFailure);
+    await Promise.resolve();
+    resolveFetch();
+    await expect(logoutPromise).rejects.toThrow(
+      "Collection notification generation could not be written",
+    );
+  });
 });

@@ -40707,6 +40707,20 @@ Local qualification and CI are separate from production throughput acceptance. T
   Sentry for the same stack by build remain pending. Apple documents that the
   shared notification center can be called from any app thread.
   [Apple notification center documentation](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter).
+- **Durable cancellation follow-up (2026-11-27).** Confirmed session retirement
+  now persists one opaque generation UUID under Application Support and resolves
+  the Expo/bridge promise after that local write, without waiting on Apple
+  enumeration or removal. Logout, rejected saved credentials, and current-owner
+  erasure start retirement from `clearSessionToken`, serialize adoption behind
+  the write, and still delete credentials when the write fails. A process that
+  stops after the write while Apple cleanup is blocked recovers on the next
+  native start or foreground by reconciling retired generations. Remaining
+  platform limit: if `UNUserNotificationCenter` is stalled or the app is
+  suspended/force-quit before reconciliation runs, an already-due alert can
+  still appear until a later successful scan removes it; Apple controls final
+  delivery timing.
+  [Generation store](../packages/mobile/modules/background-refresh/ios/CollectionNotificationGenerationStore.swift)
+  · [Session cleanup](../packages/mobile/lib/auth-session.ts).
 - **Retrospective.** The native stack identified the blocking API directly. If
   the hang recurs, correlating its timestamp with the lifecycle events that request
   cancellation would help identify the initiating path.

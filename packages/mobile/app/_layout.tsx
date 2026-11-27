@@ -195,6 +195,7 @@ function AuthGate() {
   const {
     accountErasureCleanupInProgress,
     accountSessionOwnerNonce,
+    isCurrentSessionOwner,
     user,
     serverUrl,
     isLoading,
@@ -220,17 +221,22 @@ function AuthGate() {
   const startupInteractiveMarkedRef = useRef(false);
   const localCleanupBlocksSession =
     localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
+  // Global erasure can stay true under a stale lease while a replacement user is present.
+  // Only retire alerts when that gate means this device has no current user.
   const collectionSessionEnded =
-    accountErasureCleanupInProgress ||
+    (accountErasureCleanupInProgress && !user) ||
     localCleanupBlocksSession ||
     (!isLoading && !bootstrapError && !user);
-  useCollectionNotifications(
-    collectionSessionEnded
-      ? false
-      : !isLoading && !bootstrapError && deletionRecoveryReady && backgroundSyncReady
-        ? true
-        : undefined,
-  );
+  const collectionReady =
+    !accountErasureCleanupInProgress &&
+    !isLoading &&
+    !bootstrapError &&
+    deletionRecoveryReady &&
+    backgroundSyncReady;
+  useCollectionNotifications(collectionSessionEnded ? false : collectionReady ? true : undefined, {
+    sessionOwnerNonce: accountSessionOwnerNonce,
+    isCurrentSessionOwner,
+  });
 
   const [queryClient] = useState(createAppQueryClient);
 

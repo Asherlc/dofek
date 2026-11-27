@@ -38,8 +38,12 @@ public class BackgroundRefreshModule: Module {
             self.enableCollectionNotifications(requestPermission: requestPermission, promise: promise)
         }
 
-        Function("disableCollectionNotifications") {
-            DispatchQueue.main.async { CollectionNotificationService.shared.disable() }
+        AsyncFunction("disableCollectionNotifications") { (promise: Promise) in
+            self.disableCollectionNotifications(promise: promise)
+        }
+
+        AsyncFunction("retireCollectionNotifications") { (promise: Promise) in
+            self.retireCollectionNotifications(promise: promise)
         }
 
         OnStartObserving("onBackgroundRefresh") {
@@ -116,6 +120,27 @@ public class BackgroundRefreshModule: Module {
                     promise.resolve(granted)
                 case .failure(let error):
                     promise.reject("COLLECTION_NOTIFICATIONS_UNAVAILABLE", error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func disableCollectionNotifications(promise: Promise) {
+        DispatchQueue.main.async {
+            CollectionNotificationService.shared.disable()
+            promise.resolve(nil)
+        }
+    }
+
+    /// Resolves after the durable generation write; Apple removal stays asynchronous.
+    private func retireCollectionNotifications(promise: Promise) {
+        DispatchQueue.main.async {
+            CollectionNotificationService.shared.retire { result in
+                switch result {
+                case .success:
+                    promise.resolve(nil)
+                case .failure(let error):
+                    promise.reject("COLLECTION_NOTIFICATIONS_RETIRE_FAILED", error.localizedDescription)
                 }
             }
         }

@@ -33,8 +33,21 @@ export function enableCollectionNotifications(requestPermission: boolean): Promi
 }
 
 /** Cancel both alerts when the authenticated session or background collection ends. */
-export function disableCollectionNotifications(): void {
-  BackgroundRefreshModule.disableCollectionNotifications();
+export async function disableCollectionNotifications(): Promise<void> {
+  try {
+    await BackgroundRefreshModule.disableCollectionNotifications();
+  } catch (error: unknown) {
+    captureException(error, { source: "collection-notifications-disable" });
+  }
+}
+
+/**
+ * Retire the current collection-alert generation. Resolves after the durable
+ * native write; Apple notification removal continues asynchronously.
+ * Async so a synchronous native throw becomes a rejected promise.
+ */
+export async function retireCollectionNotifications(): Promise<void> {
+  await BackgroundRefreshModule.retireCollectionNotifications();
 }
 
 /** Nondestructive native history. Validate at the telemetry boundary before use. */

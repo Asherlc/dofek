@@ -6,24 +6,35 @@ import {
 } from "../modules/background-refresh";
 import { captureException, logger } from "./telemetry";
 
+/** Current-owner admission so a stale AppState listener cannot arm alerts after retirement. */
+interface CollectionNotificationSessionAdmission {
+  sessionOwnerNonce: string | null;
+  isCurrentSessionOwner: (nonce: string | null) => boolean;
+}
+
 /** Undefined preserves native monitoring until session and collection readiness are known. */
-export function useCollectionNotifications(enabled: boolean | undefined): void {
+export function useCollectionNotifications(
+  enabled: boolean | undefined,
+  { sessionOwnerNonce, isCurrentSessionOwner }: CollectionNotificationSessionAdmission,
+): void {
   const denialExplained = useRef(false);
   useEffect(() => {
     if (enabled === undefined) return;
     if (enabled === false) {
-      disableCollectionNotifications();
+      void disableCollectionNotifications();
       denialExplained.current = false;
       return;
     }
 
     let active = true;
     let enableAttempt = 0;
+    const isAdmitted = () => active && isCurrentSessionOwner(sessionOwnerNonce);
     const enable = async (requestPermission: boolean) => {
+      if (!isAdmitted()) return;
       const attempt = ++enableAttempt;
       try {
         const granted = await enableCollectionNotifications(requestPermission);
-        if (!active || attempt !== enableAttempt) return;
+        if (attempt !== enableAttempt || !isAdmitted()) return;
         logger.info("collection-notifications", "Native collection notification check completed", {
           event: "collection_notifications_enable_completed",
           requestPermission,
@@ -45,8 +56,8 @@ export function useCollectionNotifications(enabled: boolean | undefined): void {
       } catch (error: unknown) {
         captureException(error, { source: "collection-notifications-enable" });
         if (
-          active &&
           attempt === enableAttempt &&
+          isAdmitted() &&
           requestPermission &&
           AppState.currentState === "active"
         ) {
@@ -69,5 +80,5 @@ export function useCollectionNotifications(enabled: boolean | undefined): void {
       active = false;
       subscription.remove();
     };
-  }, [enabled]);
+  }, [enabled, isCurrentSessionOwner, sessionOwnerNonce]);
 }

@@ -13,7 +13,8 @@ extension CollectionNotificationService {
             SentrySDK.capture(error: error) { scope in
                 scope.setTag(value: identifier, key: "collection_notification")
             }
-        }
+        },
+        generationStore: .makeDefault()
     )
 }
 

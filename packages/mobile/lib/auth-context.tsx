@@ -20,6 +20,7 @@ import {
   getSavedSessionUser,
   getSessionToken,
   invalidateSessionPersistence,
+  retryDurableCollectionNotificationRetirement,
   rotateSessionOwnerNonce,
   saveSessionToken,
   saveSessionUser,
@@ -67,6 +68,8 @@ interface AuthState {
   finishAccountErasureCleanup: (lease: AccountErasureCleanupLease) => void;
   /** Verify that destructive cleanup still belongs to the same local session generation. */
   isAccountErasureCleanupLeaseCurrent: (lease: AccountErasureCleanupLease) => boolean;
+  /** True when the rendered owner nonce still matches the live AuthProvider owner ref. */
+  isCurrentSessionOwner: (nonce: string | null) => boolean;
   /** The session token (for passing to tRPC). */
   sessionToken: string | null;
   /** Called after successful OAuth — stores the session token and fetches the user. */
@@ -178,6 +181,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           );
           startupOutcome = "error";
           return;
+        }
+        // Confirmed foreground signed-out only: retry durable retirement without blocking bootstrap.
+        if (AppState.currentState === "active") {
+          void retryDurableCollectionNotificationRetirement();
         }
         startupOutcome = "unauthenticated";
         return;
@@ -467,6 +474,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const isCurrentSessionOwner = useCallback((nonce: string | null): boolean => {
+    return nonce !== null && userRef.current !== null && sessionOwnerNonceRef.current === nonce;
+  }, []);
+
   const clearLocalAuthState = useCallback(() => {
     sessionGenerationRef.current += 1;
     bootstrapRetryPendingRef.current = false;
@@ -495,8 +506,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     writeSleepWidgetSignedOutMarker();
 
     // Start token/network cleanup before awaiting local storage work so a later rejection
-    // cannot skip secure session removal.
-    const logoutOperation = token ? authLogout(SERVER_URL, token) : clearSessionToken();
+    // cannot skip secure session removal. Attach telemetry immediately so preparation or
+    // cache delays cannot leave a retirement rejection unhandled.
+    const logoutOperation = (token ? authLogout(SERVER_URL, token) : clearSessionToken()).catch(
+      (error: unknown) => {
+        captureException(error, { source: "logout", retiredLifetime: true });
+      },
+    );
 
     // Clear React state immediately so the UI shows the login screen
     clearLocalAuthState();
@@ -506,11 +522,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await removeMobileQueryCache(currentUserId);
     }
 
-    try {
-      await logoutOperation;
-    } catch (error: unknown) {
-      captureException(error, { source: "logout", retiredLifetime: true });
-    }
+    await logoutOperation;
   }, [clearLocalAuthState, sessionToken, user?.id]);
 
   const value = useMemo(
@@ -525,6 +537,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       beginAccountErasureCleanupForNonce,
       finishAccountErasureCleanup,
       isAccountErasureCleanupLeaseCurrent,
+      isCurrentSessionOwner,
       sessionToken,
       onLoginSuccess,
       logout,
@@ -542,6 +555,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       beginAccountErasureCleanupForNonce,
       finishAccountErasureCleanup,
       isAccountErasureCleanupLeaseCurrent,
+      isCurrentSessionOwner,
       logout,
       retryBootstrap,
     ],
