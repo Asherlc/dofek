@@ -15,7 +15,7 @@
   Sentry debug-symbol phase. On the same commit, the unsigned iOS job
   restored the CocoaPods cache (restore + `pod install` ~1m47s, signed
   `pod install` ~2m45s). The cause of the compilation cache misses remains
-  unconfirmed. A local C probe reused a ccache 4.14.3 entry with 4.14.2.
+  unconfirmed.
   [`timeout-minutes`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idtimeout-minutes)
   [earlier signed job](https://github.com/Asherlc/dofek/actions/runs/45881143014/job/140121514895)
   [latest signed job](https://github.com/Asherlc/dofek/actions/runs/45894752390/job/140166536130)
