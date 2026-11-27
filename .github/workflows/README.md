@@ -34,6 +34,13 @@ Xcode 27.2 on GitHub's `xcode-27` runner. Update their pins together when
 upgrading the release toolchain. See the [runner software inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md#xcode)
 and [App Store submission requirements](https://developer.apple.com/app-store/submitting/).
 
+The signed iOS archive restores the CocoaPods cache published by unsigned CI
+using the same dependency key and directory. The key ties restored Pod
+settings and scripts to the selected app configuration and lockfile. The job
+runs `pod install` on every build, fetching dependencies when the cache is
+missing.
+[GitHub Actions cache matching](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#cache-key-matching).
+
 CI uploads its native dependency results and outputs as
 `release-inputs-<run_attempt>` for main pushes. Release / Production is triggered
 by [`workflow_run`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)
