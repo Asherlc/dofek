@@ -59,7 +59,7 @@ final class CollectionNotificationService {
         isCollectionActive: @escaping () -> Bool,
         reportError: @escaping (Error, String) -> Void,
         cleanupQueue: DispatchQueue = DispatchQueue(label: "com.dofek.collection-notification-cleanup"),
-        generationStore: CollectionNotificationGenerationStore
+        generationStore: CollectionNotificationGenerationStore = .makeDefault()
     ) {
         self.center = center
         self.notifications = notifications

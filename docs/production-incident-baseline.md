@@ -40724,6 +40724,14 @@ Local qualification and CI are separate from production throughput acceptance. T
   a failed retirement.
   [Generation store](../packages/mobile/modules/background-refresh/ios/CollectionNotificationGenerationStore.swift)
   · [Session cleanup](../packages/mobile/lib/auth-session.ts).
+- **CI validation (2026-11-27).** The unsigned iOS Release archive and
+  simulator bridge tests passed. The merge was held by
+  `pnpm tsx scripts/run-swift-mutation.ts --merge`, which reported
+  `No finite positive measured mutation denominator`. The sole iOS adapter
+  mutation was marked `notMaterialized` by the macOS Swift package.
+  The shared service initializer now supplies the default store, so the iOS
+  adapter uses the same production wiring through its existing call.
+  [Failed mutation verification](https://github.com/Asherlc/dofek/actions/runs/46028842251/job/140621311884).
 - **Retrospective.** The native stack identified the blocking API directly. If
   the hang recurs, correlating its timestamp with the lifecycle events that request
   cancellation would help identify the initiating path.
