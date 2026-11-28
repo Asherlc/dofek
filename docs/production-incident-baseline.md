@@ -1,5 +1,23 @@
 # Production Incident Baseline
 
+## 2026-11-27 — Hard-coded activity fixture dates blocked CI
+
+- **Impact.** The ClickHouse integration gate blocked PR #3524 and had
+  already failed on main.
+  [PR integration job](https://github.com/Asherlc/dofek/actions/runs/46092357990/job/140816602189) ·
+  [Main integration job](https://github.com/Asherlc/dofek/actions/runs/46020715686/job/140580415452)
+- **Evidence and cause.** The step `pnpm exec vitest run --project integration --coverage --shard=3/5`
+  failed with `AssertionError: expected [ { …(4) } ] to deeply equal [ { …(4) }, { …(4) } ]`
+  in the missing-versus-zero measurements test. The missing-measurement row
+  had a fixed July 30 start time. By both runs it was older than the
+  [model's 120-day initial lookback](../analytics/models/read_models/activity_summary_rows.sql).
+  The July 31 zero-measurement row was still in range. The focused integration
+  test reproduced the missing row against local ClickHouse.
+- **Fix and follow-up.** The fixture derives both dates from the test run's
+  UTC date. All six focused integration tests passed against local ClickHouse.
+  Tests that exercise a rolling lookback should seed timestamps relative to
+  the run or explicitly control the evaluation time.
+
 ## 2026-11-26 — Signed Archive (Release) hit the 30m job cap
 
 - **Impact.** Two signed iOS Archive (Release, signed) jobs were cancelled
