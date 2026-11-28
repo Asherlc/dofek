@@ -380,6 +380,12 @@ async function seedMetricPresenceFixture(
   client: ClickHouseClient,
   targetSchema: string,
 ): Promise<void> {
+  // The empty-target read model backfills only activities started within its
+  // initial lookback (rendered here as 120 days), so keep these dates recent.
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const missingMetricDate = new Date(now - 2 * dayMs).toISOString().slice(0, 10);
+  const zeroMetricDate = new Date(now - 1 * dayMs).toISOString().slice(0, 10);
   await runStatements(client, [
     `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
     `CREATE DATABASE ${targetSchema}`,
@@ -390,9 +396,9 @@ async function seedMetricPresenceFixture(
     createActivityLocationSummaryRowsTableSql(targetSchema),
     buildActivityStepCadenceRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
     buildActivitySummaryRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
-    insertMetricPresenceActivitiesSql(targetSchema),
-    insertMetricPresenceSensorSummarySql(targetSchema),
-    insertMetricPresenceLocationSummarySql(targetSchema),
+    insertMetricPresenceActivitiesSql(targetSchema, missingMetricDate, zeroMetricDate),
+    insertMetricPresenceSensorSummarySql(targetSchema, missingMetricDate, zeroMetricDate),
+    insertMetricPresenceLocationSummarySql(targetSchema, missingMetricDate, zeroMetricDate),
   ]);
 }
 
@@ -521,24 +527,36 @@ function insertStaleRawActivitySummarySql(targetSchema: string): string {
   ('${memberActivityId}', '${testUserId}', 'cycling', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), 0, 0, 0, 100, 0, toDateTime64('2026-06-01 00:00:00', 9, 'UTC'))`;
 }
 
-function insertMetricPresenceActivitiesSql(targetSchema: string): string {
+function insertMetricPresenceActivitiesSql(
+  targetSchema: string,
+  missingMetricDate: string,
+  zeroMetricDate: string,
+): string {
   return `INSERT INTO ${targetSchema}.deduped_activities VALUES
-  ('${missingMetricActivityId}', 'garmin', '${testUserId}', '${missingMetricActivityId}', 'running', 'running', NULL, 'Missing route data', toDateTime64('2026-07-30 08:00:00', 6, 'UTC'), toDateTime64('2026-07-30 09:00:00', 6, 'UTC'), 'Garmin', NULL, 'UTC', NULL, toDateTime64('2026-07-30 09:00:00', 9, 'UTC'), ['garmin'], [], [], [], 100, 0, toDateTime64('2026-07-30 09:00:00', 9, 'UTC')),
-  ('${zeroMetricActivityId}', 'garmin', '${testUserId}', '${zeroMetricActivityId}', 'running', 'running', NULL, 'Recorded zero data', toDateTime64('2026-07-31 08:00:00', 6, 'UTC'), toDateTime64('2026-07-31 09:00:00', 6, 'UTC'), 'Garmin', NULL, 'UTC', NULL, toDateTime64('2026-07-31 09:00:00', 9, 'UTC'), ['garmin'], [], [], [], 100, 0, toDateTime64('2026-07-31 09:00:00', 9, 'UTC'))`;
+  ('${missingMetricActivityId}', 'garmin', '${testUserId}', '${missingMetricActivityId}', 'running', 'running', NULL, 'Missing route data', toDateTime64('${missingMetricDate} 08:00:00', 6, 'UTC'), toDateTime64('${missingMetricDate} 09:00:00', 6, 'UTC'), 'Garmin', NULL, 'UTC', NULL, toDateTime64('${missingMetricDate} 09:00:00', 9, 'UTC'), ['garmin'], [], [], [], 100, 0, toDateTime64('${missingMetricDate} 09:00:00', 9, 'UTC')),
+  ('${zeroMetricActivityId}', 'garmin', '${testUserId}', '${zeroMetricActivityId}', 'running', 'running', NULL, 'Recorded zero data', toDateTime64('${zeroMetricDate} 08:00:00', 6, 'UTC'), toDateTime64('${zeroMetricDate} 09:00:00', 6, 'UTC'), 'Garmin', NULL, 'UTC', NULL, toDateTime64('${zeroMetricDate} 09:00:00', 9, 'UTC'), ['garmin'], [], [], [], 100, 0, toDateTime64('${zeroMetricDate} 09:00:00', 9, 'UTC'))`;
 }
 
-function insertMetricPresenceSensorSummarySql(targetSchema: string): string {
+function insertMetricPresenceSensorSummarySql(
+  targetSchema: string,
+  missingMetricDate: string,
+  zeroMetricDate: string,
+): string {
   return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows
   (activity_id, user_id, elevation_gain_m, elevation_loss_m, refresh_version, is_deleted, refreshed_at)
 VALUES
-  ('${missingMetricActivityId}', '${testUserId}', NULL, NULL, 100, 0, toDateTime64('2026-07-30 09:00:00', 9, 'UTC')),
-  ('${zeroMetricActivityId}', '${testUserId}', 0, 0, 100, 0, toDateTime64('2026-07-31 09:00:00', 9, 'UTC'))`;
+  ('${missingMetricActivityId}', '${testUserId}', NULL, NULL, 100, 0, toDateTime64('${missingMetricDate} 09:00:00', 9, 'UTC')),
+  ('${zeroMetricActivityId}', '${testUserId}', 0, 0, 100, 0, toDateTime64('${zeroMetricDate} 09:00:00', 9, 'UTC'))`;
 }
 
-function insertMetricPresenceLocationSummarySql(targetSchema: string): string {
+function insertMetricPresenceLocationSummarySql(
+  targetSchema: string,
+  missingMetricDate: string,
+  zeroMetricDate: string,
+): string {
   return `INSERT INTO ${targetSchema}.activity_location_summary_rows
   (activity_id, user_id, total_distance, centroid_lat, centroid_lng, refresh_version, is_deleted, refreshed_at)
 VALUES
-  ('${missingMetricActivityId}', '${testUserId}', NULL, 37.1, -122.1, 100, 0, toDateTime64('2026-07-30 09:00:00', 9, 'UTC')),
-  ('${zeroMetricActivityId}', '${testUserId}', 0, 37.1, -122.1, 100, 0, toDateTime64('2026-07-31 09:00:00', 9, 'UTC'))`;
+  ('${missingMetricActivityId}', '${testUserId}', NULL, 37.1, -122.1, 100, 0, toDateTime64('${missingMetricDate} 09:00:00', 9, 'UTC')),
+  ('${zeroMetricActivityId}', '${testUserId}', 0, 37.1, -122.1, 100, 0, toDateTime64('${zeroMetricDate} 09:00:00', 9, 'UTC'))`;
 }
