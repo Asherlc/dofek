@@ -37,10 +37,14 @@ export function useActivityMetrics(
     scopeKey: string | null;
     sources: ActivityMetricSourceSelection;
   } | null>(null);
-  const sources = offeredActivityMetricSources(
-    selection?.scopeKey === scopeKey ? selection.sources : undefined,
-    metricSources.data,
-  );
+  // Wait for the server's default source IDs before requesting source-dependent data.
+  // Without this, an implicit stream request is replaced by one keyed to explicit
+  // defaults, staging the controls separately from the readings they describe.
+  // TanStack keeps cached catalogue data on background errors, so a settled error
+  // with cached data still resolves the choices.
+  const sourcesResolved = metricSources.data != null || metricSources.error != null;
+  const selectedSources = selection?.scopeKey === scopeKey ? selection.sources : undefined;
+  const sources = offeredActivityMetricSources(selectedSources, metricSources.data);
   const sourceControls = (metricSources.data ?? []).map((metric) => ({
     ...metric,
     selectedId: sources[metric.key] ?? metric.defaultSourceId,
@@ -56,10 +60,12 @@ export function useActivityMetrics(
   const heartRateSourceInput = sources.heartRate ? { heartRateSourceId: sources.heartRate } : {};
   const streamInput: StreamInput = { id, maxPoints: 500, sources };
   const stream = trpc.activity.stream.useQuery(streamInput, {
+    enabled: sourcesResolved,
     placeholderData: activityQueryPlaceholder(id),
   });
   const hrInput: HrZonesInput = { id, ...heartRateSourceInput };
   const hrZones = trpc.activity.hrZones.useQuery(hrInput, {
+    enabled: sourcesResolved,
     placeholderData: activityQueryPlaceholder(id),
   });
   const points = stream.data ?? [];
@@ -68,15 +74,15 @@ export function useActivityMetrics(
   const powerZonesInput: PowerZonesInput = { id, powerSourceId: sources.power };
   const contextInput: ContextInput = { id, maxPoints: 500, ...heartRateSourceInput };
   const powerWork = trpc.activity.powerWork.useQuery(powerWorkInput, {
-    enabled: isCycling,
+    enabled: sourcesResolved && isCycling,
     placeholderData: activityQueryPlaceholder(id),
   });
   const powerZones = trpc.activity.powerZones.useQuery(powerZonesInput, {
-    enabled: isCycling && (hasRecordedPower || hasPower),
+    enabled: sourcesResolved && isCycling && (hasRecordedPower || hasPower),
     placeholderData: activityQueryPlaceholder(id),
   });
   const heartRateContext = trpc.activity.heartRateContext.useQuery(contextInput, {
-    enabled: isClimbing,
+    enabled: sourcesResolved && isClimbing,
     placeholderData: activityQueryPlaceholder(id),
   });
   const streamSources = activityMetricSourceBindings(streamInput.sources ?? {}, metricSources.data);
@@ -124,8 +130,18 @@ export function useActivityMetrics(
     if (hint) streamAttributionHints[metric.key] = hint;
   }
 
+  const streamMissing = stream.data === undefined && !stream.isError && stream.error == null;
+  const contextMissing =
+    isClimbing &&
+    heartRateContext.data === undefined &&
+    !heartRateContext.isError &&
+    heartRateContext.error == null &&
+    selectedSources?.heartRate == null;
+  const initialChartPending = !sourcesResolved || streamMissing || contextMissing;
+
   return {
     metricSources,
+    initialChartPending,
     sources,
     sourceControls,
     stream,

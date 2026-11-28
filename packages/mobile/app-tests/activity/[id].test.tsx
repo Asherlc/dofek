@@ -770,6 +770,55 @@ describe("ActivityDetailScreen", () => {
     expect(screen.queryByText("Updating metrics…")).toBeNull();
   });
 
+  it("reserves chart loading until source controls and their readings are ready together", () => {
+    mocks.metricSourcesQuery.mockReturnValue({
+      ...defaultObserver(undefined),
+      isLoading: true,
+    });
+    const view = renderActivityDetail();
+    openPerformance();
+    expect(screen.getByText("Loading charts...")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /source:/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Performance metrics:/ })).toBeNull();
+    expect(screen.queryByText("Updating metrics…")).toBeNull();
+
+    mocks.metricSourcesQuery.mockReturnValue(defaultObserver(activityDetailMetricSources));
+    mocks.streamQuery.mockReturnValue({
+      ...defaultObserver(undefined),
+      isLoading: true,
+      isFetching: true,
+    });
+    view.rerender(<ActivityDetailScreen />);
+    expect(screen.getByText("Loading charts...")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /source:/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Performance metrics:/ })).toBeNull();
+    expect(screen.queryByText("Updating metrics…")).toBeNull();
+
+    mocks.streamQuery.mockReturnValue(defaultObserver(streamPointsWithHrAndPower));
+    view.rerender(<ActivityDetailScreen />);
+    expect(screen.queryByText("Loading charts...")).toBeNull();
+    expect(screen.getByRole("button", { name: /source:/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Performance metrics:/ })).toBeTruthy();
+    expect(screen.getByRole("image", { name: /Heart Rate over activity time/ })).toBeTruthy();
+  });
+
+  it("keeps the initial metric when late HR zones make heart rate available", () => {
+    const powerOnly = streamPointsWithHrAndPower.map((point) => ({ ...point, heartRate: null }));
+    mocks.streamQuery.mockReturnValue(defaultObserver(powerOnly));
+    const view = renderActivityDetail();
+    openPerformance();
+    expect(screen.getByRole("button", { name: "View Power data" })).toBeTruthy();
+
+    mocks.hrZonesQuery.mockReturnValue(
+      defaultObserver([
+        { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 100 },
+      ]),
+    );
+    view.rerender(<ActivityDetailScreen />);
+    expect(screen.getByRole("button", { name: "View Power data" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "View Heart Rate data" })).toBeNull();
+  });
+
   it("does not show the previous ride's output after navigating to another activity", async () => {
     const previousWork = powerWorkBySource.wahoo;
     mocks.powerWorkQuery.mockImplementation((input: { id: string }, options: unknown) => ({
@@ -1180,7 +1229,17 @@ it("keeps mobile pickers available after a source read fails", async () => {
   expect(screen.getByRole("button", { name: "Heart Rate source: Garmin" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "View Heart Rate data" }));
   expect(screen.getByText("140 bpm")).toBeTruthy();
-  expect(screen.getByText("Showing previous readings from WHOOP")).toBeTruthy();
+  const priorReadingsHint = screen.getByText("Showing previous readings from WHOOP");
+  expect(priorReadingsHint).toBeTruthy();
+  expect(screen.getByText("Updating metrics…")).toBeTruthy();
+  const plot = screen.getByRole("image", { name: /Heart Rate over activity time/ });
+  expect(
+    plot.compareDocumentPosition(priorReadingsHint) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    plot.compareDocumentPosition(screen.getByText("Updating metrics…")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   failGarminRead();
   routeView.rerender(<ActivityDetailScreen />);
   fireEvent.click(screen.getByRole("button", { name: "Heart Rate source: Garmin" }));

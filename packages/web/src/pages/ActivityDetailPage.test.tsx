@@ -4,6 +4,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import type { AppRouterOutputs } from "dofek-server/router";
 import type { ComponentType } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { ActivityMetricSources } from "../../../server/src/contracts/activity-metric-sources.ts";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { sourceHardware } from "../components/ActivitySourceDisclosure.fixtures.ts";
 import { UnitContext } from "../lib/unitContext.ts";
@@ -219,6 +220,54 @@ describe("ActivityDetailPage", () => {
     renderWithUnits(<ActivityDetailPage />);
 
     expect(screen.getAllByTestId("chart-loading-skeleton")).toHaveLength(2);
+  });
+
+  it("reserves one chart-sized loading area until controls and their readings are ready together", () => {
+    mockMetricSourcesUseQuery.mockReturnValue(
+      queryResult<ActivityMetricSources>(undefined, { isLoading: true }),
+    );
+    mockStreamUseQuery.mockReturnValue(queryResult(mockStreamPoints));
+    const view = renderWithUnits(<ActivityDetailPage />);
+
+    const performance = () => {
+      const section = screen.getByRole("heading", { name: "Performance" }).closest("section");
+      if (!section) throw new Error("Performance section is missing");
+      return section;
+    };
+    const busyStatuses = () =>
+      screen.queryAllByRole("status").filter((node) => node.getAttribute("aria-busy") === "true");
+    expect(within(performance()).getByTestId("query-state-loading")).toBeTruthy();
+    expect(busyStatuses()).toHaveLength(1);
+    expect(busyStatuses()[0]?.getAttribute("aria-label")).toBe("Loading performance chart.");
+    expect(within(performance()).queryByTestId("echarts")).toBeNull();
+    expect(within(performance()).queryByText("Chart controls")).toBeNull();
+    expect(screen.queryByText("Updating metrics…")).toBeNull();
+
+    mockMetricSourcesUseQuery.mockReturnValue(queryResult(detailPageMetricSources));
+    mockStreamUseQuery.mockReturnValue(
+      queryResult<typeof mockStreamPoints>(undefined, { isLoading: true, isFetching: true }),
+    );
+    view.rerender(
+      <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+        <ActivityDetailPage />
+      </UnitContext.Provider>,
+    );
+    expect(within(performance()).getByTestId("query-state-loading")).toBeTruthy();
+    expect(busyStatuses()).toHaveLength(1);
+    expect(busyStatuses()[0]?.getAttribute("aria-label")).toBe("Loading performance chart.");
+    expect(within(performance()).queryByText("Chart controls")).toBeNull();
+    expect(screen.queryByText("Updating metrics…")).toBeNull();
+
+    mockStreamUseQuery.mockReturnValue(queryResult(mockStreamPoints));
+    view.rerender(
+      <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+        <ActivityDetailPage />
+      </UnitContext.Provider>,
+    );
+    expect(within(performance()).queryByTestId("query-state-loading")).toBeNull();
+    expect(busyStatuses()).toHaveLength(0);
+    expect(within(performance()).getByText("Chart controls")).toBeTruthy();
+    expect(within(performance()).getByTestId("echarts")).toBeTruthy();
   });
   it("does not bind chart hover events when stream points have no GPS coordinates", async () => {
     mockStreamUseQuery.mockReturnValue(
@@ -886,7 +935,19 @@ describe("ActivityDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Heart Rate source:/ }));
     fireEvent.click(screen.getByRole("radio", { name: "Heart rate B" }));
     expect(screen.getByRole("button", { name: "Heart Rate source: Heart rate B" })).toBeVisible();
-    expect(screen.getByText("Showing previous readings from Heart rate A")).toBeVisible();
+    const priorReadingsHint = screen.getByText("Showing previous readings from Heart rate A");
+    expect(priorReadingsHint).toBeVisible();
+    expect(screen.getByText("Updating metrics…")).toBeVisible();
+    const performance = screen.getByRole("heading", { name: "Performance" }).closest("section");
+    if (!performance) throw new Error("Performance section is missing");
+    const plot = within(performance).getByTestId("echarts");
+    expect(
+      plot.compareDocumentPosition(priorReadingsHint) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      plot.compareDocumentPosition(screen.getByText("Updating metrics…")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     const series = [...capturedOptions]
       .reverse()
       .find(

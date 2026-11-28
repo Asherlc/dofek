@@ -69,6 +69,7 @@ export function ActivityDetailPage() {
     powerWork,
     powerZones,
     heartRateContext,
+    initialChartPending,
   } = metrics;
   const metricsUpdating =
     stream.isFetching ||
@@ -184,7 +185,8 @@ export function ActivityDetailPage() {
     hasSpeed ||
     hasCadence ||
     sourceControls.some((metric) => metric.key !== "altitude");
-  const showPerformance = hasPerformanceChart || runningFormReadings.length > 0;
+  const showPerformance =
+    hasPerformanceChart || runningFormReadings.length > 0 || initialChartPending;
   const showHrZones = hrZones.error != null || hasHr || zones.length > 0;
   const hrZonesHaveCachedData = zones.length > 0;
   const strengthExercisesHaveCachedData = exercises.length > 0;
@@ -254,16 +256,6 @@ export function ActivityDetailPage() {
 
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
-      {metricSources.error && <QueryStatePanel error={metricSources.error} height={72} />}
-      {isClimbingActivity && heartRateContext.error && (
-        <QueryStatePanel error={heartRateContext.error} height={72} />
-      )}
-      {stream.error ? (
-        <Section title="Sensor Data">
-          <QueryStatePanel error={stream.error} height={72} />
-        </Section>
-      ) : null}
-
       {!(
         isClimbingActivity &&
         ((climbingEntries.data?.length ?? 0) > 0 || (entrySuggestions.data?.length ?? 0) > 0)
@@ -298,45 +290,48 @@ export function ActivityDetailPage() {
 
       {showPerformance && (
         <Section title="Performance">
-          {hasPerformanceChart && (
-            <>
-              {sourceControls.length > 0 && metricsUpdating && (
-                <p role="status" className="mb-2 text-xs text-muted">
-                  Updating metrics…
-                </p>
-              )}
-              <MetricsChart
-                heartRateContext={isClimbingActivity ? heartRateContext.data : undefined}
-                activityWindow={activity}
-                highlightedClimbId={highlightedClimbId ?? activeClimbId}
-                selectedClimbId={activeClimbId}
-                onSelectClimb={setActiveClimbId}
-                climbAnnotations={
-                  isClimbingActivity
-                    ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
-                    : undefined
-                }
-                points={points}
-                activityType={activity.activityType}
-                hasHr={hasHr}
-                hasPower={hasPower}
-                hasSpeed={hasSpeed}
-                hasCadence={hasCadence}
-                loading={stream.isLoading}
-                error={stream.error}
-                metricSources={sourceControls.filter((metric) => metric.key !== "altitude")}
-                sourceAttribution={{
-                  ...metrics.attributionHints.stream,
-                  heartRate:
-                    isClimbingActivity && heartRateContext.data !== undefined
-                      ? metrics.attributionHints.heartRateContext
-                      : metrics.attributionHints.stream.heartRate,
-                }}
-                units={units}
-                onHoverPosition={hasGps ? handleChartHover : undefined}
-              />
-            </>
-          )}
+          {initialChartPending ? (
+            <QueryStatePanel variant="loading" contextLabel="Performance chart" height={380} />
+          ) : hasPerformanceChart ? (
+            <MetricsChart
+              heartRateContext={isClimbingActivity ? heartRateContext.data : undefined}
+              activityWindow={activity}
+              highlightedClimbId={highlightedClimbId ?? activeClimbId}
+              selectedClimbId={activeClimbId}
+              onSelectClimb={setActiveClimbId}
+              climbAnnotations={
+                isClimbingActivity
+                  ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
+                  : undefined
+              }
+              points={points}
+              activityType={activity.activityType}
+              hasHr={hasHr}
+              hasPower={hasPower}
+              hasSpeed={hasSpeed}
+              hasCadence={hasCadence}
+              loading={stream.isLoading}
+              error={stream.error}
+              metricSources={sourceControls.filter((metric) => metric.key !== "altitude")}
+              sourceAttribution={{
+                ...metrics.attributionHints.stream,
+                heartRate:
+                  isClimbingActivity && heartRateContext.data !== undefined
+                    ? metrics.attributionHints.heartRateContext
+                    : metrics.attributionHints.stream.heartRate,
+              }}
+              units={units}
+              onHoverPosition={hasGps ? handleChartHover : undefined}
+            />
+          ) : null}
+          {hasPerformanceChart &&
+            sourceControls.length > 0 &&
+            metricsUpdating &&
+            !initialChartPending && (
+              <p role="status" className="mt-2 text-xs text-muted">
+                Updating metrics…
+              </p>
+            )}
           {runningFormReadings.length > 0 && (
             <div
               className={hasPerformanceChart ? "mt-4 border-t border-border/60 pt-4" : undefined}
@@ -357,6 +352,16 @@ export function ActivityDetailPage() {
           )}
         </Section>
       )}
+
+      {metricSources.error && <QueryStatePanel error={metricSources.error} height={72} />}
+      {isClimbingActivity && heartRateContext.error && (
+        <QueryStatePanel error={heartRateContext.error} height={72} />
+      )}
+      {stream.error ? (
+        <Section title="Sensor Data">
+          <QueryStatePanel error={stream.error} height={72} />
+        </Section>
+      ) : null}
 
       {isCycling && plannedIntervals.error && !plannedIntervals.data ? (
         <QueryStatePanel error={plannedIntervals.error} height={72} />
