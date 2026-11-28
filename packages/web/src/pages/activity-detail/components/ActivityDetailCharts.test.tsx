@@ -963,6 +963,53 @@ describe("MetricsChart custom legend", () => {
     expect(powerAxis()).toMatchObject({ show: true });
   });
 
+  it("places titles beside multiple right-hand axes and restores a lone horizontal title", () => {
+    render(
+      <MetricsChart
+        {...args}
+        points={skinTemperaturePoints}
+        metricSources={[
+          {
+            key: "skinTemperature",
+            label: "Skin Temperature",
+            sources: [],
+            selectedId: '["whoop_ble","strap-a"]',
+            onChange: vi.fn(),
+          },
+        ]}
+      />,
+    );
+
+    const verticalTitle = { nameLocation: "middle", nameRotate: 90, nameGap: 43 };
+    const horizontalTitle = { nameLocation: "end", nameRotate: 0, nameGap: 15 };
+    expect(captured.option.yAxis).toMatchObject([
+      { name: "Heart Rate (bpm)", position: "left", ...horizontalTitle },
+      { name: "Power (W)", offset: 0, ...verticalTitle },
+      { name: "Speed (km/h)", offset: 60, ...verticalTitle },
+      { name: "Cadence (rpm)", offset: 120, ...verticalTitle },
+      { name: "Skin Temperature (°C)", offset: 180, ...verticalTitle },
+    ]);
+
+    for (const name of ["Toggle Power", "Toggle Speed", "Toggle Cadence"]) {
+      fireEvent.click(screen.getByRole("button", { name }));
+    }
+    expect(captured.option.yAxis).toMatchObject([
+      { name: "Heart Rate (bpm)", show: true, ...horizontalTitle },
+      { show: false },
+      { show: false },
+      { show: false },
+      { name: "Skin Temperature (°C)", show: true, offset: 0, ...horizontalTitle },
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle Power" }));
+    expect(captured.option.yAxis).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "Power (W)", offset: 0, ...verticalTitle }),
+        expect.objectContaining({ name: "Skin Temperature (°C)", offset: 60, ...verticalTitle }),
+      ]),
+    );
+  });
+
   it("preserves metric visibility when source data changes", () => {
     const chart = render(<MetricsChart {...args} renderLegend={customLegend} />);
     fireEvent.click(screen.getByRole("button", { name: "Power" }));

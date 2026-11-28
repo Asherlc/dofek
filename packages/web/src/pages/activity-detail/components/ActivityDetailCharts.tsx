@@ -364,6 +364,7 @@ export function MetricsChart({
     formatter: () =>
       `${escapeTooltipHtml(annotation.label)}<br/>${escapeTooltipHtml(formatDateTime(new Date(annotation.startedAt)))}${annotation.endedAt ? ` – ${escapeTooltipHtml(formatDateTime(new Date(annotation.endedAt)))}` : ""}`,
   });
+  const visibleRightAxisCount = metrics.slice(1).filter((metric) => isVisible(metric.name)).length;
   const yAxes = metrics.map((metric, index) => {
     const visible = isVisible(metric.name);
     const isFirst = index === 0;
@@ -371,6 +372,7 @@ export function MetricsChart({
     const visibleRightBefore = metrics.slice(1, index).filter((m) => isVisible(m.name)).length;
     const firstVisibleIndex = metrics.findIndex((m) => isVisible(m.name));
     const showSplitLine = visible && index === firstVisibleIndex;
+    const verticalTitle = !isFirst && visibleRightAxisCount > 1;
 
     return {
       ...dofekAxis.value({
@@ -386,6 +388,9 @@ export function MetricsChart({
       }),
       show: visible,
       offset: !isFirst && visibleRightBefore > 0 ? visibleRightBefore * 60 : 0,
+      nameLocation: verticalTitle ? "middle" : "end",
+      nameRotate: verticalTitle ? 90 : 0,
+      nameGap: verticalTitle ? 43 : 15,
     };
   });
 
@@ -476,8 +481,6 @@ export function MetricsChart({
         }
       : {}),
   }));
-
-  const visibleRightAxisCount = metrics.slice(1).filter((m) => isVisible(m.name)).length;
 
   const option = {
     aria: {
