@@ -40828,3 +40828,38 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Retrospective.** The native stack identified the blocking API directly. If
   the hang recurs, correlating its timestamp with the lifecycle events that request
   cancellation would help identify the initiating path.
+
+## 2026-11-27 (Pacific) — Pending server release kept the Activities fix out of production
+
+- **Impact and evidence.** The user reported that the web Activities page still
+  loaded slowly. At 00:44:09 UTC on November 28, an authenticated tRPC batch
+  returned HTTP 200 in 11,779 ms. Its `calendar.weekListV2` cache miss took
+  11,771 ms. A later batch containing the same procedure returned in 17 ms.
+  Axiom `dofek-logs` trace `30459f59c67ca450f92aad2aac2ba932` contains the slow
+  request and procedure timing. The trace was absent from `dofek-traces`.
+  PostgreSQL slow-statement logs in the request window recorded the dated
+  cycling FTP lookup at 7,006 ms and climbing-log hydration at 4,152 ms, ending
+  at 00:44:05.089 and 00:44:09.399 UTC respectively. The requested date range
+  and filters are unknown.
+- **Cause.** Both web replicas and the worker were healthy on `7b7ebfa00`,
+  which predates the [Activities fix](https://github.com/Asherlc/dofek/pull/3515).
+  That fix [passed main CI](https://github.com/Asherlc/dofek/actions/runs/45724790089).
+  Its server release failed at **Admit forward-only server publication and
+  record intent** with `unresolved server publication 8061887800 (PENDING)`.
+  The [preceding stack rollout](https://github.com/Asherlc/dofek/actions/runs/45644846134/job/139314325367)
+  completed, but **Verify live web and worker identity before finalizing**
+  reported `unexpected end of JSON input` after validating the web and worker
+  image digests. The log does not identify which JSON operation failed.
+  GitHub still recorded deployment `8061887800` as pending at investigation.
+  [Admission failure](https://github.com/Asherlc/dofek/actions/runs/45727393982/job/139600655348)
+  · [Previous finalizer](https://github.com/Asherlc/dofek/actions/runs/45644846134/job/139332093511).
+- **Recovery and remaining risk.** The [publication recovery runbook](../deploy/README.md#publication-recovery)
+  specifies rerunning the original receipt finalizer when the stack completed.
+  After the existing release is verified, publish the CI-validated server
+  image containing the Activities fix and measure uncached `calendar.weekListV2`
+  again. Climbing-log hydration remains on the list path and needs a fresh
+  measurement after release.
+- **Retrospective.** Comparing the live container revision with the exact
+  release job distinguished an unpublished performance fix from a regression.
+  The loading runbook could ask operators to confirm the live revision before
+  profiling a reported recurrence of a merged fix.
