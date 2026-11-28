@@ -21,14 +21,12 @@ export function CompletedActivityCard({
   units,
   selectMode,
   selected,
-  showCompleted = false,
   onPress,
 }: {
   activity: Activity;
   units: ReturnType<typeof useUnitConverter>;
   selectMode: boolean;
   selected: boolean;
-  showCompleted?: boolean;
   onPress: () => void;
 }) {
   return (
@@ -69,7 +67,6 @@ export function CompletedActivityCard({
               {activity.name ??
                 formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
             </Text>
-            {showCompleted ? <Text style={styles.typePill}>Completed</Text> : null}
             {selectMode ? (
               <Text style={[styles.selectionPill, selected ? styles.selectionPillSelected : null]}>
                 {selected ? "Selected" : "Select"}

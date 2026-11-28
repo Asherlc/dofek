@@ -393,6 +393,24 @@ const mapPreview = {
 };
 
 describe("ActivitiesPage", () => {
+  it("opens Completed and makes both views reachable by keyboard", () => {
+    render(<ActivitiesPage />);
+    const completed = screen.getByRole("tab", { name: "Completed", selected: true });
+    const upcoming = screen.getByRole("tab", { name: "Upcoming", selected: false });
+    expect(completed.tabIndex).toBe(0);
+    expect(upcoming.tabIndex).toBe(-1);
+
+    completed.focus();
+    fireEvent.keyDown(completed, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(upcoming);
+    expect(upcoming.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tabpanel", { name: "Upcoming" }).tabIndex).toBe(0);
+
+    fireEvent.keyDown(upcoming, { key: "Home" });
+    expect(document.activeElement).toBe(completed);
+    expect(completed.getAttribute("aria-selected")).toBe("true");
+  });
+
   it("uses the primary activity type for unnamed activity links and selection labels", () => {
     mockQuery = {
       data: [
@@ -419,7 +437,7 @@ describe("ActivitiesPage", () => {
     expect(screen.getByRole("checkbox", { name: "Select Running" })).toBeDefined();
   });
 
-  it("renders planned rows in the workout calendar without changing completed totals", () => {
+  it("renders planned rows in Upcoming without changing completed totals", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       vi.setSystemTime(new Date(2026, 10, 24, 12));
@@ -434,14 +452,15 @@ describe("ActivitiesPage", () => {
       };
 
       render(<ActivitiesPage />);
+      fireEvent.click(screen.getByRole("tab", { name: "Upcoming" }));
 
       expect(screen.getByRole("heading", { name: "Workout calendar" })).toBeDefined();
       expect(screen.getByText("Threshold intervals")).toBeDefined();
       expect(screen.getByText("Planned")).toBeDefined();
       expect(upcomingQueryInput).toMatchObject({
-        dateRange: { startDate: "2026-11-23", endDate: "2026-11-29" },
+        dateRange: { startDate: "2026-11-24", endDate: "2027-02-21" },
       });
-      expect(screen.getByText("0")).toBeDefined();
+      expect(overviewOptions?.enabled).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -1108,7 +1127,7 @@ describe("ActivitiesPage", () => {
       weeks: 1,
       startDate: expect.any(String),
       endDate: expect.any(String),
-      dateOrder: "oldest",
+      dateOrder: "newest",
       includeProviderAbsent: true,
       page: 0,
       pageSize: 20,
@@ -1725,25 +1744,20 @@ describe("ActivitiesPage", () => {
       vi.useRealTimers();
     });
 
-    it("merges a mixed this-week day with Planned and Completed labels under Workout calendar", () => {
+    it("defaults to newest completed timestamps and switches to all of today's and future plans", () => {
       mockQuery = {
         data: [
           {
             date: "2026-11-24",
             activities: [
-              activity({
-                id: "ride-1",
-                name: "Morning ride",
-                activityType: "road_cycling",
-                startedAt: "2026-11-24T15:08:00.000Z",
-                source: {
-                  tree: { primary: null, otherSources: [] },
-                  origin: { status: "unresolved", candidateMemberActivityIds: [] },
-                  primarySourceLabel: "Garmin Connect",
-                  sourceCount: 1,
-                  overlapSummary: null,
-                },
-              }),
+              activity({ id: "late", name: "Evening ride", startedAt: "2026-11-24T20:00:00Z" }),
+              activity({ id: "early", name: "Morning ride", startedAt: "2026-11-24T08:00:00Z" }),
+            ],
+          },
+          {
+            date: "2026-11-23",
+            activities: [
+              activity({ id: "older", name: "Yesterday ride", startedAt: "2026-11-23T08:00:00Z" }),
             ],
           },
         ],
@@ -1752,6 +1766,15 @@ describe("ActivitiesPage", () => {
         isSuccess: true,
         error: null,
       };
+      const plan = (id: string, sportType: string | null, startTime: string | null) => ({
+        id,
+        title: id,
+        sportType,
+        startTime,
+        providerId: "intervals.icu",
+        description: null,
+        steps: [],
+      });
       mockUpcomingQuery = {
         ...mockUpcomingQuery,
         isSuccess: true,
@@ -1759,61 +1782,55 @@ describe("ActivitiesPage", () => {
           {
             date: "2026-11-24",
             workouts: [
-              {
-                id: "plan-1",
-                providerId: "intervals.icu",
-                title: "Tempo intervals",
-                description: null,
-                sportType: "cycling",
-                startTime: "07:00",
-                steps: [],
-              },
+              plan("Earlier today", "cycling", "06:00"),
+              plan("Later today", "running", "18:00"),
+              plan("Untimed today", null, null),
             ],
           },
-          {
-            date: "2026-11-26",
-            workouts: [
-              {
-                id: "plan-2",
-                providerId: "intervals.icu",
-                title: "Easy endurance",
-                description: null,
-                sportType: "cycling",
-                startTime: null,
-                steps: [],
-              },
-            ],
-          },
+          { date: "2026-11-26", workouts: [plan("Future ride", "cycling", "09:00")] },
         ],
       };
-
+      if (mockOverviewQuery.data) mockOverviewQuery.data.activityTypes = ["running"];
       render(<ActivitiesPage />);
-
-      expect(screen.getByRole("heading", { name: "Workout calendar" })).toBeDefined();
-      expect(screen.getByText(/Nov 23.*29, 2026/)).toBeDefined();
-      expect(screen.getByLabelText("Date range")).toHaveProperty("value", "this-week");
-      expect(weekListInput).toMatchObject({
-        startDate: "2026-11-23",
-        endDate: "2026-11-29",
-        weeks: 1,
-        dateOrder: "oldest",
-        page: 0,
-        pageSize: 20,
-      });
+      expect(weekListInput).toMatchObject({ dateOrder: "newest", page: 0 });
+      expect(upcomingOptions).toMatchObject({ enabled: false });
+      expect(screen.getByRole("tab", { name: "Completed" }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+      const before = (first: string, second: string) =>
+        expect(
+          screen.getByText(first).compareDocumentPosition(screen.getByText(second)) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      before("Evening ride", "Morning ride");
+      before("Morning ride", "Yesterday ride");
+      expect(screen.queryByText("Earlier today")).toBeNull();
+      fireEvent.change(screen.getByLabelText("Activity type"), { target: { value: "running" } });
+      fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select Evening ride" }));
+      fireEvent.click(screen.getByRole("tab", { name: "Upcoming" }));
+      expect(upcomingOptions).toMatchObject({ enabled: true });
       expect(upcomingQueryInput).toEqual({
-        dateRange: { startDate: "2026-11-23", endDate: "2026-11-29" },
+        dateRange: { startDate: "2026-11-24", endDate: "2027-02-21" },
       });
-      expect(screen.getByText("Tempo intervals")).toBeDefined();
-      expect(screen.getByText("Morning ride")).toBeDefined();
-      expect(screen.getByText("Easy endurance")).toBeDefined();
-      expect(screen.getAllByText("Planned").length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText("Completed").length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText(/Intervals\.icu/).length).toBeGreaterThanOrEqual(1);
-      expect(screen.queryByRole("heading", { name: "Upcoming workouts" })).toBeNull();
-      expect(screen.getAllByText("No workouts").length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText("Evening ride")).toBeNull();
+      before("Earlier today", "Later today");
+      before("Later today", "Untimed today");
+      before("Untimed today", "Future ride");
+      fireEvent.change(screen.getByLabelText("Activity type"), { target: { value: "cycling" } });
+      expect(screen.getByText("Earlier today")).toBeDefined();
+      expect(screen.getByText("Future ride")).toBeDefined();
+      expect(screen.queryByText("Later today")).toBeNull();
+      expect(screen.queryByText("Untimed today")).toBeNull();
+      expect(upcomingQueryInput).toEqual({
+        dateRange: { startDate: "2026-11-24", endDate: "2027-02-21" },
+      });
+      fireEvent.click(screen.getByRole("tab", { name: "Completed" }));
+      expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
+      expect(screen.getByText("Evening ride")).toBeDefined();
+      expect(weekListInput).toMatchObject({ activityType: "running" });
     });
-
-    it("includes recorded search in shared connection retry while Next 90 days stays selected", () => {
+    it("includes recorded search in shared connection retry in Completed", () => {
       const searchRefetch = vi.fn();
       const processingRefetch = vi.fn();
       const message = "We couldn't reach the server. Check your connection and try again.";
@@ -1832,7 +1849,6 @@ describe("ActivitiesPage", () => {
       };
 
       render(<ActivitiesPage />);
-      fireEvent.change(screen.getByLabelText("Date range"), { target: { value: "next-90-days" } });
       fireEvent.change(screen.getByRole("searchbox", { name: "Search activity titles" }), {
         target: { value: "Ride" },
       });
@@ -1842,31 +1858,6 @@ describe("ActivitiesPage", () => {
       fireEvent.click(screen.getByRole("button", { name: "Retry" }));
       expect(searchRefetch).toHaveBeenCalledOnce();
       expect(processingRefetch).toHaveBeenCalledOnce();
-    });
-
-    it("shows a future-only range without a recorded overview and keeps known sports", () => {
-      const overviewData = mockOverviewQuery.data;
-      if (overviewData == null) throw new Error("expected overview fixture");
-      mockOverviewQuery = {
-        ...mockOverviewQuery,
-        data: {
-          ...overviewData,
-          activityTypes: ["cycling", "running"],
-        },
-      };
-      const { rerender } = render(<ActivitiesPage />);
-      fireEvent.change(screen.getByLabelText("Date range"), { target: { value: "next-90-days" } });
-      mockOverviewQuery = { ...mockOverviewQuery, data: undefined };
-      rerender(<ActivitiesPage />);
-
-      expect(weekListOptions?.enabled).toBe(false);
-      expect(overviewOptions?.enabled).toBe(false);
-      expect(upcomingQueryInput).toEqual({
-        dateRange: { startDate: "2026-11-25", endDate: "2027-02-22" },
-      });
-      fireEvent.change(screen.getByLabelText("Activity type"), { target: { value: "cycling" } });
-      expect(upcomingQueryInput).toMatchObject({ activityType: "cycling" });
-      expect(screen.getByRole("option", { name: "Cycling" })).toBeDefined();
     });
 
     it("does not show empty weekday copy while a feed is still in flight", () => {
@@ -1923,70 +1914,17 @@ describe("ActivitiesPage", () => {
       };
 
       render(<ActivitiesPage />);
+      fireEvent.click(screen.getByRole("tab", { name: "Upcoming" }));
 
       expect(upcomingQueryInput).toEqual({
-        dateRange: { startDate: "2026-11-23", endDate: "2026-11-29" },
+        dateRange: { startDate: "2026-11-24", endDate: "2027-02-21" },
       });
       expect(screen.getByText("Easy endurance")).toBeDefined();
-      expect(screen.getByText("Activity history is unavailable.")).toBeDefined();
+      expect(screen.queryByText("Activity history is unavailable.")).toBeNull();
       expect(screen.queryByText("No workouts in this date range.")).toBeNull();
     });
 
-    it("does not mix planned rows across a date-range change", () => {
-      mockUpcomingQuery = {
-        ...mockUpcomingQuery,
-        data: [
-          {
-            date: "2026-11-26",
-            workouts: [
-              {
-                id: "this-week-plan",
-                providerId: "intervals.icu",
-                title: "This week plan",
-                description: null,
-                sportType: "cycling",
-                startTime: null,
-                steps: [],
-              },
-            ],
-          },
-        ],
-        isSuccess: true,
-      };
-      render(<ActivitiesPage />);
-      expect(screen.getByText("This week plan")).toBeDefined();
-
-      mockUpcomingQuery = {
-        ...mockUpcomingQuery,
-        data: [
-          {
-            date: "2026-10-30",
-            workouts: [
-              {
-                id: "four-week-plan",
-                providerId: "intervals.icu",
-                title: "Four week plan",
-                description: null,
-                sportType: "cycling",
-                startTime: null,
-                steps: [],
-              },
-            ],
-          },
-        ],
-        isSuccess: true,
-      };
-      fireEvent.change(screen.getByLabelText("Date range"), { target: { value: "4-weeks" } });
-
-      expect(upcomingQueryInput).toEqual({
-        dateRange: { startDate: "2026-10-28", endDate: "2026-11-24" },
-      });
-      expect(upcomingOptions?.placeholderData).toBeUndefined();
-      expect(screen.getByText("Four week plan")).toBeDefined();
-      expect(screen.queryByText("This week plan")).toBeNull();
-    });
-
-    it("keeps showing-page planned ownership while same-range paging uses placeholder data", () => {
+    it("keeps completed cards while same-range paging uses placeholder data", () => {
       mockQuery = {
         data: [
           {
@@ -2001,43 +1939,8 @@ describe("ActivitiesPage", () => {
         isSuccess: true,
         isPlaceholderData: false,
         page: 0,
-        plannedWindow: { startDate: "2026-11-20", endDate: "2026-11-24" },
         totalCount: 40,
         error: null,
-      };
-      mockUpcomingQuery = {
-        ...mockUpcomingQuery,
-        isSuccess: true,
-        data: [
-          {
-            date: "2026-11-22",
-            workouts: [
-              {
-                id: "owned-plan",
-                providerId: "intervals.icu",
-                title: "Owned page plan",
-                description: null,
-                sportType: "cycling",
-                startTime: null,
-                steps: [],
-              },
-            ],
-          },
-          {
-            date: "2026-11-28",
-            workouts: [
-              {
-                id: "outside-plan",
-                providerId: "intervals.icu",
-                title: "Outside page plan",
-                description: null,
-                sportType: "cycling",
-                startTime: null,
-                steps: [],
-              },
-            ],
-          },
-        ],
       };
 
       const { rerender } = render(<ActivitiesPage />);
@@ -2048,7 +1951,6 @@ describe("ActivitiesPage", () => {
         page: 0,
       });
       expect(screen.getByText("Older ride")).toBeDefined();
-      expect(screen.getByText("Owned page plan")).toBeDefined();
 
       // Same-range soft page: keep prior page payload as placeholder while requesting page 1.
       mockQuery = { ...mockQuery, isPlaceholderData: true, page: 0 };
@@ -2056,8 +1958,6 @@ describe("ActivitiesPage", () => {
 
       expect(weekListInput).toMatchObject({ page: 1 });
       expect(screen.getByText("Older ride")).toBeDefined();
-      expect(screen.getByText("Owned page plan")).toBeDefined();
-      expect(screen.queryByText("Outside page plan")).toBeNull();
 
       mockQuery = {
         data: [
@@ -2084,50 +1984,14 @@ describe("ActivitiesPage", () => {
         isSuccess: true,
         isPlaceholderData: false,
         page: 1,
-        plannedWindow: { startDate: "2026-11-18", endDate: "2026-11-19" },
         totalCount: 40,
         error: null,
-      };
-      mockUpcomingQuery = {
-        ...mockUpcomingQuery,
-        isSuccess: true,
-        data: [
-          {
-            date: "2026-11-18",
-            workouts: [
-              {
-                id: "next-page-plan",
-                providerId: "intervals.icu",
-                title: "Next page plan",
-                description: null,
-                sportType: "cycling",
-                startTime: null,
-                steps: [],
-              },
-            ],
-          },
-          {
-            date: "2026-11-22",
-            workouts: [
-              {
-                id: "owned-plan",
-                providerId: "intervals.icu",
-                title: "Owned page plan",
-                description: null,
-                sportType: "cycling",
-                startTime: null,
-                steps: [],
-              },
-            ],
-          },
-        ],
       };
       rerender(<ActivitiesPage />);
 
       expect(screen.getByText("Next page ride")).toBeDefined();
-      expect(screen.getByText("Next page plan")).toBeDefined();
+
       expect(screen.queryByText("Older ride")).toBeNull();
-      expect(screen.queryByText("Owned page plan")).toBeNull();
     });
 
     it("resets page and selection when the agenda span rolls into a new week", async () => {
@@ -2178,7 +2042,7 @@ describe("ActivitiesPage", () => {
       expect(screen.queryByRole("checkbox", { name: "Select Sunday ride" })).toBeNull();
     });
 
-    it("keeps cached plans when a previous-range completed placeholder is ignored", () => {
+    it("ignores completed placeholder cards from a previous range", () => {
       mockQuery = {
         data: [
           {
@@ -2191,38 +2055,15 @@ describe("ActivitiesPage", () => {
         isSuccess: true,
         error: null,
       };
-      mockUpcomingQuery = { ...mockUpcomingQuery, data: [], isSuccess: true };
-
       const { rerender } = render(<ActivitiesPage />);
       fireEvent.change(screen.getByLabelText("Date range"), { target: { value: "4-weeks" } });
       expect(screen.getByText("Historical ride")).toBeDefined();
-
       mockQuery = { ...mockQuery, isPlaceholderData: true, isSuccess: true };
-      mockUpcomingQuery = {
-        ...mockUpcomingQuery,
-        isSuccess: true,
-        data: [
-          {
-            date: "2026-11-26",
-            workouts: [
-              {
-                id: "this-week-plan",
-                providerId: "intervals.icu",
-                title: "This week plan",
-                description: null,
-                sportType: "cycling",
-                startTime: null,
-                steps: [],
-              },
-            ],
-          },
-        ],
-      };
       fireEvent.change(screen.getByLabelText("Date range"), { target: { value: "this-week" } });
       rerender(<ActivitiesPage />);
 
       expect(screen.queryByText("Historical ride")).toBeNull();
-      expect(screen.getByText("This week plan")).toBeDefined();
+
       expect(screen.queryAllByText("No workouts")).toHaveLength(0);
       expect(screen.queryByText("No workouts in this date range.")).toBeNull();
     });
@@ -2282,12 +2123,13 @@ describe("ActivitiesPage", () => {
       },
     ] as const)(
       "keeps a $label feed error visible while the other feed is still loading",
-      ({ errorText, setup }) => {
+      ({ label, errorText, setup }) => {
         const retry = setup();
         render(<ActivitiesPage />);
+        if (label === "planned") fireEvent.click(screen.getByRole("tab", { name: "Upcoming" }));
 
         expect(screen.getByText(errorText)).toBeDefined();
-        expect(screen.getByTestId("query-state-loading")).toBeDefined();
+        expect(screen.queryByTestId("query-state-loading")).toBeNull();
         expect(screen.queryByText("No workouts in this date range.")).toBeNull();
         fireEvent.click(screen.getByRole("button", { name: "Retry" }));
         expect(retry).toHaveBeenCalledOnce();
@@ -2344,9 +2186,7 @@ describe("ActivitiesPage", () => {
 
       expect(screen.getByText("Morning ride")).toBeDefined();
       expect(screen.getByText("1")).toBeDefined();
-      expect(screen.getByText("Schedule is temporarily unavailable.")).toBeDefined();
-      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-      expect(mockUpcomingQuery.refetch).toHaveBeenCalledOnce();
+      expect(screen.queryByText("Schedule is temporarily unavailable.")).toBeNull();
     });
 
     it("retains planned rows during a same-range planned refetch", () => {
@@ -2375,6 +2215,7 @@ describe("ActivitiesPage", () => {
       };
 
       render(<ActivitiesPage />);
+      fireEvent.click(screen.getByRole("tab", { name: "Upcoming" }));
 
       expect(screen.getByText("Easy endurance")).toBeDefined();
       expect(upcomingOptions?.placeholderData).toBeUndefined();
@@ -2403,6 +2244,7 @@ describe("ActivitiesPage", () => {
       };
 
       render(<ActivitiesPage />);
+      fireEvent.click(screen.getByRole("tab", { name: "Upcoming" }));
 
       expect(screen.getByText(/Snapshot/)).toBeDefined();
       expect(screen.getByText(/Nov 20, 2026/)).toBeDefined();

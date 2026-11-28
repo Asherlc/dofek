@@ -164,22 +164,24 @@ export function ActivityControls({
       </View>
       {!searching && openFilter === "range" ? (
         <View style={styles.chipRow}>
-          {ACTIVITY_AGENDA_RANGES.map(({ preset: value, label }) => (
-            <TouchableOpacity
-              key={value}
-              style={styles.filterChip}
-              accessibilityRole="button"
-              accessibilityState={{ selected: preset === value }}
-              onPress={() => {
-                onPresetChange(value);
-                setOpenFilter(undefined);
-              }}
-            >
-              <Text style={[styles.filterChipText, preset === value && styles.filterCurrent]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {ACTIVITY_AGENDA_RANGES.filter((option) => option.preset !== "next-90-days").map(
+            ({ preset: value, label }) => (
+              <TouchableOpacity
+                key={value}
+                style={styles.filterChip}
+                accessibilityRole="button"
+                accessibilityState={{ selected: preset === value }}
+                onPress={() => {
+                  onPresetChange(value);
+                  setOpenFilter(undefined);
+                }}
+              >
+                <Text style={[styles.filterChipText, preset === value && styles.filterCurrent]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ),
+          )}
         </View>
       ) : null}
       {openFilter === "sport" ? (

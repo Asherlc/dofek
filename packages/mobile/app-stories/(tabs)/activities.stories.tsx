@@ -1,4 +1,4 @@
-import { activityAgendaRange } from "@dofek/format/activity-agenda";
+import { activityAgendaRange, upcomingActivityAgendaRange } from "@dofek/format/activity-agenda";
 import { formatDateYmd, shiftDateYmd } from "@dofek/format/format";
 import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
 import { providerLabel } from "@dofek/providers/providers";
@@ -70,7 +70,7 @@ function createStoryData(
     weeks: agendaRange.weeks ?? 1,
     startDate: agendaRange.startDate,
     endDate: agendaRange.endDate,
-    dateOrder: "oldest" as const,
+    dateOrder: "newest" as const,
   };
   const hangboarding =
     originProvider === "apple_health" && originSourceName === "Hang Ten Training";
@@ -393,10 +393,6 @@ function createStoryData(
       totalCount: weekListV2.reduce((count, day) => count + day.activities.length, 0),
       page: 0,
       pageSize: 20,
-      plannedWindow: {
-        startDate: agendaRange.startDate,
-        endDate: agendaRange.endDate,
-      },
     },
     activityOverview,
     calendarData,
@@ -545,10 +541,7 @@ function MockProviders({
         ["calendar", "upcomingWorkouts"],
         {
           input: {
-            dateRange: {
-              startDate: storyData.queryInput.startDate,
-              endDate: storyData.queryInput.endDate,
-            },
+            dateRange: upcomingActivityAgendaRange(storyData.today),
           },
           type: "query",
         },
@@ -622,6 +615,15 @@ async function checkFullWidthMap(canvasElement: HTMLElement, activityName: strin
 
 export const Default: Story = {
   play: async ({ canvasElement }) => checkFullWidthMap(canvasElement, "Morning Ride"),
+};
+
+export const Upcoming: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("tab", { name: "Upcoming" }));
+    await expect(canvas.getByText("Tempo intervals")).toBeVisible();
+    await expect(canvas.getByText("Easy endurance")).toBeVisible();
+  },
 };
 
 export const LocationSearch: Story = {

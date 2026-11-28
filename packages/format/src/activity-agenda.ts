@@ -11,6 +11,32 @@ export type ActivityAgendaPreset =
 
 export type ActivityAgendaDateOrder = "oldest" | "newest";
 
+/** The planned-workout endpoint accepts up to 90 inclusive calendar dates. */
+export function upcomingActivityAgendaRange(today: string) {
+  return { startDate: today, endDate: shiftDateYmd(today, 89) };
+}
+
+/** Keep the feed's day and time order while applying the Upcoming sport filter. */
+export function filterUpcomingActivityAgenda<TWorkout extends { sportType: string | null }>(
+  days: ReadonlyArray<{ date: string; workouts: readonly TWorkout[] }> = [],
+  sport?: string,
+) {
+  const sports = new Set<string>();
+  if (sport !== undefined) sports.add(sport);
+
+  const filteredDays = days
+    .map((day) => {
+      const workouts = day.workouts.filter(({ sportType }) => {
+        if (sportType?.trim()) sports.add(sportType);
+        return sport === undefined || sportType === sport;
+      });
+      return { date: day.date, workouts };
+    })
+    .filter(({ workouts }) => workouts.length > 0);
+
+  return { days: filteredDays, sports: [...sports] };
+}
+
 export const ACTIVITY_AGENDA_RANGES: ReadonlyArray<{
   preset: ActivityAgendaPreset;
   label: string;
