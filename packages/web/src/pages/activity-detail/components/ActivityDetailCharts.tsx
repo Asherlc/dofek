@@ -344,14 +344,6 @@ export function MetricsChart({
                       className="max-w-60 rounded-r-md border-l border-border px-2"
                     />
                   ))}
-                {sourceAttribution[metric.key] &&
-                  (metric.samples.some((sample) => sample.value != null) ||
-                    (metric.key === "heartRate" &&
-                      heartRateContext?.points.some((sample) => sample.value != null))) && (
-                    <span role="status" className="px-2 text-xs text-muted">
-                      {sourceAttribution[metric.key]}
-                    </span>
-                  )}
               </div>
             ))}
           </fieldset>
@@ -571,6 +563,24 @@ export function MetricsChart({
           replaceMerge={["series"]}
         />
       )}
+      {metrics
+        .filter(
+          (metric) =>
+            sourceAttribution[metric.key] &&
+            (metric.samples.some((sample) => sample.value != null) ||
+              (metric.key === "heartRate" &&
+                heartRateContext?.points.some((sample) => sample.value != null))),
+        )
+        .map((metric) => (
+          <p
+            role="status"
+            key={metric.key}
+            aria-label={`${metric.name}: ${sourceAttribution[metric.key]}`}
+            className="mt-2 text-xs text-muted"
+          >
+            {sourceAttribution[metric.key]}
+          </p>
+        ))}
       {hasHr && isVisible("Heart Rate") && climbs.length > 0 && (
         <details className="mt-2 text-xs text-muted">
           <summary className="cursor-pointer">Climbs ({climbs.length})</summary>

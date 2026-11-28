@@ -321,6 +321,7 @@ function ActivityDetailScreen({ id }: { id: string }) {
     powerWork,
     powerZones,
     heartRateContext,
+    initialChartPending,
   } = metrics;
   const plannedIntervals = trpc.intervals.plannedByActivity.useQuery(
     { activityId: id ?? "" },
@@ -422,11 +423,16 @@ function ActivityDetailScreen({ id }: { id: string }) {
     ({ id: metricId, available }) =>
       available || sourceControls.some((control) => control.key === metricId),
   );
-  const activeMetric =
-    availableMetrics.find((metric) => metric.id === requestedMetric)?.id ?? availableMetrics[0]?.id;
   const showOverview = section === "overview";
   const showPerformance = section === "performance";
   const showDetails = section === "details";
+  const activeMetric =
+    availableMetrics.find((metric) => metric.id === requestedMetric)?.id ?? availableMetrics[0]?.id;
+  // Remember the first metric only once its chart inputs are ready, so a late
+  // HR-zones result cannot replace a metric already being displayed.
+  if (showPerformance && !initialChartPending && requestedMetric == null && activeMetric != null) {
+    setRequestedMetric(activeMetric);
+  }
   const changeSection = (next: ActivitySection) => {
     setSection(next);
     setActionsOpen(false);
@@ -802,7 +808,7 @@ function ActivityDetailScreen({ id }: { id: string }) {
 
       {showPerformance ? (
         <>
-          {activeMetric && availableMetrics.length > 1 ? (
+          {activeMetric && availableMetrics.length > 1 && !initialChartPending ? (
             <ScreenSections
               label="Performance metrics"
               sections={availableMetrics}
@@ -814,32 +820,16 @@ function ActivityDetailScreen({ id }: { id: string }) {
               }}
             />
           ) : null}
-          {(stream.isFetching ||
-            heartRateContext.isFetching ||
-            hrZones.isFetching ||
-            powerZones.isFetching ||
-            powerWork.isFetching) && (
-            <Text accessibilityLiveRegion="polite" style={{ color: colors.textSecondary }}>
-              Updating metrics…
-            </Text>
-          )}
           {isRunning && activity.runningForm ? (
             <RunningFormStats form={activity.runningForm} />
           ) : null}
-          {metricSources.error && (
-            <QueryStatePanel variant="error" message={metricSources.error.message} />
-          )}
-          {stream.error && <QueryStatePanel variant="error" message={stream.error.message} />}
-          {isClimbingActivity && heartRateContext.error && (
-            <QueryStatePanel variant="error" message={heartRateContext.error.message} />
-          )}
-          {stream.isLoading ? (
-            <View style={styles.chartsLoading}>
+          {initialChartPending ? (
+            <View style={[styles.chartsLoading, initialChartLoadingStyles.container]}>
               <ActivityIndicator color={colors.accent} size="small" />
               <Text style={styles.chartsLoadingText}>Loading charts...</Text>
             </View>
           ) : null}
-          {activeMetric ? (
+          {activeMetric && !initialChartPending ? (
             <ActivityMetricsCharts
               visibleMetric={activeMetric}
               points={points}
@@ -872,11 +862,28 @@ function ActivityDetailScreen({ id }: { id: string }) {
               onScrubEnd={handleScrubEnd}
             />
           ) : null}
+          {(stream.isFetching ||
+            heartRateContext.isFetching ||
+            hrZones.isFetching ||
+            powerZones.isFetching ||
+            powerWork.isFetching) &&
+            !initialChartPending && (
+              <Text accessibilityLiveRegion="polite" style={{ color: colors.textSecondary }}>
+                Updating metrics…
+              </Text>
+            )}
+          {metricSources.error && (
+            <QueryStatePanel variant="error" message={metricSources.error.message} />
+          )}
+          {stream.error && <QueryStatePanel variant="error" message={stream.error.message} />}
+          {isClimbingActivity && heartRateContext.error && (
+            <QueryStatePanel variant="error" message={heartRateContext.error.message} />
+          )}
           {hasGps ? (
             <RouteMap points={routePoints} hoveredPosition={hoveredPosition} height={180} />
           ) : null}
           {!activeMetric &&
-          !stream.isLoading &&
+          !initialChartPending &&
           !stream.error &&
           !(isRunning && activity.runningForm) ? (
             <QueryStatePanel variant="empty" message="No performance measurements recorded" />
@@ -973,4 +980,8 @@ function ActivityDetailScreen({ id }: { id: string }) {
 const hangboardingStyles = StyleSheet.create({
   container: { gap: 12 },
   title: { color: colors.text, fontSize: 18, fontWeight: "700" },
+});
+
+const initialChartLoadingStyles = StyleSheet.create({
+  container: { minHeight: 260, justifyContent: "center" },
 });
