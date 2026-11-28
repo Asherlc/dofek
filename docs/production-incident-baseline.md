@@ -40865,9 +40865,25 @@ Local qualification and CI are separate from production throughput acceptance. T
   The [verification job](https://github.com/Asherlc/dofek/actions/runs/45644846134/job/140808537153)
   succeeded on November 28 at 00:51:30 UTC. GitHub returned `success` for the
   same deployment ID and verified source SHA. Recovery remains manual, with
-  the existing release safeguards. The CI-validated Activities build still
-  needs publication and a new uncached `calendar.weekListV2` measurement.
-  Climbing-log hydration remains on the list path.
+  the existing release safeguards. The approved Activities release resumed at
+  its admission job and completed the stack rollout at 01:33:06 UTC. GitHub
+  marked deployment `8122229379` successful at 01:34:05 UTC for the immutable
+  `c1483c550` build. [Production release](https://github.com/Asherlc/dofek/actions/runs/45727393982/attempts/2).
+- **First measurement on the new build.** By 01:16:37 UTC, both healthy web
+  replicas served `c1483c550`; the Activities HTML referenced `web/sha-c1483c5/`.
+  A signed-in navigation from a ride detail page generated one verified
+  `calendar.weekListV2` cache miss at 01:17:17 UTC. It took 6,230 ms in the
+  server histogram and Axiom logs under trace ID
+  `1977893222345bc1a32c3cdd854ed7f4`. Axiom did not retain spans for that ID.
+  PostgreSQL recorded 4,836 ms for climbing-log hydration in the same window.
+  The browser request took 12,223 ms because the batch also included
+  `activity.powerZones`, which took 12,209 ms. The measurement was during the
+  rollout and followed an activity-detail navigation. Axiom trace
+  `c1d15986f535f0b4a55c1d2b9266d344` confirms the earlier query sequence
+  independently, with 7,393 ms for dated cycling FTP and 4,132 ms for
+  climbing-log hydration in a 12,410 ms list span. No fresh list span was
+  retained by the end of the release check. Climbing-log hydration and batch
+  interference remain sources of delay on the new build.
 - **Retrospective.** Comparing the live container revision with the exact
   release job distinguished an unpublished performance fix from a regression.
   The loading runbook could ask operators to confirm the live revision before
