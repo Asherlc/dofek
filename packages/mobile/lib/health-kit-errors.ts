@@ -20,6 +20,13 @@ export function isHealthKitDatabaseInaccessible(error: unknown): boolean {
   );
 }
 
+// The mobile tRPC fetch wrapper reports a non-JSON HTTP 408 from the HealthKit
+// quantity upload with this structured prefix (DOFEK-MOBILE-37). The status phrase
+// and response preview are transport details; only the procedure and numeric
+// status identify the known transient timeout.
+const NON_JSON_PUSH_QUANTITY_SAMPLES_408 =
+  /^Non-JSON tRPC response from healthKitSync\.pushQuantitySamples: 408(?: [^,]+)?,/;
+
 export function isTransientNetworkErrorMessage(message: string): boolean {
   // Match the React Native fetch failure shapes seen in DOFEK-MOBILE-19, including
   // when the message is prefixed by sync-stage labels or TRPC wrappers. iOS surfaces
@@ -27,6 +34,7 @@ export function isTransientNetworkErrorMessage(message: string): boolean {
   // (NSURLErrorTimedOut) and a dropped connection (NSURLErrorNetworkConnectionLost,
   // "The network connection was lost.").
   if (message.includes(";")) return false;
+  if (NON_JSON_PUSH_QUANTITY_SAMPLES_408.test(message)) return true;
   return /fetch failed:\s*(?:UnexpectedException:\s*)?(?:the request timed out\.|the network connection was lost\.|the Internet connection appears to be offline\.|cancelled|canceled)(?: \(at [^)]+\))?$/i.test(
     message,
   );

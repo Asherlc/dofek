@@ -530,35 +530,48 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
-  it("does not report TRPCClientError background fetch timeouts to Sentry (DOFEK-MOBILE-19)", async () => {
-    vi.useFakeTimers();
-    const client = createMockClient();
-    await initBackgroundHealthKitSync(client);
-    await vi.runAllTimersAsync();
-    mockCaptureException.mockClear();
-    vi.mocked(queryDailyStatistics).mockResolvedValueOnce([{ date: "2026-03-22", value: 1_000 }]);
-    const timeoutError = new Error("fetch failed: UnexpectedException: The request timed out.");
-    client.healthKitSync.pushQuantitySamples.mutate.mockRejectedValueOnce(
-      new Error("TRPCClientError", { cause: timeoutError }),
-    );
+  it.each([
+    ["native fetch timeout", "fetch failed: UnexpectedException: The request timed out."],
+    [
+      "non-JSON HTTP 408 upload diagnostic",
+      "Non-JSON tRPC response from healthKitSync.pushQuantitySamples: 408 request timed out, content-type absent, ",
+    ],
+  ])(
+    "does not report a wrapped %s to Sentry (DOFEK-MOBILE-19/37)",
+    async (_label, diagnosticMessage) => {
+      vi.useFakeTimers();
+      try {
+        const client = createMockClient();
+        await initBackgroundHealthKitSync(client);
+        await vi.runAllTimersAsync();
+        mockCaptureException.mockClear();
+        vi.mocked(queryDailyStatistics).mockResolvedValueOnce([
+          { date: "2026-03-22", value: 1_000 },
+        ]);
+        client.healthKitSync.pushQuantitySamples.mutate.mockRejectedValueOnce(
+          new Error("TRPCClientError", { cause: new Error(diagnosticMessage) }),
+        );
 
-    const listener = mockAddSampleUpdateListener.mock.calls[0][0];
-    listener({
-      typeIdentifier: "HKQuantityTypeIdentifierStepCount",
-      updateId: "update-1",
-    });
+        const listener = mockAddSampleUpdateListener.mock.calls[0][0];
+        listener({
+          typeIdentifier: "HKQuantityTypeIdentifierStepCount",
+          updateId: "update-1",
+        });
 
-    await vi.advanceTimersByTimeAsync(5000);
-    await vi.runAllTimersAsync();
+        await vi.advanceTimersByTimeAsync(5000);
+        await vi.runAllTimersAsync();
 
-    expect(mockCaptureException).not.toHaveBeenCalled();
-    expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "bg-healthkit-sync",
-      "Background HealthKit upload timed out; retrying on next delivery",
-    );
-    expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
-    vi.useRealTimers();
-  });
+        expect(mockCaptureException).not.toHaveBeenCalled();
+        expect(mockLoggerInfo).toHaveBeenCalledWith(
+          "bg-healthkit-sync",
+          "Background HealthKit upload timed out; retrying on next delivery",
+        );
+        expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["update-1"], false);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("does not report observer sync result errors that are only transient timeouts", async () => {
     vi.useFakeTimers();

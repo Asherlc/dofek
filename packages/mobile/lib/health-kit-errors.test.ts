@@ -112,6 +112,41 @@ describe("health-kit-errors", () => {
     expect(isBackgroundHealthKitTransientNetworkError(new Error("server error"))).toBe(false);
   });
 
+  it.each([
+    // Status with and without a reason phrase, plus a response preview (DOFEK-MOBILE-37).
+    [
+      "Non-JSON tRPC response from healthKitSync.pushQuantitySamples: 408 request timed out, content-type absent, ",
+      true,
+    ],
+    [
+      "Non-JSON tRPC response from healthKitSync.pushQuantitySamples: 408, content-type absent, ",
+      true,
+    ],
+    [
+      "Non-JSON tRPC response from healthKitSync.pushQuantitySamples: 408 Request Timeout, content-type text/plain, upstream timeout body",
+      true,
+    ],
+    // Other statuses, a status with a 408 prefix, the wrong procedure, and mixed results stay reportable.
+    [
+      "Non-JSON tRPC response from healthKitSync.pushQuantitySamples: 413 Payload Too Large, content-type text/plain, payload too large",
+      false,
+    ],
+    [
+      "Non-JSON tRPC response from healthKitSync.pushQuantitySamples: 4080 request timed out, content-type absent, ",
+      false,
+    ],
+    [
+      "Non-JSON tRPC response from healthKitSync.pushWorkouts: 408 request timed out, content-type absent, ",
+      false,
+    ],
+    [
+      "Non-JSON tRPC response from healthKitSync.pushQuantitySamples: 408 request timed out, content-type absent, ; other failure",
+      false,
+    ],
+  ])("classifies the non-JSON pushQuantitySamples diagnostic: %s", (message, expected) => {
+    expect(isTransientNetworkErrorMessage(message)).toBe(expected);
+  });
+
   it("suppresses transient network errors only for declared background sync sources", () => {
     const connectionLostError = new Error(
       "fetch failed: UnexpectedException: The network connection was lost.",
