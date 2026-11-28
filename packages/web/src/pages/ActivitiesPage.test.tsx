@@ -1784,7 +1784,7 @@ describe("ActivitiesPage", () => {
             workouts: [
               plan("Earlier today", "cycling", "06:00"),
               plan("Later today", "running", "18:00"),
-              plan("Untimed today", null, null),
+              plan("No start time today", null, null),
             ],
           },
           { date: "2026-11-26", workouts: [plan("Future ride", "cycling", "09:00")] },
@@ -1815,13 +1815,13 @@ describe("ActivitiesPage", () => {
       });
       expect(screen.queryByText("Evening ride")).toBeNull();
       before("Earlier today", "Later today");
-      before("Later today", "Untimed today");
-      before("Untimed today", "Future ride");
+      before("Later today", "No start time today");
+      before("No start time today", "Future ride");
       fireEvent.change(screen.getByLabelText("Activity type"), { target: { value: "cycling" } });
       expect(screen.getByText("Earlier today")).toBeDefined();
       expect(screen.getByText("Future ride")).toBeDefined();
       expect(screen.queryByText("Later today")).toBeNull();
-      expect(screen.queryByText("Untimed today")).toBeNull();
+      expect(screen.queryByText("No start time today")).toBeNull();
       expect(upcomingQueryInput).toEqual({
         dateRange: { startDate: "2026-11-24", endDate: "2027-02-21" },
       });
