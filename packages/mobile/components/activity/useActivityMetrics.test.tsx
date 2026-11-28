@@ -309,4 +309,34 @@ describe("useActivityMetrics", () => {
       });
     },
   );
+
+  it("keeps the visible climbing chart when an explicit HR source follows an initial context error", () => {
+    const points = [{ heartRate: 140 }];
+    dependencies.stream.mockReturnValue(query(points));
+    dependencies.heartRateContext.mockImplementation((input?: { heartRateSourceId?: string }) =>
+      input?.heartRateSourceId === "hr-b"
+        ? query(undefined, { isLoading: true })
+        : query(undefined, {
+            error: new Error("Climbing HR context is unavailable"),
+            isError: true,
+          }),
+    );
+    const { result } = renderHook(() =>
+      useActivityMetrics("activity-a", {
+        isCycling: false,
+        isClimbing: true,
+        hasRecordedPower: false,
+      }),
+    );
+    expect(result.current.initialChartPending).toBe(false);
+    expect(result.current.points).toEqual(points);
+
+    act(() =>
+      result.current.sourceControls.find((source) => source.key === "heartRate")?.onChange("hr-b"),
+    );
+
+    expect(result.current.sources.heartRate).toBe("hr-b");
+    expect(result.current.points).toEqual(points);
+    expect(result.current.initialChartPending).toBe(false);
+  });
 });

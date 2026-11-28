@@ -47,10 +47,8 @@ export function useActivityMetrics(
   // TanStack keeps cached catalogue data on background errors, so a settled error
   // with cached data still resolves the choices.
   const sourcesResolved = metricSources.data != null || metricSources.error != null;
-  const sources = offeredActivityMetricSources(
-    selection?.scopeKey === scopeKey ? selection.sources : undefined,
-    metricSources.data,
-  );
+  const selectedSources = selection?.scopeKey === scopeKey ? selection.sources : undefined;
+  const sources = offeredActivityMetricSources(selectedSources, metricSources.data);
   const sourceControls = (metricSources.data ?? []).map((metric) => ({
     ...metric,
     selectedId: sources[metric.key] ?? metric.defaultSourceId,
@@ -142,7 +140,8 @@ export function useActivityMetrics(
     isClimbing &&
     heartRateContext.data === undefined &&
     !heartRateContext.isError &&
-    heartRateContext.error == null;
+    heartRateContext.error == null &&
+    selectedSources?.heartRate == null;
   const initialChartPending = !sourcesResolved || streamMissing || contextMissing;
 
   return {

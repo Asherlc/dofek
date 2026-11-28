@@ -234,7 +234,11 @@ describe("ActivityDetailPage", () => {
       if (!section) throw new Error("Performance section is missing");
       return section;
     };
-    expect(within(performance()).getAllByTestId("chart-loading-skeleton")).toHaveLength(1);
+    const busyStatuses = () =>
+      screen.queryAllByRole("status").filter((node) => node.getAttribute("aria-busy") === "true");
+    expect(within(performance()).getByTestId("query-state-loading")).toBeTruthy();
+    expect(busyStatuses()).toHaveLength(1);
+    expect(busyStatuses()[0]?.getAttribute("aria-label")).toBe("Loading performance chart.");
     expect(within(performance()).queryByTestId("echarts")).toBeNull();
     expect(within(performance()).queryByText("Chart controls")).toBeNull();
     expect(screen.queryByText("Updating metrics…")).toBeNull();
@@ -248,7 +252,9 @@ describe("ActivityDetailPage", () => {
         <ActivityDetailPage />
       </UnitContext.Provider>,
     );
-    expect(within(performance()).getAllByTestId("chart-loading-skeleton")).toHaveLength(1);
+    expect(within(performance()).getByTestId("query-state-loading")).toBeTruthy();
+    expect(busyStatuses()).toHaveLength(1);
+    expect(busyStatuses()[0]?.getAttribute("aria-label")).toBe("Loading performance chart.");
     expect(within(performance()).queryByText("Chart controls")).toBeNull();
     expect(screen.queryByText("Updating metrics…")).toBeNull();
 
@@ -258,7 +264,8 @@ describe("ActivityDetailPage", () => {
         <ActivityDetailPage />
       </UnitContext.Provider>,
     );
-    expect(within(performance()).queryByTestId("chart-loading-skeleton")).toBeNull();
+    expect(within(performance()).queryByTestId("query-state-loading")).toBeNull();
+    expect(busyStatuses()).toHaveLength(0);
     expect(within(performance()).getByText("Chart controls")).toBeTruthy();
     expect(within(performance()).getByTestId("echarts")).toBeTruthy();
   });

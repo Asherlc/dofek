@@ -291,7 +291,7 @@ export function ActivityDetailPage() {
       {showPerformance && (
         <Section title="Performance">
           {initialChartPending ? (
-            <ChartLoadingSkeleton height={380} />
+            <QueryStatePanel variant="loading" contextLabel="Performance chart" height={380} />
           ) : hasPerformanceChart ? (
             <MetricsChart
               heartRateContext={isClimbingActivity ? heartRateContext.data : undefined}
