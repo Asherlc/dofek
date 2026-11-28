@@ -23,6 +23,12 @@
   delivery succeeds.
   [Anchor handling](../packages/mobile/lib/health-kit-sync.ts#L599)
   [Observer queue](../packages/mobile/lib/background-health-kit-sync.ts#L263)
+- **Classifier correction.** Background sync treats the non-JSON HTTP 408
+  from `healthKitSync.pushQuantitySamples` as a transient timeout. The observer
+  records the failed sync and leaves the delivery eligible for retry. The
+  mobile regression test covers the wrapped error from this alert and verifies
+  that the observer acknowledges failure without sending a Sentry exception.
+  [Observer regression test](../packages/mobile/lib/background-health-kit-sync.test.ts)
 
 ## 2026-11-27 — Hard-coded activity fixture dates blocked CI
 
