@@ -40849,16 +40849,25 @@ Local qualification and CI are separate from production throughput acceptance. T
   The [preceding stack rollout](https://github.com/Asherlc/dofek/actions/runs/45644846134/job/139314325367)
   completed, but **Verify live web and worker identity before finalizing**
   reported `unexpected end of JSON input` after validating the web and worker
-  image digests. The log does not identify which JSON operation failed.
-  GitHub still recorded deployment `8061887800` as pending at investigation.
+  image digests at 15:59:56 UTC on November 25. The error fell inside GitHub's
+  15:55–16:52 UTC incident. A local HTTP fixture reproduced the same diagnostic
+  with GitHub CLI 2.105.0 for both GET and POST when an HTTP 503 JSON response
+  had an empty body. `gh api --include` retained the 503 and request ID even
+  though the command still failed. The outage is the supported explanation,
+  but the original log did not preserve the endpoint or HTTP status. GitHub
+  still recorded deployment `8061887800` as pending at investigation.
   [Admission failure](https://github.com/Asherlc/dofek/actions/runs/45727393982/job/139600655348)
-  · [Previous finalizer](https://github.com/Asherlc/dofek/actions/runs/45644846134/job/139332093511).
-- **Recovery and remaining risk.** The [publication recovery runbook](../deploy/README.md#publication-recovery)
-  specifies rerunning the original receipt finalizer when the stack completed.
-  After the existing release is verified, publish the CI-validated server
-  image containing the Activities fix and measure uncached `calendar.weekListV2`
-  again. Climbing-log hydration remains on the list path and needs a fresh
-  measurement after release.
+  · [Previous finalizer](https://github.com/Asherlc/dofek/actions/runs/45644846134/job/139332093511)
+  · [GitHub incident](https://www.githubstatus.com/incidents/qn8mfv6q5hlx)
+  · [GitHub CLI issue](https://github.com/cli/cli/issues/10579).
+- **Recovery and remaining risk.** Following the [publication recovery runbook](../deploy/README.md#publication-recovery),
+  reran only the original receipt finalizer with `gh run rerun 45644846134 --job 139332093511`.
+  The [verification job](https://github.com/Asherlc/dofek/actions/runs/45644846134/job/140808537153)
+  succeeded on November 28 at 00:51:30 UTC. GitHub returned `success` for the
+  same deployment ID and verified source SHA. Recovery remains manual, with
+  the existing release safeguards. The CI-validated Activities build still
+  needs publication and a new uncached `calendar.weekListV2` measurement.
+  Climbing-log hydration remains on the list path.
 - **Retrospective.** Comparing the live container revision with the exact
   release job distinguished an unpublished performance fix from a regression.
   The loading runbook could ask operators to confirm the live revision before
