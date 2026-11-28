@@ -1,11 +1,9 @@
 import {
   type ActivityAgendaPreset,
-  activityAgendaDateOrder,
   activityAgendaRange,
+  filterUpcomingActivityAgenda,
   formatActivityAgendaCaption,
-  mergeActivityAgendaDays,
-  resolveActivityAgendaOwnedPlannedWindow,
-  withActivityAgendaEmptyDays,
+  upcomingActivityAgendaRange,
 } from "@dofek/format/activity-agenda";
 import {
   formatDateForDisplay,
@@ -16,7 +14,7 @@ import {
 } from "@dofek/format/format";
 import { isConnectionFailure, userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
-import type { AppRouterOutputs } from "dofek-server/router";
+import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -37,6 +35,7 @@ import { PaginationControls } from "../../components/PaginationControls";
 import { PlannedWorkoutCard } from "../../components/PlannedWorkoutCard";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { ScreenSections } from "../../components/ScreenSections";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
@@ -47,8 +46,11 @@ import { colors } from "../../theme";
 const ACTIVITY_PAGE_SIZE = 20;
 const ALL_ACTIVITY_TYPES = "all";
 const DEFAULT_PRESET: ActivityAgendaPreset = "this-week";
-const EMPTY_PLANNED_WORKOUTS: AppRouterOutputs["calendar"]["upcomingWorkouts"][number]["workouts"] =
-  [];
+const ACTIVITY_VIEWS = [
+  { id: "completed", title: "Completed" },
+  { id: "upcoming", title: "Upcoming" },
+] as const;
+type ActivityView = (typeof ACTIVITY_VIEWS)[number]["id"];
 
 type ActivitySearchSelection =
   | { kind: "title" | "name"; name: string }
@@ -58,6 +60,8 @@ export default function ActivitiesScreen() {
   const router = useRouter();
   const units = useUnitConverter();
   const today = useTodayQueryDate();
+  const [view, setView] = useState<ActivityView>("completed");
+  const [upcomingSport, setUpcomingSport] = useState<string>();
   const [preset, setPreset] = useState<ActivityAgendaPreset>(DEFAULT_PRESET);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
   const [trainingTimeExpanded, setTrainingTimeExpanded] = useState(false);
@@ -76,7 +80,7 @@ export default function ActivitiesScreen() {
       : searchSelection?.kind === "name"
         ? { kind: "name" as const, name: searchSelection.name }
         : undefined;
-  const searching = searchSelection !== undefined;
+  const searching = view === "completed" && searchSelection !== undefined;
   const searchName = searchDraft.trim();
   const searchLabel =
     searchMode === "location" ? "Search activity locations" : "Search activity titles";
@@ -86,13 +90,10 @@ export default function ActivitiesScreen() {
   const [activityPage, setActivityPage] = useState(0);
   const selectedActivityType = activityType === ALL_ACTIVITY_TYPES ? undefined : activityType;
   const agendaRange = useMemo(() => activityAgendaRange(preset, today), [preset, today]);
-  const dateOrder = activityAgendaDateOrder(preset);
-  const futureOnly = preset === "next-90-days";
-  const showOverview = agendaRange.weeks != null && !futureOnly;
-  const selectedSpan = useMemo(
-    () => ({ startDate: agendaRange.startDate, endDate: agendaRange.endDate }),
-    [agendaRange.startDate, agendaRange.endDate],
-  );
+  const dateOrder = "newest" as const;
+  const futureOnly = view === "upcoming";
+  const showOverview = !futureOnly;
+  const upcomingRange = useMemo(() => upcomingActivityAgendaRange(today), [today]);
   const agendaSpanKey = `${agendaRange.startDate}:${agendaRange.endDate}`;
   const [observedAgendaSpanKey, setObservedAgendaSpanKey] = useState(agendaSpanKey);
   const cancelSelection = () => {
@@ -110,7 +111,7 @@ export default function ActivitiesScreen() {
   const lastSportTypes = useRef<string[]>([]);
   const queryInput = useMemo(
     () => ({
-      weeks: agendaRange.weeks ?? 4,
+      weeks: agendaRange.weeks,
       startDate: agendaRange.startDate,
       endDate: agendaRange.endDate,
       dateOrder,
@@ -122,7 +123,7 @@ export default function ActivitiesScreen() {
   const titleSearchQuery = trpc.calendar.searchActivities.useInfiniteQuery(
     { title: searchTitle ?? "", activityType: selectedActivityType, pageSize: ACTIVITY_PAGE_SIZE },
     {
-      enabled: searchTitle !== undefined,
+      enabled: !futureOnly && searchTitle !== undefined,
       getNextPageParam: (page) => page.next ?? undefined,
       gcTime: 0,
       meta: { persist: false },
@@ -135,7 +136,7 @@ export default function ActivitiesScreen() {
       pageSize: ACTIVITY_PAGE_SIZE,
     },
     {
-      enabled: searchLocation !== undefined,
+      enabled: !futureOnly && searchLocation !== undefined,
       getNextPageParam: (page) => page.next ?? undefined,
       refetchInterval: (query) =>
         query.state.data?.pages.some((page) =>
@@ -151,7 +152,7 @@ export default function ActivitiesScreen() {
   const places = trpc.activityLocation.places.useQuery(
     { query: placeLookup ?? "" },
     {
-      enabled: placeLookup !== undefined,
+      enabled: !futureOnly && placeLookup !== undefined,
       staleTime: Number.POSITIVE_INFINITY,
       retry: false,
       gcTime: 0,
@@ -178,7 +179,7 @@ export default function ActivitiesScreen() {
   });
   const overviewQuery = trpc.calendar.activityOverview.useQuery(
     {
-      weeks: agendaRange.weeks ?? 4,
+      weeks: agendaRange.weeks,
       endDate: agendaRange.endDate,
       ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
     },
@@ -205,24 +206,12 @@ export default function ActivitiesScreen() {
       : previousInput?.rangeKey === rangeKey
         ? trpcUtils.calendar.weekListV2.getData(previousInput.input)
         : undefined;
-  const upcomingInput = useMemo(
-    () => ({
-      dateRange: selectedSpan,
-      ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
-    }),
-    [selectedSpan, selectedActivityType],
+  const upcomingQuery = trpc.calendar.upcomingWorkouts.useQuery(
+    { dateRange: upcomingRange },
+    { enabled: futureOnly },
   );
-  const upcomingQuery = trpc.calendar.upcomingWorkouts.useQuery(upcomingInput, {
-    enabled: !searching,
-  });
-  const ownedPlannedWindow = resolveActivityAgendaOwnedPlannedWindow({
-    futureOnly,
-    selectedSpan,
-    pageData,
-    activityPage: resolvedActivityPage,
-  });
   const calendarQuery = trpc.calendar.calendarData.useQuery(
-    { days: (agendaRange.weeks ?? 1) * 7 },
+    { days: agendaRange.weeks * 7 },
     {
       enabled: showOverview && !searching,
       placeholderData: (previousData) =>
@@ -291,70 +280,35 @@ export default function ActivitiesScreen() {
     : pageData?.days;
   const listQuery = searching ? searchQuery : query;
   const hasListData = searching ? !!searchQuery.data : !!pageData;
-  // pageData already drops cross-range placeholders; also require current success so an
-  // errored completed request cannot treat a retained empty payload as settled.
-  const completedSucceeded = futureOnly || (pageData != null && query.isSuccess === true);
-  const plannedSucceeded = upcomingQuery.isSuccess === true;
-  const agendaDays = useMemo(() => {
-    if (searching) {
-      return (completedDays ?? []).map((day) => ({
-        date: day.date,
-        activities: day.activities,
-        workouts: EMPTY_PLANNED_WORKOUTS,
-      }));
-    }
-    let merged = mergeActivityAgendaDays(
-      futureOnly ? undefined : completedDays,
-      upcomingQuery.data,
-      ownedPlannedWindow,
-      dateOrder,
-    );
-    if (preset === "this-week" && completedSucceeded && plannedSucceeded && ownedPlannedWindow) {
-      merged = withActivityAgendaEmptyDays(merged, ownedPlannedWindow, dateOrder);
-    }
-    return merged;
-  }, [
-    searching,
-    completedDays,
-    upcomingQuery.data,
-    ownedPlannedWindow,
-    dateOrder,
-    preset,
-    futureOnly,
-    completedSucceeded,
-    plannedSucceeded,
-  ]);
-  const hasActivities = agendaDays.some((day) => day.activities.length > 0);
-  const hasAgendaRows = agendaDays.some(
-    (day) => day.activities.length > 0 || day.workouts.length > 0,
+  const upcomingAgenda = useMemo(
+    () => filterUpcomingActivityAgenda(upcomingQuery.data, upcomingSport),
+    [upcomingQuery.data, upcomingSport],
   );
+  const agendaDays = futureOnly
+    ? upcomingAgenda.days.map((day) => ({ ...day, activities: [] }))
+    : (completedDays ?? [])
+        .filter((day) => day.activities.length > 0)
+        .map((day) => ({ ...day, workouts: [] }));
+  const hasActivities = agendaDays.some((day) => day.activities.length > 0);
   const sportTypes = overviewQuery.data?.activityTypes ?? lastSportTypes.current;
-  const rangeCaption = formatActivityAgendaCaption(agendaRange.startDate, agendaRange.endDate);
-  const agendaFeedsSettled =
-    (futureOnly || (!query.isLoading && !query.isFetching)) &&
-    !upcomingQuery.isLoading &&
-    !upcomingQuery.isFetching;
-  const showAgendaLoading =
-    !hasAgendaRows &&
-    !searching &&
-    ((futureOnly ? false : query.isLoading && !pageData) ||
-      (upcomingQuery.isLoading && upcomingQuery.data == null));
+  const { startDate, endDate } = futureOnly ? upcomingRange : agendaRange;
+  const rangeCaption = formatActivityAgendaCaption(startDate, endDate);
+  const activeQuery = futureOnly ? upcomingQuery : listQuery;
+  const showAgendaLoading = agendaDays.length === 0 && activeQuery.isLoading;
   const showRangeEmpty =
-    !hasAgendaRows &&
-    agendaFeedsSettled &&
-    completedSucceeded &&
-    plannedSucceeded &&
+    agendaDays.length === 0 &&
+    activeQuery.isSuccess &&
+    !activeQuery.isFetching &&
     (futureOnly || pageData?.totalCount === 0);
   // Only count failures the person can actually see: overview and calendar are
-  // hidden while searching or on the future-only range, and the calendar is
+  // hidden while searching or browsing Upcoming, and the calendar is
   // hidden while collapsed.
   const visibleQueries = [
     ...(!searching && showOverview ? [overviewQuery] : []),
     ...(!searching && showOverview && trainingTimeExpanded ? [calendarQuery] : []),
-    // Keep recorded search visible even when Next 90 days disables completed browse.
-    ...(searching || !futureOnly ? [listQuery] : []),
+    activeQuery,
     processingStatus,
-    ...(placeLookup ? [places] : []),
+    ...(!futureOnly && placeLookup ? [places] : []),
   ];
   const connectionFailures = visibleQueries.filter(
     (query) => query.error != null && isConnectionFailure(query.error),
@@ -471,141 +425,172 @@ export default function ActivitiesScreen() {
         />
       ) : null}
 
-      <View style={styles.searchRow}>
-        {(["title", "location"] as const).map((mode) => (
-          <TouchableOpacity
-            key={mode}
-            style={styles.filterChip}
-            accessibilityRole="button"
-            accessibilityState={{ selected: mode === searchMode }}
-            onPress={() => {
-              if (mode === searchMode) return;
-              setSearchMode(mode);
-              clearSearch();
-            }}
-          >
-            <Text style={[styles.filterChipText, mode === searchMode && styles.filterCurrent]}>
-              {mode === "title" ? "Title" : "Location"}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      <View style={styles.searchRow}>
-        <TextInput
-          accessibilityLabel={searchLabel}
-          placeholder={searchLabel}
-          placeholderTextColor={colors.textSecondary}
-          value={searchDraft}
-          maxLength={200}
-          onChangeText={(value) => {
-            setSearchDraft(value);
-            setPlaceLookup(undefined);
-          }}
-          onSubmitEditing={submitSearch}
-          returnKeyType="search"
-          style={styles.searchInput}
-        />
-        <TouchableOpacity
-          style={styles.selectButton}
-          accessibilityRole="button"
-          onPress={submitSearch}
-        >
-          <Text style={styles.selectButtonText}>Search</Text>
-        </TouchableOpacity>
-        {searchMode === "location" ? (
-          <TouchableOpacity
-            style={styles.selectButton}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: !searchName }}
-            disabled={!searchName}
-            onPress={() => {
-              setSearchSelection({ kind: "name", name: searchName });
-              setPlaceLookup(searchName);
-              cancelSelection();
-            }}
-          >
-            <Text style={styles.selectButtonText}>Look up a place</Text>
-          </TouchableOpacity>
-        ) : null}
-        {searching ? (
-          <TouchableOpacity
-            style={styles.selectButton}
-            accessibilityRole="button"
-            onPress={clearSearch}
-          >
-            <Text style={styles.selectButtonText}>Clear search</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
-      {placeLookup && places.isFetching && !places.data ? (
-        <QueryStatePanel variant="loading" minHeight={44} />
-      ) : placeLookup && places.isError && !isSharedConnectionFailure(places.error) ? (
-        <QueryStatePanel
-          variant="error"
-          message={places.error?.message}
-          minHeight={60}
-          retryLabel="Retry place lookup"
-          onRetry={() => void places.refetch()}
-        />
-      ) : placeLookup && places.data?.length === 0 ? (
-        <Text style={styles.selectionGuidance} accessibilityLiveRegion="polite">
-          No places found.
-        </Text>
-      ) : placeLookup && places.data ? (
-        <View style={styles.controlsPanel}>
-          <Text style={styles.selectionGuidance}>
-            Choose a place to find nearby GPS activities.
-          </Text>
-          {places.data.map(({ id, label, latitude, longitude }) => (
+      <ScreenSections
+        label="Activity views"
+        sections={ACTIVITY_VIEWS}
+        selected={view}
+        onSelect={(next) => {
+          if (next === view) return;
+          setView(next);
+          cancelSelection();
+        }}
+      />
+      {!futureOnly ? (
+        <>
+          <View style={styles.searchRow}>
+            {(["title", "location"] as const).map((mode) => (
+              <TouchableOpacity
+                key={mode}
+                style={styles.filterChip}
+                accessibilityRole="button"
+                accessibilityState={{ selected: mode === searchMode }}
+                onPress={() => {
+                  if (mode === searchMode) return;
+                  setSearchMode(mode);
+                  clearSearch();
+                }}
+              >
+                <Text style={[styles.filterChipText, mode === searchMode && styles.filterCurrent]}>
+                  {mode === "title" ? "Title" : "Location"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={styles.searchRow}>
+            <TextInput
+              accessibilityLabel={searchLabel}
+              placeholder={searchLabel}
+              placeholderTextColor={colors.textSecondary}
+              value={searchDraft}
+              maxLength={200}
+              onChangeText={(value) => {
+                setSearchDraft(value);
+                setPlaceLookup(undefined);
+              }}
+              onSubmitEditing={submitSearch}
+              returnKeyType="search"
+              style={styles.searchInput}
+            />
             <TouchableOpacity
-              key={id}
               style={styles.selectButton}
               accessibilityRole="button"
-              onPress={() => {
-                setPlaceLookup(undefined);
-                setSearchSelection({ kind: "nearby", latitude, longitude, label });
-                cancelSelection();
-              }}
+              onPress={submitSearch}
             >
-              <Text style={styles.selectButtonText}>{label}</Text>
+              <Text style={styles.selectButtonText}>Search</Text>
+            </TouchableOpacity>
+            {searchMode === "location" ? (
+              <TouchableOpacity
+                style={styles.selectButton}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !searchName }}
+                disabled={!searchName}
+                onPress={() => {
+                  setSearchSelection({ kind: "name", name: searchName });
+                  setPlaceLookup(searchName);
+                  cancelSelection();
+                }}
+              >
+                <Text style={styles.selectButtonText}>Look up a place</Text>
+              </TouchableOpacity>
+            ) : null}
+            {searching ? (
+              <TouchableOpacity
+                style={styles.selectButton}
+                accessibilityRole="button"
+                onPress={clearSearch}
+              >
+                <Text style={styles.selectButtonText}>Clear search</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          {placeLookup && places.isFetching && !places.data ? (
+            <QueryStatePanel variant="loading" minHeight={44} />
+          ) : placeLookup && places.isError && !isSharedConnectionFailure(places.error) ? (
+            <QueryStatePanel
+              variant="error"
+              message={places.error?.message}
+              minHeight={60}
+              retryLabel="Retry place lookup"
+              onRetry={() => void places.refetch()}
+            />
+          ) : placeLookup && places.data?.length === 0 ? (
+            <Text style={styles.selectionGuidance} accessibilityLiveRegion="polite">
+              No places found.
+            </Text>
+          ) : placeLookup && places.data ? (
+            <View style={styles.controlsPanel}>
+              <Text style={styles.selectionGuidance}>
+                Choose a place to find nearby GPS activities.
+              </Text>
+              {places.data.map(({ id, label, latitude, longitude }) => (
+                <TouchableOpacity
+                  key={id}
+                  style={styles.selectButton}
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setPlaceLookup(undefined);
+                    setSearchSelection({ kind: "nearby", latitude, longitude, label });
+                    cancelSelection();
+                  }}
+                >
+                  <Text style={styles.selectButtonText}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+          {searchSelection?.kind === "nearby" ? (
+            <Text style={styles.selectionGuidance} accessibilityLiveRegion="polite">
+              Near {searchSelection.label}
+            </Text>
+          ) : null}
+          {(placeLookup && !!places.data?.length) || searchSelection?.kind === "nearby" ? (
+            <Text style={styles.selectionGuidance}>
+              Place lookup by <Link href="https://www.geoapify.com/">Geoapify</Link>
+              {" · "}
+              <Link href="https://www.openstreetmap.org/copyright">
+                © OpenStreetMap contributors
+              </Link>
+            </Text>
+          ) : null}
+
+          <ActivityControls
+            activityTypes={sportTypes}
+            activityType={activityType}
+            preset={preset}
+            searching={searching}
+            canSelect={hasActivities}
+            selectMode={selectMode}
+            selectedCount={selectedCount}
+            deletePending={bulkDelete.isPending}
+            mergePending={mergeActivities.isPending}
+            mergeEligible={mergeEligible}
+            mixedTypes={selectedTypes.size > 1}
+            onActivityTypeChange={updateActivityType}
+            onPresetChange={updatePreset}
+            onSelect={() => setSelectMode(true)}
+            onCancelSelection={cancelSelection}
+            onDeleteSelected={confirmBulkDelete}
+            onMergeSelected={confirmMerge}
+          />
+        </>
+      ) : upcomingAgenda.sports.length > 0 ? (
+        <View style={styles.searchRow}>
+          {[undefined, ...upcomingAgenda.sports].map((type) => (
+            <TouchableOpacity
+              key={type === undefined ? "all" : `sport:${type}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: upcomingSport === type }}
+              onPress={() => setUpcomingSport(type)}
+              style={styles.filterChip}
+            >
+              <Text style={[styles.filterChipText, upcomingSport === type && styles.filterCurrent]}>
+                {type === undefined ? "All activities" : formatActivityTypeLabel(type)}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
       ) : null}
-      {searchSelection?.kind === "nearby" ? (
-        <Text style={styles.selectionGuidance} accessibilityLiveRegion="polite">
-          Near {searchSelection.label}
-        </Text>
-      ) : null}
-      {(placeLookup && !!places.data?.length) || searchSelection?.kind === "nearby" ? (
-        <Text style={styles.selectionGuidance}>
-          Place lookup by <Link href="https://www.geoapify.com/">Geoapify</Link>
-          {" · "}
-          <Link href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</Link>
-        </Text>
-      ) : null}
-
-      <ActivityControls
-        activityTypes={sportTypes}
-        activityType={activityType}
-        preset={preset}
-        searching={searching}
-        canSelect={hasActivities}
-        selectMode={selectMode}
-        selectedCount={selectedCount}
-        deletePending={bulkDelete.isPending}
-        mergePending={mergeActivities.isPending}
-        mergeEligible={mergeEligible}
-        mixedTypes={selectedTypes.size > 1}
-        onActivityTypeChange={updateActivityType}
-        onPresetChange={updatePreset}
-        onSelect={() => setSelectMode(true)}
-        onCancelSelection={cancelSelection}
-        onDeleteSelected={confirmBulkDelete}
-        onMergeSelected={confirmMerge}
-      />
-
-      {bulkDelete.error ? (
+      {!futureOnly && bulkDelete.error ? (
         <QueryStatePanel variant="error" message={userFacingErrorMessage(bulkDelete.error)} />
       ) : null}
 
@@ -754,7 +739,9 @@ export default function ActivitiesScreen() {
               retrying={listQuery.isFetching}
             />
           ) : null}
-          {upcomingQuery.isError ? (
+          {futureOnly &&
+          upcomingQuery.isError &&
+          !isSharedConnectionFailure(upcomingQuery.error) ? (
             <QueryStatePanel
               variant="error"
               title="Planned workouts: Could not load this section"
@@ -773,46 +760,36 @@ export default function ActivitiesScreen() {
               minHeight={120}
             />
           ) : (
-            agendaDays.map((day) => {
-              const emptyDay = day.activities.length === 0 && day.workouts.length === 0;
-              return (
-                <View key={day.date} style={styles.daySection}>
-                  <View style={styles.dayHeaderRow}>
-                    <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
-                    <View style={styles.dayHeaderRule} />
-                  </View>
-                  {emptyDay && completedSucceeded && plannedSucceeded ? (
-                    <Text style={styles.activityMeta}>No workouts</Text>
-                  ) : emptyDay ? null : (
-                    <>
-                      {day.workouts.map((workout) => (
-                        <PlannedWorkoutCard
-                          key={`${workout.providerId}:${workout.id}`}
-                          workout={workout}
-                        />
-                      ))}
-                      {day.activities.map((activity) => (
-                        <CompletedActivityCard
-                          key={activity.id}
-                          activity={activity}
-                          units={units}
-                          selectMode={selectMode}
-                          selected={selectedActivityIds.has(activity.id)}
-                          showCompleted
-                          onPress={() => {
-                            if (selectMode) {
-                              toggleSelectedActivity(activity.id, activity.activityType);
-                              return;
-                            }
-                            router.push(`/activity/${activity.id}`);
-                          }}
-                        />
-                      ))}
-                    </>
-                  )}
+            agendaDays.map((day) => (
+              <View key={day.date} style={styles.daySection}>
+                <View style={styles.dayHeaderRow}>
+                  <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
+                  <View style={styles.dayHeaderRule} />
                 </View>
-              );
-            })
+                {day.workouts.map((workout) => (
+                  <PlannedWorkoutCard
+                    key={`${workout.providerId}:${workout.id}`}
+                    workout={workout}
+                  />
+                ))}
+                {day.activities.map((activity) => (
+                  <CompletedActivityCard
+                    key={activity.id}
+                    activity={activity}
+                    units={units}
+                    selectMode={selectMode}
+                    selected={selectedActivityIds.has(activity.id)}
+                    onPress={() => {
+                      if (selectMode) {
+                        toggleSelectedActivity(activity.id, activity.activityType);
+                        return;
+                      }
+                      router.push(`/activity/${activity.id}`);
+                    }}
+                  />
+                ))}
+              </View>
+            ))
           )}
           {!futureOnly ? (
             <PaginationControls

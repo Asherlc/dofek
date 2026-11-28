@@ -47,7 +47,6 @@ const meta = {
     units: metricUnits,
     selectMode: false,
     selected: false,
-    showCompleted: true,
     onPress: fn(),
   },
 } satisfies Meta<typeof CompletedActivityCard>;

@@ -1,15 +1,52 @@
+import { resolveRawProviderActivityType } from "@dofek/training/activity-types";
+import { createActivityTypeMapper, STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
 import { formatDateMedium, formatDateShort, shiftDateYmd } from "./format.ts";
 
 /** Shared Activities agenda date presets and day-merge helpers. */
 
-export type ActivityAgendaPreset =
-  | "this-week"
-  | "4-weeks"
-  | "8-weeks"
-  | "12-weeks"
-  | "next-90-days";
+export type ActivityAgendaPreset = "this-week" | "4-weeks" | "8-weeks" | "12-weeks";
 
 export type ActivityAgendaDateOrder = "oldest" | "newest";
+
+/** The planned-workout endpoint accepts up to 90 inclusive calendar dates. */
+export function upcomingActivityAgendaRange(today: string) {
+  return { startDate: today, endDate: shiftDateYmd(today, 89) };
+}
+
+const mapPlannedSport = createActivityTypeMapper(STRAVA_ACTIVITY_TYPE_MAP);
+
+/** Preserve day and timed order, placing plans without a start time last. */
+export function filterUpcomingActivityAgenda<
+  TWorkout extends { sportType: string | null; startTime: string | null },
+>(days: ReadonlyArray<{ date: string; workouts: readonly TWorkout[] }> = [], sport?: string) {
+  const sports = new Set<string>();
+
+  const filteredDays = days
+    .map((day) => {
+      const workouts = day.workouts.filter(({ sportType }) => {
+        const raw = sportType?.trim();
+        const canonical =
+          raw && Object.hasOwn(STRAVA_ACTIVITY_TYPE_MAP, raw)
+            ? mapPlannedSport(raw).canonicalType
+            : raw
+              ? resolveRawProviderActivityType(raw.toLowerCase()).canonicalType
+              : "other";
+        if (canonical !== "other") sports.add(canonical);
+        return sport === undefined || (canonical !== "other" && canonical === sport);
+      });
+      return {
+        date: day.date,
+        workouts: [
+          ...workouts.filter((workout) => workout.startTime !== null),
+          ...workouts.filter((workout) => workout.startTime === null),
+        ],
+      };
+    })
+    .filter(({ workouts }) => workouts.length > 0);
+
+  if (sport !== undefined) sports.add(sport);
+  return { days: filteredDays, sports: [...sports] };
+}
 
 export const ACTIVITY_AGENDA_RANGES: ReadonlyArray<{
   preset: ActivityAgendaPreset;
@@ -19,7 +56,6 @@ export const ACTIVITY_AGENDA_RANGES: ReadonlyArray<{
   { preset: "4-weeks", label: "4 weeks" },
   { preset: "8-weeks", label: "8 weeks" },
   { preset: "12-weeks", label: "12 weeks" },
-  { preset: "next-90-days", label: "Next 90 days" },
 ];
 
 /** Narrow a select/chip string to a known Activities agenda preset. */
@@ -41,7 +77,7 @@ function mondayOfContainingWeek(today: string): string {
 export function activityAgendaRange(
   preset: ActivityAgendaPreset,
   today: string,
-): { startDate: string; endDate: string; weeks: number | null } {
+): { startDate: string; endDate: string; weeks: number } {
   switch (preset) {
     case "this-week": {
       const startDate = mondayOfContainingWeek(today);
@@ -54,12 +90,6 @@ export function activityAgendaRange(
       return { startDate: shiftDateYmd(today, -(8 * 7 - 1)), endDate: today, weeks: 8 };
     case "12-weeks":
       return { startDate: shiftDateYmd(today, -(12 * 7 - 1)), endDate: today, weeks: 12 };
-    case "next-90-days":
-      return {
-        startDate: shiftDateYmd(today, 1),
-        endDate: shiftDateYmd(today, 90),
-        weeks: null,
-      };
   }
 }
 
@@ -128,11 +158,6 @@ export function mergeActivityAgendaDays<TActivity, TWorkout>(
       activities: entry.activities,
       workouts: entry.workouts,
     }));
-}
-
-/** Calendar order for this week / next 90 days; newest-first for historical ranges. */
-export function activityAgendaDateOrder(preset: ActivityAgendaPreset): ActivityAgendaDateOrder {
-  return preset === "this-week" || preset === "next-90-days" ? "oldest" : "newest";
 }
 
 /** Inclusive YYYY-MM-DD dates from start through end. */

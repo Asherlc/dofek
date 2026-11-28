@@ -398,7 +398,7 @@ describe("Activities browsing and search", () => {
       weeks: 1,
       startDate: expect.any(String),
       endDate: expect.any(String),
-      dateOrder: "oldest",
+      dateOrder: "newest",
       activityType: "running",
       page: 0,
       pageSize: 20,
