@@ -67,14 +67,14 @@ describe("filterUpcomingActivityAgenda", () => {
     });
     expect(filterUpcomingActivityAgenda(days, "swimming")).toEqual({
       days: [{ date: "2026-11-26", workouts: [last] }],
-      sports: ["swimming", "running", "cycling"],
+      sports: ["running", "cycling", "swimming"],
     });
   });
 
   it("keeps a selected sport available when it is absent from the feed", () => {
     expect(filterUpcomingActivityAgenda(days, "hiking")).toEqual({
       days: [],
-      sports: ["hiking", "running", "cycling", "swimming"],
+      sports: ["running", "cycling", "swimming", "hiking"],
     });
     expect(filterUpcomingActivityAgenda(undefined, "hiking")).toEqual({
       days: [],

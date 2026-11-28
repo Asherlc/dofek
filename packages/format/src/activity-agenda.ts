@@ -22,7 +22,6 @@ export function filterUpcomingActivityAgenda<TWorkout extends { sportType: strin
   sport?: string,
 ) {
   const sports = new Set<string>();
-  if (sport !== undefined) sports.add(sport);
 
   const filteredDays = days
     .map((day) => {
@@ -34,6 +33,7 @@ export function filterUpcomingActivityAgenda<TWorkout extends { sportType: strin
     })
     .filter(({ workouts }) => workouts.length > 0);
 
+  if (sport !== undefined) sports.add(sport);
   return { days: filteredDays, sports: [...sports] };
 }
 
