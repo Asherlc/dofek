@@ -214,13 +214,11 @@ export function ActivityControls({
                 }}
                 className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
               >
-                {ACTIVITY_AGENDA_RANGES.filter((option) => option.preset !== "next-90-days").map(
-                  (option) => (
-                    <option key={option.preset} value={option.preset}>
-                      {option.label}
-                    </option>
-                  ),
-                )}
+                {ACTIVITY_AGENDA_RANGES.map((option) => (
+                  <option key={option.preset} value={option.preset}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </label>
           </>

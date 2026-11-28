@@ -95,7 +95,7 @@ export function ActivitiesPage() {
   const agendaRange = useMemo(() => activityAgendaRange(preset, today), [preset, today]);
   const dateOrder = "newest" as const;
   const futureOnly = view === "upcoming";
-  const showOverview = agendaRange.weeks != null && !futureOnly;
+  const showOverview = !futureOnly;
   const upcomingRange = useMemo(() => upcomingActivityAgendaRange(today), [today]);
   const agendaSpanKey = `${agendaRange.startDate}:${agendaRange.endDate}`;
   const [observedAgendaSpanKey, setObservedAgendaSpanKey] = useState(agendaSpanKey);
@@ -122,7 +122,7 @@ export function ActivitiesPage() {
   const lastSportTypes = useRef<string[]>([]);
   const queryInput = useMemo(
     () => ({
-      weeks: agendaRange.weeks ?? 4,
+      weeks: agendaRange.weeks,
       startDate: agendaRange.startDate,
       endDate: agendaRange.endDate,
       dateOrder,
@@ -181,7 +181,7 @@ export function ActivitiesPage() {
   });
   const overviewQuery = trpc.calendar.activityOverview.useQuery(
     {
-      weeks: agendaRange.weeks ?? 4,
+      weeks: agendaRange.weeks,
       endDate: agendaRange.endDate,
       ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
       ...(showHidden ? { includeProviderAbsent: true } : {}),
@@ -416,7 +416,7 @@ export function ActivitiesPage() {
             type="button"
             role="tab"
             aria-selected={view === id}
-            aria-controls={`${tabsId}-panel`}
+            aria-controls={`${tabsId}-${id}-panel`}
             tabIndex={view === id ? 0 : -1}
             onClick={() => selectView(id)}
             onKeyDown={(event) => {
@@ -445,246 +445,261 @@ export function ActivitiesPage() {
           </button>
         ))}
       </div>
-      <div
-        id={`${tabsId}-panel`}
-        role="tabpanel"
-        aria-labelledby={`${tabsId}-${view}`}
-        tabIndex={futureOnly ? 0 : undefined}
-        className="space-y-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-      >
-        <div className="space-y-4">
-          {!futureOnly ? (
-            <>
-              <ActivitySearchControls
-                selection={searchSelection}
-                onSearch={(selection) => {
-                  setSearchSelection(selection);
-                  cancelSelection();
-                }}
-              />
-              <ActivityControls
-                activityTypes={sportTypes}
-                activityType={activityType}
-                preset={preset}
-                showHidden={showHidden && !searching}
-                searching={searching}
-                canSelect={hasActivities}
-                selectMode={selectMode}
-                confirmDelete={confirmDelete}
-                confirmMerge={confirmMerge}
-                confirmRestore={confirmRestore}
-                selectedCount={selectedCount}
-                selectedHiddenCount={selectedHiddenCount}
-                selectedVisibleCount={selectedVisibleCount}
-                mergeEligible={mergeEligible}
-                mergePending={mergeActivities.isPending}
-                mixedTypes={selectedTypes.size > 1}
-                deletePending={bulkDelete.isPending}
-                restorePending={restoreProviderAbsent.isPending}
-                onActivityTypeChange={updateActivityType}
-                onPresetChange={updatePreset}
-                onShowHiddenChange={updateShowHidden}
-                onSelect={() => setSelectMode(true)}
-                onCancelSelection={cancelSelection}
-                onDeleteSelected={() => setConfirmDelete(true)}
-                onMergeSelected={() => setConfirmMerge(true)}
-                onRestoreSelected={() => setConfirmRestore(true)}
-                onConfirmDelete={handleConfirmDelete}
-                onConfirmMerge={() => mergeActivities.mutate({ ids: [...selectedActivityIds] })}
-                onConfirmRestore={handleConfirmRestore}
-              />
-            </>
-          ) : upcomingAgenda.sports.length > 0 ? (
-            <label className="flex w-fit items-center gap-2 text-xs text-muted">
-              Activity type
-              <select
-                className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
-                value={upcomingSport ?? ""}
-                onChange={(event) => setUpcomingSport(event.target.value || undefined)}
-              >
-                <option value="">All activities</option>
-                {upcomingAgenda.sports.map((type) => (
-                  <option key={type} value={type}>
-                    {formatActivityTypeLabel(type)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {!futureOnly && bulkDelete.error ? (
-            <QueryStatePanel error={bulkDelete.error} height={80} />
-          ) : null}
-          {!futureOnly && mergeActivities.error ? (
-            <QueryStatePanel error={mergeActivities.error} height={80} />
-          ) : null}
-          {!futureOnly && restoreProviderAbsent.error ? (
-            <QueryStatePanel error={restoreProviderAbsent.error} height={80} />
-          ) : null}
-          {searching || !showOverview ? null : overviewQuery.isLoading && !overviewQuery.data ? (
-            <QueryStatePanel variant="loading" height={120} />
-          ) : overviewQuery.isError && !overviewQuery.data ? (
-            isSharedConnectionFailure(overviewQuery.error) ? null : (
-              <QueryStatePanel error={overviewQuery.error} height={120} />
-            )
-          ) : (
-            <>
-              {overviewQuery.isError && !isSharedConnectionFailure(overviewQuery.error) ? (
-                <QueryStatePanel error={overviewQuery.error} height={72} />
-              ) : null}
-              <ActivityOverview overview={overviewQuery.data} units={units} />
-            </>
-          )}
-        </div>
-        {sharedConnectionFailure ? (
-          <QueryStatePanel
-            error={connectionFailures[0]?.error}
-            height={72}
-            onRetry={retryConnectionFailures}
-            retrying={retryingConnectionFailures}
-          />
-        ) : null}
-        {searching ? (
-          listQuery.isLoading && !hasListData ? (
-            <QueryStatePanel variant="loading" height={400} />
-          ) : listQuery.isError &&
-            !isSharedConnectionFailure(listQuery.error) &&
-            (!hasListData || !hasActivities) ? (
-            <QueryStatePanel
-              error={listQuery.error}
-              height={200}
-              onRetry={() => void listQuery.refetch()}
-              retrying={listQuery.isFetching}
+      {ACTIVITY_VIEWS.map(({ id }) => (
+        <div
+          key={id}
+          id={`${tabsId}-${id}-panel`}
+          role="tabpanel"
+          aria-labelledby={`${tabsId}-${id}`}
+          tabIndex={id === "upcoming" ? 0 : undefined}
+          hidden={view !== id}
+          className="space-y-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          {id === "completed" ? (
+            <ActivitySearchControls
+              active={view === id}
+              selection={searchSelection}
+              onSearch={(selection) => {
+                setSearchSelection(selection);
+                cancelSelection();
+              }}
             />
-          ) : !hasActivities &&
-            !searchQuery.hasNextPage &&
-            !isSharedConnectionFailure(listQuery.error) ? (
-            <QueryStatePanel variant="empty" message="No matching activities." height={200} />
-          ) : (
-            <div className="space-y-7">
-              {listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
+          ) : null}
+          {view === id ? (
+            <>
+              <div className="space-y-4">
+                {!futureOnly ? (
+                  <ActivityControls
+                    activityTypes={sportTypes}
+                    activityType={activityType}
+                    preset={preset}
+                    showHidden={showHidden && !searching}
+                    searching={searching}
+                    canSelect={hasActivities}
+                    selectMode={selectMode}
+                    confirmDelete={confirmDelete}
+                    confirmMerge={confirmMerge}
+                    confirmRestore={confirmRestore}
+                    selectedCount={selectedCount}
+                    selectedHiddenCount={selectedHiddenCount}
+                    selectedVisibleCount={selectedVisibleCount}
+                    mergeEligible={mergeEligible}
+                    mergePending={mergeActivities.isPending}
+                    mixedTypes={selectedTypes.size > 1}
+                    deletePending={bulkDelete.isPending}
+                    restorePending={restoreProviderAbsent.isPending}
+                    onActivityTypeChange={updateActivityType}
+                    onPresetChange={updatePreset}
+                    onShowHiddenChange={updateShowHidden}
+                    onSelect={() => setSelectMode(true)}
+                    onCancelSelection={cancelSelection}
+                    onDeleteSelected={() => setConfirmDelete(true)}
+                    onMergeSelected={() => setConfirmMerge(true)}
+                    onRestoreSelected={() => setConfirmRestore(true)}
+                    onConfirmDelete={handleConfirmDelete}
+                    onConfirmMerge={() => mergeActivities.mutate({ ids: [...selectedActivityIds] })}
+                    onConfirmRestore={handleConfirmRestore}
+                  />
+                ) : upcomingAgenda.sports.length > 0 ? (
+                  <label className="flex w-fit items-center gap-2 text-xs text-muted">
+                    Activity type
+                    <select
+                      className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
+                      value={upcomingSport ?? ""}
+                      onChange={(event) => setUpcomingSport(event.target.value || undefined)}
+                    >
+                      <option value="">All activities</option>
+                      {upcomingAgenda.sports.map((type) => (
+                        <option key={type} value={type}>
+                          {formatActivityTypeLabel(type)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                {!futureOnly && bulkDelete.error ? (
+                  <QueryStatePanel error={bulkDelete.error} height={80} />
+                ) : null}
+                {!futureOnly && mergeActivities.error ? (
+                  <QueryStatePanel error={mergeActivities.error} height={80} />
+                ) : null}
+                {!futureOnly && restoreProviderAbsent.error ? (
+                  <QueryStatePanel error={restoreProviderAbsent.error} height={80} />
+                ) : null}
+                {searching || !showOverview ? null : overviewQuery.isLoading &&
+                  !overviewQuery.data ? (
+                  <QueryStatePanel variant="loading" height={120} />
+                ) : overviewQuery.isError && !overviewQuery.data ? (
+                  isSharedConnectionFailure(overviewQuery.error) ? null : (
+                    <QueryStatePanel error={overviewQuery.error} height={120} />
+                  )
+                ) : (
+                  <>
+                    {overviewQuery.isError && !isSharedConnectionFailure(overviewQuery.error) ? (
+                      <QueryStatePanel error={overviewQuery.error} height={72} />
+                    ) : null}
+                    <ActivityOverview overview={overviewQuery.data} units={units} />
+                  </>
+                )}
+              </div>
+              {sharedConnectionFailure ? (
                 <QueryStatePanel
-                  error={listQuery.error}
+                  error={connectionFailures[0]?.error}
                   height={72}
-                  onRetry={() => void listQuery.refetch()}
-                  retrying={listQuery.isFetching}
+                  onRetry={retryConnectionFailures}
+                  retrying={retryingConnectionFailures}
                 />
               ) : null}
-              {agendaDays.map((day) => (
-                <section key={day.activities[0]?.id ?? day.date}>
-                  <div className="mb-2 flex items-center gap-3">
-                    <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">
-                      {formatDayHeader(day.date)}
-                    </h3>
-                    <div className="h-px flex-1 bg-border/60" />
-                  </div>
-                  <div data-testid="activity-card-grid" className="grid gap-3 lg:grid-cols-2">
-                    {day.activities.map((activity) => (
-                      <ActivityCard
-                        key={activity.id}
-                        activity={activity}
-                        units={units}
-                        selectMode={selectMode}
-                        selected={selectedActivityIds.has(activity.id)}
-                        onToggleSelected={() => toggleSelectedActivity(activity)}
+              {searching ? (
+                listQuery.isLoading && !hasListData ? (
+                  <QueryStatePanel variant="loading" height={400} />
+                ) : listQuery.isError &&
+                  !isSharedConnectionFailure(listQuery.error) &&
+                  (!hasListData || !hasActivities) ? (
+                  <QueryStatePanel
+                    error={listQuery.error}
+                    height={200}
+                    onRetry={() => void listQuery.refetch()}
+                    retrying={listQuery.isFetching}
+                  />
+                ) : !hasActivities &&
+                  !searchQuery.hasNextPage &&
+                  !isSharedConnectionFailure(listQuery.error) ? (
+                  <QueryStatePanel variant="empty" message="No matching activities." height={200} />
+                ) : (
+                  <div className="space-y-7">
+                    {listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
+                      <QueryStatePanel
+                        error={listQuery.error}
+                        height={72}
+                        onRetry={() => void listQuery.refetch()}
+                        retrying={listQuery.isFetching}
                       />
+                    ) : null}
+                    {agendaDays.map((day) => (
+                      <section key={day.activities[0]?.id ?? day.date}>
+                        <div className="mb-2 flex items-center gap-3">
+                          <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">
+                            {formatDayHeader(day.date)}
+                          </h3>
+                          <div className="h-px flex-1 bg-border/60" />
+                        </div>
+                        <div data-testid="activity-card-grid" className="grid gap-3 lg:grid-cols-2">
+                          {day.activities.map((activity) => (
+                            <ActivityCard
+                              key={activity.id}
+                              activity={activity}
+                              units={units}
+                              selectMode={selectMode}
+                              selected={selectedActivityIds.has(activity.id)}
+                              onToggleSelected={() => toggleSelectedActivity(activity)}
+                            />
+                          ))}
+                        </div>
+                      </section>
                     ))}
+                    {searchQuery.hasNextPage ? (
+                      <button
+                        type="button"
+                        disabled={searchQuery.isFetching}
+                        className="rounded-md border border-border px-3 py-2 text-sm"
+                        onClick={() => void searchQuery.fetchNextPage()}
+                      >
+                        {searchQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+                      </button>
+                    ) : null}
+                  </div>
+                )
+              ) : (
+                <section aria-labelledby="workout-calendar-heading" className="space-y-4">
+                  <header className="space-y-1">
+                    <h2
+                      id="workout-calendar-heading"
+                      className="text-sm font-semibold text-foreground tracking-wide"
+                    >
+                      Workout calendar
+                    </h2>
+                    <p className="text-xs text-muted">{rangeCaption}</p>
+                  </header>
+                  <div className="space-y-7">
+                    {!futureOnly &&
+                    listQuery.isError &&
+                    !isSharedConnectionFailure(listQuery.error) ? (
+                      <QueryStatePanel
+                        error={listQuery.error}
+                        height={72}
+                        onRetry={() => void listQuery.refetch()}
+                        retrying={listQuery.isFetching}
+                      />
+                    ) : null}
+                    {futureOnly &&
+                    upcomingQuery.isError &&
+                    !isSharedConnectionFailure(upcomingQuery.error) ? (
+                      <QueryStatePanel
+                        contextLabel="Planned workouts"
+                        error={upcomingQuery.error}
+                        height={72}
+                        onRetry={() => void upcomingQuery.refetch()}
+                        retrying={upcomingQuery.isFetching}
+                      />
+                    ) : null}
+                    {showAgendaLoading ? (
+                      <QueryStatePanel variant="loading" height={400} />
+                    ) : showRangeEmpty ? (
+                      <QueryStatePanel
+                        variant="empty"
+                        message="No workouts in this date range."
+                        height={200}
+                      />
+                    ) : (
+                      agendaDays.map((day) => (
+                        <section key={day.date}>
+                          <div className="mb-2 flex items-center gap-3">
+                            <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">
+                              {formatDayHeader(day.date)}
+                            </h3>
+                            <div className="h-px flex-1 bg-border/60" />
+                          </div>
+                          <div
+                            data-testid="activity-card-grid"
+                            className="grid gap-3 lg:grid-cols-2"
+                          >
+                            {day.workouts.map((workout) => (
+                              <PlannedWorkoutCard
+                                key={`${workout.providerId}:${workout.id}`}
+                                workout={workout}
+                              />
+                            ))}
+                            {day.activities.map((activity) => (
+                              <ActivityCard
+                                key={activity.id}
+                                activity={activity}
+                                units={units}
+                                selectMode={selectMode}
+                                selected={selectedActivityIds.has(activity.id)}
+                                onToggleSelected={() => toggleSelectedActivity(activity)}
+                              />
+                            ))}
+                          </div>
+                        </section>
+                      ))
+                    )}
+                    {!futureOnly ? (
+                      <PaginationControls
+                        page={currentActivityPage}
+                        pageSize={ACTIVITY_PAGE_SIZE}
+                        totalItems={activityCount}
+                        itemLabel="activities"
+                        onPageChange={setActivityPage}
+                      />
+                    ) : null}
                   </div>
                 </section>
-              ))}
-              {searchQuery.hasNextPage ? (
-                <button
-                  type="button"
-                  disabled={searchQuery.isFetching}
-                  className="rounded-md border border-border px-3 py-2 text-sm"
-                  onClick={() => void searchQuery.fetchNextPage()}
-                >
-                  {searchQuery.isFetchingNextPage ? "Loading…" : "Load more"}
-                </button>
-              ) : null}
-            </div>
-          )
-        ) : (
-          <section aria-labelledby="workout-calendar-heading" className="space-y-4">
-            <header className="space-y-1">
-              <h2
-                id="workout-calendar-heading"
-                className="text-sm font-semibold text-foreground tracking-wide"
-              >
-                Workout calendar
-              </h2>
-              <p className="text-xs text-muted">{rangeCaption}</p>
-            </header>
-            <div className="space-y-7">
-              {!futureOnly && listQuery.isError && !isSharedConnectionFailure(listQuery.error) ? (
-                <QueryStatePanel
-                  error={listQuery.error}
-                  height={72}
-                  onRetry={() => void listQuery.refetch()}
-                  retrying={listQuery.isFetching}
-                />
-              ) : null}
-              {futureOnly &&
-              upcomingQuery.isError &&
-              !isSharedConnectionFailure(upcomingQuery.error) ? (
-                <QueryStatePanel
-                  contextLabel="Planned workouts"
-                  error={upcomingQuery.error}
-                  height={72}
-                  onRetry={() => void upcomingQuery.refetch()}
-                  retrying={upcomingQuery.isFetching}
-                />
-              ) : null}
-              {showAgendaLoading ? (
-                <QueryStatePanel variant="loading" height={400} />
-              ) : showRangeEmpty ? (
-                <QueryStatePanel
-                  variant="empty"
-                  message="No workouts in this date range."
-                  height={200}
-                />
-              ) : (
-                agendaDays.map((day) => (
-                  <section key={day.date}>
-                    <div className="mb-2 flex items-center gap-3">
-                      <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">
-                        {formatDayHeader(day.date)}
-                      </h3>
-                      <div className="h-px flex-1 bg-border/60" />
-                    </div>
-                    <div data-testid="activity-card-grid" className="grid gap-3 lg:grid-cols-2">
-                      {day.workouts.map((workout) => (
-                        <PlannedWorkoutCard
-                          key={`${workout.providerId}:${workout.id}`}
-                          workout={workout}
-                        />
-                      ))}
-                      {day.activities.map((activity) => (
-                        <ActivityCard
-                          key={activity.id}
-                          activity={activity}
-                          units={units}
-                          selectMode={selectMode}
-                          selected={selectedActivityIds.has(activity.id)}
-                          onToggleSelected={() => toggleSelectedActivity(activity)}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                ))
               )}
-              {!futureOnly ? (
-                <PaginationControls
-                  page={currentActivityPage}
-                  pageSize={ACTIVITY_PAGE_SIZE}
-                  totalItems={activityCount}
-                  itemLabel="activities"
-                  onPageChange={setActivityPage}
-                />
-              ) : null}
-            </div>
-          </section>
-        )}
-      </div>
+            </>
+          ) : null}
+        </div>
+      ))}
     </PageLayout>
   );
 }

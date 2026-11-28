@@ -92,7 +92,7 @@ export default function ActivitiesScreen() {
   const agendaRange = useMemo(() => activityAgendaRange(preset, today), [preset, today]);
   const dateOrder = "newest" as const;
   const futureOnly = view === "upcoming";
-  const showOverview = agendaRange.weeks != null && !futureOnly;
+  const showOverview = !futureOnly;
   const upcomingRange = useMemo(() => upcomingActivityAgendaRange(today), [today]);
   const agendaSpanKey = `${agendaRange.startDate}:${agendaRange.endDate}`;
   const [observedAgendaSpanKey, setObservedAgendaSpanKey] = useState(agendaSpanKey);
@@ -111,7 +111,7 @@ export default function ActivitiesScreen() {
   const lastSportTypes = useRef<string[]>([]);
   const queryInput = useMemo(
     () => ({
-      weeks: agendaRange.weeks ?? 4,
+      weeks: agendaRange.weeks,
       startDate: agendaRange.startDate,
       endDate: agendaRange.endDate,
       dateOrder,
@@ -179,7 +179,7 @@ export default function ActivitiesScreen() {
   });
   const overviewQuery = trpc.calendar.activityOverview.useQuery(
     {
-      weeks: agendaRange.weeks ?? 4,
+      weeks: agendaRange.weeks,
       endDate: agendaRange.endDate,
       ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
     },
@@ -211,7 +211,7 @@ export default function ActivitiesScreen() {
     { enabled: futureOnly },
   );
   const calendarQuery = trpc.calendar.calendarData.useQuery(
-    { days: (agendaRange.weeks ?? 1) * 7 },
+    { days: agendaRange.weeks * 7 },
     {
       enabled: showOverview && !searching,
       placeholderData: (previousData) =>

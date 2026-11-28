@@ -399,12 +399,22 @@ describe("ActivitiesPage", () => {
     const upcoming = screen.getByRole("tab", { name: "Upcoming", selected: false });
     expect(completed.tabIndex).toBe(0);
     expect(upcoming.tabIndex).toBe(-1);
+    const completedPanel = screen.getByRole("tabpanel", { name: "Completed" });
+    const panels = screen.getAllByRole("tabpanel", { hidden: true });
+    expect(panels).toHaveLength(2);
+    expect(completed.getAttribute("aria-controls")).toBe(completedPanel.id);
+    const upcomingPanel = panels.find((panel) => panel.id !== completedPanel.id);
+    expect(upcomingPanel).toMatchObject({ hidden: true });
+    expect(upcoming.getAttribute("aria-controls")).toBe(upcomingPanel?.id);
+    expect(upcomingPanel?.getAttribute("aria-labelledby")).toBe(upcoming.id);
 
     completed.focus();
     fireEvent.keyDown(completed, { key: "ArrowRight" });
     expect(document.activeElement).toBe(upcoming);
     expect(upcoming.getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tabpanel", { name: "Upcoming" }).tabIndex).toBe(0);
+    expect(screen.getByRole("tabpanel", { name: "Upcoming" })).toBe(upcomingPanel);
+    expect(upcomingPanel?.tabIndex).toBe(0);
+    expect(completedPanel.hidden).toBe(true);
 
     fireEvent.keyDown(upcoming, { key: "Home" });
     expect(document.activeElement).toBe(completed);
@@ -705,7 +715,22 @@ describe("ActivitiesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Location" }));
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Oakland" } });
     fireEvent.click(screen.getByRole("button", { name: "Look up a place" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Upcoming" }));
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(placeLookupQuery).toHaveBeenLastCalledWith(
+      { query: "Oakland" },
+      expect.objectContaining({ enabled: false }),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Completed" }));
+    expect(screen.getByRole("searchbox", { name: "Search activity locations" })).toMatchObject({
+      value: "Oakland",
+    });
     fireEvent.click(screen.getByRole("button", { name: "Oakland, CA" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Upcoming" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Completed" }));
+    expect(screen.getByRole("searchbox", { name: "Search activity locations" })).toMatchObject({
+      value: "Oakland",
+    });
     expect(screen.getByRole("link", { name: "Oakland Run" })).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     expect(fetchNextPage).toHaveBeenCalledOnce();
@@ -1782,9 +1807,9 @@ describe("ActivitiesPage", () => {
           {
             date: "2026-11-24",
             workouts: [
-              plan("Earlier today", "cycling", "06:00"),
-              plan("Later today", "running", "18:00"),
               plan("No start time today", null, null),
+              plan("Earlier today", "Ride", "06:00"),
+              plan("Later today", "running", "18:00"),
             ],
           },
           { date: "2026-11-26", workouts: [plan("Future ride", "cycling", "09:00")] },

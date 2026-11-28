@@ -9,9 +9,11 @@ export type ActivitySearchSelection =
   | { kind: "nearby"; latitude: number; longitude: number; label: string };
 
 export function ActivitySearchControls({
+  active = true,
   selection,
   onSearch,
 }: {
+  active?: boolean;
   selection: ActivitySearchSelection | undefined;
   onSearch: (selection: ActivitySearchSelection | undefined) => void;
 }) {
@@ -23,7 +25,7 @@ export function ActivitySearchControls({
   const places = trpc.activityLocation.places.useQuery(
     { query: lookup ?? "" },
     {
-      enabled: lookup !== undefined,
+      enabled: active && lookup !== undefined,
       staleTime: Number.POSITIVE_INFINITY,
       retry: false,
       gcTime: 0,
@@ -41,6 +43,8 @@ export function ActivitySearchControls({
     setMode(next);
     clear();
   };
+
+  if (!active) return null;
 
   return (
     <div className="space-y-2">

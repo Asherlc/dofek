@@ -67,7 +67,7 @@ function createStoryData(
   const yesterday = shiftDateYmd(today, -1);
   const agendaRange = activityAgendaRange("this-week", today);
   const queryInput = {
-    weeks: agendaRange.weeks ?? 1,
+    weeks: agendaRange.weeks,
     startDate: agendaRange.startDate,
     endDate: agendaRange.endDate,
     dateOrder: "newest" as const,
