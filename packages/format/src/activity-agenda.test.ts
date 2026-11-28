@@ -4,13 +4,84 @@ import {
   activityAgendaDateOrder,
   activityAgendaPlannedWindow,
   activityAgendaRange,
+  filterUpcomingActivityAgenda,
   formatActivityAgendaCaption,
   isActivityAgendaPreset,
   mergeActivityAgendaDays,
   resolveActivityAgendaOwnedPlannedWindow,
+  upcomingActivityAgendaRange,
   withActivityAgendaEmptyDays,
 } from "./activity-agenda.ts";
 import { shiftDateYmd } from "./format.ts";
+
+describe("upcomingActivityAgendaRange", () => {
+  it.each([
+    ["2026-11-24", "2027-02-21"],
+    ["2026-12-31", "2027-03-30"],
+    ["2028-02-01", "2028-04-30"],
+    ["2026-03-08", "2026-06-05"],
+    ["2026-11-01", "2027-01-29"],
+  ])("includes today and exactly 89 later dates from %s", (today, endDate) => {
+    expect(upcomingActivityAgendaRange(today)).toEqual({ startDate: today, endDate });
+  });
+});
+
+describe("filterUpcomingActivityAgenda", () => {
+  const first = { id: "first", sportType: "running" };
+  const second = { id: "second", sportType: "cycling" };
+  const third = { id: "third", sportType: "running" };
+  const missing = { id: "missing", sportType: null };
+  const empty = { id: "empty", sportType: "" };
+  const blank = { id: "blank", sportType: "  " };
+  const last = { id: "last", sportType: "swimming" };
+  const days = [
+    { date: "2026-11-24", workouts: [first, second, third, missing, empty, blank] },
+    { date: "2026-11-25", workouts: [] },
+    { date: "2026-11-26", workouts: [last] },
+  ];
+
+  it("returns empty results for default, explicit missing, and empty feeds", () => {
+    expect(filterUpcomingActivityAgenda()).toEqual({ days: [], sports: [] });
+    expect(filterUpcomingActivityAgenda(undefined)).toEqual({ days: [], sports: [] });
+    expect(filterUpcomingActivityAgenda([])).toEqual({ days: [], sports: [] });
+    expect(filterUpcomingActivityAgenda([{ date: "2026-11-24", workouts: [] }])).toEqual({
+      days: [],
+      sports: [],
+    });
+  });
+
+  it("removes empty days and preserves day and workout order including unknown sports", () => {
+    expect(filterUpcomingActivityAgenda(days)).toEqual({
+      days: [
+        { date: "2026-11-24", workouts: [first, second, third, missing, empty, blank] },
+        { date: "2026-11-26", workouts: [last] },
+      ],
+      sports: ["running", "cycling", "swimming"],
+    });
+  });
+
+  it("filters exact raw sports and drops unmatched days while retaining all distinct choices", () => {
+    expect(filterUpcomingActivityAgenda(days, "running")).toEqual({
+      days: [{ date: "2026-11-24", workouts: [first, third] }],
+      sports: ["running", "cycling", "swimming"],
+    });
+    expect(filterUpcomingActivityAgenda(days, "swimming")).toEqual({
+      days: [{ date: "2026-11-26", workouts: [last] }],
+      sports: ["swimming", "running", "cycling"],
+    });
+  });
+
+  it("keeps a selected sport available when it is absent from the feed", () => {
+    expect(filterUpcomingActivityAgenda(days, "hiking")).toEqual({
+      days: [],
+      sports: ["hiking", "running", "cycling", "swimming"],
+    });
+    expect(filterUpcomingActivityAgenda(undefined, "hiking")).toEqual({
+      days: [],
+      sports: ["hiking"],
+    });
+  });
+});
 
 describe("ACTIVITY_AGENDA_RANGES", () => {
   it("lists the Activities presets in display order", () => {
