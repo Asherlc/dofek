@@ -1,5 +1,29 @@
 # Production Incident Baseline
 
+## 2026-11-27 — Background Apple Health upload returned HTTP 408
+
+- **Impact.** One production iOS user had a quantity-sample upload fail at
+  19:36:53 PST on build `1795711332` (release `e39a4c65b`). The app received
+  HTTP 408 with an empty body and no content type during an observer sync.
+  [Sentry issue](https://east-bay-software.sentry.io/issues/7871672999/)
+- **Evidence and cause.** Between 03:31 and 03:42 UTC on November 28, Axiom
+  recorded six web requests for `healthKitSync.pushQuantitySamples`, all HTTP
+  200 in 16–493 ms. The Sentry trace contains mobile startup spans and no
+  matching server request. Traefik access logs retain only HTTP 5xx responses,
+  so the component that returned the 408 remains unconfirmed. The mobile
+  timeout classifier matches native fetch error messages and misses the
+  non-JSON HTTP 408 error that triggered this alert.
+  [Sentry trace](https://east-bay-software.sentry.io/explore/traces/trace/e4610b9ac01347cb83d09a0af13bc8e7)
+  [Traefik logging configuration](../deploy/docker-compose.yml#L47)
+  [Mobile timeout classifier](../packages/mobile/lib/health-kit-errors.ts#L23)
+- **Mitigation and follow-up.** The existing observer sync leaves the anchor
+  uncommitted and retains unfinished work for a later delivery. Recovery of
+  this batch remains unconfirmed. If the alert recurs, correlate the affected
+  upload across the client and ingress and confirm whether a later observer
+  delivery succeeds.
+  [Anchor handling](../packages/mobile/lib/health-kit-sync.ts#L599)
+  [Observer queue](../packages/mobile/lib/background-health-kit-sync.ts#L263)
+
 ## 2026-11-27 — Hard-coded activity fixture dates blocked CI
 
 - **Impact.** The ClickHouse integration gate blocked PR #3524 and had
